@@ -13,15 +13,22 @@ held at a time. The memory checked before any pixel is read bounds that whole re
 - TIFF: the ``(C, Y, X)`` result, the decoded page, and what ``tifffile`` holds while it
   decodes the page: the encoded bytes it reads (twice: the bytes read and their slices per
   strip or tile; at most four read buffers when they are read in several buffers) and, per
-  decoding thread, one encoded and :data:`DECODE_COPIES` decoded strips or tiles and the
-  codec's state (:data:`CODEC_STATE`). An uncompressed page stored in one run of bytes is
-  read straight into the page array. Plus the parsed header.
+  decoding thread, what a window read counts for one piece: one encoded and its decoded copies,
+  the codec's own buffers for it and the codec's state (``window_memory.tiff_piece_work`` and
+  ``codec_state``, one definition for windows, these reads and blocks). An uncompressed page
+  stored in one run of bytes is read straight into the page array. Plus the parsed header.
 - OME-Zarr: the result, every chunk one plane touches (:data:`ZARR_COPIES` times: stored,
   decompressed, decoded) and the plane zarr returns for each channel.
 
 This bound is measured for deflate, LZMA and uncompressed TIFF pages decoded by ``tifffile``
-itself; codecs decoded only through imagecodecs are counted like deflate and are not
-measured (issue #342). The estimate of a single :func:`.planes.read_plane` call is unchanged.
+itself and for LZW and JPEG pages decoded through imagecodecs (peak RSS); a page stored with
+any other codec (:data:`.codec_bounds.TIFF_BOUNDED`) is refused from its header before any
+pixel is read (:class:`.plane_errors.CompressionNotBoundedError`, issue #356). A JPEG page is
+decoded piece by piece in tifffile's threads, each piece's stream checked before it is decoded
+(``tiff_pieces.read_jpeg_page``, through ``planes._read_page``): libjpeg sizes what it
+allocates from the stream, so a stream declaring more than its piece is refused, as window and
+block reads refuse it. The estimate of
+a single :func:`.planes.read_plane` call is unchanged.
 
 The values are those of :func:`.planes.read_plane`, channel by channel: the same selection
 of the same decoded page, oriented Y before X and converted to native byte order.
@@ -36,7 +43,9 @@ from pathlib import Path
 import numpy as np
 import tifffile
 
+from . import window_memory
 from .axes import AxisMapping
+from .codec_bounds import check_tiff_codec
 from .planes import (
     DEFAULT_MEMORY_LIMIT,
     PlaneLayout,
@@ -52,6 +61,7 @@ from .planes import (
     _zarr_read,
     format_bytes,
 )
+from .tiff_pieces import piece_decode
 from .zarr_input import NgffImage, is_zarr_store
 
 KIB = 2**10
@@ -62,14 +72,8 @@ PAGE_BYTES = 2 * KIB
 """tifffile's parsed page (or frame) and its tags, per page of the series."""
 PIECE_ENTRY_BYTES = 80
 """One strip or tile's offset and byte count, as tifffile holds them (two Python integers)."""
-DECODE_COPIES = 5
-"""Decoded copies of a compressed TIFF piece a decoding thread holds at once."""
 ZARR_COPIES = 3
 """Copies of each chunk a plane touches held at once: stored, decompressed and decoded."""
-CODEC_STATE = {1: 0, 8: 64 * KIB, 32946: 64 * KIB, 34925: 66 * MIB}
-"""A decoder's own state per thread by TIFF compression code: none uncompressed, deflate's
-window and tables, LZMA's dictionary (at most 64 MiB for the presets 0 to 9) and its tables.
-Another codec is counted as deflate, unmeasured (issue #342)."""
 
 
 def xyc_plane_memory(
@@ -97,7 +101,7 @@ def xyc_plane_memory(
         layout = _layout(series, mapping, path, _Binning(histogram=False), memory_limit)
         count = _checked(layout, channel_count, path)
         pages = _page_indices(layout, mapping, {"Z": z, "T": t}, count)
-        return _tiff_memory(series, layout, pages, count)
+        return _tiff_memory(series, layout, pages, count, path)
 
 
 def read_xyc_plane(
@@ -137,7 +141,7 @@ def read_xyc_plane(
         layout = _layout(series, mapping, path, _Binning(histogram=False), memory_limit)
         count = _checked(layout, channel_count, path)
         pages = _page_indices(layout, mapping, wanted, count)
-        _refuse_over(_tiff_memory(series, layout, pages, count), layout, count, path)
+        _refuse_over(_tiff_memory(series, layout, pages, count, path), layout, count, path)
         return _read_tiff(series, layout, mapping, path, wanted, count)
 
 
@@ -158,13 +162,20 @@ def _page_indices(
 
 
 def _tiff_memory(
-    series: tifffile.TiffPageSeries, layout: PlaneLayout, pages: list[int], count: int
+    series: tifffile.TiffPageSeries,
+    layout: PlaneLayout,
+    pages: list[int],
+    count: int,
+    path: str | os.PathLike,
 ) -> int:
     """Bound the memory of reading ``count`` channels of a plane of a TIFF series whole.
 
-    The pages are decoded one at a time, so the largest decode of ``pages`` counts.
+    The pages are decoded one at a time, so the largest decode of ``pages`` counts. A page
+    stored with a codec whose memory is not measured is refused here, from its header,
+    before any pixel is read (:mod:`.codec_bounds`, issue #356).
     """
     found = [_page(series, index) for index in pages]
+    check_tiff_codec(found, path, "every channel at once (RunInputs.read_plane)")
     pieces = max(len(page.databytecounts) for page in found)
     header = OPEN_BYTES + PAGE_BYTES * len(series.pages) + PIECE_ENTRY_BYTES * pieces
     decode = max(_decode_memory(series.keyframe, page) for page in found)
@@ -189,9 +200,9 @@ def _decode_memory(
     It reads ``page``'s own strips or tiles (their own byte counts) in buffers of up to
     ``TIFF.BUFFERSIZE`` bytes and slices them into one ``bytes`` per piece, keeping both;
     while the next buffer is read the previous one and its slices can still be held. Each
-    decoding thread holds one encoded piece, :data:`DECODE_COPIES` decoded copies of it
-    (decompressed, as an array, reshaped, unpredicted) and the codec's own state
-    (:data:`CODEC_STATE`). The thread count is ``tifffile``'s for this machine.
+    decoding thread holds one encoded piece, its decoded copies (decompressed, as an array,
+    reshaped, unpredicted), the codec's own buffers for it and the codec's state, as a window
+    read counts them (``window_memory``). The thread count is ``tifffile``'s for this machine.
     """
     if page.is_contiguous:
         return 0  # read straight into the page array
@@ -200,8 +211,10 @@ def _decode_memory(
     buffers = min(2 * encoded, 4 * (tifffile.TIFF.BUFFERSIZE + largest))
     piece = math.prod(int(n) for n in keyframe.chunks) * np.dtype(keyframe.dtype).itemsize
     threads = max(1, int(keyframe.maxworkers))
-    state = CODEC_STATE.get(int(keyframe.compression), CODEC_STATE[8])
-    return buffers + threads * (largest + DECODE_COPIES * piece + state)
+    decode = piece_decode(keyframe)
+    work = window_memory.tiff_piece_work(piece, largest, cached=False, decode=decode)
+    state = window_memory.codec_state(decode.compression)  # other codecs are refused (#356)
+    return buffers + threads * (work + state)
 
 
 def _zarr_memory(layout: PlaneLayout, count: int) -> int:

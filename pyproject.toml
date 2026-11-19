@@ -24,6 +24,10 @@ dependencies = [
     "tifffile>=2023.7.10",
     # Counting the connected pieces of each mask label in the optional mask step.
     "scipy>=1.10",
+    # The measured decoders of every compressed TIFF the bounded readers read (#356; owner
+    # decision of 18 November 2026): deflate, LZMA, LZW and JPEG (libjpeg-turbo 3), checked at
+    # run time by codec_bounds.decoder_unmeasured.
+    "imagecodecs>=2024.12.30",
     # Per-plane histograms, the CSV table, pooling and normalization, pinned to a release tag;
     # what each pin brought is in CHANGELOG.md.
     "morphobricks-normalization @ git+https://github.com/CellMigrationLab/morphobricks-normalization.git@v0.7.1",
@@ -142,6 +146,8 @@ baseline = "tools/code_rules_baseline.json"
 "morphobricks_preprocessing.ome_header" = "io"
 "morphobricks_preprocessing.tiff_colour" = "io"
 "morphobricks_preprocessing.rgb_override" = "pure"
+"morphobricks_preprocessing.jpeg_stream" = "pure"
+"morphobricks_preprocessing.jpeg_piece" = "io"
 "morphobricks_preprocessing.axis_review" = "pure"
 "morphobricks_preprocessing.mask_checks" = "pure"
 "morphobricks_preprocessing.mask_review" = "pure"
@@ -364,6 +370,9 @@ baseline = "tools/code_rules_baseline.json"
 "morphobricks_preprocessing.plane_errors" = "pure"
 "morphobricks_preprocessing.tiff_pieces" = "io"
 "morphobricks_preprocessing.windows" = "io"
+"morphobricks_preprocessing.window_source" = "pure"
+"morphobricks_preprocessing.window_tiff" = "io"
+"morphobricks_preprocessing.codec_bounds" = "io"
 "morphobricks_preprocessing.window_memory" = "pure"
 "morphobricks_preprocessing.window_reader" = "io"
 "morphobricks_preprocessing.block_cache" = "pure"

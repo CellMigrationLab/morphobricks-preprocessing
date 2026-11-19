@@ -8,8 +8,108 @@ v0.5.1: no run before v0.5.1 is read.)
 
 ## Unreleased
 
+### Breaking
+
+- **imagecodecs is a required dependency, and the only decoder of compressed TIFFs in the
+  bounded readers** (#356, review B2; owner decision of 18 November 2026). `imagecodecs>=
+  2024.12.30` moves from the `dev` extra to the core dependencies. With it installed, tifffile
+  decodes deflate (codes 8 and 32946) with `imagecodecs.deflate_decode` and LZMA with
+  `imagecodecs.lzma_decode` instead of the standard library's `zlib` and `lzma`, and LZW (which
+  tifffile cannot decode without it) with `lzw_decode`; a JPEG piece is decoded by imagecodecs'
+  libjpeg decoder called directly, never through tifffile (see *Fixed*, F1): one measured
+  decoder path. The bounded readers (windows, every channel of a plane, blocks) check it at run
+  time, from the header and before any pixel is read (`codec_bounds.decoder_unmeasured`):
+  imagecodecs missing, older than 2024.12.30, built on a libjpeg other than libjpeg-turbo 3 (for
+  JPEG), a libjpeg decoder that is not compiled (a Python wrapper, where a fallback could live),
+  or a decoder other than imagecodecs' in tifffile's table, is refused with
+  `CompressionNotBoundedError` (`compression_not_bounded`) naming what was found and "install or
+  upgrade imagecodecs"; nothing falls back to another decoder. Values are unchanged (the same
+  deflate and LZMA streams decode to the same bytes). The deflate and LZMA bounds were measured
+  with `tracemalloc` (#339, #351); their RSS on the standard library's path went over the
+  estimate in 2 of 5 runs in the review of this PR (a deflate window, 1.06), and stays at 0.50
+  with imagecodecs; the block reader's deflate and LZMA estimate is still #342's (item 3).
+- **Only codecs with a measured memory bound are read by the bounded readers** (#356, P2,
+  external audit of `6a3446b`; owner decision of 18 November 2026: refuse untested codecs). The
+  readers that plan their working memory before any pixel is read decode only the TIFF codecs
+  listed, with their measured evidence, in `codec_bounds.TIFF_BOUNDED`: uncompressed, deflate
+  (codes 8 and 32946, without a predictor or with the horizontal predictor), LZMA (no
+  predictor), LZW (code 5, without a predictor or with the horizontal predictor) and JPEG (code
+  7) in the measured form: 8-bit greyscale, RGB or YCbCr (subsampled at most 2 × 2), interleaved,
+  without an NDPI header (owner decision of 18 November 2026: measure JPEG, the usual H&E and
+  brightfield whole-slide export, and LZW, then read them; see *Added*). At v0.7.0 any other
+  codec was estimated with deflate's state, a bound never measured (and its native allocations
+  unseen by `tracemalloc`). Now a TIFF stored with any other compression or predictor, or a JPEG
+  page in another form, is refused from its header, before any pixel is read, with the
+  compression and the fix named (save it again as an uncompressed, deflate, LZW or LZMA TIFF,
+  tiled for a large image, or as OME-Zarr): the new `CompressionNotBoundedError` (a `PlaneReadError`,
+  `code = "compression_not_bounded"`, exported by the package) and, for windows,
+  `windows.WindowCompressionError` (also a `WindowLayoutError`). No bound is invented. **Newly
+  refused**, for TIFFs stored with old-style JPEG, PackBits, Zstandard, WebP, JPEG 2000, JPEG XL,
+  PNG, LERC or the floating-point predictor (or the horizontal predictor with LZMA or with no
+  compression), or with JPEG of 12-bit samples, separate colour planes, other colour spaces or
+  samples, YCbCr subsampled more than 2 × 2 or an NDPI header, whatever their size:
+  - every window read and plan: `read_window`, `window_plan`, `WindowReader` and
+    `RunInputs.window_reader` (`read_window`, `window_plan`), `cache_plan` /
+    `RunInputs.window_cache_plan`, `window_map.map_plan` (and so `map_windows` /
+    `iter_windows`), and the mask windows `read_mask_window` / `mask_window_plan` of such a mask;
+  - `RunInputs.read_plane` (every channel of a plane, `plane_channels.read_xyc_plane` and
+    `xyc_plane_memory`), and with it `RunInputs.read_image` and its `LazyImage`, and the H&E
+    tissue mask of a run's image (`RunInputs.he_tissue_mask`, `preview_he_tissue_mask`, which
+    read through `read_plane`);
+  - and, only for images whose planes are **over the memory limit** (read in blocks at v0.7.0,
+    with the warning `planes_read_in_blocks`): `check` and `run` (`check_planes` now reports the
+    error `compression_not_bounded`, so the run stops before any pixel is read), `convert`'s
+    checks, `iter_planes` / `iter_xyc_planes`, `planes.read_plane` and its reduced preview
+    (`preview=True`, `read_sample_plane`: the notebook's axis preview of such an image).
+  Unchanged: planes within the memory limit read whole (`planes.read_plane`, the run's
+  histograms, the conversion): their estimate is not stated as an upper bound for any codec, so
+  the rule does not reach them and they read every codec tifffile decodes, as before (contract
+  §9.1 *Codecs*, `docs/design/lazy-windows.md`). Raising the memory limit so that such planes
+  are read whole is the other way out for a run. OME-Zarr reads are not refused by codec; the
+  OME-Zarr codecs the measurements cover are recorded in `codec_bounds.ZARR_MEASURED` (Blosc
+  LZ4 for zarr format 2, Zstandard for zarr format 3). The allowed codecs read bitwise as
+  before. New tests write each refused codec when its encoder is available (only that codec's
+  test is skipped otherwise) and rewrite the compression tag of an uncompressed file to each
+  refused code (never skipped): every bounded reader refuses with the exact message and no pixel
+  read.
+
 ### Added
 
+- **LZW and JPEG TIFFs are read by the bounded readers, with measured memory bounds** (#356,
+  owner decision of 18 November 2026). JPEG-compressed TIFFs (the usual H&E and brightfield
+  whole-slide export: YCbCr 4:2:0 as tifffile and scanners write it, RGB-encoded as Aperio SVS,
+  greyscale; the JPEG tables in the TIFF header) and LZW (with or without the horizontal
+  predictor) are read in windows (`read_window`, `WindowReader`, `map_windows`, mask windows),
+  by `RunInputs.read_plane` (and `read_image`, the H&E tissue mask) and in blocks, bitwise as
+  tifffile reads them. They are decoded by imagecodecs in C, so their estimates
+  (`window_memory`) count what `tracemalloc` cannot see: LZW's code table (40 KiB with
+  imagecodecs 2026.11, about 150 KiB with 2026.3, the last for Python 3.11; counted at 192 KiB)
+  and libjpeg's state (about 22–30 KiB; counted at 64 KiB); two decoded JPEG pieces; libjpeg's
+  rows (44 rows of the piece's width, at libjpeg's largest vertical sampling factor) and a
+  progressive piece's coefficients (2 bytes per sample, padded to 32-pixel MCUs; counted for
+  every JPEG piece, as the header cannot tell), for the piece and the previous one, whose buffers
+  the C allocator may still hold. One definition (`window_memory.tiff_piece_work` with the piece's
+  `PieceDecode`) is used by windows, every channel of a plane and blocks; blocks of the other
+  codecs keep their estimate (#342). `tests/test_codec_memory.py` measures in a fresh process,
+  over JPEG tiles of 256 and 512 and strips, YCbCr 4:2:0 and 4:2:2, RGB-encoded and greyscale,
+  baseline and progressive, compressible and noisy, and LZW `uint8` and `uint16`, windows
+  (inside a piece, across pieces, the whole plane; uncached and cached), every channel of a
+  plane with 1 and 4 tifffile threads and blocks, on Python 3.13 (imagecodecs 2026.11.11) and
+  3.11 (2026.3.6): peak RSS at most 0.90 of the estimate, traced
+  peak at most 0.97 of its Python part, and, for one piece, the C library's memory (C heap
+  sampled through glibc's `mallinfo2`) at most 0.98 of its terms. Lowering the codecs' states,
+  the JPEG decode copies, coefficients or rows to zero (and the copies to 1) fails a test;
+  `JPEG_NATIVE_PIECES` (the previous piece's libjpeg buffers, counted for what glibc may still
+  hold) is **not mutation-covered**: lowered from 2 to 1, no test fails reliably (the review of
+  this PR saw 1 failure in 4 runs on Python 3.11's stack, at 1.001; never on 3.13's). It stays
+  on that evidence, which is not deterministic. A YCbCr-subsampled JPEG is now read in windows and blocks (the decoder upsamples
+  a piece whole; at v0.7.0 it was refused as "subsampled colour"), and a JPEG piece whose stream
+  declares more pixels than its piece is refused before it is decoded (`PlaneReadError`), by
+  every read of a JPEG TIFF (windows, blocks, every channel of a plane, a whole plane): the new
+  `jpeg_stream` walks a piece's markers as libjpeg walks them and refuses any stream libjpeg
+  could read otherwise, and a JPEG page is decoded piece by piece, each checked first
+  (`tiff_pieces.read_jpeg_page`). imagecodecs is a required dependency (*Breaking*), so CI
+  runs these measurements on the decoders a default install uses.
 - **`window_map`: a function mapped over windows in threads, results in window order**
   (`docs/design/lazy-windows.md` §5.2 (b), with (a) as its special case; owner decision of 17
   November 2026). `map_plan(reader, windows, *, channels, workers, t, z, max_in_flight)` works
@@ -31,8 +131,8 @@ v0.5.1: no run before v0.5.1 is read.)
   on where lazy, windowed reading of large images lives (here, processing-agnostic), its API,
   how MorphoFeature, CellPatcher, a brick run directly and a LabConstrictor/QuPath tool use it
   (window geometry stays CellPatcher's, Spec ADR 0004 EW5), what exists and what is missing
-  (among it imagecodecs, not a dependency, without which JPEG whole-slide images cannot be
-  decoded), and its concurrency: TIFF deflate decoding releases the GIL (the standard library's
+  (among it imagecodecs, without which JPEG whole-slide images cannot be decoded; a required
+  dependency since #356), and its concurrency: TIFF deflate decoding releases the GIL (the standard library's
   `zlib`, measured: 154, 254 and 282 MiB/s with 1, 2 and 4 threads), imagecodecs' and
   numcodecs' codecs are documented to release it too but OME-Zarr decoding was not measured; the
   cache is single-flight; the ways to hand parallelism to a consumer, and the rules (order,
@@ -96,6 +196,52 @@ v0.5.1: no run before v0.5.1 is read.)
   CI's `wheel-identity` job also runs its tests from a wheel.
 
 ### Fixed
+
+- **A JPEG piece is decoded by libjpeg alone, never by LJPEG as a fallback** (#356; second
+  review of #357, finding F1). When libjpeg refuses a stream ("Bogus Huffman table definition",
+  "SOF type", "Unsupported JPEG data precision", "Unsupported color conversion"), tifffile
+  2026.11 (`TiffPage.decode`) and, before imagecodecs 2026.11, imagecodecs' own `jpeg_decode`
+  retry it with `imagecodecs.ljpeg_decode` (liblj92), which walks the markers otherwise (it reads
+  a fill byte `FF FF` as a marker with a length). A crafted tile showed `check_jpeg_piece` a
+  256² baseline frame while liblj92 decoded a hidden 8192² lossless frame (128 MiB of `uint16`
+  from an 8.4 MB tile): peak RSS 136.8 MiB against a window plan of 8.8 MiB (15.5×), 137.4
+  against 36.0 for every channel of a plane (3.8×) and 136.9 against 10.6 for blocks (12.9×), on
+  Python 3.13 (tifffile 2026.11.16, imagecodecs 2026.11.11) and 3.11 (imagecodecs 2026.3.6) alike;
+  the read failed only after the peak. The `decoder_unmeasured` gate checked
+  `TIFF.DECOMPRESSORS[7]`, which tifffile's JPEG path does not use. Every read of a JPEG TIFF
+  (windows, cached windows, every channel of a plane, blocks, a reduced preview, a whole plane)
+  now decodes a piece through the new `jpeg_piece`: imagecodecs' compiled libjpeg decoder
+  called directly (`jpeg_decode` from imagecodecs 2026.11, which has no fallback; `jpeg8_decode`
+  before, as `jpeg_decode` was then a Python wrapper with the fallback), with tifffile's
+  arguments (`JPEGTables`, the colour spaces of RGB and YCbCr pages, the piece's shape) and
+  tifffile's reshape. A stream libjpeg refuses is refused (`PlaneReadError`, "libjpeg cannot
+  decode it (...)"); nothing else is tried. `codec_bounds.decoder_unmeasured` refuses, before
+  any pixel is read, an imagecodecs whose libjpeg decoder is a Python function. The same tile
+  now peaks at 8.5 MiB (window, plan 8.8), 9.2 (plane, 36.0) and 8.8 (blocks, 10.6). Values of
+  valid JPEG TIFFs are unchanged: 21 files (greyscale, RGB and YCbCr 4:2:0 and 4:2:2 with
+  `JPEGTables`, baseline and progressive, tiles and strips with partial edges, JFIF and Aperio
+  RGB, OpenSlide's CMU-1-Small-Region.svs and its strip pages) read byte for byte as before
+  through windows, every channel of a plane, blocks and whole planes, and as `tifffile.imread`,
+  on Python 3.13 and on 3.11 with imagecodecs 2026.3.6 and 2024.12.30.
+  `tests/test_jpeg_no_fallback.py` writes the bypass tile (a 2048² hidden frame in a 256² tile)
+  and spies on `ljpeg_decode`: at `a6bc438` every path called it.
+
+- **A window's plan sizes the pieces of the pages its read decodes** (#356, P1, external audit
+  of `6a3446b`). `window_plan` charged every compressed TIFF window the first page's (the
+  keyframe's) largest encoded strip or tile, while the read decodes the asked channel, T and Z's
+  own page, so a later page that compresses less was under-planned. The plan now takes the
+  largest encoded piece among exactly the pieces the read decodes, from their pages' headers;
+  the plan and the read name the same pages and pieces (`tiff_pieces._box_pieces`, shared by
+  both). `windows.window_plan` and `WindowReader.window_plan` gain `z` and `t` (the plane
+  `read_window` reads with them); with neither, the plan holds for a window of any plane, sized
+  from the series' largest piece. `RunWindowReader.window_plan` and `window_map.map_plan` plan
+  the plane they read (they passed no plane before). A mask window's plan (`mask_window_plan`,
+  no plane) is sized from the mask's largest piece. Planes over the memory limit read in blocks
+  (one layout for every plane) are sized from the series' largest piece too. A test writes a
+  tiled deflate `TCYX` image with a blank t=0 and a noisy t=1: the t=1 plan is higher by
+  exactly the difference of the pages' largest tiles, its fresh-process peak stays under it
+  (uncached and cached), and a limit one byte below it is refused before any piece is decoded,
+  uncached and through a cache. Only plans of files whose pages compress differently change.
 
 - **An OME-Zarr window's memory estimate holds when the CPU is busy** (#354). zarr 3 reads and
   decodes chunks in worker threads shared by every read, and a worker keeps the last call it ran

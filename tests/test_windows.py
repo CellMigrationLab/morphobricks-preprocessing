@@ -6,8 +6,7 @@ import numpy as np
 import pytest
 import tifffile
 
-from morphobricks_preprocessing import prefill_mapping, read_plane
-from morphobricks_preprocessing import windows as windows_module
+from morphobricks_preprocessing import prefill_mapping, read_plane, window_tiff
 from morphobricks_preprocessing.planes import PlaneMemoryError, PlaneReadError
 from morphobricks_preprocessing.windows import (
     WindowBoundsError,
@@ -245,7 +244,7 @@ def test_pages_that_cannot_be_read_in_parts_are_refused(small, monkeypatch):
     # tifffile cannot write a subsampled or NDPI page without imagecodecs; the block reader's
     # answer for them (no way to split the page) is what the window reader refuses.
     path, mapping = small
-    monkeypatch.setattr(windows_module, "_tiff_blocking", lambda *args: None)
+    monkeypatch.setattr(window_tiff, "_tiff_blocking", lambda *args: None)
     with pytest.raises(WindowLayoutError, match="cannot be read in parts"):
         read_window(path, mapping, bounds=(0, 4, 0, 4), channels=[0])
 

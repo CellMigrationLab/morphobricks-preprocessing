@@ -63,9 +63,11 @@ from morphobricks_normalization.histogram import (
 from morphobricks_normalization.ranges import HistogramSettings, RangeCheck
 
 from .axes import PLANE_ROLES, AxisMapping, AxisReview
-from .plane_errors import PlaneMemoryError, PlaneReadError
-from .tiff_pieces import _read_tiff_box
+from .codec_bounds import FIX, READ, refusal_text, unbounded
+from .plane_errors import CompressionNotBoundedError, PlaneMemoryError, PlaneReadError
+from .tiff_pieces import _Blocking, _largest_piece, _read_tiff_box, _tiff_blocking, page_array
 from .validation import ValidationIssue, error, plural, warning
+from .window_memory import block_piece_work
 from .zarr_input import (
     NgffError,
     NgffImage,
@@ -270,28 +272,6 @@ class XycPlane:
 
 
 @dataclass(frozen=True)
-class _Blocking:
-    """How a plane can be split into blocks, in the order of its stored axes.
-
-    ``rows`` and ``cols`` are the stored dimensions of the plane's two axes, in
-    array order (``rows`` first); blocks are rectangles of rows and columns of
-    those, aligned to the stored pieces (``unit`` rows and columns). Pieces that
-    can be read a few rows at a time allow blocks of fewer rows than a piece.
-    """
-
-    kind: str  # "tiff" or "zarr"
-    rows: int
-    cols: int
-    rows_are_y: bool
-    unit: tuple[int, int]
-    partial_rows: bool
-    piece_nbytes: int
-    encoded_nbytes: int = 0
-    row_nbytes: int = 0
-    stored: tuple[tuple[int, int], ...] = ()  # TIFF: (series dimension, stored dimension)
-
-
-@dataclass(frozen=True)
 class PlaneLayout:
     """How the planes of one file are read, worked out from its header.
 
@@ -328,6 +308,9 @@ class PlaneLayout:
         Estimated working memory for one block when planes are read in blocks;
         for planes that cannot be read within the limit, for the smallest block
         possible. None when planes fit whole or cannot be split.
+    unbounded_codec
+        The unmeasured codec (:func:`.codec_bounds.unbounded`) of a TIFF whose planes are over
+        the memory limit: they are never read in blocks (issue #356). None otherwise.
     """
 
     shape: tuple[int, ...]
@@ -343,6 +326,7 @@ class PlaneLayout:
     block_shape: tuple[int, int] | None = None
     block_memory_estimate: int | None = None
     blocking: _Blocking | None = field(default=None, repr=False, compare=False)
+    unbounded_codec: str | None = None
 
     @property
     def page_ndim(self) -> int:
@@ -628,7 +612,9 @@ def check_planes(
     -------
     list of ValidationIssue
         Errors for planes that cannot be read within the memory limit, not even
-        in blocks (``plane_over_memory_limit``), and for files whose planes
+        in blocks (``plane_over_memory_limit``), for planes over the limit stored with a
+        codec whose read memory is not measured, never read in blocks
+        (``compression_not_bounded``, issue #356), and for files whose planes
         cannot be read one at a time (``unsupported_layout``); a warning naming
         the files whose planes are read in blocks (``planes_read_in_blocks``).
     """
@@ -637,6 +623,7 @@ def check_planes(
     over: list[tuple[str, PlaneLayout]] = []
     blocked: list[tuple[str, PlaneLayout]] = []
     unsupported: list[str] = []
+    refused: list[tuple[str, PlaneLayout]] = []
     for rel in sorted(mappings):
         try:
             layout = plane_layout(
@@ -650,27 +637,16 @@ def check_planes(
             logger.debug("Cannot read %s plane by plane", rel, exc_info=True)
             unsupported.append(rel)
             continue
-        if not layout.fits:
+        if layout.unbounded_codec is not None:
+            refused.append((rel, layout))
+        elif not layout.fits:
             over.append((rel, layout))
         elif layout.in_blocks:
             blocked.append((rel, layout))
 
-    issues = []
-    if over:
-        largest = max(layout.min_memory_estimate for _, layout in over)
-        issues.append(
-            error(
-                "plane_over_memory_limit",
-                f"{plural(len(over), 'image')} cannot be read within the memory limit of "
-                f"{format_bytes(memory_limit)}, not even in blocks: the smallest part of a "
-                f"plane that can be read on its own needs up to {format_bytes(largest)}. A "
-                "plane stored compressed in one piece has to be decoded whole.",
-                [rel for rel, _ in over],
-                "Raise the memory limit if this computer has enough memory, or save the "
-                "images again as tiled or uncompressed TIFF files or as OME-Zarr with smaller "
-                "chunks.",
-            )
-        )
+    issues = [_over_issue(over, memory_limit)] if over else []
+    if refused:
+        issues.append(_codec_issue(refused, memory_limit))
     if blocked:
         largest = max(layout.memory_estimate for _, layout in blocked)
         issues.append(
@@ -698,6 +674,37 @@ def check_planes(
             )
         )
     return issues
+
+
+def _over_issue(over: list[tuple[str, PlaneLayout]], memory_limit: int) -> ValidationIssue:
+    """Return the error naming images whose planes cannot be read within the limit at all."""
+    largest = max(layout.min_memory_estimate for _, layout in over)
+    return error(
+        "plane_over_memory_limit",
+        f"{plural(len(over), 'image')} cannot be read within the memory limit of "
+        f"{format_bytes(memory_limit)}, not even in blocks: the smallest part of a "
+        f"plane that can be read on its own needs up to {format_bytes(largest)}. A "
+        "plane stored compressed in one piece has to be decoded whole.",
+        [rel for rel, _ in over],
+        "Raise the memory limit if this computer has enough memory, or save the "
+        "images again as tiled or uncompressed TIFF files or as OME-Zarr with smaller "
+        "chunks.",
+    )
+
+
+def _codec_issue(refused: list[tuple[str, PlaneLayout]], memory_limit: int) -> ValidationIssue:
+    """Return the error naming images over the limit whose codec has no measured bound."""
+    codecs = sorted({layout.unbounded_codec for _, layout in refused})
+    return error(
+        "compression_not_bounded",
+        f"The planes of {plural(len(refused), 'image')} are too large to read whole within "
+        f"the memory limit of {format_bytes(memory_limit)}, and they are stored with "
+        f"{', '.join(codecs)}, whose decoding memory has not been measured, so they are not "
+        f"read in blocks. {READ}.",
+        [rel for rel, _ in refused],
+        f"{FIX} Or raise the memory limit so that their planes are read whole, if this "
+        "computer has enough memory.",
+    )
 
 
 def format_bytes(n: int) -> str:
@@ -750,6 +757,7 @@ def _layout(
     binning: _Binning,
     memory_limit: int = DEFAULT_MEMORY_LIMIT,
 ) -> PlaneLayout:
+    """Work out from a TIFF series' header how its planes are read: whole, or in blocks."""
     shape = tuple(int(n) for n in series.shape)
     y, x = _check_fit(shape, str(series.axes), mapping, path)
     keyframe = series.keyframe
@@ -798,7 +806,12 @@ def _layout(
     )
     if memory <= memory_limit:
         return layout
-    return _with_blocks(layout, _tiff_blocking(keyframe, shape, split, y, x), binning)
+    if (codec := unbounded(keyframe)) is not None:  # blocks only of measured codecs (#356)
+        return replace(layout, unbounded_codec=codec)
+    # Blocks of any plane are read with this one layout: their pieces are sized from the
+    # largest stored piece of the series, not the first page's (issue #356).
+    blocking = _tiff_blocking(keyframe, shape, split, y, x, _largest_piece(series))
+    return _with_blocks(layout, blocking, binning)
 
 
 def _channel_count(shape: tuple[int, ...], mapping: AxisMapping) -> int:
@@ -831,6 +844,7 @@ def _finished_histograms_nbytes(dtype: np.dtype, bin_count: int | None, channels
 
 
 def _check_limit(layout: PlaneLayout, path) -> None:  # noqa: ANN001
+    _refuse_codec(layout, path)
     if not layout.fits:
         raise PlaneMemoryError(
             f"Reading one plane of {Path(path).name} needs about "
@@ -839,6 +853,15 @@ def _check_limit(layout: PlaneLayout, path) -> None:  # noqa: ANN001
             "limit if this computer has enough memory, or save the image again as a tiled "
             "or uncompressed TIFF file or as OME-Zarr with smaller chunks."
         )
+
+
+def _refuse_codec(layout: PlaneLayout, path: str | os.PathLike) -> None:
+    """Refuse planes over the limit whose codec has no measured bound (blocks, #356)."""
+    if layout.unbounded_codec is not None:
+        limit = format_bytes(layout.memory_limit)
+        reading = f"in blocks (its planes are over the memory limit of {limit})"
+        also = " Or raise the memory limit so that its planes are read whole."
+        raise CompressionNotBoundedError(refusal_text(path, layout.unbounded_codec, reading, also))
 
 
 def _positions(
@@ -948,7 +971,7 @@ def _read_page(series: tifffile.TiffPageSeries, index: int, layout: PlaneLayout,
     if page is None:
         raise PlaneReadError(f"Page {index} of {path} is missing from the file.")
     try:
-        data = page.asarray()
+        data = page_array(page, path)  # a JPEG piece's stream is checked first (#356)
     except Exception as exc:  # decoding errors come from many codecs
         raise PlaneReadError(f"Page {index} of {path} cannot be decoded: {exc}") from exc
     return data.reshape(layout.page_shape)
@@ -1077,7 +1100,7 @@ def _tiff_piece_memory(blocking: _Blocking, rows: int) -> int:
         # Uncompressed rows are read straight from the file, then copied into the block.
         return 2 * min(rows, blocking.unit[0]) * blocking.row_nbytes
     # One compressed piece at a time is read and decoded, then copied into the block.
-    return blocking.piece_nbytes + blocking.encoded_nbytes
+    return block_piece_work(blocking.piece_nbytes, blocking.encoded_nbytes, blocking.decode)
 
 
 def _ranges(length: int, unit: int, size: int) -> list[tuple[int, int]]:
@@ -1128,6 +1151,7 @@ def _whole_or_preview(
     """
     if not layout.in_blocks and layout.fits:
         return layout
+    _refuse_codec(layout, path)
     if not preview:
         if layout.fits:
             raise PlaneMemoryError(
@@ -1178,56 +1202,6 @@ def _whole_or_reduced(plane: Plane, layout: PlaneLayout) -> Plane:
 
 
 # TIFF blocks ---------------------------------------------------------------------------
-
-
-def _tiff_blocking(
-    keyframe: tifffile.TiffPage,
-    shape: tuple[int, ...],
-    split: int,
-    y: int,
-    x: int,
-) -> _Blocking | None:
-    """Work out how the pages of a series are stored in strips or tiles, if they can be split.
-
-    Each page is a normalised array (separate samples, depth, rows, columns,
-    contiguous samples). The page's own axes of the series must line up with
-    that array, with the plane's two axes on its rows and columns.
-    """
-    if keyframe.is_subsampled or keyframe.jpegheader is not None or keyframe.dtype is None:
-        return None
-    stored_shape = tuple(int(n) for n in keyframe.shaped)
-    page_dims = [d for d in range(split, len(shape)) if shape[d] > 1]
-    stored_dims = [i for i in range(5) if stored_shape[i] > 1]
-    if [shape[d] for d in page_dims] != [stored_shape[i] for i in stored_dims]:
-        return None
-    stored = dict(zip(page_dims, stored_dims, strict=True))
-    rows, cols = sorted((y, x))
-    if stored.get(rows) != 2 or stored.get(cols) != 3:
-        return None
-    itemsize = np.dtype(keyframe.dtype).itemsize
-    samples = stored_shape[4]
-    if keyframe.is_tiled:
-        depth, unit = keyframe.tiledepth, (keyframe.tilelength, keyframe.tilewidth)
-    else:
-        depth, unit = 1, (min(keyframe.rowsperstrip, stored_shape[2]), stored_shape[3])
-    uncompressed = (
-        keyframe.compression == 1
-        and keyframe.predictor == 1
-        and keyframe.fillorder == 1
-        and keyframe.bitspersample == itemsize * 8
-    )
-    return _Blocking(
-        kind="tiff",
-        rows=rows,
-        cols=cols,
-        rows_are_y=rows == y,
-        unit=unit,
-        partial_rows=uncompressed,
-        piece_nbytes=depth * unit[0] * unit[1] * samples * itemsize,
-        encoded_nbytes=max((int(n) for n in keyframe.databytecounts), default=0),
-        row_nbytes=unit[1] * samples * itemsize,
-        stored=tuple(stored.items()),
-    )
 
 
 def _tiff_reblock(series, mapping: AxisMapping, path) -> Callable[[int], PlaneLayout]:  # noqa: ANN001

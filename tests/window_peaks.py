@@ -123,7 +123,7 @@ def _cached_peak(path, mapping, cache, plane, bounds, read):
         peak = tracemalloc.get_traced_memory()[1] - start + held
     finally:
         tracemalloc.stop()
-    return reader.window_plan(bounds=bounds, channels=read["channels"]).memory_estimate, peak
+    return reader.window_plan(bounds=bounds, **read).memory_estimate, peak
 
 
 def measure(path, axes, channels, plane, coordinates=None, windows=WINDOWS, caches=CACHES):
@@ -139,7 +139,7 @@ def measure(path, axes, channels, plane, coordinates=None, windows=WINDOWS, cach
     results = []
     for y0, y1, x0, x1 in windows:
         bounds = (min(y0, rows - 1), min(y1, rows), min(x0, cols - 1), min(x1, cols))
-        plan = window_plan(path, mapping, bounds=bounds, channels=channels)
+        plan = window_plan(path, mapping, bounds=bounds, **read)  # the plane read (#356)
         peak = _peak(functools.partial(read_window, path, mapping, bounds=bounds, **read))
         results.append(["read", bounds, 0, peak, plan.memory_estimate])
         for cache in caches:
@@ -159,7 +159,7 @@ def parts(path):
 
     from morphobricks_preprocessing import window_memory
     from morphobricks_preprocessing.block_cache import BlockCache
-    from morphobricks_preprocessing.tiff_pieces import _decode_segment
+    from morphobricks_preprocessing.tiff_pieces import _decode_segment, piece_decode
 
     with tifffile.TiffFile(path) as tif:
         page = tif.series[0].keyframe
@@ -168,7 +168,7 @@ def parts(path):
         held = []
         decode = _peak(lambda: held.append(_decode_segment(page, 0, path)))
         piece, encoded = held[0].nbytes, int(page.databytecounts[0])
-        work = window_memory.tiff_piece_work(piece, encoded, cached=False)
+        work = window_memory.tiff_piece_work(piece, encoded, False, piece_decode(page))
         found = [["decode", decode, window_memory.codec_state(page.compression) + work]]
         cache = BlockCache(2 * piece)
         frozen = _peak(lambda: cache.get("piece", lambda: held[0]))
