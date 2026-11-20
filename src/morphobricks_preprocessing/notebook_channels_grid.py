@@ -220,7 +220,7 @@ class TagGrid:
         """
         ok = save_change(self.store, tagged(self.layouts, tags, cells))
         self.message = "" if ok else ui.status("error", "Not saved.", [self.store.refusal()])
-        ok and self.matrix.sync_statement()
+        ok and self.matrix.sync_statement(cells)  # the user's clicked cells (ADR 0006)
         self.refresh()
         self._on_change()
         return ok
@@ -318,7 +318,7 @@ class TagGrid:
         self.message = "" if ok else ui.status("error", "Not saved.", [self.store.refusal()])
         if ok and rgb:
             self.types.confirm_header(rgb)
-        ok and self.matrix.sync_statement()
+        ok and self.matrix.sync_statement(cells)
         self.refresh()
         self._on_change()
 

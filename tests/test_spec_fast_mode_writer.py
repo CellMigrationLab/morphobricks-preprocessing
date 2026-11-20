@@ -280,3 +280,53 @@ def test_p40b_strict_mode_chosen_on_the_command_line_publishes_no_fast_file(tmp_
     root, out = _plain_tree(tmp_path / "exp"), tmp_path / "out"
     assert main(["describe", str(root), "--output", str(out), "--strict", *FAST_ARGS]) == 1
     assert not (out / DESCRIPTION_FILENAME).exists()  # strict answers are the notebook's
+
+
+def test_a_draft_file_of_version_3_is_refused_as_an_unknown_version():
+    """Draft file version 4 (ADR 0006): a version 3 draft has no fast-mode statement."""
+    import json
+
+    from morphobricks_preprocessing.draft_format import (
+        DraftFileError,
+        answers_from_bytes,
+        answers_to_bytes,
+    )
+    from morphobricks_preprocessing.published_answers import published_answers
+
+    doc = json.loads(answers_to_bytes(published_answers(description_from_bytes(V41), "0" * 64)))
+    doc["version"] = 3
+    del doc["channel_layout"], doc["switch_mode"]
+    with pytest.raises(DraftFileError) as refused:
+        answers_from_bytes(json.dumps(doc).encode("utf-8"))
+    assert refused.value.code == "unknown_version"
+
+
+def test_p40a_an_image_whose_header_cannot_be_read_is_never_published(tmp_path, capsys):
+    """Re-review of #362: inspect_images' issues refuse the one-command path."""
+    from morphobricks_preprocessing.cli import main
+
+    root, out = _plain_tree(tmp_path / "exp"), tmp_path / "out"
+    (root / "DrugA/rep2/FOV009.ome.tif").write_bytes(b"not a TIFF file")
+    assert main(["describe", str(root), "--output", str(out), *FAST_ARGS]) == 1
+    assert "FOV009.ome.tif" in capsys.readouterr().out
+    assert not (out / DESCRIPTION_FILENAME).exists()
+
+
+def test_p40a_images_of_unknown_channel_count_are_never_published(tmp_path, capsys):
+    """Re-review of #362: plain TIFFs whose planes are not named are unchecked, so refused."""
+    import numpy as np
+    import tifffile
+
+    from morphobricks_preprocessing.cli import main
+
+    root, out = tmp_path / "exp", tmp_path / "out"
+    for condition, planes in (("CTRL", 2), ("DrugA", 5)):
+        for repeat in ("rep1", "rep2"):
+            path = root / condition / repeat / "FOV000.tif"
+            path.parent.mkdir(parents=True)
+            data = np.zeros((planes, 8, 8), np.uint8)
+            tifffile.imwrite(path, data, photometric="minisblack", metadata=None)
+    assert main(["describe", str(root), "--output", str(out), *FAST_ARGS]) == 1
+    text = capsys.readouterr().out
+    assert "could not be checked" in text and "DrugA/rep1/FOV000.tif" in text
+    assert not (out / DESCRIPTION_FILENAME).exists()

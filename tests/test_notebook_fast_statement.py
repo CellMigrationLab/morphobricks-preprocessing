@@ -87,3 +87,28 @@ def test_10_a_published_fast_file_reopens_ticked_and_is_switched_only_by_the_use
     answer_all(again)
     assert again.save_experiment()
     assert _published(folders[2]).channel_layout is None
+
+
+def test_a_unit_tagged_from_its_header_with_no_click_is_never_marked_unit(tmp_path):
+    """Re-review of #362: only the user's action makes a unit "tagged on its own" (section 10).
+
+    drug/rep1/t1's header names its channels ACTIN, DNA, PHASE: fast mode tags it so with no
+    click ("from its header names"). The draft must not mark it ``unit`` on its own: it stays
+    ``experiment``, so publication follows the list and its images are refused as
+    ``header_order`` (FC4, P37 (c)) until the user tags it on its own.
+    """
+    from morphobricks_preprocessing.channel_matrix import HEADER
+    from test_notebook_tag_matrix import LABELLED, _design, _screen, _states, _types
+
+    other = ("drug", "rep1", "t1")
+    order = lambda key: ["ACTIN", "DNA", "PHASE"] if key == other else LABELLED  # noqa: E731
+    nb = _screen(tmp_path, _design(tmp_path, names_of=order))
+    _types(nb)
+    assert _states(nb)[other] == HEADER
+    units = nb.draft_answers.units
+    assert units[other].channels == ("ACTIN", "DNA", "PHASE")  # tagged with no click
+    assert {u.channels_from for u in units.values()} == {"experiment"}
+    grid = nb.channel_grid
+    grid.cells[(other, 0)].value = None  # the user's own click on that unit
+    grid.cells[(other, 0)].value = "ACTIN"
+    assert nb.draft_answers.units[other].channels_from == "unit"

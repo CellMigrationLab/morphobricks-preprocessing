@@ -68,7 +68,7 @@ from .physical_check import check_physical
 from .reconcile_observe import observe_folders
 from .report import format_issues
 from .run.description_file import PublicationRefused, publish_description
-from .run.description_run import load_description
+from .run.description_run import load_description, without_global_channel_checks
 from .run.recorded import normalise_relative_path
 from .validation import has_errors
 
@@ -245,7 +245,8 @@ def describe_fast(
     """
     key = tagged_unit(draft)
     images = [image for image in discovery.images if image not in excluded]
-    headers = inspect_images(discovery.root, images).files
+    inspected = inspect_images(discovery.root, images)
+    headers = inspected.files
     tagged = next(
         (m for m in headers if key is not None and _unit_of(m.relative_path) == key), None
     )
@@ -279,6 +280,13 @@ def describe_fast(
         print("Not published. What is missing:")
         print("\n".join(f"  - {item}" for item in blockers))
         return 1
+    # The experiment-wide channel and dimension checks are replaced by the description's own
+    # (as in a described run); every other error, an unreadable header first, refuses.
+    refused = [i for i in without_global_channel_checks(inspected.issues) if i.is_error]
+    if refused:  # an image whose header cannot be read is never published unchecked
+        print("Not published: some images cannot be checked against the channel list.")
+        print(format_issues(refused))
+        return 1
     return _publish_fast(draft, answers, discovery, headers, output)
 
 
@@ -304,6 +312,14 @@ def _publish_fast(
     report = check_physical(candidate, discovery, headers)
     if report.issues:
         print(format_issues(physical_issues(report.issues)))
+        return 1
+    if report.unchecked:  # every image's count and type checked, never a guessed count
+        print(
+            "Not published: these images could not be checked against the channel list (their "
+            "header does not state the channel count, or cannot be read; name their axes, for "
+            "example with the notebook or convert, and describe again):"
+        )
+        print("\n".join(f"  - {path}" for path in report.unchecked))
         return 1
     output.mkdir(parents=True, exist_ok=True)
     try:

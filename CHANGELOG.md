@@ -43,12 +43,16 @@ old pin are refused with `spec_commit_mismatch`, as at every re-pin.
 - **FC1, the writer default.** The notebook publishes a new description in fast mode while
   *Every imaging unit has the same channels in the same order* is ticked (the default): the list
   is the tagged unit's row of tags, its date the day of the user's action, and each unit is
-  marked `experiment` or `unit` (tagged on its own, tuned by hand, another layout or image
-  type). Unticked, the file is strict. The command line's one-command path:
+  marked `experiment`, or `unit` only by the user's action (switched to its own, or its cells
+  clicked to other tags); a unit tagged from its header names with no click stays
+  `experiment` and is refused at the check when it contradicts the list. Unticked, the file
+  is strict. The command line's one-command path:
   `describe EXPERIMENT --channels A,B --image-type channels --accept-ids --comparable
   --confirmed-on YYYY-MM-DD --publish` (every answer stated in the command; the tagged unit is
   the first in folder order and its header names are confirmed; every image is checked against
-  the list before anything is written); `--strict` keeps the per-unit mode.
+  the list before anything is written: an image whose header cannot be read, or whose channel
+  count it does not state, refuses publication and is listed); `--strict` keeps the per-unit
+  mode.
 - **The mode is kept (experiment-v1 section 10).** A published file reopens in its own mode:
   the draft carries `channel_layout` and every `channels_from`, and the notebook's tick follows
   it. Switching is the user's tick only, recorded in the draft (`switch_mode`); publication

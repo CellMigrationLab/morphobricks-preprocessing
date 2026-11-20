@@ -7,11 +7,14 @@ from the first tagged unit), its image type is that unit's answered type, and it
 day of the user's action (given by the caller, kept byte for byte while the list and type stay
 the same, experiment-v1 4.3a). Each unit says how its list was confirmed (``channels_from``):
 
-- ``experiment``: its saved tags and type are the list's;
-- ``unit``: the user tagged it on its own (switched to its own, tuned by hand, another layout
-  or another image type), or it was already marked ``unit`` when the page opened (a published
-  or saved marker is never turned back by this module). A unit whose tags or image type are not
-  all answered is left unmarked: it is not answered yet.
+- ``unit`` only by the user's action (ADR 0006, section 10: "the draft never sets ``unit`` on
+  its own"): a unit the user switched to tagging on its own, one whose cells the user clicked
+  to other tags or another type than the list's, or one already marked ``unit`` when the page
+  opened (a saved marker is never turned back here);
+- ``experiment`` otherwise, also for a unit tagged from its header names with no click whose
+  tags differ from the list: it is published following the list, and its images are refused
+  at the check (``R_FAST_LAYOUT_CONTRADICTION``, for example ``header_order``) until the user
+  tags it on its own. A unit whose tags or image type are not all answered is left unmarked.
 
 Unticked, the draft is strict (no statement, no marker). The mode of the published file is
 kept unless the user changes the tick: :func:`with_statement` records ``switch_mode`` exactly
@@ -71,6 +74,7 @@ def with_statement(
     lead: UnitLayout | None,
     template: Sequence[str | None],
     own: Collection[UnitKey],
+    clicked: Collection[UnitKey] = (),
     *,
     ticked: bool,
     day: str,
@@ -91,6 +95,9 @@ def with_statement(
     own
         The units tagged on their own: switched so this session, or marked ``unit`` when the
         page opened.
+    clicked
+        The units whose cells the user clicked this session (a user's tag, never a no-click
+        tag from header names).
     ticked
         Whether the statement is ticked.
     day
@@ -115,9 +122,8 @@ def with_statement(
         if unit.image_type is None:
             units[layout.key] = replace(unit, channels_from=None)  # not answered yet
             continue
-        follows = (
-            tuple(unit.channels) == channels and unit.image_type == kind and layout.key not in own
-        )
+        same = tuple(unit.channels) == channels and unit.image_type == kind
+        follows = layout.key not in own and (same or layout.key not in clicked)
         units[layout.key] = replace(unit, channels_from=EXPERIMENT if follows else OWN)
     return replace(answers, channel_layout=statement, units=units, switch_mode=switch)
 

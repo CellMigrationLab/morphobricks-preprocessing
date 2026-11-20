@@ -118,7 +118,12 @@ def test_swapped_channels_stay_refused_until_their_own_cells_are_tagged(exp):  #
     nb.channel_grid.cells[(DRUG, 1)].value = "DNA"
     nb._refresh_check_save()
     assert nb.draft_answers.channels["DNA"].header_names == ("DAPI",)
-    assert HEADER_REFUSAL not in _text(nb.checks.value)
+    shown = _text(nb.checks.value)
+    assert HEADER_REFUSAL not in shown
+    # The user's own tags of the drug folders made them units tagged on their own (ADR 0006,
+    # a user action), checked as in a strict file: no R_HEADER_CONTRADICTION either.
+    assert "R_HEADER_CONTRADICTION" not in shown
+    assert nb.draft_answers.units[DRUG].channels_from == "unit"
 
 
 # --- "same way?" in a draft is the answer for the folders and layout it was given for --------

@@ -103,6 +103,8 @@ class TagMatrix:
         self.all_own: list[widgets.Button] = []
         self.layout_buttons: dict[int, widgets.Button] = {}
         self.stopped = widgets.HTML()
+        self.clicked: set[UnitKey] = set()
+        """Units whose cells the user clicked this session: only they may become ``unit``."""
         self.marked_own: set[UnitKey] = set()
         """Units marked ``unit`` when the page opened (ADR 0006): kept, never turned back."""
         self.setting_tick = False
@@ -152,13 +154,15 @@ class TagMatrix:
             finally:
                 self.setting_tick = False
 
-    def sync_statement(self) -> bool:
+    def sync_statement(self, cells: Sequence[tuple[UnitKey, int]] = ()) -> bool:
         """Save the statement and the units' markers the tick and the tags give (ADR 0006).
 
         A save with no click (the draft only, :func:`.fast_statement.with_statement`): it
         follows the user's tags and tick, and dates a new or changed list with the day of that
-        action. True when something changed.
+        action. ``cells`` are the cells the user just clicked: their units are the user's
+        tags (only such a unit may become ``unit``). True when something changed.
         """
+        self.clicked.update(key for key, _ in cells)
         answers = self.grid.store.answers()
         groups, _ = self.groups()
         lead = groups[0][0] if groups else None
@@ -168,6 +172,7 @@ class TagMatrix:
             lead,
             self.template(groups[0]) if groups else (),
             self.own | self.marked_own,
+            self.clicked,
             ticked=bool(self.grid.same_channels.value),
             day=date.today().isoformat(),
         )
