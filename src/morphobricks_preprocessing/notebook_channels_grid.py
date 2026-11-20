@@ -17,15 +17,11 @@ whose header lacks a channel name, or whose saved tags differ, is a block of its
 folder can be taken out of its block (**Tag this folder on its own**). A block answer writes,
 for each of its folders, the same tags into the draft that tagging the folders one by one would.
 
-On a reopen, new folders whose header is exactly that of a saved, fully tagged block (the same
-block key, but no tags yet) form a block of their own. It offers **Tag like the saved group**:
-one click copies those tags, as if chosen by hand (never automatic, PR 17c). A header without
-every channel name is never offered it.
-
-A block whose header names equal the labels exactly is pre-tagged, but the pre-tag is only a
-suggestion until the user confirms it, once for the block. The page is complete only when every
-channel position of every unit is tagged and every image type answered. Labels used in only some
-folders say so, with the consequence.
+On a reopen, new folders whose header is that of a saved, fully tagged block offer **Tag like
+the saved group** (one click, never automatic, PR 17c). A block whose header names equal the
+labels is pre-tagged, a suggestion until the user confirms it. **Tag this biological repeat
+(all conditions)** sets one repeat's tags at once (:mod:`.notebook_channels_repeat`). The page
+is complete when every channel and image type is answered.
 
 The card reads and saves through an :class:`.notebook_channels_view.AnswerStore`. The image
 type is answered by :class:`.notebook_channels_type.ImageTypeColumn`: placed in each folder row,
@@ -52,6 +48,7 @@ from .channel_labels import (
 from .draft_answers import UnitKey
 from .notebook_channel_thumbs import COLOUR_TEXT, CONTRAST_TEXT, Thumbnails
 from .notebook_channels_matrix import STATEMENT, TagMatrix
+from .notebook_channels_repeat import RepeatRows
 from .notebook_channels_rows import FolderRows
 from .notebook_channels_type import ImageTypeColumn
 from .notebook_channels_view import (
@@ -129,6 +126,7 @@ class TagGrid:
         )
         self.same_channels.observe(lambda _: self._statement_changed(), "value")
         self.matrix = TagMatrix(self)
+        self.by_repeat = RepeatRows(self)
         self.blocks = widgets.VBox()
         self.usage_html = widgets.HTML()
         self.status = widgets.HTML()
@@ -156,6 +154,7 @@ class TagGrid:
                 self.blocks,
                 self.detail,
                 self.matrix.stopped,
+                self.by_repeat.box,
                 self.problem,
                 self.usage_html,
                 self.status,
@@ -395,6 +394,7 @@ class TagGrid:
                 for units in blocks
             ]
             self.blocks.children = [header, *self.fold.arrange(built)]
+            self.by_repeat.build(width)
         finally:
             self.building = False
         self._summary()
