@@ -40,11 +40,29 @@ old pin are refused with `spec_commit_mismatch`, as at every re-pin.
   following the list has `fast_layout_images` (per image: `path`, `fov_key`, `header_verified`,
   and per channel the name as read and its evidence, `header` or `statement`).
 
-### Not in this change
+- **FC1, the writer default.** The notebook publishes a new description in fast mode while
+  *Every imaging unit has the same channels in the same order* is ticked (the default): the list
+  is the tagged unit's row of tags, its date the day of the user's action, and each unit is
+  marked `experiment` or `unit` (tagged on its own, tuned by hand, another layout or image
+  type). Unticked, the file is strict. The command line's one-command path:
+  `describe EXPERIMENT --channels A,B --image-type channels --accept-ids --comparable
+  --confirmed-on YYYY-MM-DD --publish` (every answer stated in the command; the tagged unit is
+  the first in folder order and its header names are confirmed; every image is checked against
+  the list before anything is written); `--strict` keeps the per-unit mode.
+- **The mode is kept (experiment-v1 section 10).** A published file reopens in its own mode:
+  the draft carries `channel_layout` and every `channels_from`, and the notebook's tick follows
+  it. Switching is the user's tick only, recorded in the draft (`switch_mode`); publication
+  refuses a candidate of another mode without it (`mode_switch_unconfirmed`), and a recorded
+  switch that changes nothing.
+- **New units under a fast-mode file** (P15, P38) are drafted with `channels_from =
+  "experiment"` and the list materialised; a contradicting one is refused at the run
+  (`R_FAST_LAYOUT_CONTRADICTION`), never switched to `unit` by the draft.
 
-- The writer default of FC1 (the notebook and `describe` writing fast mode for a new
-  description) and the reconciliation drafting of new units with `channels_from = "experiment"`
-  (P38 (c), P40): later pull requests.
+### Changed
+
+- **Draft file version 4** (`morphobricks.draft.json`): the keys `channel_layout` and
+  `switch_mode`, and a unit's `channels_from`. A version 3 draft is refused (`unknown_version`;
+  it was written under the old Spec pin anyway, `spec_commit_mismatch`).
 
 ## v0.8.0 (19 November 2026)
 

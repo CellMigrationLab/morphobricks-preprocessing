@@ -34,6 +34,7 @@ EXPECTED_MODULES = (
     "test_spec_discovery.py",
     "test_spec_encoding.py",
     "test_spec_fast_layout.py",
+    "test_spec_fast_mode_writer.py",
     "test_spec_fov_image_type.py",
     "test_spec_lab_links.py",
     "test_spec_mask_conversion.py",

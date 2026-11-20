@@ -33,6 +33,10 @@ from test_notebook_check_save import (  # noqa: F401
 pytest.importorskip("ipywidgets")
 pytest.importorskip("matplotlib")
 
+HEADER_REFUSAL = "R_FAST_LAYOUT_CONTRADICTION"
+"""The notebook publishes fast mode by default (Spec ADR 0006): a header that contradicts the
+experiment list in a unit that follows it is this one refusal, not R_HEADER_CONTRADICTION."""
+
 CTRL, DRUG = ("ctrl", "rep1", "single"), ("drug", "rep1", "single")
 
 
@@ -60,7 +64,7 @@ def _saved_then_drug_renamed(folders):
         write_channels(folders[0] / folder / "a.tif", ["Hoechst", "Actin", "Ch3"], KINDS, seed=seed)
     nb = opened(*folders)
     nb._refresh_check_save()
-    assert "R_HEADER_CONTRADICTION" in _text(nb.checks.value)
+    assert HEADER_REFUSAL in _text(nb.checks.value)
     assert nb.draft_answers.channels["DNA"].header_names == ("DAPI",)
     return nb
 
@@ -72,7 +76,7 @@ def test_a_header_refusal_is_not_lifted_by_tagging_another_folder(exp):  # noqa:
     assert nb.draft_answers.channels["DNA"].header_names == ("DAPI",)  # Hoechst: not confirmed
     shown = _text(nb.checks.value)
     assert "The images contradict it: the run would stop" in shown
-    assert "R_HEADER_CONTRADICTION" in shown and "&#x27;Hoechst&#x27;" in shown
+    assert HEADER_REFUSAL in shown and "&#x27;Hoechst&#x27;" in shown
     assert not nb._check.can_run and not nb._run_allowed() and nb.run() is None
 
 
@@ -81,7 +85,7 @@ def test_a_header_refusal_is_not_lifted_by_tagging_another_channel_of_the_folder
     _retag(nb, DRUG, 2, "PHASE")  # the changed folders, but not the channel renamed
     nb._refresh_check_save()
     assert nb.draft_answers.channels["DNA"].header_names == ("DAPI",)
-    assert "R_HEADER_CONTRADICTION" in _text(nb.checks.value) and not nb._check.can_run
+    assert HEADER_REFUSAL in _text(nb.checks.value) and not nb._check.can_run
 
 
 def test_tagging_the_renamed_channel_again_confirms_its_name_and_lifts_the_refusal(exp):  # noqa: F811
@@ -107,14 +111,14 @@ def test_swapped_channels_stay_refused_until_their_own_cells_are_tagged(exp):  #
     nb._refresh_check_save()
     assert nb.draft_answers.channels["DNA"].header_names == ("DAPI",)
     assert nb.draft_answers.channels["ACTIN"].header_names == ("Actin",)
-    assert "R_HEADER_CONTRADICTION" in _text(nb.checks.value) and not nb._check.can_run
+    assert HEADER_REFUSAL in _text(nb.checks.value) and not nb._check.can_run
     for index in (0, 1):
         nb.channel_grid.cells[(DRUG, index)].value = None
     nb.channel_grid.cells[(DRUG, 0)].value = "ACTIN"
     nb.channel_grid.cells[(DRUG, 1)].value = "DNA"
     nb._refresh_check_save()
     assert nb.draft_answers.channels["DNA"].header_names == ("DAPI",)
-    assert "R_HEADER_CONTRADICTION" not in _text(nb.checks.value)
+    assert HEADER_REFUSAL not in _text(nb.checks.value)
 
 
 # --- "same way?" in a draft is the answer for the folders and layout it was given for --------

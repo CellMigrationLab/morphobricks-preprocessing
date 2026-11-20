@@ -90,6 +90,7 @@ def test_unticking_restores_no_alias_a_save_since_dropped_on_the_strict_page(
     nb.channel_grid.same_channels.value = False
     monkeypatch.setattr(TagGrid, "SAME_CHANNELS", False)
     strict = stepper(root, masks, tmp_path / "copy")
+    strict.channel_grid.same_channels.value = False  # the published file is fast: the user's untick
     save(strict)
     assert not strict.draft_answers.channels["DNA"].header_names  # the save dropped DAPI
     assert nb.draft_answers == strict.draft_answers
@@ -175,6 +176,7 @@ def test_unticking_takes_out_an_alias_only_the_no_click_tags_added(
     nb.channel_grid.same_channels.value = False
     monkeypatch.setattr(TagGrid, "SAME_CHANNELS", False)
     strict = stepper(root, masks, tmp_path / "copy")
+    strict.channel_grid.same_channels.value = False  # the published file is fast: the user's untick
     save(strict)
     assert strict.draft_answers.channels["DNA"].header_names == dna
     assert nb.draft_answers == strict.draft_answers

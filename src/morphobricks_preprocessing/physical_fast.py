@@ -105,7 +105,9 @@ def _check_fast_unit(
 
     ``layouts`` are the effective layouts of the images that are not refused by
     ``R_RGB_OVERRIDE_NOT_THREE_SAMPLES`` (which keeps its priority and is not listed twice).
-    Returns the axes and fast-mode issues, and for a unit without them each image's record.
+    Returns the axes and fast-mode issues, and for a unit without them the record of each image
+    whose channel count is known: an image whose count is not stated is listed unchecked by the
+    caller and gets no record, so no per-index statement implies a count nobody checked.
     """
     issues = _axes_issues(key, layouts)
     for path, layout in layouts.items():
@@ -118,6 +120,7 @@ def _check_fast_unit(
     records = tuple(
         image_record(path, fov_key(key, path), channel_evidence(statement, layout.names))
         for path, layout in sorted(layouts.items())
+        if layout.channels is not None
     )
     return [], records
 

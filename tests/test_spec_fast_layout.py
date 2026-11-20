@@ -53,6 +53,12 @@ STRICT_CODES = {
 }
 MATCH = ["DAPI", "Phalloidin-488"]
 PATHS = re.compile(rb"^# Paths: (.+)$", re.M)
+FOV_KEY = {
+    "condition": "CTRL",
+    "biological_repeat": "rep1",
+    "technical_repeat": "single",
+    "position_id": "a",
+}
 
 
 # --- The description: reader, writer, digests (conformance plan section 2, "Fast mode") -------
@@ -282,7 +288,7 @@ def test_p37c_four_contradictions_are_one_refusal_listing_every_image(tmp_path, 
     assert "3 channels" in refusal.message and "the list has" not in refusal.message
 
 
-def test_p37c_a_run_stops_before_any_pixel_is_read_and_publishes_nothing(tmp_path):
+def test_p37c_a_run_stops_before_any_pixel_is_read_and_publishes_nothing(tmp_path, no_pixel_reads):
     root, out = _tree(tmp_path / "exp", V41), tmp_path / "out"
     out.mkdir()
     (out / DESCRIPTION_FILENAME).write_bytes(V41)
@@ -436,7 +442,7 @@ def test_a_malformed_fast_layout_images_record_is_refused():
         FAST_IMAGES: [
             {
                 "path": "a.tif",
-                "fov_key": {},
+                "fov_key": FOV_KEY,
                 "header_verified": True,  # contradicts the statement evidence below
                 "channels": [
                     {"c": 0, "channel": "DNA", "header_name": "DAPI", "evidence": "header"},
@@ -447,6 +453,34 @@ def test_a_malformed_fast_layout_images_record_is_refused():
     }
     with pytest.raises(ValueError, match="header_verified"):
         checked_fast_images(unit, "units[0]")
+    item = unit[FAST_IMAGES][0]
+    item["header_verified"] = False
+    checked_fast_images(unit, "units[0]")  # well formed now
+    item["fov_key"] = {}  # experiment-v1 3.4: four fields
+    with pytest.raises(ValueError, match="fov_key"):
+        checked_fast_images(unit, "units[0]")
+    item["fov_key"] = {**FOV_KEY, "position_id": ""}
+    with pytest.raises(ValueError, match="fov_key"):
+        checked_fast_images(unit, "units[0]")
+    item["fov_key"] = FOV_KEY
+    item["channels"][1] = {"c": 1, "channel": "ACTIN", "header_name": None, "evidence": "header"}
+    with pytest.raises(ValueError, match="malformed channel entry"):  # header evidence, no name
+        checked_fast_images(unit, "units[0]")
+    item["channels"][1]["header_name"] = ""
+    with pytest.raises(ValueError, match="malformed channel entry"):
+        checked_fast_images(unit, "units[0]")
     unit["channels_from"] = "unit"
     with pytest.raises(ValueError, match="channels_from"):
         checked_fast_images(unit, "units[0]")
+
+
+def test_an_image_with_an_unknown_channel_count_gets_no_record_and_is_unchecked(tmp_path):
+    """Open question 5 of the first review: no per-index statement for an unchecked count."""
+    root = _tree(tmp_path / "exp", V41)
+    plain = root / "CTRL/rep2/FOV009.tif"  # no axis names, no confirmed roles: count unknown
+    tifffile.imwrite(plain, np.zeros((2, 8, 8), np.uint8), photometric="minisblack", metadata=None)
+    report = _check(root, V41)
+    assert "CTRL/rep2/FOV009.tif" in report.unchecked
+    assert FAST not in report.codes
+    records = report.fast_images.get(UnitKey("CTRL", "rep2", "single"), ())
+    assert "CTRL/rep2/FOV009.tif" not in [r["path"] for r in records]

@@ -1,9 +1,11 @@
 """The answers a published description holds, for reopening it in the notebook (pure).
 
 On reopening, the published ``morphobricks.toml`` is the user's answers: every ID, shown-as name,
-reference, pairing, comparability date, channel tag, image type and mask. :func:`published_answers`
-turns it back into :class:`.draft_answers.DraftAnswers` keyed by the source folders (never by an
-ID), so the same cards show them and the folders found now decide what still applies
+reference, pairing, comparability date, channel tag, image type and mask, and in a fast-mode file
+the statement ``channel_layout`` and each unit's ``channels_from`` (ADR 0006: the mode is
+kept). :func:`published_answers` turns it back into :class:`.draft_answers.DraftAnswers`
+keyed by the source folders (never by an ID), so the same cards show them and the folders
+found now decide what still applies
 (:func:`.draft_answers.carry_over`). Nothing is confirmed by this module: every value is copied
 from the published file, and a comparability date is dropped (the repeat asked again) only when
 the candidate's layout of that repeat differs from the published one: its folders, or a unit's
@@ -27,6 +29,7 @@ from .draft_answers import (
     ChannelAnswer,
     ConditionAnswer,
     DraftAnswers,
+    LayoutAnswer,
     MaskAnswer,
     RepeatAnswer,
     UnitAnswer,
@@ -73,7 +76,11 @@ def _units(published: Description) -> dict[UnitKey, UnitAnswer]:
                 kind = "rgb" if unit.image_type == "rgb" else CHANNELS_TYPE
                 key = (folder, member.source_repeat, unit.source_folder)
                 out[key] = UnitAnswer(
-                    tuple(unit.channels), kind, unit.display_name, unit.rgb_header_override
+                    tuple(unit.channels),
+                    kind,
+                    unit.display_name,
+                    unit.rgb_header_override,
+                    unit.channels_from,
                 )
     return out
 
@@ -125,7 +132,21 @@ def published_answers(published: Description, base_sha256: str) -> DraftAnswers:
             for key, m in published.masks.items()
         },
         pairing=pairing,
+        channel_layout=_statement(published),
     )
+
+
+def _statement(published: Description) -> LayoutAnswer | None:
+    """Return the published fast-mode statement as the user's answer, None for a strict file.
+
+    A published fast-mode file stays fast and a strict one strict when reopened: only the
+    user switches the mode (experiment-v1 section 10, ADR 0006).
+    """
+    layout = published.channel_layout
+    if layout is None:
+        return None
+    kind = "rgb" if layout.image_type == "rgb" else CHANNELS_TYPE
+    return LayoutAnswer(tuple(layout.channels), kind, layout.confirmed_on)
 
 
 Layout = frozenset[tuple[UnitKey, tuple[str | None, ...] | None, str | None, bool | None]]

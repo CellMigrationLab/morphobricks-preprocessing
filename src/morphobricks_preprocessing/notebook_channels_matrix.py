@@ -24,14 +24,16 @@ declared assumption; unticked, the page is the strict per-unit blocks of
   (:mod:`.strict_draft`), and unticking writes the strict page's draft back.
 
 Each saved unit gets exactly the tags tagging it by hand gives (:func:`.channel_answers.
-with_tags`), so the draft has the same bytes. The statement itself is not in the draft: the
-draft and description formats have no field for it yet (a Spec amendment will add one).
+with_tags`). While ticked, the statement itself is in the draft (``channel_layout`` and each
+unit's ``channels_from``, Spec ADR 0006, :mod:`.fast_statement`), so the published description
+is a fast-mode file; unticked, the draft is strict. A published file reopens in its own mode.
 """
 
 from __future__ import annotations
 
 import html
 from collections.abc import Sequence
+from datetime import date
 from typing import TYPE_CHECKING
 
 import ipywidgets as widgets
@@ -55,6 +57,7 @@ from .channel_matrix import (
     trusted,
 )
 from .draft_answers import ChannelAnswer, UnitKey
+from .fast_statement import published_fast, statement_changed, with_statement
 from .notebook_channels_view import (
     CHOOSE,
     blank_chip,
@@ -100,6 +103,10 @@ class TagMatrix:
         self.all_own: list[widgets.Button] = []
         self.layout_buttons: dict[int, widgets.Button] = {}
         self.stopped = widgets.HTML()
+        self.marked_own: set[UnitKey] = set()
+        """Units marked ``unit`` when the page opened (ADR 0006): kept, never turned back."""
+        self.setting_tick = False
+        """True while the tick is set to the draft's own mode (not the user's switch)."""
         self.saved: dict[str, ChannelAnswer] = {}
         """The labels and their aliases saved when the page opened: the only aliases trusted."""
 
@@ -109,7 +116,9 @@ class TagMatrix:
 
     def opening(self) -> None:
         """Note the aliases saved when the page opens for new units (the ones trusted)."""
-        self.saved = dict(self.grid.store.answers().channels)
+        answers = self.grid.store.answers()
+        self.saved = dict(answers.channels)
+        self.marked_own = {k for k, u in answers.units.items() if u.channels_from == "unit"}
 
     def trust_headers(self) -> bool:
         """Tag every untagged unit whose header names its channels (no click); True if saved.
@@ -124,6 +133,47 @@ class TagMatrix:
         if not cells:
             return False
         return save_unattended(self.grid.store, synced(answers, self.grid.layouts, cells))
+
+    def tick_for_mode(self) -> None:
+        """Tick the statement as a published file's mode is, or the user's switch of it.
+
+        ADR 0006, section 10: a published file reopens in its own mode and is never switched
+        here. A new description keeps the page's tick (ticked by default, FC1).
+        """
+        answers = self.grid.store.answers()
+        published = published_fast(answers)
+        if published is None:
+            return
+        mode = published != answers.switch_mode
+        if self.grid.same_channels.value != mode:
+            self.setting_tick = True
+            try:
+                self.grid.same_channels.value = mode
+            finally:
+                self.setting_tick = False
+
+    def sync_statement(self) -> bool:
+        """Save the statement and the units' markers the tick and the tags give (ADR 0006).
+
+        A save with no click (the draft only, :func:`.fast_statement.with_statement`): it
+        follows the user's tags and tick, and dates a new or changed list with the day of that
+        action. True when something changed.
+        """
+        answers = self.grid.store.answers()
+        groups, _ = self.groups()
+        lead = groups[0][0] if groups else None
+        new = with_statement(
+            answers,
+            self.grid.layouts,
+            lead,
+            self.template(groups[0]) if groups else (),
+            self.own | self.marked_own,
+            ticked=bool(self.grid.same_channels.value),
+            day=date.today().isoformat(),
+        )
+        if not statement_changed(answers, new):
+            return False
+        return save_unattended(self.grid.store, new)
 
     def take_back(self) -> None:
         """Write the strict page's draft back (the statement unticked).

@@ -215,6 +215,25 @@ def test_every_refused_unit_is_listed_and_switched_at_once(tmp_path):
 LABELLED = ["DNA", "ACTIN", "PHASE"]
 
 
+def tags_only(answers):
+    """The answers without fast mode's statement, markers and switch (Spec ADR 0006).
+
+    The fast page's draft records the statement, the strict page's does not: what must be
+    byte-equal between them is everything else, the tags and aliases.
+    """
+    from dataclasses import replace
+
+    units = {k: replace(u, channels_from=None) for k, u in answers.units.items()}
+    return replace(answers, channel_layout=None, switch_mode=False, units=units)
+
+
+def tag_bytes(path):
+    """The draft file's bytes without fast mode's statement (:func:`tags_only`)."""
+    from morphobricks_preprocessing.draft_format import answers_from_bytes, answers_to_bytes
+
+    return answers_to_bytes(tags_only(answers_from_bytes(path.read_bytes())))
+
+
 def test_headers_naming_every_channel_are_trusted_with_no_click(tmp_path):
     other = ("drug", "rep1", "t1")
     order = lambda key: ["ACTIN", "DNA", "PHASE"] if key == other else LABELLED  # noqa: E731
@@ -241,8 +260,11 @@ def test_trusted_headers_write_the_draft_bytes_of_tagging_by_hand(tmp_path, monk
     assert not hand.draft_answers.units
     hand.channel_grid.confirm_buttons[0].click()  # the strict path's confirmation
     _types(hand)
-    assert fast.draft_answers == hand.draft_answers
-    one = (tmp_path / "fast" / DRAFT_FILENAME).read_bytes()
+    assert fast.draft_answers.channel_layout.channels == tuple(LABELLED)  # the statement (FC2)
+    assert {u.channels_from for u in fast.draft_answers.units.values()} == {"experiment"}
+    assert hand.draft_answers.channel_layout is None  # the strict page writes none
+    assert tags_only(fast.draft_answers) == hand.draft_answers
+    one = tag_bytes(tmp_path / "fast" / DRAFT_FILENAME)
     assert one == (tmp_path / "hand" / DRAFT_FILENAME).read_bytes()
 
 
@@ -276,8 +298,9 @@ def test_the_filled_matrix_writes_the_draft_bytes_of_tagging_every_unit_by_hand(
     hand = _screen(tmp_path, root, "hand")
     _by_hand(hand)
     _types(hand)
-    assert matrix.draft_answers == hand.draft_answers
-    one = (tmp_path / "matrix" / DRAFT_FILENAME).read_bytes()
+    assert matrix.draft_answers.channel_layout.channels == TAGS  # the statement (FC2)
+    assert tags_only(matrix.draft_answers) == hand.draft_answers
+    one = tag_bytes(tmp_path / "matrix" / DRAFT_FILENAME)
     assert one == (tmp_path / "hand" / DRAFT_FILENAME).read_bytes()
     assert one.count(b'"PHASE"') >= len(UNITS)
 
@@ -362,7 +385,7 @@ def test_a_reopen_trusts_saved_aliases_and_fills_a_nameless_unit_only_on_the_cli
     for key in (NEW_KEY, named):
         for index, tag in enumerate(TAGS):
             by_hand.channel_grid.cells[(key, index)].value = tag
-    assert (out / DRAFT_FILENAME).read_bytes() == (tmp_path / "copy" / DRAFT_FILENAME).read_bytes()
+    assert tag_bytes(out / DRAFT_FILENAME) == tag_bytes(tmp_path / "copy" / DRAFT_FILENAME)
 
 
 # --- review of #319: unticking, and aliases made in this session --------------------------
@@ -521,6 +544,7 @@ def test_unticking_keeps_the_aliases_saved_at_opening_that_only_trusted_units_ho
     nb.channel_grid.same_channels.value = False
     monkeypatch.setattr(TagGrid, "SAME_CHANNELS", False)
     strict = stepper(root, masks, tmp_path / "copy")
+    strict.channel_grid.same_channels.value = False  # the published file is fast: the user's untick
     assert nb.draft_answers.channels["DNA"].header_names == ("DAPI",)
     assert nb.draft_answers == strict.draft_answers
     nb.channel_grid.same_channels.value = True  # ticked again: as on opening

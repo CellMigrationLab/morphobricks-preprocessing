@@ -17,14 +17,22 @@ is published, the folders and the headers of their images are compared with it
 exactly as the notebook compares them on reopening, so both say the same. This module
 adds no rule.
 
-**Nothing is confirmed here.** An ID, a repeat's comparability (N35), a reference and a removal
-are the user's answers, given in the notebook; the command never answers for the user and never
-reads the clock. ``--publish`` publishes only a draft that has no open question and holds every
-decision confirmed; otherwise it exits with status 1 and lists what is missing. In this version
-the command line cannot hold answers (the draft file the notebook writes is not part of the
-package yet), so ``--publish`` refuses every draft built from the folders and publishes nothing;
-for a published description that matches the folders it reports that there is nothing to
-publish.
+**Nothing is confirmed for the user.** An ID, a repeat's comparability (N35), a reference and
+a removal are the user's answers, given in the notebook or stated in the fast-mode options
+below; the command never reads the clock. ``--publish`` publishes only a draft that has no
+open question and holds every decision confirmed; otherwise it exits with status 1 and lists
+what is missing. Without the fast-mode options (or with ``--strict``) the command line holds
+no answers, so ``--publish`` refuses every draft built from the folders; for a published
+description that matches the folders it reports that there is nothing to publish.
+
+**Fast mode (Spec ADR 0006, owner decision FC1) is the default for a new description.** With
+``--channels`` (the tagged unit's channel IDs in order), ``--image-type``, ``--accept-ids``,
+``--comparable`` and ``--confirmed-on``, every answer is the user's, stated in the command
+(:mod:`.fast_answers`), and ``--publish`` publishes a fast-mode file in one command after every
+image's header was checked against the list (a contradiction lists every image,
+``R_FAST_LAYOUT_CONTRADICTION``, and nothing is written). ``--strict`` keeps the per-unit
+mode, whose per-acquisition answers are given in the notebook. A published description is
+never switched between modes here.
 
 Exit status: 1 for an error (a folder that cannot be described, a description that cannot be
 read, a publication refused), else 0, as every command.
@@ -35,7 +43,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from .description import Description
+from .description import Description, DescriptionError
 from .description_reconcile import (
     CHANNELS_CHANGED,
     NEW_UNIT,
@@ -46,17 +54,30 @@ from .description_reconcile import (
     UnitFolders,
     reconcile,
 )
+from .description_run_text import physical_issues
+from .design import DESIGN_FILENAME
+from .design_derive import write_derived_design
 from .discovery import DiscoveryResult, default_output_folder, discover_experiment
-from .draft import Draft, draft_from_discovery
+from .draft import Draft, DraftError, draft_from_discovery
+from .draft_answers import DraftAnswers, description_from_draft
 from .draft_ids import IdKind, id_problems
+from .fast_answers import fast_answers, tagged_unit
 from .metadata import inspect_images
 from .name_issues import non_nfc_folders_issue
+from .physical_check import check_physical
 from .reconcile_observe import observe_folders
 from .report import format_issues
+from .run.description_file import PublicationRefused, publish_description
 from .run.description_run import load_description
 from .run.recorded import normalise_relative_path
 from .validation import has_errors
 
+FAST_HINT = (
+    "\nFast mode is the default for a new description (one channel list for the experiment, "
+    "Spec ADR 0006): publish in one command with --channels, --image-type, --accept-ids, "
+    "--comparable, --confirmed-on and --publish; --strict tags each acquisition on its own in "
+    "the notebook."
+)
 QUESTION_TEXT = {
     "id_pending": "choose the ID of {subject} (accept the proposal or type another)",
     "repeat_not_confirmed": (
@@ -119,6 +140,39 @@ def add_describe_parser(commands: argparse._SubParsersAction) -> argparse.Argume
         help="image to leave out, relative to the experiment folder (repeatable)",
     )
     describe.add_argument(
+        "--strict",
+        action="store_true",
+        help="describe in the strict per-unit mode: each acquisition's channels confirmed on "
+        "its own (in the notebook). Default: fast mode, one channel list for the experiment "
+        "(Spec ADR 0006)",
+    )
+    describe.add_argument(
+        "--channels",
+        metavar="ID,ID,...",
+        help="fast mode: the channel IDs of the first acquisition in folder order (the tagged "
+        "unit, named in the output), in source order C0, C1, ...; its header names are "
+        "confirmed as their header names. Every acquisition is stated to have them",
+    )
+    describe.add_argument(
+        "--image-type",
+        choices=("channels", "rgb"),
+        help="fast mode: the image type of the list (never inferred)",
+    )
+    describe.add_argument(
+        "--accept-ids", action="store_true", help="fast mode: accept every proposed ID"
+    )
+    describe.add_argument(
+        "--comparable",
+        action="store_true",
+        help="fast mode: every biological repeat's folders were prepared and acquired under "
+        "the same circumstances (your answer, dated --confirmed-on)",
+    )
+    describe.add_argument(
+        "--confirmed-on",
+        metavar="YYYY-MM-DD",
+        help="fast mode: the day of your statements (never read from the clock)",
+    )
+    describe.add_argument(
         "--publish",
         action="store_true",
         help="publish the description only when no question is open and every decision is "
@@ -151,6 +205,10 @@ def describe_command(args: argparse.Namespace) -> int:
     else:
         draft = draft_from_discovery(discovery, excluded)
         lines, blockers = draft_lines(draft, root), draft_blockers(draft)
+        if not args.strict and args.channels is not None:
+            return describe_fast(args, draft, discovery, excluded, output, lines)
+        if not args.strict:
+            lines.append(FAST_HINT)
     print("\n".join(lines))
     if not args.publish:
         return 0
@@ -167,6 +225,98 @@ def describe_command(args: argparse.Namespace) -> int:
     print("Not published. What is missing:")
     print("\n".join(f"  - {item}" for item in blockers))
     return 1
+
+
+def describe_fast(
+    args: argparse.Namespace,
+    draft: Draft,
+    discovery: DiscoveryResult,
+    excluded: list[str],
+    output: Path,
+    lines: list[str],
+) -> int:
+    """Print the fast-mode draft of a new description and publish it on ``--publish``.
+
+    Fast mode is the default for a new description (Spec ADR 0006, FC1): one channel list for
+    the experiment, the order of the tagged unit (the first in folder order). Every answer is
+    the command's (:mod:`.fast_answers`); every image's header is checked against the list
+    before anything is written, and a contradiction lists every image
+    (``R_FAST_LAYOUT_CONTRADICTION``), with nothing published.
+    """
+    key = tagged_unit(draft)
+    images = [image for image in discovery.images if image not in excluded]
+    headers = inspect_images(discovery.root, images).files
+    tagged = next(
+        (m for m in headers if key is not None and _unit_of(m.relative_path) == key), None
+    )
+    names = () if tagged is None else tuple(tagged.raw_channel_names)
+    lines = [
+        *lines,
+        "",
+        "Fast mode (the default; --strict for the per-unit mode): one channel list for the "
+        "experiment, the order of the tagged unit "
+        + ("(none)" if key is None else f"{' / '.join(key)}, header names {list(names)}"),
+    ]
+    print("\n".join(lines))
+    if not args.publish:
+        return 0
+    print()
+    channels = [c for c in (args.channels or "").split(",") if c]
+    answers, blockers = fast_answers(
+        draft,
+        channels,
+        args.image_type or "",
+        names,
+        accept_ids=args.accept_ids,
+        comparable=args.comparable,
+        confirmed_on=args.confirmed_on,
+    )
+    if not channels:
+        blockers.insert(0, "give the tagged unit's channel IDs in order (--channels)")
+    if args.image_type is None:
+        blockers.insert(0, "give the image type of the list (--image-type)")
+    if answers is None or blockers:
+        print("Not published. What is missing:")
+        print("\n".join(f"  - {item}" for item in blockers))
+        return 1
+    return _publish_fast(draft, answers, discovery, headers, output)
+
+
+def _unit_of(path: str) -> tuple[str, str, str]:
+    """Return the unit key of an image path (condition, repeat, technical or ``single``)."""
+    parts = path.split("/")[:-1]
+    return (parts[0], parts[1], parts[2] if len(parts) > 2 else "single")
+
+
+def _publish_fast(
+    draft: Draft,
+    answers: DraftAnswers,
+    discovery: DiscoveryResult,
+    headers: list,
+    output: Path,
+) -> int:
+    """Check every image against the list, then publish; nothing is written on any refusal."""
+    try:
+        candidate = description_from_draft(draft, answers)
+    except DraftError as exc:
+        print(f"Not published: {exc}")
+        return 1
+    report = check_physical(candidate, discovery, headers)
+    if report.issues:
+        print(format_issues(physical_issues(report.issues)))
+        return 1
+    output.mkdir(parents=True, exist_ok=True)
+    try:
+        publication = publish_description(output, candidate, base_sha256="absent")
+    except (PublicationRefused, DescriptionError, ValueError) as exc:
+        print(f"Not published: {exc}")
+        return 1
+    write_derived_design(candidate, output / DESIGN_FILENAME)
+    print(
+        f"Published {publication.path} in fast mode (channel list "
+        f"{list(candidate.channel_layout.channels)})."
+    )
+    return 0
 
 
 def _proposal(kind: IdKind, folder: str, slot_proposed: str | None) -> str:

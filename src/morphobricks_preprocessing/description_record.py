@@ -17,6 +17,8 @@ from .description import Description
 from .description_unnamed import FIELD, checked_items, unnamed_items
 from .description_write import section_digests
 from .fast_layout import HEADER, STATEMENT
+from .physical_fast import fov_key
+from .physical_unit import UnitKey
 from .rgb_override import HEADER_RGB, NO_INTERPRETATION, RGB, UNUSED, USED, OverrideUse
 
 KEY = "experiment_description"
@@ -227,14 +229,17 @@ def recorded_description(value: object) -> dict | None:
 
 _FAST_KEYS = frozenset({"path", "fov_key", "header_verified", "channels"})
 _EVIDENCE_KEYS = frozenset({"c", "channel", "header_name", "evidence"})
+_FOV_KEY = frozenset(fov_key(UnitKey("c", "r", "t"), "p.tif"))
+"""The four fields of a FOV key (experiment-v1 3.4), each non-empty text: the record's own."""
 
 
 def checked_fast_images(unit: dict, where: str) -> None:
     """Refuse a malformed ``fast_layout_images`` of one unit record (ADR 0006).
 
     The unit says ``channels_from = "experiment"``; the items are sorted by distinct path; each
-    lists one entry per channel of the unit, in C order, with ``evidence`` ``header`` or
-    ``statement``; ``header_verified`` is true exactly when every entry is ``header``.
+    lists one entry per channel of the unit, in C order, with ``evidence`` ``header`` (only with
+    a non-empty ``header_name``) or ``statement``; ``header_verified`` is true exactly when every
+    entry is ``header``; ``fov_key`` is the four non-empty fields of experiment-v1 3.4.
     """
     items = unit[FAST_IMAGES]
     if unit.get(CHANNELS_FROM) != "experiment" or not isinstance(items, list):
@@ -243,6 +248,15 @@ def checked_fast_images(unit: dict, where: str) -> None:
         if not isinstance(item, dict) or set(item) != _FAST_KEYS:
             raise ValueError(
                 f"{where}.{FAST_IMAGES} items must hold {', '.join(sorted(_FAST_KEYS))}"
+            )
+        fov = item["fov_key"]
+        if (
+            not isinstance(fov, dict)
+            or set(fov) != _FOV_KEY
+            or not all(isinstance(v, str) and v for v in fov.values())
+        ):
+            raise ValueError(
+                f"{where}.{FAST_IMAGES} fov_key must hold {', '.join(sorted(_FOV_KEY))}"
             )
         entries = item["channels"]
         if not isinstance(entries, list) or [
@@ -255,6 +269,7 @@ def checked_fast_images(unit: dict, where: str) -> None:
                 or entry["c"] != index
                 or entry["evidence"] not in (HEADER, STATEMENT)
                 or not isinstance(entry["header_name"], str | None)
+                or (entry["evidence"] == HEADER and not entry["header_name"])
             ):
                 raise ValueError(f"{where}.{FAST_IMAGES} holds a malformed channel entry")
         verified = all(entry["evidence"] == HEADER for entry in entries)

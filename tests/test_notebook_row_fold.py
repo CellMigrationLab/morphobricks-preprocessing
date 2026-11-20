@@ -204,8 +204,10 @@ def test_a_header_rewritten_under_the_same_files_keeps_its_row_open(tmp_path):
     assert nb.same_way["rep1"].value and "rep1: answer" not in _text(nb.todo)
     shown = _text(nb.checks)
     assert "The images contradict it: the run would stop" in shown
-    assert shown.count("R_HEADER_CONTRADICTION") == 2
-    assert "repeat folder &#x27;rep1&#x27;" in shown  # the unit it names
+    # Published in fast mode (the default, ADR 0006): one refusal listing the image's swapped
+    # header names (header_order at C0 and C1), not two R_HEADER_CONTRADICTION.
+    assert shown.count("R_FAST_LAYOUT_CONTRADICTION") == 1 and "header_order C0, C1" in shown
+    assert "ctrl/rep1/single/a (ctrl/rep1/a.tif)" in shown  # the image it names, by FOV key
     assert "changed since saved" in _text(nb.replicates_box)  # rep1's block stays open
     assert "can start" not in nb.save_status.value and "nothing changed" not in nb.saved_line.value
     assert nb.run_button.disabled

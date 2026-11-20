@@ -206,9 +206,9 @@ def test_an_empty_text_tag_is_refused_in_the_file():
 
 def test_the_file_is_version_3_and_older_versions_are_refused():
     data = answers_to_bytes(complete())
-    assert b'"version": 3' in data
+    assert b'"version": 4' in data
     with pytest.raises(DraftFileError) as refused:
-        answers_from_bytes(data.replace(b'"version": 3', b'"version": 2'))
+        answers_from_bytes(data.replace(b'"version": 4', b'"version": 2'))
     assert refused.value.code == "unknown_version"
 
 
