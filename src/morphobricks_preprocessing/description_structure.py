@@ -10,13 +10,18 @@ from __future__ import annotations
 import re
 from collections.abc import Callable, Iterator, Mapping
 from datetime import date
+from functools import partial
 
 from .description_report import Issues, key_path
 from .description_rules import (
     CHANNEL,
+    CHANNEL_LAYOUT,
+    CHANNELS_FROM,
+    CHANNELS_FROM_VALUES,
     CONDITION,
     FORBIDDEN,
     IMAGE_TYPES,
+    LAYOUT,
     MASK,
     MEMBER,
     REPEAT,
@@ -131,12 +136,28 @@ def _confirmation(table: Mapping[str, object], path: str, out: Issues) -> None:
             out.add(Code.E_TYPE, f"{path}.confirmed", value)
         elif not value:
             out.add(Code.E_REPEAT_UNCONFIRMED, f"{path}.confirmed", value)
-    if "confirmed_on" in table:
-        value = table["confirmed_on"]
+    _date(table, "confirmed_on", path, out)
+
+
+def _date(table: Mapping[str, object], key: str, path: str, out: Issues) -> None:
+    """Check a date field: a text value naming a real ``YYYY-MM-DD`` day."""
+    if key not in table:
+        return
+    value = table[key]
+    if not _is_text(value):
+        out.add(Code.E_TYPE, key_path(path, key), value)
+    elif not _real_date(value):
+        out.add(Code.E_DATE_FORMAT, key_path(path, key), value)
+
+
+def _image_type(table: Mapping[str, object], path: str, out: Issues) -> None:
+    """Check ``image_type``: text, and only ``rgb`` (section 4.4b)."""
+    if "image_type" in table:
+        value = table["image_type"]
         if not _is_text(value):
-            out.add(Code.E_TYPE, f"{path}.confirmed_on", value)
-        elif not _real_date(value):
-            out.add(Code.E_DATE_FORMAT, f"{path}.confirmed_on", value)
+            out.add(Code.E_TYPE, f"{path}.image_type", value)
+        elif value not in IMAGE_TYPES:
+            out.add(Code.E_ENUM, f"{path}.image_type", value)
 
 
 def _real_date(value: str) -> bool:
@@ -150,23 +171,30 @@ def _real_date(value: str) -> bool:
     return True
 
 
-def _unit(table: Mapping[str, object], path: str, out: Issues) -> None:
-    """Check one imaging unit's fields: types, ``image_type`` and ``rgb_header_override``."""
+def _unit(table: Mapping[str, object], path: str, out: Issues, *, fast: bool) -> None:
+    """Check one imaging unit's fields: types, ``channels_from``, ``image_type``, RH1.
+
+    In a fast-mode file (``fast``) every unit states ``channels_from``; there is no default
+    inside the file (section 4.4, ADR 0006). Its absence elsewhere is phase 5's rule.
+    """
     _fields(table, UNIT, path, out)
     _text(table, "source_folder", path, out, filled=False)
     _text(table, "display_name", path, out, filled=True)
     _text_array(table, "channels", path, out, filled=False, minimum=1)
-    if "image_type" in table:
-        value = table["image_type"]
+    if fast and CHANNELS_FROM not in table:
+        out.add(Code.E_MISSING_FIELD, f"{path}.{CHANNELS_FROM}")
+    if CHANNELS_FROM in table:
+        value = table[CHANNELS_FROM]
         if not _is_text(value):
-            out.add(Code.E_TYPE, f"{path}.image_type", value)
-        elif value not in IMAGE_TYPES:
-            out.add(Code.E_ENUM, f"{path}.image_type", value)
+            out.add(Code.E_TYPE, f"{path}.{CHANNELS_FROM}", value)
+        elif value not in CHANNELS_FROM_VALUES:
+            out.add(Code.E_ENUM, f"{path}.{CHANNELS_FROM}", value)
+    _image_type(table, path, out)
     if RGB_HEADER_OVERRIDE in table and type(table[RGB_HEADER_OVERRIDE]) is not bool:
         out.add(Code.E_TYPE, f"{path}.{RGB_HEADER_OVERRIDE}", table[RGB_HEADER_OVERRIDE])
 
 
-def _member(table: Mapping[str, object], path: str, out: Issues) -> None:
+def _member(table: Mapping[str, object], path: str, out: Issues, *, fast: bool) -> None:
     _fields(table, MEMBER, path, out)
     _text(table, "source_repeat", path, out, filled=False)
     if "image_count" in table:
@@ -176,15 +204,34 @@ def _member(table: Mapping[str, object], path: str, out: Issues) -> None:
         elif count < 1:
             out.add(Code.E_VALUE_RANGE, f"{path}.image_count", count)
     for _, unit, unit_path in _id_tables(table, "technical_repeats", path, out, minimum=1):
-        _unit(unit, unit_path, out)
+        _unit(unit, unit_path, out, fast=fast)
 
 
-def _repeat(table: Mapping[str, object], path: str, out: Issues) -> None:
+def _repeat(table: Mapping[str, object], path: str, out: Issues, *, fast: bool) -> None:
     _fields(table, REPEAT, path, out)
     _text(table, "display_name", path, out, filled=True)
     _confirmation(table, path, out)
     for _, member, member_path in _id_tables(table, "members", path, out, minimum=1):
-        _member(member, member_path, out)
+        _member(member, member_path, out, fast=fast)
+
+
+def _channel_layout(doc: Mapping[str, object], out: Issues) -> bool:
+    """Check ``channel_layout`` (section 4.3a) and return whether the file is a fast-mode file.
+
+    A file is a fast-mode file exactly when the table is present and is a table; its absence
+    means strict per-unit, and nothing here supplies it (ADR 0006).
+    """
+    if CHANNEL_LAYOUT not in doc:
+        return False
+    table = doc[CHANNEL_LAYOUT]
+    if not _is_table(table):
+        out.add(Code.E_TYPE, CHANNEL_LAYOUT, table)
+        return False
+    _fields(table, LAYOUT, CHANNEL_LAYOUT, out)
+    _text_array(table, "channels", CHANNEL_LAYOUT, out, filled=False, minimum=1)
+    _image_type(table, CHANNEL_LAYOUT, out)
+    _date(table, "confirmed_on", CHANNEL_LAYOUT, out)
+    return True
 
 
 def _mask(table: Mapping[str, object], path: str, out: Issues) -> None:
@@ -212,12 +259,17 @@ def _used_ids(doc: Mapping[str, object], out: Issues) -> None:
         _text_array(table, key, "used_ids", out, filled=False, minimum=1)
 
 
-SECTIONS: tuple[tuple[str, int, Callable[[Mapping[str, object], str, Issues], None]], ...] = (
-    ("conditions", 1, _condition),
-    ("channels", 1, _channel),
-    ("repeats", 1, _repeat),
-    ("masks", 0, _mask),
-)
+Check = Callable[[Mapping[str, object], str, Issues], None]
+
+
+def _sections(fast: bool) -> tuple[tuple[str, int, Check], ...]:
+    """Return the ID-keyed sections in file order, each with its minimum size and check."""
+    return (
+        ("conditions", 1, _condition),
+        ("channels", 1, _channel),
+        ("repeats", 1, partial(_repeat, fast=fast)),
+        ("masks", 0, _mask),
+    )
 
 
 def check_structure(doc: Mapping[str, object]) -> Issues:
@@ -230,7 +282,8 @@ def check_structure(doc: Mapping[str, object]) -> Issues:
     """
     out = Issues()
     _fields(doc, TOP, "", out)
-    for key, minimum, check in SECTIONS:
+    fast = _channel_layout(doc, out)
+    for key, minimum, check in _sections(fast):
         for _, table, path in _id_tables(doc, key, "", out, minimum=minimum):
             check(table, path, out)
     _used_ids(doc, out)

@@ -23,12 +23,13 @@ from .description_file import sha256_hex
 from .description_read import read_description_bytes
 from .description_report import DescriptionIssue
 from .description_review import design_changes
-from .description_rules import Refusal
+from .description_rules import CHANNEL_LAYOUT, Refusal
 from .description_run_text import reader_issue, reader_warning
 from .description_transition import Reconfirmation
 from .description_write import canonical_bytes
 from .design import DesignFormatError
 from .design_derive import derive_design
+from .fast_layout import FAST_LAYOUT_CONTRADICTION
 from .physical_check import HETEROGENEOUS_LAYOUT
 from .run.description_file import transition_refusals
 from .run.description_run import RunDescription, check_description
@@ -50,6 +51,13 @@ _TRANSITION_TEXT = {
     ),
 }
 
+_LAYOUT_DATE_TEXT = (
+    "The date of the statement “every unit has the same channels in the same order” differs "
+    "from the saved one, but the list and image type are as saved, so the saved date stays "
+    "(experiment-v1 4.3a, ADR 0006).",
+    "Keep the saved date of the channel list; it changes only when the list changes.",
+)
+
 
 @dataclass(frozen=True)
 class CandidateCheck:
@@ -65,6 +73,32 @@ class CandidateCheck:
     physical_run: bool = False
     changes: tuple[str, ...] = ()
     warnings: tuple[ValidationIssue, ...] = ()
+    unchecked: tuple[str, ...] = ()
+    """Images the physical checks could not check (header unreadable, count not stated)."""
+
+    @property
+    def fast_refusals(self) -> tuple[str, ...]:
+        """Why a fast-mode description may not be published yet (owner, 20 November 2026).
+
+        ADR 0006 section 10: in fast mode the draft is always saved, but publishing is refused
+        while any image contradicts the list (``R_FAST_LAYOUT_CONTRADICTION``) or is not
+        checked against it. Empty for a strict file (its 10 November behaviour is unchanged).
+        """
+        if self.description is None or not self.description.fast_mode:
+            return ()
+        out = [i.message for i in self.run_refusals if i.code == FAST_LAYOUT_CONTRADICTION]
+        if not self.physical_run:
+            out.append(
+                "the images are not checked against the channel list yet: confirm the axis "
+                "roles (step 2)"
+            )
+        out += [f"not checked against the channel list: {path}" for path in self.unchecked]
+        return tuple(out)
+
+    @property
+    def can_publish(self) -> bool:
+        """True when the description may be published: valid, and in fast mode checked."""
+        return self.can_save and not self.fast_refusals
 
     @property
     def can_save(self) -> bool:
@@ -87,10 +121,13 @@ def transition_issue(issue: DescriptionIssue) -> ValidationIssue:
     code, path = issue.code.value, issue.path
     base, _, key = path.partition(".")
     key = str(issue.value) if base == "used_ids" else key.strip('"')
-    message, action = _TRANSITION_TEXT.get(
-        issue.code,
-        ("Publication refuses this change.", "Undo the change it names."),
-    )
+    if base == CHANNEL_LAYOUT:
+        message, action = _LAYOUT_DATE_TEXT
+    else:
+        message, action = _TRANSITION_TEXT.get(
+            issue.code,
+            ("Publication refuses this change.", "Undo the change it names."),
+        )
     shown, todo = message.format(id=key, code=code, path=path), action.format(id=key)
     return error(code, f"Saving would be refused: {code} at {path}. {shown} {todo}", (), todo)
 
@@ -137,7 +174,10 @@ def check_candidate(
     except DesignFormatError as exc:
         changes = [f"cannot be derived: {exc}"]
     physical = checked.physical is not None
-    return CandidateCheck(parsed, refused, tuple(problems), physical, tuple(changes), warned)
+    unchecked = checked.physical.unchecked if physical else ()
+    return CandidateCheck(
+        parsed, refused, tuple(problems), physical, tuple(changes), warned, tuple(unchecked)
+    )
 
 
 __all__ = ["CandidateCheck", "check_candidate", "transition_issue"]

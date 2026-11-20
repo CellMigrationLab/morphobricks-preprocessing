@@ -1,0 +1,79 @@
+# Fixture t17_fast_mode_adopted_repeat_redated
+# Expected: `R_CONFIRMED_ON_CHANGED` (N35 not reopened)
+# Source: ADR 0006 (owner decisions FC1-FC4, 16 November 2026)
+# As t16, but rep1's `confirmed_on` is also changed to 2026-11-16. Adopting fast mode changes how the lists were confirmed, not what they are (`channels_from` is not part of the confirmed layout, experiment-v1 10), so rep1 is not reopened and its new date is refused.
+schema = "morphobricks-experiment"
+schema_version = 1
+
+[conditions.CTRL]
+source_folder = "CTRL"
+display_name = "Control"
+
+[conditions.DrugA]
+source_folder = "DrugA"
+display_name = "Drug A"
+reference = "CTRL"
+target = "SRC"
+treatment_key = "saracatinib"
+
+[channels.DNA]
+display_name = "DAPI"
+header_names = ["DAPI"]
+
+[channels.ACTIN]
+display_name = "F-actin"
+header_names = ["Phalloidin-488"]
+
+[channel_layout]
+channels = ["DNA", "ACTIN"]
+confirmed_on = "2026-11-16"
+
+[repeats.rep1]
+confirmed = true
+confirmed_on = "2026-11-16"
+
+[repeats.rep1.members.CTRL]
+source_repeat = "rep1"
+image_count = 12
+
+[repeats.rep1.members.CTRL.technical_repeats.single]
+source_folder = "single"
+channels = ["DNA", "ACTIN"]
+channels_from = "experiment"
+
+[repeats.rep1.members.DrugA]
+source_repeat = "rep1"
+image_count = 11
+
+[repeats.rep1.members.DrugA.technical_repeats.single]
+source_folder = "single"
+channels = ["DNA", "ACTIN"]
+channels_from = "experiment"
+
+[repeats.rep2]
+confirmed = true
+confirmed_on = "2026-11-06"
+
+[repeats.rep2.members.CTRL]
+source_repeat = "rep2"
+image_count = 10
+
+[repeats.rep2.members.CTRL.technical_repeats.single]
+source_folder = "single"
+channels = ["DNA", "ACTIN"]
+channels_from = "experiment"
+
+[repeats.rep2.members.DrugA]
+source_repeat = "rep2"
+image_count = 10
+
+[repeats.rep2.members.DrugA.technical_repeats.single]
+source_folder = "single"
+channels = ["DNA", "ACTIN"]
+channels_from = "experiment"
+
+[used_ids]
+conditions = ["CTRL", "DrugA"]
+channels = ["ACTIN", "DNA"]
+repeats = ["rep1", "rep2"]
+technical_repeats = ["single"]

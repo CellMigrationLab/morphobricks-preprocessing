@@ -96,7 +96,8 @@ class TagGrid:
     """The tag grid: blocks of folders with identical headers, one answer per block."""
 
     SAME_CHANNELS = True
-    """The statement's default: ticked (owner, 16 November 2026)."""
+    """The statement's default for a new description: ticked (owner, 16 November 2026, FC1).
+    A published description reopens in its own mode (ADR 0006): only the user switches it."""
 
     def __init__(
         self,
@@ -175,13 +176,15 @@ class TagGrid:
             self.alone = set()
             self.matrix.reset()
             self.matrix.opening()
+            self.matrix.tick_for_mode()
         self.layouts, self.labels, self.rows.thumbs = layouts, labels, thumbs
         if self.place_types:
             self.types.open(layouts)
         self.detail.children = []
-        trusted = self.matrix.trust_headers()  # fast mode: headers naming every channel
+        # fast mode: headers naming every channel, then the statement they and the tick give
+        changed = self.matrix.trust_headers() | self.matrix.sync_statement()
         self.refresh()
-        if trusted:
+        if changed:
             self._on_change()
         ui.set_visible(self.widget, True)
 
@@ -196,11 +199,14 @@ class TagGrid:
 
     def _statement_changed(self) -> None:
         """Show the matrix or the blocks after the statement is ticked or unticked."""
+        if self.matrix.setting_tick:  # the draft's own mode, set on opening (ADR 0006)
+            return
         self.matrix.reset()
         if self.same_channels.value:
             self.matrix.trust_headers()
         else:
             self.matrix.take_back()  # the strict page's draft: a header pre-tag needs its click
+        self.matrix.sync_statement()
         self.refresh()
         self._on_change()
 
@@ -214,6 +220,7 @@ class TagGrid:
         """
         ok = save_change(self.store, tagged(self.layouts, tags, cells))
         self.message = "" if ok else ui.status("error", "Not saved.", [self.store.refusal()])
+        ok and self.matrix.sync_statement(cells)  # the user's clicked cells (ADR 0006)
         self.refresh()
         self._on_change()
         return ok
@@ -311,6 +318,7 @@ class TagGrid:
         self.message = "" if ok else ui.status("error", "Not saved.", [self.store.refusal()])
         if ok and rgb:
             self.types.confirm_header(rgb)
+        ok and self.matrix.sync_statement(cells)
         self.refresh()
         self._on_change()
 

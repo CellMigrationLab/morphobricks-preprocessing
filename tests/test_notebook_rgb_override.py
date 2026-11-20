@@ -241,6 +241,7 @@ def _descendants(widget):
 # --- what is published and run ----------------------------------------------------------------
 
 
+@pytest.mark.usefixtures("statement_off")  # RH1 in a strict file (owner, 10 November)
 def test_the_published_file_is_a_hand_written_one_with_the_key_and_the_run_records_it(tmp_path):
     plain = _notebook(tmp_path, out="plain")
     _colour_for_all(plain)

@@ -72,6 +72,45 @@ class PublicationRefused(Exception):
         super().__init__(f"the description was not published: {shown}")
 
 
+MODE_SWITCH_UNCONFIRMED = "mode_switch_unconfirmed"
+"""Preprocessing's refusal of a publication that switches between fast and strict mode
+(Spec ADR 0006) without the user's recorded switch: no reader or reconciliation switches."""
+
+
+class ModeSwitchRefused(ValueError):
+    """Raised when a candidate changes the mode of the published file without the user's switch.
+
+    Experiment-v1 section 10 (ADR 0006): adopting fast mode on a strict file, or giving it up,
+    is a user action published as a new file; a candidate whose mode differs from the
+    published one is refused unless the user's switch is recorded (``switch_mode``), and a
+    recorded switch that changes nothing is refused too. Nothing is written.
+    """
+
+    code = MODE_SWITCH_UNCONFIRMED
+
+
+def check_mode_switch(old: Description | None, new: Description, switch_mode: bool) -> None:
+    """Refuse an unrecorded switch between fast and strict mode, or a switch that is none.
+
+    Raises
+    ------
+    ModeSwitchRefused
+        When ``old`` is a fast-mode file and ``new`` a strict one (or the reverse) and
+        ``switch_mode`` is False, or when ``switch_mode`` is True and the mode is unchanged
+        (or there is no published file).
+    """
+    changed = old is not None and old.fast_mode != new.fast_mode
+    if changed and not switch_mode:
+        before, after = ("fast", "strict") if old.fast_mode else ("strict", "fast")
+        raise ModeSwitchRefused(
+            f"the published description is in {before} mode and this one in {after} mode, but "
+            "no switch of mode was recorded: only you switch it (tick or untick “every imaging "
+            "unit has the same channels in the same order”, then save again)"
+        )
+    if switch_mode and not changed:
+        raise ModeSwitchRefused("a switch of mode was recorded, but the mode does not change")
+
+
 class RecordsFileError(OSError):
     """Raised when ``morphobricks.records.jsonl`` is refused (``R_RECORDS_FILE_INVALID``).
 
@@ -243,6 +282,7 @@ def publish_description(
     confirmations: tuple[Reconfirmation, ...] = (),
     removals: tuple[Removal, ...] = (),
     recorded_on: str | None = None,
+    switch_mode: bool = False,
 ) -> Publication:
     """Publish ``candidate`` as ``morphobricks.toml``, or refuse and write nothing.
 
@@ -265,6 +305,9 @@ def publish_description(
         The date (``YYYY-MM-DD``) of the ``image_count_changed`` records: required when any
         confirmed member's ``image_count`` changes, alone or with other changes; never
         defaulted and never read from the clock.
+    switch_mode
+        True only for the user's recorded switch between fast and strict mode (ADR 0006); see
+        :func:`check_mode_switch`.
 
     Returns
     -------
@@ -283,7 +326,8 @@ def publish_description(
         When the candidate's canonical bytes, or the published file, is not a valid description.
     ValueError
         When a re-confirmation is not needed by the candidate, a dropped unit has no removal, a
-        removal names a unit the candidate keeps, or ``recorded_on`` is missing when needed.
+        removal names a unit the candidate keeps, or ``recorded_on`` is missing when needed;
+        :class:`ModeSwitchRefused` for a switch of mode that is not the user's.
     """
     folder = Path(output_folder)
     with output_lock(folder):
@@ -294,6 +338,7 @@ def publish_description(
             confirmations=confirmations,
             removals=removals,
             recorded_on=recorded_on,
+            switch_mode=switch_mode,
         )
 
 
@@ -305,6 +350,7 @@ def publish_locked(
     confirmations: tuple[Reconfirmation, ...] = (),
     removals: tuple[Removal, ...] = (),
     recorded_on: str | None = None,
+    switch_mode: bool = False,
 ) -> Publication:
     """Publish like :func:`publish_description` for a caller that already holds the lock.
 
@@ -324,6 +370,7 @@ def publish_locked(
     data = canonical_bytes(candidate)
     description_from_bytes(data)  # the exact bytes to be written pass the strict reader
     old = _compare(published, candidate, confirmations)
+    check_mode_switch(old, candidate, switch_mode)
     new_sha = sha256_hex(data)
     records = tuple(_record(c, base, new_sha) for c in sorted(confirmations, key=_order))
     if old is not None:

@@ -25,29 +25,27 @@ from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from types import MappingProxyType
 
-from .axis_names import OPEN_AXIS
 from .description import Description, Unit
 from .discovery import DiscoveryResult
+from .fast_layout import FAST_LAYOUT_CONTRADICTION
 from .image_names import position_id
 from .mask_rules import MASK_CONTRADICTS_REPRESENTATION as MASK_CONTRADICTS_REPRESENTATION
-from .metadata import OME_ZARR, TiffMetadata, header_channel_count, named_axes
-from .rgb_override import (
-    OVERRIDE_SAMPLES,
-    RGB,
-    OverrideUse,
-    declares_override,
-    effectively_rgb,
-    header_overridden,
-    override_uses,
-)
+from .metadata import TiffMetadata
+from .physical_fast import check_fast_unit
+from .physical_unit import IMAGE_TYPE_CONTRADICTS_HEADER as IMAGE_TYPE_CONTRADICTS_HEADER
+from .physical_unit import RGB_OVERRIDE_NOT_THREE_SAMPLES as RGB_OVERRIDE_NOT_THREE_SAMPLES
+from .physical_unit import UNIT_NOT_HOMOGENEOUS as UNIT_NOT_HOMOGENEOUS
+from .physical_unit import Layout as Layout
+from .physical_unit import PhysicalIssue as PhysicalIssue
+from .physical_unit import UnitKey as UnitKey
+from .physical_unit import layout_of as layout_of
+from .physical_unit import type_issues, unit_images, unnamed_positions
+from .rgb_override import RGB, OverrideUse, header_overridden, override_uses
 
 UNIT_NOT_FOUND = "R_UNIT_NOT_FOUND"
 UNIT_NOT_DECLARED = "R_UNIT_NOT_DECLARED"
 CHANNEL_COUNT_MISMATCH = "R_CHANNEL_COUNT_MISMATCH"
-UNIT_NOT_HOMOGENEOUS = "R_UNIT_NOT_HOMOGENEOUS"
 HEADER_CONTRADICTION = "R_HEADER_CONTRADICTION"
-IMAGE_TYPE_CONTRADICTS_HEADER = "R_IMAGE_TYPE_CONTRADICTS_HEADER"
-RGB_OVERRIDE_NOT_THREE_SAMPLES = "R_RGB_OVERRIDE_NOT_THREE_SAMPLES"
 MASK_TYPE_NOT_DECLARED = "R_MASK_TYPE_NOT_DECLARED"
 HETEROGENEOUS_LAYOUT = "R_HETEROGENEOUS_LAYOUT_NOT_ENABLED"
 PHYSICAL_CODES = frozenset(
@@ -60,6 +58,7 @@ PHYSICAL_CODES = frozenset(
         IMAGE_TYPE_CONTRADICTS_HEADER,
         RGB_OVERRIDE_NOT_THREE_SAMPLES,
         MASK_TYPE_NOT_DECLARED,
+        FAST_LAYOUT_CONTRADICTION,
     }
 )
 """The codes of this module (the rest of §8's ``R_*`` belong to publication and the run).
@@ -68,52 +67,6 @@ PHYSICAL_CODES = frozenset(
 lists are accepted from Stage 3, S3.3; decided from the
 description alone) and ``MASK_CONTRADICTS_REPRESENTATION`` (the mask step's) are named here so
 the reader's modules hold no code literal; they are not folder checks and are not in the set."""
-
-
-@dataclass(frozen=True)
-class UnitKey:
-    """An imaging unit by its source folder labels (never by canonical IDs)."""
-
-    condition: str
-    biological_repeat: str
-    technical_repeat: str
-
-
-@dataclass(frozen=True)
-class PhysicalIssue:
-    """One refusal: its code, the unit, and where it was found.
-
-    ``path`` is the image (relative to the experiment root) and ``fov`` its position ID;
-    ``c_index`` the source channel index, None when the issue is not about one channel. For
-    ``R_MASK_TYPE_NOT_DECLARED`` ``unit`` is None and ``detail`` is the mask type.
-    """
-
-    code: str
-    unit: UnitKey | None
-    path: str | None = None
-    fov: str | None = None
-    c_index: int | None = None
-    detail: str = ""
-
-
-@dataclass(frozen=True)
-class Layout:
-    """What one image's header says about its channels: the unit's signature when all agree.
-
-    ``channels`` is None when the header does not name the channel axis and no confirmed
-    roles were given, so the count is not known. ``names`` are the raw header names by C
-    index, as read (None where there is none).
-    """
-
-    channels: int | None
-    names: tuple[str | None, ...]
-    rgb: bool
-    axes: str
-
-    @property
-    def named(self) -> bool:
-        """True when every channel has a header name."""
-        return bool(self.channels) and len(self.names) == self.channels and all(self.names)
 
 
 @dataclass(frozen=True)
@@ -175,6 +128,12 @@ class PhysicalReport:
     for each image (:class:`.rgb_override.OverrideUse`: used, with the header's colour
     interpretation, or unused because the header already says RGB or states no colour
     interpretation). Declared and effective are recorded separately (4.4b, 14 November 2026)."""
+    fast_images: Mapping[UnitKey, tuple[dict, ...]] = field(
+        default_factory=lambda: MappingProxyType({})
+    )
+    """Per unit with ``channels_from = "experiment"`` that passed, one record per checked image,
+    sorted by path: ``path``, ``fov_key``, ``header_verified`` and the evidence of each channel
+    (the run manifest's ``fast_layout_images``, ADR 0006; :func:`.fast_layout.image_record`)."""
 
     @property
     def codes(self) -> frozenset[str]:
@@ -194,30 +153,6 @@ def nfc(text: str) -> str:
 
 def _name(name: str | None) -> str | None:
     return nfc(name) if name else None
-
-
-def layout_of(
-    meta: TiffMetadata, roles: Sequence[str | None] | None = None, *, rgb: bool = False
-) -> Layout:
-    """Return the layout one readable image's header states.
-
-    The channel count is the length of the confirmed ``C`` role when ``roles`` are given, else
-    what the header names (the ``C`` axis, or the samples of an RGB image); None when the header
-    leaves an axis open and no roles say which dimension is the channel. ``rgb`` reads the image
-    as RGB whatever its header's colour interpretation: its effective type after a valid RGB
-    header override (:func:`.rgb_override.effectively_rgb`), so that images differing only in
-    colour interpretation are homogeneous (experiment-v1 4.4b).
-    """
-    axes = named_axes(meta).replace("T", "")
-    if meta.rgb_samples or rgb:
-        count: int | None = header_channel_count(meta)
-    elif roles is not None:
-        count = dict(zip(roles, meta.shape, strict=True)).get("C", 1)
-    elif OPEN_AXIS in named_axes(meta):
-        count = None
-    else:
-        count = header_channel_count(meta)
-    return Layout(count, tuple(meta.raw_channel_names), meta.rgb_samples or rgb, axes)
 
 
 def declared_units(description: Description) -> dict[UnitKey, tuple[str, Unit]]:
@@ -279,50 +214,6 @@ def _homogeneity(key: UnitKey, layouts: Mapping[str, Layout]) -> tuple[Layout, l
     return reference, issues
 
 
-def _type_issue(declared: Unit, layout: Layout, meta: TiffMetadata) -> tuple[str, str] | None:
-    """Return the code and text of one image whose header contradicts its unit, else None.
-
-    A header that does not say RGB under a unit declared ``rgb`` with the override is accepted
-    when the image has exactly three interleaved samples (RH1), else it is
-    ``R_RGB_OVERRIDE_NOT_THREE_SAMPLES``. Only the header is read.
-    """
-    if meta.kind == OME_ZARR or layout.rgb == (declared.image_type == RGB):
-        return None
-    three = meta.interleaved_samples == OVERRIDE_SAMPLES
-    if declares_override(declared):
-        if three:
-            return None
-        samples = meta.interleaved_samples or "no"
-        return RGB_OVERRIDE_NOT_THREE_SAMPLES, (
-            f"rgb_header_override needs exactly {OVERRIDE_SAMPLES} interleaved samples per "
-            f"pixel; the header states {samples} interleaved samples "
-            f"(photometric {meta.photometric or 'not stated'})"
-        )
-    what = (
-        f"declared {declared.image_type or 'not rgb'}, the header says "
-        f"{'rgb' if layout.rgb else 'not rgb'}"
-    )
-    if declared.image_type == RGB and three:
-        what += (
-            f" (photometric {meta.photometric or 'not stated'}) but stores "
-            f"{OVERRIDE_SAMPLES} interleaved samples per pixel: if they are R, G and B in this "
-            "order, declare rgb_header_override = true on this unit (experiment-v1 4.4b)"
-        )
-    return IMAGE_TYPE_CONTRADICTS_HEADER, what
-
-
-def _type_issues(
-    key: UnitKey, declared: Unit, layouts: Mapping[str, Layout], metas: Mapping[str, TiffMetadata]
-) -> list[PhysicalIssue]:
-    """Compare the declared image type with each header that states a colour interpretation."""
-    found = ((path, _type_issue(declared, layout, metas[path])) for path, layout in layouts.items())
-    return [
-        PhysicalIssue(issue[0], key, path, position_id(path), None, issue[1])
-        for path, issue in found
-        if issue is not None
-    ]
-
-
 def _quoted(names: Iterable[str | None]) -> str:
     """List header names as read, quoted so outer whitespace shows; ``none`` when empty."""
     shown = [repr(name) if name else "(no name)" for name in names]
@@ -357,19 +248,6 @@ def _evidence_issues(
     return out
 
 
-def _unnamed(unit: Unit, layouts: Mapping[str, Layout]) -> dict[str, tuple[int, ...]]:
-    """Return per image the declared channel positions its header gives no name (not RGB)."""
-    if unit.image_type == RGB:  # R, G and B take no header names (§4.4b)
-        return {}
-    found = {
-        path: tuple(
-            i for i in range(len(unit.channels)) if i >= len(layout.names) or not layout.names[i]
-        )
-        for path, layout in layouts.items()
-    }
-    return {path: positions for path, positions in found.items() if positions}
-
-
 def _check_unit(
     key: UnitKey,
     repeat_unit: tuple[str, Unit],
@@ -378,44 +256,34 @@ def _check_unit(
     metas: Mapping[str, TiffMetadata],
     roles: Mapping[str, Sequence[str | None]],
 ) -> tuple[list[PhysicalIssue], Layout | None, bool, list[str], dict[str, tuple[int, ...]]]:
-    """Check one declared unit that has images.
+    """Check one declared unit that has images, as a strict unit.
 
     Returns the issues, the common layout, verified, the unchecked images and, for a unit
-    without issues, the images whose header names not every channel (:func:`_unnamed`). For a
-    unit with ``rgb_header_override = true`` an image without three interleaved samples is
-    reported first (``R_RGB_OVERRIDE_NOT_THREE_SAMPLES``, replacing the unit's other checks: it
-    cannot be one of the unit's colour images whatever the others are). Homogeneity then compares
-    the effective layouts: every image the override lifts is read as RGB.
+    without issues, the images whose header names not every channel
+    (:func:`unnamed_positions`). For a unit with ``rgb_header_override = true`` an image
+    without three interleaved samples is reported first (``R_RGB_OVERRIDE_NOT_THREE_SAMPLES``,
+    replacing the unit's other checks: it cannot be one of the unit's colour images whatever
+    the others are). Homogeneity then compares the effective layouts: every image the override
+    lifts is read as RGB.
     """
     _, unit = repeat_unit
-    readable = [p for p in paths if p in metas and metas[p].readable]
-    layouts = {p: layout_of(metas[p], roles.get(p)) for p in readable}
-    unchecked = [p for p in paths if p not in layouts]
-    verified = bool(readable) and all(metas[p].kind != OME_ZARR for p in readable)
+    found = unit_images(key, unit, paths, metas, roles)
+    layouts, unchecked, verified = found.layouts, found.unchecked, found.verified
+    if found.samples:
+        return found.samples, None, verified, unchecked, {}
     if not layouts:
         return [], None, verified, unchecked, {}
-    samples = [
-        issue
-        for issue in _type_issues(key, unit, layouts, metas)
-        if issue.code == RGB_OVERRIDE_NOT_THREE_SAMPLES
-    ]
-    if samples:
-        return samples, None, verified, unchecked, {}
-    layouts = {  # the effective type: an image the override lifts is rgb (4.4b)
-        p: layout_of(metas[p], roles.get(p), rgb=True) if effectively_rgb(unit, metas[p]) else lay
-        for p, lay in layouts.items()
-    }
     reference, issues = _homogeneity(key, layouts)
     if issues:
         return issues, None, verified, unchecked, {}
-    issues = _type_issues(key, unit, layouts, metas)
+    issues = type_issues(key, unit, layouts, metas)
     if issues:
         return issues, None, verified, unchecked, {}
     verified = verified and header_overridden(unit, layouts, metas) is None  # RH1
     issues = _evidence_issues(key, unit, description, layouts)
     if reference.channels is None:  # the header does not say; never a guessed count
         unchecked += [p for p in layouts if p not in unchecked]
-    unnamed = {} if issues else _unnamed(unit, layouts)
+    unnamed = {} if issues else unnamed_positions(unit, layouts)
     return issues, None if issues else reference, verified, unchecked, unnamed
 
 
@@ -466,12 +334,22 @@ def check_physical(
     unnamed: dict[UnitKey, Mapping[str, tuple[int, ...]]] = {}
     overridden: dict[UnitKey, str] = {}
     override_images: dict[UnitKey, Mapping[str, OverrideUse]] = {}
+    fast: dict[UnitKey, tuple[dict, ...]] = {}
     for key, paths in found.items():
         if key not in declared:
             continue
-        found_issues, layout, ok, missing, nameless = _check_unit(
-            key, declared[key], description, sorted(paths), metas, roles or {}
-        )
+        unit = declared[key][1]
+        if description.channel_layout is not None and unit.follows_experiment:
+            layout = None
+            found_issues, ok, missing, nameless, records = check_fast_unit(
+                key, unit, description, sorted(paths), metas, roles or {}
+            )
+            if records:
+                fast[key] = records
+        else:
+            found_issues, layout, ok, missing, nameless = _check_unit(
+                key, declared[key], description, sorted(paths), metas, roles or {}
+            )
         named = header_overridden(declared[key][1], paths, metas)
         if named is not None and not found_issues:
             overridden[key] = named
@@ -499,6 +377,7 @@ def check_physical(
         MappingProxyType(unnamed),
         MappingProxyType(overridden),
         MappingProxyType(override_images),
+        MappingProxyType(fast),
     )
 
 

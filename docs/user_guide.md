@@ -677,14 +677,35 @@ morphobricks-preprocessing describe /data/exp1 --publish
 
 publishes the description only when no question is open and every decision is confirmed;
 otherwise it prints `Not published. What is missing:` with every item and exits with status 1.
-In this version the command line holds none of your answers (they are given in the notebook),
-so `--publish` publishes nothing from a draft made of folders: it lists what is missing. For
+Without the fast-mode options below the command line holds none of your answers (they are
+given in the notebook), so `--publish` publishes nothing from a draft made of folders: it
+lists what is missing. For
 a published description that matches the folders it says `Nothing to publish` and exits with
 status 0; for one whose only change is in the image headers, it says that no answer is
 missing and that the run stops until the headers fit, and exits with status 0; for one that
 no longer matches otherwise, it lists the new, gone or changed folders and leaves the file as
 it is. Like the other commands, `describe` exits with status 1 when it reports an
 error (an experiment folder that is not found, an unreadable description) and 0 otherwise.
+
+**Fast mode, the default for a new description (Spec ADR 0006).** When every imaging unit has
+the same channels in the same order, state it once and publish in one command:
+
+```bash
+morphobricks-preprocessing describe /data/exp1 --channels DNA,ACTIN --image-type channels \
+    --accept-ids --comparable --confirmed-on 2026-11-20 --publish
+```
+
+`--channels` are the channel IDs of the *tagged unit*, the first acquisition in folder order
+(the output names it and its header names), in source order C0, C1, ...; its header names are
+confirmed as those channels' header names. `--image-type` is `channels` or `rgb` (then
+`--channels R,G,B`). `--accept-ids` accepts every proposed ID, `--comparable` is your answer
+that every biological repeat's folders were prepared and acquired the same way, and
+`--confirmed-on` is the day of your statements (never read from the clock). Every image's
+header is checked against the list first: an image with other channels, names in another
+order, other names or another image type is listed (`R_FAST_LAYOUT_CONTRADICTION`) and nothing
+is written. Experiments where some acquisitions differ are described in the notebook, tagging
+those acquisitions on their own. `--strict` keeps the per-acquisition mode, answered in the
+notebook. A published description is never switched between modes by `describe`.
 
 ### Stating pixel sizes (`calibrate`)
 
@@ -1117,6 +1138,9 @@ continues.
 | `R_MASK_CONTRADICTS_REPRESENTATION` | Error | The masks step found a file of a mask declared `binary` that is stored as floats, or holds, over all its planes together, a negative value or two or more different positive values (the message names the file and the values found, or its pixel type). A binary mask holds 0 and at most one positive value (an all-zero or all-foreground file is accepted), stored as integers or true/false. Declare the mask as `instances` in the description if every value is an object, or as `parent_labels` (grouped labels) if every value is one group, such as the mitochondria of one cell; or fix the file (save a float mask as integers). The file stays `not yet checked`, so an analysis that names the mask refuses it (`A_MASK_UNCHECKED`) without reading it. |
 | `R_UNIT_NOT_FOUND`, `R_UNIT_NOT_DECLARED`, `R_UNIT_NOT_HOMOGENEOUS`, `R_CHANNEL_COUNT_MISMATCH`, `R_HEADER_CONTRADICTION`, `R_IMAGE_TYPE_CONTRADICTS_HEADER`, `R_MASK_TYPE_NOT_DECLARED` | Error | The published description and the folder or the image headers disagree (the message says where). Correct the description, publish it again and run again. |
 | `R_IMAGE_TYPE_CONTRADICTS_HEADER` for colour scanner files, `R_RGB_OVERRIDE_NOT_THREE_SAMPLES`, `E_RGB_OVERRIDE_WITHOUT_RGB` | Error | Some scanners store colour (RGB) images with a header that does not say RGB (for example TIFF photometric *minisblack* with three samples per pixel). The acquisition declared `image_type = "rgb"` is then refused, and the message says so and names `rgb_header_override`. If the three samples are red, green and blue in this order, add `rgb_header_override = true` to that acquisition in `morphobricks.toml` (beside `image_type = "rgb"`; in the notebook, tick **Read these folders as colour (RGB) although their header does not say colour** on the Image type card of the Channels step) and publish again: the run then accepts the header and records the acquisition in the manifest as declared RGB with the header overridden (`image_type_header_overridden`, `header_photometric`). Every image whose header does not say RGB must have exactly three interleaved samples per pixel, else `R_RGB_OVERRIDE_NOT_THREE_SAMPLES` names the image (reported before `R_UNIT_NOT_HOMOGENEOUS`); the key on an acquisition that is not declared `rgb` is `E_RGB_OVERRIDE_WITHOUT_RGB`. Images of the acquisition that differ only in colour interpretation (some *minisblack*, some RGB) are then one layout. Images whose header already says RGB, or whose format states no colour interpretation (OME-Zarr), do not use the key; the manifest records, per image, whether it was used (`rgb_header_override_images`). Adding, removing or changing the key reopens the "same way" confirmation of that replicate. Only headers are read, never pixels. |
+| `R_FAST_LAYOUT_CONTRADICTION` | Error | The published description is in **fast mode** (it has a `channel_layout` table: "every imaging unit has the same channels in the same order", Spec ADR 0006) and some images of the acquisitions that follow it (`channels_from = "experiment"`) contradict that list. One message lists **every** contradicting image, with its FOV key (condition, repeat and acquisition folders, then the image name) and path, and every contradiction found in it: `image_type` (the header says colour where the list is not, or the reverse), `channel_count` (another number of channels), `header_order` (header names of the list in another order) or `header_names` (a header name that is no confirmed name of any channel of the list), each with its C index and what was expected and found. It is decided from the image headers only, before any pixel is read; nothing is reordered, dropped or guessed, and nothing was processed. Tag the acquisitions of these images on their own (`channels_from = "unit"`, confirmed per acquisition), publish again and run again. An image whose header gives no channel names (or an empty name) needs no evidence and follows the list; the manifest records each image of a fast acquisition in `fast_layout_images` (`header_verified` true only when every channel was confirmed by its header name). In such acquisitions this one code replaces `R_CHANNEL_COUNT_MISMATCH`, `R_HEADER_CONTRADICTION`, `R_IMAGE_TYPE_CONTRADICTS_HEADER` and `R_UNIT_NOT_HOMOGENEOUS` (which stays for the other axes); `R_RGB_OVERRIDE_NOT_THREE_SAMPLES` keeps its priority. An acquisition tagged on its own is checked as in a description without fast mode. Experiments with extra channels in some acquisitions are refused here: tag those acquisitions on their own. |
+| `mode_switch_unconfirmed` | Error | The description would change between fast mode (one channel list for the experiment) and the strict per-acquisition mode, but you did not switch it: a published description keeps its mode when it is reopened. Tick or untick **Every imaging unit has the same channels in the same order** on *Tag channels* yourself, then save again. Nothing was published. |
+| `E_FAST_LAYOUT_MISMATCH`, `E_FAST_MARKER_WITHOUT_LAYOUT` | Error | The description is refused by the reader: an acquisition marked `channels_from = "experiment"` lists other channels or another image type than `channel_layout` (`E_FAST_LAYOUT_MISMATCH`), or an acquisition has `channels_from` in a description without `channel_layout` (`E_FAST_MARKER_WITHOUT_LAYOUT`). In a description with `channel_layout` every acquisition must say `channels_from` (`E_MISSING_FIELD`). |
 | `description_unreadable` | Error | `morphobricks.toml` or `morphobricks.records.jsonl` cannot be read. A description the reader refuses is reported with its own code (`E_*`, `R_FILE_SYMLINK`) and table path. |
 | `unreadable_folder` | Error | A folder could not be opened. Check permissions. |
 | `link_outside_folder` | Error | A link in the experiment or masks folder leads outside it (the message names each link and its target), and nothing outside the selected folder is read. Copy or move the files in, or select a folder that holds them, then remove the link. |

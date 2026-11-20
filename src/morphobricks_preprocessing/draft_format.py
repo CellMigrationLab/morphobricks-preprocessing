@@ -1,9 +1,11 @@
 """The bytes of ``morphobricks.draft.json``: written canonically, read strictly (contract 18).
 
-A draft file is one JSON object: ``format``, ``version``, ``base_sha256``, ``spec_commit`` and
+A draft file is one JSON object: ``format``, ``version``, ``base_sha256``, ``spec_commit``,
 seven tables of the user's answers (``conditions``, ``technical_repeats``, ``repeats``,
-``pairing``, ``units``, ``channels``, ``masks``), every key required. Reading never repairs:
-bytes that are not UTF-8 JSON, a duplicate key, ``NaN``, an unknown ``version``, a key the
+``pairing``, ``units``, ``channels``, ``masks``), the fast-mode statement ``channel_layout``
+(``null`` for a strict draft; version 4, Spec ADR 0006) and ``switch_mode`` (true only when the
+user switched a published file between fast and strict mode), every key required. Reading never
+repairs: bytes that are not UTF-8 JSON, a duplicate key, ``NaN``, an unknown ``version``, a key the
 format does not have, a missing key, a value of the wrong type or a date that is not a real
 ``YYYY-MM-DD`` day are refused with :class:`DraftFileError`, whose ``code`` says which.
 Writing is deterministic (sorted keys, two-space indent, LF, a final newline), so saving the
@@ -24,6 +26,7 @@ from .draft_answers import (
     ChannelAnswer,
     ConditionAnswer,
     DraftAnswers,
+    LayoutAnswer,
     MaskAnswer,
     RepeatAnswer,
     UnitAnswer,
@@ -32,10 +35,10 @@ from .draft_answers import (
 from .run.description_file import ABSENT
 
 DRAFT_FORMAT = "morphobricks-description-draft"
-DRAFT_VERSION = 3
+DRAFT_VERSION = 4
 IMAGE_TYPES = ("rgb", "channels")
 """The image types a draft may hold: ``channels`` is the answer "ordinary channel image"."""
-SPEC_COMMIT = "bf68d3032a4548cd908e1d530296fdf22a1a9b7f"
+SPEC_COMMIT = "232fb38880cc487510532d99dc71d46a27005f23"
 """The MorphoBricks-Spec commit the rules of this brick are pinned to (``tests/spec_fixtures``)."""
 BASE_MISSING = "R_DRAFT_BASE_MISSING"
 SHA256 = re.compile(r"[0-9a-f]{64}")
@@ -53,10 +56,14 @@ TOP = (
     "units",
     "channels",
     "masks",
+    "channel_layout",
+    "switch_mode",
 )
 CONDITION_KEYS = ("id", "display_name", "reference", "target", "treatment_key")
 REPEAT_KEYS = ("id", "confirmed_on", "display_name")
-UNIT_KEYS = ("channels", "image_type", "display_name", "rgb_header_override")
+UNIT_KEYS = ("channels", "image_type", "display_name", "rgb_header_override", "channels_from")
+LAYOUT_KEYS = ("channels", "image_type", "confirmed_on")
+CHANNELS_FROM = ("experiment", "unit")
 CHANNEL_KEYS = ("display_name", "header_names")
 MASK_KEYS = ("source_type", "representation", "source_channels", "display_name")
 
@@ -159,11 +166,15 @@ def _units(value: object) -> dict[tuple[str, str, str], UnitAnswer]:
                 kind = _optional(item, "image_type", where)
                 if kind is not None and kind not in IMAGE_TYPES:
                     raise _bad(f"{where}.image_type", f"one of {IMAGE_TYPES} is expected")
+                marker = _optional(item, "channels_from", where)
+                if marker is not None and marker not in CHANNELS_FROM:
+                    raise _bad(f"{where}.channels_from", f"one of {CHANNELS_FROM} is expected")
                 out[(condition, repeat, folder)] = UnitAnswer(
                     _tags(item["channels"], f"{where}.channels"),
                     kind,
                     _optional(item, "display_name", where),
                     _optional_flag(item, "rgb_header_override", where),
+                    marker,
                 )
     return out
 
@@ -205,6 +216,23 @@ def _mask(raw: object, where: str) -> MaskAnswer:
         _optional_texts(item, "source_channels", where),
         _optional(item, "display_name", where),
     )
+
+
+def _layout(value: object) -> LayoutAnswer | None:
+    """Read ``channel_layout``: null (a strict draft) or the user's fast-mode statement."""
+    if value is None:
+        return None
+    item = _table(value, "channel_layout", LAYOUT_KEYS, LAYOUT_KEYS)
+    channels = _texts(item["channels"], "channel_layout.channels")
+    kind = _text(item["image_type"], "channel_layout.image_type")
+    day = _text(item["confirmed_on"], "channel_layout.confirmed_on")
+    if not channels or not all(channels):
+        raise _bad("channel_layout.channels", "a non-empty list of channel IDs is expected")
+    if kind not in IMAGE_TYPES:
+        raise _bad("channel_layout.image_type", f"one of {IMAGE_TYPES} is expected")
+    if not valid_day(day):
+        raise _bad("channel_layout.confirmed_on", f"a real day written YYYY-MM-DD, not {day!r}")
+    return LayoutAnswer(channels, kind, day)
 
 
 def _base(doc: dict) -> str:
@@ -274,7 +302,15 @@ def answers_from_bytes(data: bytes) -> DraftAnswers:
         {k: _channel(v, f"channels.{k}") for k, v in _entries(doc["channels"], "channels").items()},
         {k: _mask(v, f"masks.{k}") for k, v in _entries(doc["masks"], "masks").items()},
         _pairing(doc["pairing"]),
+        _layout(doc["channel_layout"]),
+        _flag(doc["switch_mode"]),
     )
+
+
+def _flag(value: object) -> bool:
+    if not isinstance(value, bool):
+        raise _bad("switch_mode", "true or false is expected")
+    return value
 
 
 def _given(pairs: Mapping[str, object]) -> dict[str, object]:
@@ -302,6 +338,7 @@ def answers_to_bytes(answers: DraftAnswers) -> bytes:
                 "image_type": unit.image_type,
                 "display_name": unit.display_name,
                 "rgb_header_override": unit.rgb_header_override,
+                "channels_from": unit.channels_from,
             }
         )
     pairing: dict[str, dict[str, str]] = {}
@@ -331,6 +368,14 @@ def answers_to_bytes(answers: DraftAnswers) -> bytes:
             k: _lists({f: getattr(v, f) for f in MASK_KEYS})
             for k, v in sorted(answers.masks.items())
         },
+        "channel_layout": None
+        if answers.channel_layout is None
+        else {
+            "channels": list(answers.channel_layout.channels),
+            "image_type": answers.channel_layout.image_type,
+            "confirmed_on": answers.channel_layout.confirmed_on,
+        },
+        "switch_mode": answers.switch_mode,
     }
     try:
         return (json.dumps(doc, ensure_ascii=False, indent=2) + "\n").encode("utf-8")

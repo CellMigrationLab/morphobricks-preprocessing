@@ -24,7 +24,17 @@ from dataclasses import dataclass, field, replace
 from datetime import date
 from types import MappingProxyType
 
-from .description import USED_KINDS, Channel, Condition, Description, Mask, Member, Repeat, Unit
+from .description import (
+    USED_KINDS,
+    Channel,
+    ChannelLayout,
+    Condition,
+    Description,
+    Mask,
+    Member,
+    Repeat,
+    Unit,
+)
 from .description_transition import DATE
 from .draft import Draft, DraftError, OpenQuestion
 
@@ -32,6 +42,8 @@ CHANNELS = "channels"
 """The answer "an ordinary channel image": published as an absent ``image_type`` (§4.4b)."""
 ANSWERED_TYPES = (CHANNELS, "rgb")
 """The image-type answers that count: only an explicit one is published."""
+
+EXPERIMENT, OWN = "experiment", "unit"  # a unit's channels_from in a fast-mode draft (4.4)
 
 UnitKey = tuple[str, str, str]
 """``(condition folder, source repeat folder, technical-repeat folder or "single")``."""
@@ -76,6 +88,21 @@ class UnitAnswer:
     image_type: str | None = None
     display_name: str | None = None
     rgb_header_override: bool | None = None
+    channels_from: str | None = None
+    """``experiment`` (published with the list materialised) or ``unit`` (tagged on its own) in
+    a fast-mode draft, None in a strict one (ADR 0006)."""
+
+
+@dataclass(frozen=True)
+class LayoutAnswer:
+    """The user's fast-mode statement: ``channel_layout`` of experiment-v1 4.3a (ADR 0006).
+
+    The tagged unit's order, its type (``"rgb"`` or ``"channels"``) and the statement's day.
+    """
+
+    channels: tuple[str, ...]
+    image_type: str
+    confirmed_on: str
 
 
 @dataclass(frozen=True)
@@ -117,6 +144,8 @@ class DraftAnswers:
     channels: Mapping[str, ChannelAnswer] = field(default_factory=dict)
     masks: Mapping[str, MaskAnswer] = field(default_factory=dict)
     pairing: Mapping[tuple[str, str], str] = field(default_factory=dict)
+    channel_layout: LayoutAnswer | None = None  # the fast-mode statement; None: strict
+    switch_mode: bool = False  # only the user's switch of a published file's mode (section 10)
 
 
 class DraftIncomplete(DraftError):
@@ -140,6 +169,52 @@ def valid_day(text: str) -> bool:
     except ValueError:
         return False
     return True
+
+
+def fast_units(draft: Draft, answers: DraftAnswers) -> DraftAnswers:
+    """Return a fast-mode draft's answers with every unit not marked ``unit`` following the list.
+
+    Experiment-v1 4.3a and 10 (ADR 0006): a unit marked ``experiment`` and a unit with no answer
+    (a new unit, P15) list the list, marked ``experiment``, never ``unit``. Strict: unchanged.
+    """
+    layout = answers.channel_layout
+    if layout is None:
+        return answers
+    units = dict(answers.units)
+    for key in sorted(_unit_keys(draft)):  # pairing regroups units, never renames them
+        given = units.get(key)
+        if given is not None and (given.channels_from != EXPERIMENT or given.image_type is None):
+            continue  # tagged on its own, or not answered yet: its own questions
+        base = given or UnitAnswer(())
+        units[key] = replace(
+            base,
+            channels=tuple(layout.channels),
+            image_type=layout.image_type,
+            channels_from=EXPERIMENT,
+            rgb_header_override=base.rgb_header_override if layout.image_type == "rgb" else None,
+        )
+    return replace(answers, units=units)
+
+
+def mode_problems(answers: DraftAnswers) -> list[str]:
+    """Name every answer that does not fit the draft's mode (strict or fast, ADR 0006)."""
+    if answers.channel_layout is None:
+        return [
+            f"unit {' / '.join(key)} says channels_from without a channel list"
+            for key, unit in sorted(answers.units.items())
+            if unit.channels_from is not None
+        ]
+    layout = answers.channel_layout
+    out = [
+        f"unit {' / '.join(key)}: channels_from {unit.channels_from!r}"
+        for key, unit in sorted(answers.units.items())
+        if unit.channels_from not in (None, EXPERIMENT, OWN)
+    ]
+    if layout.image_type not in ANSWERED_TYPES or not layout.channels:
+        out.append("the channel list needs at least one channel and an answered image type")
+    if not valid_day(layout.confirmed_on):
+        out.append(f"the channel list's date {layout.confirmed_on!r} is not a real day")
+    return out
 
 
 def _unit_keys(draft: Draft) -> set[UnitKey]:
@@ -236,6 +311,9 @@ def apply_answers(draft: Draft, answers: DraftAnswers) -> Draft:
     unknown = _unknown_keys(draft, answers)
     if unknown:
         raise DraftError(f"the draft has no {', '.join(unknown)}", ("unknown_key",))
+    wrong = mode_problems(answers)
+    if wrong:
+        raise DraftError("; ".join(wrong), ("channels_from_without_layout",))
     twice = _repeated_tags(answers.units)
     if twice:
         raise DraftError(
@@ -368,6 +446,7 @@ def missing_confirmations(
     ``unit_channel_count_unknown``. :func:`.run.draft_file.publish_draft` always gives them.
     """
     out = list(draft.open_questions())
+    answers = fast_units(draft, answers)
     declared = set(answers.channels)
     undeclared: set[str] = set()
     checked = channel_counts is not None
@@ -418,6 +497,7 @@ def _repeat(draft: Draft, label: str, answers: DraftAnswers) -> Repeat:
                 given.display_name,
                 kind,
                 given.rgb_header_override,
+                given.channels_from,
             )
         members[cid] = Member(member.source_repeat, member.image_count, units)
     shown = answers.repeats.get(label, RepeatAnswer()).display_name
@@ -449,6 +529,7 @@ def description_from_draft(
     questions = missing_confirmations(applied, answers, channel_counts=channel_counts)
     if questions:
         raise DraftIncomplete(questions)
+    answers = fast_units(applied, answers)
     conditions = {}
     for folder, slot in applied.conditions.items():
         answer = answers.conditions.get(folder, ConditionAnswer())
@@ -479,7 +560,16 @@ def description_from_draft(
             )
             for key, m in answers.masks.items()
         },
+        channel_layout=_layout(answers.channel_layout),
     )
+
+
+def _layout(answer: LayoutAnswer | None) -> ChannelLayout | None:
+    """Return the description's ``channel_layout`` of the statement (None: a strict file)."""
+    if answer is None:
+        return None
+    kind = None if answer.image_type == CHANNELS else answer.image_type
+    return ChannelLayout(tuple(answer.channels), answer.confirmed_on, kind)
 
 
 __all__ = [
@@ -489,6 +579,9 @@ __all__ = [
     "ConditionAnswer",
     "DraftAnswers",
     "DraftIncomplete",
+    "EXPERIMENT",
+    "LayoutAnswer",
+    "OWN",
     "MaskAnswer",
     "RepeatAnswer",
     "UnitAnswer",
@@ -497,6 +590,8 @@ __all__ = [
     "carry_over",
     "confirm_repeat",
     "description_from_draft",
+    "fast_units",
     "missing_confirmations",
+    "mode_problems",
     "valid_day",
 ]

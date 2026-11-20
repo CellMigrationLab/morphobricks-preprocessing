@@ -50,6 +50,8 @@ class Code(StrEnum):
     E_RGB_TOKEN_MISUSE = "E_RGB_TOKEN_MISUSE"
     E_RGB_ALIAS = "E_RGB_ALIAS"
     E_RGB_OVERRIDE_WITHOUT_RGB = "E_RGB_OVERRIDE_WITHOUT_RGB"
+    E_FAST_LAYOUT_MISMATCH = "E_FAST_LAYOUT_MISMATCH"
+    E_FAST_MARKER_WITHOUT_LAYOUT = "E_FAST_MARKER_WITHOUT_LAYOUT"
     E_DISPLAY_NAME_COLLISION = "E_DISPLAY_NAME_COLLISION"
     E_USED_ID_MISSING = "E_USED_ID_MISSING"
     E_SOURCE_FOLDER_REUSED = "E_SOURCE_FOLDER_REUSED"
@@ -110,9 +112,25 @@ REPRESENTATIONS = ("instances", "binary", "parent_labels")
 IMAGE_TYPES = ("rgb",)
 RGB_HEADER_OVERRIDE = "rgb_header_override"
 """The optional boolean unit key of amendment RH1 (section 4.4b): only on an ``rgb`` unit."""
+CHANNEL_LAYOUT = "channel_layout"
+"""The optional top-level table of fast mode (section 4.3a, ADR 0006): present, the file is a
+fast-mode file; absent, a strict per-unit file. No reader ever supplies it."""
+CHANNELS_FROM = "channels_from"
+"""The unit key of fast mode (section 4.4, ADR 0006): how the unit's list was confirmed."""
+CHANNELS_FROM_VALUES = ("experiment", "unit")
+"""The exact, lower-case values of ``channels_from``; never case-folded."""
 
 TOP = TableSpec(
-    ("schema", "schema_version", "conditions", "channels", "repeats", "masks", "used_ids"),
+    (
+        "schema",
+        "schema_version",
+        "conditions",
+        "channels",
+        "channel_layout",
+        "repeats",
+        "masks",
+        "used_ids",
+    ),
     frozenset({"schema", "schema_version", "conditions", "channels", "repeats", "used_ids"}),
 )
 CONDITION = TableSpec(
@@ -129,9 +147,23 @@ MEMBER = TableSpec(
     frozenset({"source_repeat", "image_count", "technical_repeats"}),
 )
 UNIT = TableSpec(
-    ("source_folder", "display_name", "channels", "image_type", "rgb_header_override"),
+    (
+        "source_folder",
+        "display_name",
+        "channels",
+        "channels_from",
+        "image_type",
+        "rgb_header_override",
+    ),
     frozenset({"source_folder", "channels"}),
 )
+"""``channels_from`` is required on every unit of a fast-mode file only, so the phase-3 check
+adds that requirement itself (section 4.4, ADR 0006)."""
+LAYOUT = TableSpec(
+    ("channels", "image_type", "confirmed_on"),
+    frozenset({"channels", "confirmed_on"}),
+)
+"""``channel_layout`` (section 4.3a, ADR 0006): ``rgb_header_override`` is not a field of it."""
 MASK = TableSpec(
     ("source_type", "representation", "source_channels", "display_name"),
     frozenset({"source_type", "representation"}),

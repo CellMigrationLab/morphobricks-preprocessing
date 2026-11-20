@@ -27,6 +27,10 @@ from test_notebook_check_save import KINDS, answer_all, exp  # noqa: F401
 pytest.importorskip("ipywidgets")
 pytest.importorskip("matplotlib")
 
+HEADER_REFUSAL = "R_FAST_LAYOUT_CONTRADICTION"
+"""The notebook publishes fast mode by default (Spec ADR 0006): a header that contradicts the
+experiment list in a unit that follows it is this one refusal, not R_HEADER_CONTRADICTION."""
+
 from morphobricks_preprocessing import notebook_check_save  # noqa: E402
 from morphobricks_preprocessing import notebook_style as ui  # noqa: E402
 from test_notebook_axes_quick import stepper  # noqa: E402
@@ -97,7 +101,9 @@ def _dates(nb):
 
 
 def _published_dates(folders):
+    """The repeats' dates (a fast-mode file's channel_layout has a date of its own)."""
     text = (folders[2] / "morphobricks.toml").read_text(encoding="utf-8")
+    text = re.sub(r"\[channel_layout\]\n(?:.+\n)*", "", text)
     return re.findall(r'confirmed_on = "([0-9-]+)"', text)
 
 
@@ -114,7 +120,7 @@ def test_d_a_header_change_shows_its_refusal_at_once_and_reopens_nothing(exp, mo
     assert "headers changed: ctrl/rep1" in nb.folder_changes.value
     shown = _text(nb.checks.value)
     assert "The images contradict it: the run would stop" in shown
-    assert "R_HEADER_CONTRADICTION" in shown and "&#x27;Hoechst&#x27;" in shown
+    assert HEADER_REFUSAL in shown and "&#x27;Hoechst&#x27;" in shown
     assert "can start" not in nb.save_status.value and nb.run_button.disabled
 
 
@@ -269,6 +275,7 @@ def test_the_cli_says_nothing_changed_when_the_headers_are_as_saved(exp, capsys)
 # --- item 2: Save allowed, the refusal said beside the button -------------------------------------
 
 
+@pytest.mark.usefixtures("statement_off")  # strict mode: the owner decision of 10 November 2026
 def test_save_stays_allowed_beside_a_line_saying_the_run_will_stop_and_why(exp):  # noqa: F811
     _saved_then_rewritten(exp)
     nb = stepper(*exp)

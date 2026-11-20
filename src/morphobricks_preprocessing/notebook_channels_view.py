@@ -8,7 +8,7 @@ cell, a label used in only some units) and is not in the palette.
 from __future__ import annotations
 
 import html
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Protocol
 
 import ipywidgets as widgets
@@ -71,10 +71,48 @@ def save_change(store: AnswerStore, change: Change) -> bool:
     The store's ``change`` applies it to the draft and to the strict page's draft; a store
     without one saves ``change(answers)``. ``ValueError`` from the change is the caller's.
     """
+    before = store.answers().units
     apply = getattr(store, "change", None)
-    if apply is not None:
-        return bool(apply(change))
-    return store.update(change(store.answers()))
+    ok = bool(apply(change)) if apply is not None else store.update(change(store.answers()))
+    if ok:
+        note_user_units(store, before, store.answers().units)
+    return ok
+
+
+USER_UNITS = "fast_mode_user_units"
+"""The store attribute holding the units a user's save changed (fast mode, ADR 0006)."""
+
+
+def _answer_of(unit: object) -> tuple:
+    """Return what the user answers about a unit: its tags, and its image type with override."""
+    if unit is None:
+        return ((), (None, None))
+    return (tuple(unit.channels), (unit.image_type, unit.rgb_header_override))
+
+
+def note_user_units(store: AnswerStore, before: Mapping, after: Mapping) -> None:
+    """Note, per unit, which of its answers a user's save changed: ``tags`` or ``type``.
+
+    Fast mode (Spec ADR 0006, section 10): only the user's action makes a unit ``unit``
+    (:func:`.fast_statement.with_statement`), and every per-unit answer is such an action for
+    what it changed: a tag (also a label list that untags it), an image type, the RGB header
+    override, *Use for all folders*. A save with no click (:func:`save_unattended`) is never
+    noted.
+    """
+    noted = getattr(store, USER_UNITS, None)
+    if noted is None:
+        noted = {}
+        setattr(store, USER_UNITS, noted)
+    for key in set(before) | set(after):
+        old, new = _answer_of(before.get(key)), _answer_of(after.get(key))
+        for name, a, b in (("tags", old[0], new[0]), ("type", old[1], new[1])):
+            if a != b:
+                noted.setdefault(key, set()).add(name)
+
+
+def user_units(store: AnswerStore, what: str) -> frozenset:
+    """Return the units whose ``tags`` or ``type`` a user's save changed this session."""
+    return frozenset(k for k, names in getattr(store, USER_UNITS, {}).items() if what in names)
 
 
 def save_unattended(store: AnswerStore, new: DraftAnswers) -> bool:

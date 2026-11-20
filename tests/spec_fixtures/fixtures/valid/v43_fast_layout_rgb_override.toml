@@ -1,0 +1,85 @@
+# Fixture v43_fast_layout_rgb_override
+# Expected: PASS
+# Source: ADR 0006 (owner decisions FC1-FC4, 16 November 2026)
+# Fast mode for an RGB experiment: `channel_layout` declares `image_type = "rgb"` with R, G, B, materialised in every unit. The CTRL units also declare the RH1 key `rgb_header_override = true` on their own (scanner TIFFs whose header says MINISBLACK with three interleaved samples): the key stays per unit, is never inferred and is not part of `channel_layout`. Homogeneous: the effective type of every unit is rgb.
+schema = "morphobricks-experiment"
+schema_version = 1
+
+[conditions.CTRL]
+source_folder = "CTRL"
+display_name = "Control"
+
+[conditions.DrugA]
+source_folder = "DrugA"
+display_name = "Drug A"
+reference = "CTRL"
+
+[channels.R]
+display_name = "Red"
+
+[channels.G]
+display_name = "Green"
+
+[channels.B]
+display_name = "Blue"
+
+[channel_layout]
+channels = ["R", "G", "B"]
+image_type = "rgb"
+confirmed_on = "2026-11-16"
+
+[repeats.rep1]
+confirmed = true
+confirmed_on = "2026-11-16"
+
+[repeats.rep1.members.CTRL]
+source_repeat = "rep1"
+image_count = 8
+
+[repeats.rep1.members.CTRL.technical_repeats.single]
+source_folder = "single"
+channels = ["R", "G", "B"]
+channels_from = "experiment"
+image_type = "rgb"
+rgb_header_override = true
+
+[repeats.rep1.members.DrugA]
+source_repeat = "rep1"
+image_count = 8
+
+[repeats.rep1.members.DrugA.technical_repeats.single]
+source_folder = "single"
+channels = ["R", "G", "B"]
+channels_from = "experiment"
+image_type = "rgb"
+
+[repeats.rep2]
+confirmed = true
+confirmed_on = "2026-11-16"
+
+[repeats.rep2.members.CTRL]
+source_repeat = "rep2"
+image_count = 8
+
+[repeats.rep2.members.CTRL.technical_repeats.single]
+source_folder = "single"
+channels = ["R", "G", "B"]
+channels_from = "experiment"
+image_type = "rgb"
+rgb_header_override = true
+
+[repeats.rep2.members.DrugA]
+source_repeat = "rep2"
+image_count = 8
+
+[repeats.rep2.members.DrugA.technical_repeats.single]
+source_folder = "single"
+channels = ["R", "G", "B"]
+channels_from = "experiment"
+image_type = "rgb"
+
+[used_ids]
+conditions = ["CTRL", "DrugA"]
+channels = ["B", "G", "R"]
+repeats = ["rep1", "rep2"]
+technical_repeats = ["single"]

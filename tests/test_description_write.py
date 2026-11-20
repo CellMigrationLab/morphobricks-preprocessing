@@ -91,7 +91,8 @@ def test_the_bytes_follow_the_layout_of_section_9_1(item):
     assert first == ['schema = "morphobricks-experiment"', "schema_version = 1"]
     order = [head.split(".")[0] for head in heads]
     assert order == sorted(
-        order, key=["conditions", "channels", "repeats", "masks", "used_ids"].index
+        order,
+        key=["conditions", "channels", "channel_layout", "repeats", "masks", "used_ids"].index,
     )
 
 

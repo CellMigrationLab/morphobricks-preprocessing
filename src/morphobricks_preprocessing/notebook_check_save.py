@@ -47,6 +47,7 @@ from .notebook_check_view import (
     changes_html,
     checks_html,
     comparisons_html,
+    fast_block_html,
     names_html,
     removal_text,
     run_stop_html,
@@ -217,9 +218,13 @@ class _CheckSaveScreen(_ReplicateBoxes):
             self._check = self._candidate_check(answers)
         self.todo.value = todo_html(*todo)
         self.checks.value = checks_html(self._check) or self._blocked(state)
-        ready = self._check is not None and self._check.can_save and not self._moves_open()
+        ready = self._check is not None and self._check.can_publish and not self._moves_open()
         self.save_button.disabled = not ready or self._saved_current()
-        self.save_note.value = "" if self.save_button.disabled else run_stop_html(self._check)
+        self.save_note.value = (
+            fast_block_html(self._check)
+            if self.save_button.disabled
+            else run_stop_html(self._check)
+        )
         ui.set_visible(self.save_note, bool(self.save_note.value))
         self.save_blocker.value = blocked_line(self._save_blockers(todo))
         self._show_saved_state()
@@ -232,9 +237,11 @@ class _CheckSaveScreen(_ReplicateBoxes):
         if missing:  # and the Channels questions waiting, so none is found only afterwards
             line = f"{plural(missing, 'answer')} still missing (listed above the button)"
             return [line, *self._open_change_lines()]
+        fast = () if self._check is None else self._check.fast_refusals
         return (
             self._open_change_lines()
             or self._unseen_lines()
+            or (["fast mode: every image must fit the channel list (listed below)"] if fast else [])
             or ["these answers are refused: see the red message above the button"]
         )
 

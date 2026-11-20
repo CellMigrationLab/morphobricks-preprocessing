@@ -248,6 +248,7 @@ def publish_draft(
             confirmations=confirmations,
             removals=removals,
             recorded_on=recorded_on,
+            switch_mode=resumed.answers.switch_mode,
         )
         write_derived_design(candidate, folder / DESIGN_FILENAME)
         (folder / DRAFT_FILENAME).unlink()

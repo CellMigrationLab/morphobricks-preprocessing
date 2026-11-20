@@ -1672,3 +1672,16 @@ Raised during review; to be decided before the milestones that need them:
     the refusal is the existing `A_MASK_UNCHECKED` (ADR 0005 adds no `A_*` code, and names
     `A_MASK_UNCHECKED` as the refusal of a file the mask step has not checked), with its own
     message naming the cause and the fix: run the masks step again.
+84. Fast mode (MorphoBricks-Spec ADR 0006, accepted 20 November 2026, merge `232fb38`): may a
+    fast-mode description that the images contradict be published? *Decided (owner, 20
+    November 2026):* in fast mode the notebook always **saves the draft** (every answer is
+    kept), but **publishing** a fast-mode description is refused while any contradiction is
+    shown: an image that contradicts the experiment channel list
+    (`R_FAST_LAYOUT_CONTRADICTION`) or an image not checked against it (axis roles not
+    confirmed, a header that cannot be read or does not state the channel count), ADR 0006
+    section 10. The *Check and save* screen lists every reason beside the disabled button,
+    with the fix (tag those units on their own). Strict mode keeps the decision of 10
+    November 2026 unchanged: a valid description may be saved even when the run's checks
+    would refuse it, and the user is told the run will stop. *Encoding choices of this
+    brick:* `CandidateCheck.fast_refusals` and `can_publish`; the notebook's save button
+    follows `can_publish`; `describe --publish` refuses the same cases.

@@ -204,6 +204,7 @@ class _ChannelsStep:
 
     def _types_changed(self) -> None:
         """Redraw the grid after an image type (its rows hold the type cells)."""
+        self.channel_grid.matrix.sync_statement()  # the statement's type is the lead's (ADR 0006)
         if self._stains_not_applicable != self.channel_labels.not_applicable:
             self._channel_labels_changed()  # every folder became colour, or no longer is
         else:

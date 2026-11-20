@@ -12,23 +12,62 @@ from collections.abc import Mapping
 
 from .description_identity import USED_KINDS, nfc
 from .description_report import Issues, key_path
-from .description_rules import RGB_HEADER_OVERRIDE, RGB_TOKENS, Code
+from .description_rules import (
+    CHANNEL_LAYOUT,
+    CHANNELS_FROM,
+    RGB_HEADER_OVERRIDE,
+    RGB_TOKENS,
+    Code,
+)
 from .description_walk import Table, member_path, members, unit_path, units
 
 
+def _channel_list(doc: Table, table: Table, path: str, out: Issues) -> None:
+    """Check one ordered list: declared, not repeated, and the RGB rules of section 4.4b.
+
+    The rules of a unit's ``channels``, which the fast-mode list follows too (section 4.3a).
+    """
+    listed = table["channels"]
+    seen: set[str] = set()
+    for index, channel in enumerate(listed):
+        if channel not in doc["channels"]:
+            out.add(Code.E_UNKNOWN_CHANNEL, f"{path}.channels[{index}]", channel)
+        if channel in seen:
+            out.add(Code.E_DUPLICATE_CHANNEL_IN_UNIT, f"{path}.channels[{index}]", channel)
+        seen.add(channel)
+    if table.get("image_type") == "rgb":
+        if listed != list(RGB_TOKENS):
+            out.add(Code.E_RGB_UNIT_CHANNELS, f"{path}.channels", listed)
+        return
+    for index, channel in enumerate(listed):
+        if channel.casefold() in {token.casefold() for token in RGB_TOKENS}:
+            out.add(Code.E_RGB_TOKEN_MISUSE, f"{path}.channels[{index}]", channel)
+
+
+def _fast_marker(layout: Table | None, table: Table, path: str, out: Issues) -> None:
+    """Check ``channels_from`` against ``channel_layout`` (section 4.3a, ADR 0006).
+
+    The marker exists only in a fast-mode file, and a unit that follows the experiment list
+    lists it exactly, with the same image type: the materialised copy is checked, never
+    trusted.
+    """
+    if CHANNELS_FROM in table and layout is None:
+        out.add(Code.E_FAST_MARKER_WITHOUT_LAYOUT, f"{path}.{CHANNELS_FROM}", table[CHANNELS_FROM])
+    if layout is not None and table.get(CHANNELS_FROM) == "experiment":
+        mine = (table["channels"], table.get("image_type"))
+        if mine != (layout["channels"], layout.get("image_type")):
+            out.add(Code.E_FAST_LAYOUT_MISMATCH, path, mine)
+
+
 def _unit_channels(doc: Table, out: Issues) -> None:
-    """Check that unit channels are declared, not repeated, and follow the RGB rules (4.4b)."""
-    channels = doc["channels"]
+    """Check the fast-mode list and every unit's list, marker and RH1 key."""
+    layout = doc.get(CHANNEL_LAYOUT)
+    if layout is not None:
+        _channel_list(doc, layout, CHANNEL_LAYOUT, out)
     for repeat, condition, unit, table in units(doc):
         path = unit_path(repeat, condition, unit)
-        listed = table["channels"]
-        seen: set[str] = set()
-        for index, channel in enumerate(listed):
-            if channel not in channels:
-                out.add(Code.E_UNKNOWN_CHANNEL, f"{path}.channels[{index}]", channel)
-            if channel in seen:
-                out.add(Code.E_DUPLICATE_CHANNEL_IN_UNIT, f"{path}.channels[{index}]", channel)
-            seen.add(channel)
+        _fast_marker(layout, table, path, out)
+        _channel_list(doc, table, path, out)
         if RGB_HEADER_OVERRIDE in table and table.get("image_type") != "rgb":
             # RH1: present with any value, true or false, only beside image_type = "rgb"
             out.add(
@@ -36,13 +75,6 @@ def _unit_channels(doc: Table, out: Issues) -> None:
                 f"{path}.{RGB_HEADER_OVERRIDE}",
                 table[RGB_HEADER_OVERRIDE],
             )
-        if table.get("image_type") == "rgb":
-            if listed != list(RGB_TOKENS):
-                out.add(Code.E_RGB_UNIT_CHANNELS, f"{path}.channels", listed)
-            continue
-        for index, channel in enumerate(listed):
-            if channel.casefold() in {token.casefold() for token in RGB_TOKENS}:
-                out.add(Code.E_RGB_TOKEN_MISUSE, f"{path}.channels[{index}]", channel)
 
 
 def _channel_tables(doc: Table, out: Issues) -> None:

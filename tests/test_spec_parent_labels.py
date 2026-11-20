@@ -46,7 +46,7 @@ from spec_pin import all_fixtures, fixtures, read_pin
 
 VALID = {item.name.split("_")[0]: item for item in fixtures("valid")}
 INVALID = {item.name.split("_")[0]: item for item in fixtures("invalid")}
-PINNED = "bf68d3032a4548cd908e1d530296fdf22a1a9b7f"  # the ADR 0005 merge, a descendant of PL1's
+PINNED = "232fb38880cc487510532d99dc71d46a27005f23"  # ADR 0006 accepted (Spec #53), after PL1
 EMPTY = DraftAnswers(ABSENT, SPEC_COMMIT)
 GROUPS = Capabilities(parent_labels_support=True)
 

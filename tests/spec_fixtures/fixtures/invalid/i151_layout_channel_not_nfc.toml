@@ -1,0 +1,83 @@
+# Fixture i151_layout_channel_not_nfc
+# Expected: E_ID_NOT_NFC
+# Paths: E_ID_NOT_NFC channel_layout.channels[1]
+# Source: ADR 0006 (owner decisions FC1-FC4, 16 November 2026)
+# v41 whose `channel_layout.channels` lists "ACTIN\u0301" (decomposed): an entry of the experiment list is a channel reference, checked for NFC in phase 4 and not reported as E_UNKNOWN_CHANNEL or E_FAST_LAYOUT_MISMATCH (phase 5); never normalized.
+schema = "morphobricks-experiment"
+schema_version = 1
+
+[conditions.CTRL]
+source_folder = "CTRL"
+display_name = "Control"
+
+[conditions.DrugA]
+source_folder = "DrugA"
+display_name = "Drug A"
+reference = "CTRL"
+
+[channels.DNA]
+display_name = "Nuclei stain"
+header_names = ["DAPI", "Hoechst 33342"]
+
+[channels.ACTIN]
+display_name = "F-actin"
+header_names = ["Phalloidin-488"]
+
+[channel_layout]
+channels = ["DNA", "ACTIN\u0301"]
+confirmed_on = "2026-11-16"
+
+[repeats.rep1]
+confirmed = true
+confirmed_on = "2026-11-16"
+
+[repeats.rep1.members.CTRL]
+source_repeat = "rep1"
+image_count = 12
+
+[repeats.rep1.members.CTRL.technical_repeats.acquisition_1]
+source_folder = "acquisition_1"
+channels = ["DNA", "ACTIN"]
+channels_from = "experiment"
+
+[repeats.rep1.members.CTRL.technical_repeats.acquisition_2]
+source_folder = "acquisition_2"
+channels = ["DNA", "ACTIN"]
+channels_from = "experiment"
+
+[repeats.rep1.members.DrugA]
+source_repeat = "rep1"
+image_count = 11
+
+[repeats.rep1.members.DrugA.technical_repeats.single]
+source_folder = "single"
+channels = ["DNA", "ACTIN"]
+channels_from = "experiment"
+
+[repeats.rep2]
+confirmed = true
+confirmed_on = "2026-11-16"
+
+[repeats.rep2.members.CTRL]
+source_repeat = "rep2"
+image_count = 10
+
+[repeats.rep2.members.CTRL.technical_repeats.single]
+source_folder = "single"
+channels = ["DNA", "ACTIN"]
+channels_from = "experiment"
+
+[repeats.rep2.members.DrugA]
+source_repeat = "rep2"
+image_count = 10
+
+[repeats.rep2.members.DrugA.technical_repeats.single]
+source_folder = "single"
+channels = ["DNA", "ACTIN"]
+channels_from = "unit"
+
+[used_ids]
+conditions = ["CTRL", "DrugA"]
+channels = ["ACTIN", "DNA"]
+repeats = ["rep1", "rep2"]
+technical_repeats = ["acquisition_1", "acquisition_2", "single"]
