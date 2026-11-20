@@ -24,7 +24,7 @@
   **different image types** (RGB beside ordinary channel units, fixture `v29`) (§4.4b, §8). It
   replaces "Stage 1-2 only: the units do not all have the same ordered list".
 - **Amended** on 16 November 2026 (owner decisions FC1-FC4,
-  [ADR 0006](adr/0006-fast-channel-layout.md), proposed): **fast mode**, one ordered channel list
+  [ADR 0006](adr/0006-fast-channel-layout.md), accepted 20 November 2026): **fast mode**, one ordered channel list
   stated once for the experiment in the optional top-level table `channel_layout`, materialised in
   every unit, each unit saying how its list was confirmed (`channels_from`); a contradicting image is
   refused before any pixel read (`R_FAST_LAYOUT_CONTRADICTION`). A file without the table is a strict

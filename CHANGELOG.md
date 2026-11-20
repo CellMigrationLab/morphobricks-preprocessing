@@ -9,8 +9,8 @@ v0.5.1: no run before v0.5.1 is read.)
 ## Unreleased
 
 **Fast mode (Spec ADR 0006, owner decisions FC1-FC4), reader and image checks.** The Spec pin
-moves from `bf68d30` to `43d7a77` (MorphoBricks-Spec `main`, with the ADR 0006 amendment of
-experiment-v1). No format version changes: experiment-v1 stays version 1 (an amendment, like
+moves from `bf68d30` to `232fb38` (MorphoBricks-Spec `main`: the ADR 0006 amendment of
+experiment-v1, accepted by the owner on 20 November 2026, Spec #53). No format version changes: experiment-v1 stays version 1 (an amendment, like
 PL1 and RH1), the run manifest stays version 5 (additive unit keys). Drafts written under the
 old pin are refused with `spec_commit_mismatch`, as at every re-pin.
 
