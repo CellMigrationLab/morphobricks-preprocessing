@@ -96,6 +96,9 @@ def test_a_removal_does_not_accept_a_header_name_lost_in_a_folder_still_there(ex
     assert nb._published().description.channels["DNA"].header_names == published
 
 
+@pytest.mark.usefixtures(
+    "statement_off"
+)  # strict mode: saving beside the run's refusal (10 November)
 def test_without_the_tag_change_the_removal_saves(exp):  # noqa: F811
     # The way out the reason names: DNA keeps its saved names, so only the removal changes it
     # (the run then stops on the header itself, R_HEADER_CONTRADICTION, as without a removal).

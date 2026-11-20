@@ -8,9 +8,9 @@ day of the user's action (given by the caller, kept byte for byte while the list
 the same, experiment-v1 4.3a). Each unit says how its list was confirmed (``channels_from``):
 
 - ``unit`` only by the user's action (ADR 0006, section 10: "the draft never sets ``unit`` on
-  its own"): a unit the user switched to tagging on its own, one whose cells the user clicked
-  to other tags or another type than the list's, or one already marked ``unit`` when the page
-  opened (a saved marker is never turned back here);
+  its own"): a unit the user switched to tagging on its own, one the user's own answer (a tag,
+  an image type, the RGB header override) gave other tags or another type than the list's,
+  or one already marked ``unit`` when the page opened (a saved marker is never turned back);
 - ``experiment`` otherwise, also for a unit tagged from its header names with no click whose
   tags differ from the list: it is published following the list, and its images are refused
   at the check (``R_FAST_LAYOUT_CONTRADICTION``, for example ``header_order``) until the user
@@ -73,8 +73,7 @@ def with_statement(
     layouts: Sequence[UnitLayout],
     lead: UnitLayout | None,
     template: Sequence[str | None],
-    own: Collection[UnitKey],
-    clicked: Collection[UnitKey] = (),
+    users: tuple[Collection[UnitKey], Collection[UnitKey], Collection[UnitKey]],
     *,
     ticked: bool,
     day: str,
@@ -92,17 +91,17 @@ def with_statement(
         units only, or none).
     template
         The first layout's row of tags (the list, in source order).
-    own
-        The units tagged on their own: switched so this session, or marked ``unit`` when the
-        page opened.
-    clicked
-        The units whose cells the user clicked this session (a user's tag, never a no-click
-        tag from header names).
+    users
+        The user's actions, as three sets of units: tagged on their own (switched so this
+        session, or marked ``unit`` when the page opened); whose tags a user's save changed
+        (never a no-click tag from header names); whose image type (or RGB header override) a
+        user's save changed.
     ticked
         Whether the statement is ticked.
     day
         The day of the user's action (``YYYY-MM-DD``), used only when the list or type changes.
     """
+    own, clicked, typed = users
     published = published_fast(answers)
     switch = published is not None and published != ticked
     if not ticked:
@@ -117,13 +116,17 @@ def with_statement(
     units = dict(answers.units)
     for layout in layouts:
         unit = units.get(layout.key)
-        if unit is None or None in tags_of(layout, unit) or not unit.channels:
+        if unit is None:
+            continue
+        if None in tags_of(layout, unit) or not unit.channels:
+            units[layout.key] = replace(unit, channels_from=None)  # not answered yet
             continue
         if unit.image_type is None:
             units[layout.key] = replace(unit, channels_from=None)  # not answered yet
             continue
-        same = tuple(unit.channels) == channels and unit.image_type == kind
-        follows = layout.key not in own and (same or layout.key not in clicked)
+        tags_own = tuple(unit.channels) != channels and layout.key in clicked
+        type_own = unit.image_type != kind and layout.key in typed
+        follows = layout.key not in own and not tags_own and not type_own
         units[layout.key] = replace(unit, channels_from=EXPERIMENT if follows else OWN)
     return replace(answers, channel_layout=statement, units=units, switch_mode=switch)
 

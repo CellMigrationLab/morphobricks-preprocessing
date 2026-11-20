@@ -29,6 +29,7 @@ from .description_transition import Reconfirmation
 from .description_write import canonical_bytes
 from .design import DesignFormatError
 from .design_derive import derive_design
+from .fast_layout import FAST_LAYOUT_CONTRADICTION
 from .physical_check import HETEROGENEOUS_LAYOUT
 from .run.description_file import transition_refusals
 from .run.description_run import RunDescription, check_description
@@ -72,6 +73,32 @@ class CandidateCheck:
     physical_run: bool = False
     changes: tuple[str, ...] = ()
     warnings: tuple[ValidationIssue, ...] = ()
+    unchecked: tuple[str, ...] = ()
+    """Images the physical checks could not check (header unreadable, count not stated)."""
+
+    @property
+    def fast_refusals(self) -> tuple[str, ...]:
+        """Why a fast-mode description may not be published yet (owner, 20 November 2026).
+
+        ADR 0006 section 10: in fast mode the draft is always saved, but publishing is refused
+        while any image contradicts the list (``R_FAST_LAYOUT_CONTRADICTION``) or is not
+        checked against it. Empty for a strict file (its 10 November behaviour is unchanged).
+        """
+        if self.description is None or not self.description.fast_mode:
+            return ()
+        out = [i.message for i in self.run_refusals if i.code == FAST_LAYOUT_CONTRADICTION]
+        if not self.physical_run:
+            out.append(
+                "the images are not checked against the channel list yet: confirm the axis "
+                "roles (step 2)"
+            )
+        out += [f"not checked against the channel list: {path}" for path in self.unchecked]
+        return tuple(out)
+
+    @property
+    def can_publish(self) -> bool:
+        """True when the description may be published: valid, and in fast mode checked."""
+        return self.can_save and not self.fast_refusals
 
     @property
     def can_save(self) -> bool:
@@ -147,7 +174,10 @@ def check_candidate(
     except DesignFormatError as exc:
         changes = [f"cannot be derived: {exc}"]
     physical = checked.physical is not None
-    return CandidateCheck(parsed, refused, tuple(problems), physical, tuple(changes), warned)
+    unchecked = checked.physical.unchecked if physical else ()
+    return CandidateCheck(
+        parsed, refused, tuple(problems), physical, tuple(changes), warned, tuple(unchecked)
+    )
 
 
 __all__ = ["CandidateCheck", "check_candidate", "transition_issue"]

@@ -275,6 +275,7 @@ def test_the_cli_says_nothing_changed_when_the_headers_are_as_saved(exp, capsys)
 # --- item 2: Save allowed, the refusal said beside the button -------------------------------------
 
 
+@pytest.mark.usefixtures("statement_off")  # strict mode: the owner decision of 10 November 2026
 def test_save_stays_allowed_beside_a_line_saying_the_run_will_stop_and_why(exp):  # noqa: F811
     _saved_then_rewritten(exp)
     nb = stepper(*exp)

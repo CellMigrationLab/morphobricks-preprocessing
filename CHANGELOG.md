@@ -62,6 +62,16 @@ old pin are refused with `spec_commit_mismatch`, as at every re-pin.
   "experiment"` and the list materialised; a contradicting one is refused at the run
   (`R_FAST_LAYOUT_CONTRADICTION`), never switched to `unit` by the draft.
 
+- **Publishing fast mode needs every image checked (owner decision of 20 November 2026,
+  plan §12 item 84).** In fast mode the notebook always saves the draft, but *Check and save*
+  refuses to publish while any image contradicts the channel list
+  (`R_FAST_LAYOUT_CONTRADICTION`) or is not checked against it, listing every reason
+  (`CandidateCheck.fast_refusals`, `can_publish`). Strict mode is unchanged (10 November
+  2026: it saves, and says the run will stop).
+- **Only the user's action marks a unit `unit`:** a tag, an image type or the RGB header
+  override the user answers for that unit (`notebook_channels_view.note_user_units`); a
+  no-click tag from header names never does.
+
 ### Changed
 
 - **Draft file version 4** (`morphobricks.draft.json`): the keys `channel_layout` and

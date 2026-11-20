@@ -168,6 +168,30 @@ def run_stop_html(check: CandidateCheck | None) -> str:
     )
 
 
+def fast_block_html(check: object) -> str:
+    """Return why a fast-mode description cannot be published yet, else "".
+
+    Owner decision of 20 November 2026 (ADR 0006 section 10): in fast mode the answers are
+    always saved in the draft, but publishing is refused while any image contradicts the
+    channel list or is not checked against it; every reason is listed, with the fix.
+    """
+    reasons = () if check is None else check.fast_refusals
+    if not reasons:
+        return ""
+    return ui.status(
+        "error",
+        "Not publishable in fast mode yet: every image must fit the channel list.",
+        [
+            *(html.escape(r) for r in reasons),
+            html.escape(
+                "Your answers are kept in the draft. Tag the units of these images on their own "
+                "(or fix the images), then check and save again."
+            ),
+        ],
+        raw=True,
+    )
+
+
 def saved_html(when: str, run_allowed: bool, roles_confirmed: bool) -> str:
     """Say that the description is saved, and that the run can start only once it can.
 

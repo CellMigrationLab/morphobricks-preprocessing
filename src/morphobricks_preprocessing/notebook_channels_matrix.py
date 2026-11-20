@@ -67,6 +67,7 @@ from .notebook_channels_view import (
     restore_strict,
     save_unattended,
     unit_name,
+    user_units,
 )
 from .notebook_values import natural_key
 
@@ -171,8 +172,11 @@ class TagMatrix:
             self.grid.layouts,
             lead,
             self.template(groups[0]) if groups else (),
-            self.own | self.marked_own,
-            self.clicked,
+            (
+                self.own | self.marked_own,
+                self.clicked | user_units(self.grid.store, "tags"),
+                user_units(self.grid.store, "type"),
+            ),
             ticked=bool(self.grid.same_channels.value),
             day=date.today().isoformat(),
         )

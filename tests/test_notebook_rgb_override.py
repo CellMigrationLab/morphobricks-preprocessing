@@ -46,7 +46,6 @@ from morphobricks_preprocessing.notebook_ui import PreprocessingNotebook  # noqa
 FOLDERS = ["ctrl/rep1", "ctrl/rep2", "drug/rep1", "drug/rep2"]
 OVERRIDE = b'image_type = "rgb"\nrgb_header_override = true\n'
 CONTRADICTS = "R_IMAGE_TYPE_CONTRADICTS_HEADER"
-FAST = "R_FAST_LAYOUT_CONTRADICTION"
 
 
 def _text(html):
@@ -242,6 +241,7 @@ def _descendants(widget):
 # --- what is published and run ----------------------------------------------------------------
 
 
+@pytest.mark.usefixtures("statement_off")  # RH1 in a strict file (owner, 10 November)
 def test_the_published_file_is_a_hand_written_one_with_the_key_and_the_run_records_it(tmp_path):
     plain = _notebook(tmp_path, out="plain")
     _colour_for_all(plain)
@@ -250,11 +250,7 @@ def test_the_published_file_is_a_hand_written_one_with_the_key_and_the_run_recor
     without = (tmp_path / "plain" / DESCRIPTION_FILENAME).read_bytes()
     refused = _run(tmp_path, "plain")
     assert not refused.written
-    # The notebook published a fast-mode file (ADR 0006, the default): in its units the header's
-    # colour interpretation is a fast-mode contradiction of kind image_type, naming the key.
-    fast = [issue for issue in refused.issues if issue.code == FAST]
-    assert fast and CONTRADICTS not in {issue.code for issue in refused.issues}
-    assert "image_type" in fast[0].message and "rgb_header_override" in fast[0].message
+    assert CONTRADICTS in {issue.code for issue in refused.issues}
 
     nb = _notebook(tmp_path, out="out")
     _colour_for_all(nb)
@@ -263,8 +259,7 @@ def test_the_published_file_is_a_hand_written_one_with_the_key_and_the_run_recor
     assert nb.save_experiment()
     published = (tmp_path / "out" / DESCRIPTION_FILENAME).read_bytes()
     # The same answers by hand: the key after each unit's image type, as RH1 writes it.
-    head, units = without.split(b"[repeats.", 1)  # channel_layout has no such key (i148)
-    hand = head + b"[repeats." + units.replace(b'image_type = "rgb"\n', OVERRIDE)
+    hand = without.replace(b'image_type = "rgb"\n', OVERRIDE)
     assert hand.count(OVERRIDE) == 4
     assert published == hand == canonical_bytes(description_from_bytes(hand))
     result = _run(tmp_path, "out")

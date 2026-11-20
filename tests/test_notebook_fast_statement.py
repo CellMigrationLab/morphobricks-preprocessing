@@ -112,3 +112,104 @@ def test_a_unit_tagged_from_its_header_with_no_click_is_never_marked_unit(tmp_pa
     grid.cells[(other, 0)].value = None  # the user's own click on that unit
     grid.cells[(other, 0)].value = "ACTIN"
     assert nb.draft_answers.units[other].channels_from == "unit"
+
+
+def test_a_units_image_type_answered_by_the_user_is_never_replaced_by_the_list(tmp_path):
+    """Third review of #362: an image type the user picks for one unit is the user's action.
+
+    drug/rep1/t1 answered ``rgb`` with its type button while the list's type is ``channels``:
+    it is marked ``unit`` and published with its own answer, never materialised to the list's
+    type (FC4: a different image type is refused, never adjusted; section 3.3).
+    """
+    from morphobricks_preprocessing.draft_answers import fast_units
+    from test_notebook_tag_matrix import _design, _screen, _tag_once, _types
+
+    other = ("drug", "rep1", "t1")
+    nb = _screen(tmp_path, _design(tmp_path, names_of=lambda key: None))
+    _tag_once(nb)
+    _types(nb)
+    assert nb.draft_answers.units[other].channels_from == "experiment"
+    nb.channel_types.radios[other].value = "rgb"  # the user's type button, no cell clicked
+    answers = nb.draft_answers
+    assert answers.units[other].image_type == "rgb"
+    assert answers.units[other].channels_from == "unit"
+    kept = fast_units(nb._draft_base, answers).units[other]
+    assert kept.image_type == "rgb"  # not replaced by the list's type
+
+
+def test_a_save_with_no_click_notes_no_user_unit():
+    """Only a user's save is noted (note_user_units); a no-click save never is."""
+    from dataclasses import replace
+
+    from morphobricks_preprocessing.draft_answers import DraftAnswers, UnitAnswer
+    from morphobricks_preprocessing.notebook_channels_view import (
+        save_change,
+        save_unattended,
+        user_units,
+    )
+
+    class Store:
+        def __init__(self):
+            self.saved = DraftAnswers("absent", "0" * 40)
+
+        def answers(self):
+            return self.saved
+
+        def update(self, new):
+            self.saved = new
+            return True
+
+    store, key = Store(), ("c", "r", "t")
+    unit = UnitAnswer(("DNA",), "channels")
+    save_unattended(store, replace(store.saved, units={key: unit}))
+    assert user_units(store, "tags") == user_units(store, "type") == frozenset()
+    save_change(store, lambda a: replace(a, units={key: replace(unit, image_type="rgb")}))
+    assert user_units(store, "type") == {key} and user_units(store, "tags") == frozenset()
+
+
+def _published_then_renamed(folders, *, fast):  # noqa: F811
+    """Publish (fast or strict), rename drug's channel 1 to Hoechst, reopen, change a reference.
+
+    The reference change is an answer to save; the renamed header contradicts the saved list.
+    """
+    from channel_images import write_channels
+    from test_notebook_check_save import FOLDERS, KINDS, opened
+
+    first = opened(*folders)
+    first.channel_grid.same_channels.value = fast
+    answer_all(first)
+    assert first.save_experiment()
+    published = (folders[2] / DESCRIPTION_FILENAME).read_bytes()
+    for seed, folder in enumerate(FOLDERS[2:]):
+        names = ["Hoechst", "Actin", "Ch3"]
+        write_channels(folders[0] / folder / "a.tif", names, KINDS, seed=seed)
+    nb = opened(*folders)
+    nb.reference_boxes["drug"].value = ""  # a change to save: compared against nothing
+    nb._refresh_check_save()
+    return nb, published
+
+
+def test_owner_20_nov_fast_mode_saves_the_draft_but_refuses_to_publish_a_contradiction(
+    folders,  # noqa: F811
+):
+    """Owner decision of 20 November 2026 (ADR 0006 section 10)."""
+    from morphobricks_preprocessing.description_file import DRAFT_FILENAME
+
+    nb, before = _published_then_renamed(folders, fast=True)
+    assert nb._check is not None and nb._check.can_save  # a valid description
+    assert nb._check.fast_refusals and not nb._check.can_publish
+    assert nb.save_button.disabled and not nb.save_experiment()
+    shown = nb.save_note.value
+    assert "Not publishable in fast mode yet" in shown and "Hoechst" in shown
+    assert (folders[2] / DESCRIPTION_FILENAME).read_bytes() == before  # nothing published
+    assert b'"reference": ""' in (folders[2] / DRAFT_FILENAME).read_bytes()  # the draft saved
+
+
+def test_owner_20_nov_strict_mode_keeps_saving_with_the_runs_refusal_named(
+    folders,  # noqa: F811
+):
+    """Strict mode is unchanged (owner, 10 November 2026): it saves, the run will stop."""
+    nb, _ = _published_then_renamed(folders, fast=False)
+    assert not nb._check.fast_refusals and nb._check.can_publish
+    assert "You can save, but the run will stop" in nb.save_note.value
+    assert nb.save_experiment()
