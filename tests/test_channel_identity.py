@@ -400,3 +400,71 @@ def test_a_sparse_bright_channel_copied_into_another_slot_is_a_close_look_alike(
     (found,) = report.findings
     assert (found.code, found.channel, found.nearest) == (POSSIBLE_CHANNEL_SWAP, "Actin", "Spots")
     assert found.nearest_distance < 0.5
+
+
+def test_a_present_but_uncheckable_channel_is_not_called_absent():
+    # Every unit of rep2 has Cy5; the first unit has it too, but with a negative low percentile
+    # (no signature). Its Actin looks like Cy5: the unit has that channel, so the message must
+    # not say it does not.
+    cy5 = (60.0, 20.0, 300.0)
+
+    def stains(unit, found):
+        if unit.biological_repeat == "rep2" or unit == UNITS[0]:
+            found["Cy5"] = (60.0, -20.0, 300.0) if unit == UNITS[0] else cy5
+        if unit == UNITS[0]:
+            found["Actin"] = cy5
+        return found
+
+    report = check_channel_identity(experiment(edit=stains))
+    reasons = {(n.unit, n.channel): n.reason for n in report.not_checked}
+    assert reasons[(UNITS[0], "Cy5")] == "it has negative intensities"
+    (found,) = report.findings
+    assert (found.unit, found.channel, found.nearest) == (UNITS[0], "Actin", "Cy5")
+    assert not found.nearest_absent
+    (issue,) = report.validation_issues()
+    assert "does not have" not in issue.message
+
+
+def test_the_compared_across_conditions_note_is_kept_for_a_nearest_channel_only_result():
+    # Actin exists only in the treated units, so the nearest channel's reference of a control
+    # unit's DAPI is taken across conditions, while its own reference is within its condition.
+    def between(unit, stains):
+        if unit.condition == "ctrl":
+            del stains["Actin"]
+        if unit == SWAPPED:
+            stains["Actin"] = STAINS["Actin"]
+            dapi, actin = np.log(stains["DAPI"]), np.log(stains["Actin"])
+            stains["DAPI"] = tuple(np.exp(dapi + 0.74 * (actin - dapi)))
+            del stains["Actin"]
+        return stains
+
+    report = check_channel_identity(experiment(edit=between, noise=False))
+    (found,) = report.findings
+    assert (found.channel, found.nearest, found.clear) == ("DAPI", "Actin", False)
+    assert found.across_conditions
+    (issue,) = report.validation_issues()
+    assert "compared across conditions" in issue.message
+
+
+def test_a_unit_with_two_pixel_types_does_not_change_the_offsets():
+    def louder(unit, stains):
+        if unit == UNITS[0]:
+            stains = {c: tuple(10 * v for v in s) for c, s in stains.items()}
+        return stains
+
+    found = experiment(edit=louder, noise=False)
+    mixed = [*found, summary(UNITS[0], 9, STAINS, "uint8")]
+    without = [
+        s for s in found if (s.condition, s.biological_repeat, s.technical_repeat) != UNITS[0]
+    ]
+    assert check_channel_identity(mixed).offsets == check_channel_identity(without).offsets
+
+
+def test_no_channel_checked_does_not_blame_too_few_units():
+    text = channel_identity_text(
+        check_channel_identity(
+            [summary(UNITS[0], 0, STAINS, "uint8"), summary(UNITS[0], 1, STAINS, "uint16")]
+        )
+    )
+    assert "no channel could be checked" in text and "too few" not in text
+    assert "see the list of what was not checked" in text

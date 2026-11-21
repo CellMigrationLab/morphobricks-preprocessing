@@ -96,14 +96,12 @@ def check_channel_identity(
     """
     settings = ChannelIdentitySettings() if settings is None else settings
     summaries = list(summaries)
-    offsets = channel_offsets(summaries)
+    offsets = channel_offsets(single_type_summaries(summaries))
     signatures, not_checked = unit_signatures(summaries, offsets)
     pools: dict[tuple[str, str], list[ChannelSignature]] = {}
     for signature in signatures:
         pools.setdefault((signature.dtype, signature.channel), []).append(signature)
-    unit_channels: dict[Unit, set[str]] = {}
-    for signature in signatures:
-        unit_channels.setdefault(signature.unit, set()).add(signature.channel)
+    unit_channels = unit_presence(summaries)
     places: dict[tuple[Unit, str], _Place] = {}
     for signature in signatures:
         own = _reference(pools, signature, signature.channel, settings)
@@ -131,6 +129,40 @@ def check_channel_identity(
         offsets=tuple((dtype, channel, o) for (dtype, channel), o in sorted(offsets.items())),
         settings=settings,
     )
+
+
+def _by_unit(summaries: Iterable[ImageSummary]) -> dict[Unit, list[ImageSummary]]:
+    """Group the image summaries by imaging unit."""
+    units: dict[Unit, list[ImageSummary]] = {}
+    for summary in summaries:
+        unit = Unit(summary.condition, summary.biological_repeat, summary.technical_repeat)
+        units.setdefault(unit, []).append(summary)
+    return units
+
+
+def unit_presence(summaries: Iterable[ImageSummary]) -> dict[Unit, set[str]]:
+    """Return the channels each unit has, from its images, whether or not they can be checked.
+
+    A channel that is present but has no signature (negative intensities, mixed pixel types)
+    is still the unit's: it must not be called absent.
+    """
+    return {
+        unit: {c for image in images for c in image.channels}
+        for unit, images in _by_unit(summaries).items()
+    }
+
+
+def single_type_summaries(summaries: Iterable[ImageSummary]) -> list[ImageSummary]:
+    """Return the summaries of the units whose images share one pixel type.
+
+    A unit with several pixel types has no signature, so it must not shape the offsets either.
+    """
+    return [
+        image
+        for images in _by_unit(summaries).values()
+        if len({str(i.dtype) for i in images}) == 1
+        for image in images
+    ]
 
 
 def channel_offsets(summaries: Iterable[ImageSummary]) -> dict[tuple[str, str], float]:
@@ -169,12 +201,8 @@ def unit_signatures(
     its pixel type (no offset) have no signature: they are returned as not checked, never
     filled in.
     """
-    units: dict[Unit, list[ImageSummary]] = {}
-    for summary in summaries:
-        unit = Unit(summary.condition, summary.biological_repeat, summary.technical_repeat)
-        units.setdefault(unit, []).append(summary)
     signatures, not_checked = [], []
-    for unit, images in sorted(units.items()):
+    for unit, images in sorted(_by_unit(summaries).items()):
         channels = sorted({c for image in images for c in image.channels})
         dtypes = sorted({str(image.dtype) for image in images})
         if len(dtypes) > 1:
@@ -326,13 +354,14 @@ def _finding(
     near = min(place.others, key=lambda c: place.others[c][0])
     distance, across = place.others[near]
     clear = distance <= settings.swap_limit and distance * settings.swap_ratio < place.distance
+    shown = clear or distance < place.distance  # the text names the nearest channel
     return replace(
         found,
         nearest=near,
         nearest_distance=distance,
         nearest_absent=near not in place.channels,
         clear=clear,
-        across_conditions=own[2] or (clear and across),
+        across_conditions=own[2] or (shown and across),
     )
 
 
@@ -407,5 +436,7 @@ __all__ = [
     "log_values",
     "recorded_settings",
     "settings_entry",
+    "single_type_summaries",
+    "unit_presence",
     "unit_signatures",
 ]

@@ -121,7 +121,7 @@ def channel_identity_summary(report: ChannelIdentityReport) -> str:
     channel could be checked.
     """
     if not report.compared:
-        return "no channel could be checked (too few units to compare with)."
+        return "no channel could be checked (see the list of what was not checked)."
     compared = plural(report.compared, "unit channel")
     if not report.issues:
         return f"{compared} compared: each looks like the same channel of the other units."

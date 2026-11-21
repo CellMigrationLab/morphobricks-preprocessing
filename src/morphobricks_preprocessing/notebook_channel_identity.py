@@ -90,7 +90,8 @@ class ChannelIdentityView:
         self.status.value = ui.status(kind, title, lines)
         self.findings.value = channel_identity_html(report)
         self.plot.value = channel_identity_png(report, labels) or b""
-        ui.set_visible(self.box, bool(report.signatures))
+        ui.set_visible(self.plot, bool(self.plot.value))
+        ui.set_visible(self.box, True)  # also without a plot: the status and the reasons
 
     def clear(self) -> None:
         """Hide the view and forget the report."""
