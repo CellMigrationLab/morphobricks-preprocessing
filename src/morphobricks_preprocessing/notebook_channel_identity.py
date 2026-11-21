@@ -175,7 +175,10 @@ def channel_identity_png(
             color=INK,
             linewidth=1.4,
             linestyle="--",
-            label="possible swap: from its reference (other units of its condition)",
+            label=(
+                "possible swap: from its reference (other units of its condition, "
+                "or of the experiment when too few)"
+            ),
         ),
     ]
     figure.legend(handles=handles, loc="outside lower center", ncols=3, fontsize=8, frameon=False)

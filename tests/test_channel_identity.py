@@ -297,6 +297,7 @@ def test_the_limits_are_typed_and_recorded_exactly():
         {"mad_floor": float("nan")},
         {"min_log_difference": -1},
         {"swap_ratio": 0.5},
+        {"partner_ratio": 0.9},
     )
     for bad in bad_limits:
         with pytest.raises(ValueError):
@@ -323,3 +324,61 @@ def test_the_too_few_test_fails_when_the_reference_includes_the_unit(monkeypatch
     monkeypatch.setattr(channel_identity, "_others", lambda pool, unit: list(pool))
     with pytest.raises(AssertionError):
         test_too_few_units_are_not_checked()
+
+
+def test_an_8_bit_channel_whose_median_is_0_or_1_count_is_not_reported():
+    # A sparse 8-bit channel: its median is 0 in most units and 1 count in others. One count
+    # is the smallest step measured, so the log offset is at least one count (no 1/0.2 ratio).
+    def sparse(unit, stains):
+        stains = {c: tuple(v / 16 for v in values) for c, values in stains.items()}
+        stains["Sparse"] = (float(unit.technical_repeat == "t2"), 0.0, 40.0)
+        return stains
+
+    report = check_channel_identity(experiment(edit=sparse, dtype=lambda unit: "uint8"))
+    assert report.issues == () and report.compared == 32
+    assert ("uint8", "Sparse", 1.0) in report.offsets
+
+
+def test_a_bright_channel_does_not_change_a_dim_channels_verdict():
+    dim = {"Dim": (20.0, 5.0, 80.0), "Dim2": (40.0, 8.0, 160.0), "Mid": (2000.0, 200.0, 8000.0)}
+    bright = {"Bright": (20000.0, 500.0, 60000.0)}
+
+    def weaker(extra):
+        def edit(unit, stains):
+            found = {**dim, **extra}
+            if unit == SWAPPED:  # its Dim three times weaker
+                found["Dim"] = tuple(v / 3 for v in found["Dim"])
+            return found
+
+        return edit
+
+    def verdicts(report):
+        return [(f.code, f.unit, f.channel, round(f.distance, 9)) for f in report.findings]
+
+    alone = check_channel_identity(experiment(edit=weaker({})))
+    with_bright = check_channel_identity(experiment(edit=weaker(bright)))
+    assert [(f.code, f.unit, f.channel) for f in alone.findings] == [
+        (CHANNEL_UNLIKE_OTHERS, SWAPPED, "Dim")
+    ]
+    assert verdicts(with_bright) == verdicts(alone)
+
+
+def test_a_normal_channel_near_a_failed_one_is_not_half_of_a_swap():
+    # A and B are 1.5 times apart. In one unit A's stain failed (3 times weaker, so it now
+    # looks like B) and its B happens to lie a little towards A: B is nearer A's reference
+    # than its own, but not twice nearer, so no swap is claimed.
+    pair = {"A": (300.0, 50.0, 1500.0), "B": (200.0, 33.0, 1000.0), "C": (2000.0, 200.0, 8000.0)}
+
+    def failed(unit, stains):
+        found = dict(pair)
+        if unit == SWAPPED:
+            found["A"] = tuple(v / 3 for v in pair["A"])
+            found["B"] = tuple(1.3 * v for v in pair["B"])
+        return found
+
+    found = experiment(edit=failed, noise=False)
+    report = check_channel_identity(found)
+    assert [(f.code, f.channel) for f in report.findings] == [(CHANNEL_UNLIKE_OTHERS, "A")]
+    # Without the partner's ratio (any nearer is enough) the same data are called a swap.
+    loose = check_channel_identity(found, ChannelIdentitySettings(partner_ratio=1.0))
+    assert {i.code for i in loose.issues} == {POSSIBLE_CHANNEL_SWAP}

@@ -107,7 +107,10 @@ def describe_settings(settings: ChannelIdentitySettings) -> str:
         f"distance over {settings.outlier_limit:g} robust deviations and a difference of at "
         f"least {settings.min_log_difference:g} log units, references of at least "
         f"{plural(settings.min_reference, 'other unit')}, robust spread at least "
-        f"{settings.mad_floor:g} log units"
+        f"{settings.mad_floor:g} log units; a swap when two channels of a unit look like each "
+        f"other ({settings.partner_ratio:g} times nearer each other), or one is at distance "
+        f"{settings.swap_limit:g} or less from another channel and {settings.swap_ratio:g} times "
+        "nearer it than its own"
     )
 
 

@@ -23,8 +23,9 @@ KEY = "channel_identity"
 """The manifest key of the limits, beside ``intensity_checks``."""
 COMPONENTS = ("level", "bright", "spread")
 _FLOATS = ("outlier_limit", "mad_floor", "min_log_difference", "swap_limit", "swap_ratio")
+_FLOATS += ("partner_ratio",)
 _KEYS = ("outlier_limit", "min_reference", "mad_floor", "min_log_difference")
-_KEYS += ("swap_limit", "swap_ratio")
+_KEYS += ("swap_limit", "swap_ratio", "partner_ratio")
 
 
 @dataclass(frozen=True)
@@ -56,6 +57,10 @@ class ChannelIdentitySettings:
     swap_ratio
         How many times closer to the other channel than to its own reference the channel must
         be (unless the two channels of the unit look like each other); default 3.0.
+    partner_ratio
+        For a mutual swap, how many times nearer the other channel's reference than its own
+        each of the two channels must be, so a normal channel close to a failed one is not
+        named half of a swap; default 2.0.
 
     Raises
     ------
@@ -69,6 +74,7 @@ class ChannelIdentitySettings:
     min_log_difference: float = 0.6
     swap_limit: float = 1.0
     swap_ratio: float = 3.0
+    partner_ratio: float = 2.0
 
     def __post_init__(self) -> None:
         for name in _FLOATS:
@@ -78,8 +84,9 @@ class ChannelIdentitySettings:
             if not (math.isfinite(value) and value > 0):
                 raise ValueError(f"{name} must be a positive finite number; got {value!r}.")
             object.__setattr__(self, name, float(value))
-        if self.swap_ratio < 1:
-            raise ValueError(f"swap_ratio must be at least 1; got {self.swap_ratio!r}.")
+        for name in ("swap_ratio", "partner_ratio"):
+            if getattr(self, name) < 1:
+                raise ValueError(f"{name} must be at least 1; got {getattr(self, name)!r}.")
         count = self.min_reference
         if isinstance(count, bool) or not isinstance(count, (int, np.integer)) or count < 1:
             raise ValueError(f"min_reference must be a whole number of at least 1; got {count!r}.")
@@ -137,7 +144,7 @@ class ChannelSignature:
         The unit, the channel ID and the pixel type of the unit's images.
     level, bright, spread
         ``log(x + offset)`` of the median, of the high percentile, and of the high minus the
-        low percentile, with the offset of the pixel type (:attr:`ChannelIdentityReport.offsets`).
+        low percentile, with the channel's offset (:attr:`ChannelIdentityReport.offsets`).
     saturated_fraction
         Median over the images that have one; None when none has (not compared).
     images
@@ -236,8 +243,8 @@ class ChannelIdentityReport:
     pixel_types
         ``(dtype, units)`` per pixel type, sorted; units of different types are not compared.
     offsets
-        ``(dtype, offset)``: the offset added before the log, per pixel type
-        (:data:`.channel_identity.OFFSET_FRACTION` of the median high percentile).
+        ``(dtype, channel, offset)``: the offset added before the log, per pixel type and
+        channel (:func:`.channel_identity.channel_offsets`).
     settings
         The limits used.
     """
@@ -248,7 +255,7 @@ class ChannelIdentityReport:
     issues: tuple[ValidationIssue, ...] = ()
     compared: int = 0
     pixel_types: tuple[tuple[str, int], ...] = ()
-    offsets: tuple[tuple[str, float], ...] = ()
+    offsets: tuple[tuple[str, str, float], ...] = ()
     settings: ChannelIdentitySettings = field(default_factory=ChannelIdentitySettings)
 
     @property

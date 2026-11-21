@@ -8,10 +8,11 @@ limits in the manifest, and nothing is blocked.
 **Signature.** Per imaging unit (condition, biological repeat, technical repeat) and channel ID,
 the median over the unit's images of three log values: ``level`` = log(median + o), ``bright``
 = log(high percentile + o) and ``spread`` = log(high - low percentile + o), the contrast. The
-offset ``o`` is :data:`OFFSET_FRACTION` of the median high percentile of the pixel type's
-images, so the log is scale-free: 8-bit, 16-bit and 0-1 float images give the same verdicts
-for the same relative differences. The saturated fraction is kept beside the signature but is
-not compared (``saturated_image`` covers it).
+offset ``o`` is :data:`OFFSET_FRACTION` of the channel's own median high percentile in its pixel
+type (at least one count for integer types, below which nothing is measured), so the log is
+scale-free: 16-bit and 0-1 float images give the same verdicts for the same relative
+differences, and a bright channel does not change a dim channel's verdict. The saturated
+fraction is kept beside the signature but is not compared (``saturated_image`` covers it).
 
 **Reference.** For a unit and a channel: the per-component median and scaled MAD (1.4826 x MAD,
 at least ``mad_floor``) of that channel's signatures in the *other* units of the same condition
@@ -66,8 +67,8 @@ from .validation import plural
 
 MAD_SCALE = 1.4826
 """Makes the MAD a standard deviation for normally distributed values."""
-OFFSET_FRACTION = 1e-3
-"""The offset added before the log, as a fraction of the pixel type's median high percentile."""
+OFFSET_FRACTION = 0.003
+"""The offset added before the log, as a fraction of the channel's median high percentile."""
 _Pools = Mapping[tuple[str, str], list[ChannelSignature]]
 _Reference = tuple[np.ndarray, np.ndarray, bool]
 
@@ -91,7 +92,7 @@ def check_channel_identity(
     """
     settings = ChannelIdentitySettings() if settings is None else settings
     summaries = list(summaries)
-    offsets = pixel_type_offsets(summaries)
+    offsets = channel_offsets(summaries)
     signatures, not_checked = unit_signatures(summaries, offsets)
     pools: dict[tuple[str, str], list[ChannelSignature]] = {}
     for signature in signatures:
@@ -123,38 +124,46 @@ def check_channel_identity(
         issues=tuple(finding_issues(findings, settings)),
         compared=compared,
         pixel_types=tuple((dtype, len(units)) for dtype, units in sorted(types.items())),
-        offsets=tuple(sorted(offsets.items())),
+        offsets=tuple((dtype, channel, o) for (dtype, channel), o in sorted(offsets.items())),
         settings=settings,
     )
 
 
-def pixel_type_offsets(summaries: Iterable[ImageSummary]) -> dict[str, float]:
-    """Return the offset added before the log, per pixel type that has a positive intensity.
+def channel_offsets(summaries: Iterable[ImageSummary]) -> dict[tuple[str, str], float]:
+    """Return the offset added before the log, per pixel type and channel.
 
-    :data:`OFFSET_FRACTION` of the median of the positive high percentiles of the pixel type's
-    image channels: proportional to the data, so the signatures of images scaled by a factor
-    differ only by its log and every verdict is the same.
+    :data:`OFFSET_FRACTION` of the median of the channel's positive high percentiles among the
+    images of that pixel type: proportional to the channel's own data, so images scaled by a
+    factor differ only by its log and a bright channel leaves a dim one's offset alone. For
+    integer pixel types the offset is at least one count, the smallest step measured, so a
+    median of 0 or 1 count is not read as a large ratio. A channel without any positive
+    high percentile has no offset.
     """
-    highs: dict[str, list[float]] = {}
+    highs: dict[tuple[str, str], list[float]] = {}
     for summary in summaries:
-        found = highs.setdefault(str(summary.dtype), [])
-        found += [h for h in summary.p_high if h is not None and h > 0]
-    return {
-        dtype: OFFSET_FRACTION * float(np.median(values))
-        for dtype, values in highs.items()
-        if values
-    }
+        for channel, high in zip(summary.channels, summary.p_high, strict=True):
+            found = highs.setdefault((str(summary.dtype), channel), [])
+            if high is not None and high > 0:
+                found.append(high)
+    offsets = {}
+    for (dtype, channel), values in highs.items():
+        if values:
+            offset = OFFSET_FRACTION * float(np.median(values))
+            integer = np.dtype(dtype).kind in "iub"
+            offsets[(dtype, channel)] = max(offset, 1.0) if integer else offset
+    return offsets
 
 
 def unit_signatures(
-    summaries: Iterable[ImageSummary], offsets: Mapping[str, float]
+    summaries: Iterable[ImageSummary], offsets: Mapping[tuple[str, str], float]
 ) -> tuple[list[ChannelSignature], list[NotChecked]]:
     """Return every unit's signature per channel, and the unit channels without one.
 
     An image channel without finite pixels has no values and is left out (the intensity
     checks name it). A unit whose images have different pixel types, a unit channel with no
-    image left or with a negative intensity, and a pixel type without any positive intensity
-    (no offset) have no signature: they are returned as not checked, never filled in.
+    image left or with a negative intensity, and a channel without any positive intensity in
+    its pixel type (no offset) have no signature: they are returned as not checked, never
+    filled in.
     """
     units: dict[Unit, list[ImageSummary]] = {}
     for summary in summaries:
@@ -164,16 +173,17 @@ def unit_signatures(
     for unit, images in sorted(units.items()):
         channels = sorted({c for image in images for c in image.channels})
         dtypes = sorted({str(image.dtype) for image in images})
-        reason = None
         if len(dtypes) > 1:
             reason = f"its images have different pixel types ({', '.join(dtypes)})"
-        elif dtypes[0] not in offsets:
-            reason = f"every intensity of its pixel type ({dtypes[0]}) is zero"
-        if reason is not None:
             not_checked += [NotChecked(unit, c, reason) for c in channels]
             continue
         for channel in channels:
-            found = _signature(unit, channel, dtypes[0], images, offsets[dtypes[0]])
+            offset = offsets.get((dtypes[0], channel))
+            if offset is None:
+                reason = f"every intensity of this channel is zero in {dtypes[0]} images"
+                not_checked.append(NotChecked(unit, channel, reason))
+                continue
+            found = _signature(unit, channel, dtypes[0], images, offset)
             (signatures if isinstance(found, ChannelSignature) else not_checked).append(found)
     return signatures, not_checked
 
@@ -310,10 +320,13 @@ def _finding(
     )
 
 
-def _leans(place: _Place, channel: str, limit: float) -> bool:
-    """Return True when the channel is nearer ``channel``'s reference than its own, in ``limit``."""
+def _leans(place: _Place, channel: str, limit: float, ratio: float) -> bool:
+    """Return True when the channel is ``ratio`` times nearer ``channel``'s reference than its own.
+
+    The distance to ``channel``'s reference must also be within ``limit``.
+    """
     found = place.others.get(channel)
-    return found is not None and found[0] < place.distance and found[0] <= limit
+    return found is not None and found[0] * ratio < place.distance and found[0] <= limit
 
 
 def _findings(
@@ -322,8 +335,9 @@ def _findings(
     """Return the findings, with the swaps made, sorted by unit and channel.
 
     A reported channel whose nearest channel ``c'`` is one of its unit's makes a mutual swap
-    when it is nearer ``c'`` than its own reference and the unit's ``c'`` is nearer this
-    channel than its own (both within ``outlier_limit``), the unit's ``c'`` reported or not;
+    when it is ``partner_ratio`` times nearer ``c'`` than its own reference and the unit's
+    ``c'`` is ``partner_ratio`` times nearer this channel than its own (both within
+    ``outlier_limit``), the unit's ``c'`` reported or not;
     otherwise a channel that clearly looks like another channel of its unit is a swap.
     """
     limit = settings.outlier_limit
@@ -334,9 +348,10 @@ def _findings(
         partner = places.get(other)
         if found.mutual or found.nearest_absent or partner is None:
             continue
-        if not (
-            _leans(places[key], found.nearest, limit) and _leans(partner, found.channel, limit)
-        ):
+        ratio = settings.partner_ratio
+        if not _leans(places[key], found.nearest, limit, ratio):
+            continue
+        if not _leans(partner, found.channel, limit, ratio):
             continue
         pair = findings.get(other) or _finding(partner, settings, force=True)
         distance, across = partner.others[found.channel]
@@ -353,24 +368,6 @@ def _findings(
     return [findings[key] for key in sorted(findings)]
 
 
-def channel_centre(
-    report: ChannelIdentityReport, channel: str, dtype: str, without: Unit | None = None
-) -> tuple[float, float] | None:
-    """Return the median ``(bright, spread)`` of ``channel`` over the units, for the plot.
-
-    ``without`` leaves one unit out.
-    """
-    values = [
-        (s.bright, s.spread)
-        for s in report.signatures
-        if s.channel == channel and s.dtype == dtype and s.unit != without
-    ]
-    if not values:
-        return None
-    bright, spread = np.median(np.array(values), axis=0)
-    return float(bright), float(spread)
-
-
 __all__ = [
     "CHANNEL_IDENTITY_CODES",
     "CHANNEL_UNLIKE_OTHERS",
@@ -385,13 +382,12 @@ __all__ = [
     "ChannelSignature",
     "NotChecked",
     "Unit",
-    "channel_centre",
     "channel_identity_summary",
     "channel_identity_text",
     "check_channel_identity",
     "describe_settings",
     "not_compared_text",
-    "pixel_type_offsets",
+    "channel_offsets",
     "recorded_settings",
     "settings_entry",
     "unit_signatures",
