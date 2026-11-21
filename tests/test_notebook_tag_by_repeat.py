@@ -15,7 +15,7 @@ from channel_images import write_channels, write_masks
 from morphobricks_preprocessing.channel_labels import UnitLayout
 from morphobricks_preprocessing.description import description_from_bytes
 from morphobricks_preprocessing.description_file import DESCRIPTION_FILENAME
-from morphobricks_preprocessing.draft_answers import DraftAnswers
+from morphobricks_preprocessing.draft_answers import DraftAnswers, UnitAnswer
 from morphobricks_preprocessing.repeat_tags import (
     pairing_collision,
     repeat_fill,
@@ -204,9 +204,9 @@ def test_1_5_the_list_is_the_current_state_and_publishing_waits_for_it(tmp_path,
 def test_1_5_publishing_is_refused_while_a_unit_is_listed(tmp_path, statement_off):
     root, masks, out = _experiment(tmp_path, names=_contradicting)
     nb = opened(root, masks, out)
-    set_labels(nb, list(TAGS))
+    set_labels(nb, list(EXTRA))
     odd = ("drug", "rep2", "t1")
-    for index, tag in enumerate(("ACTIN", "DNA", "PHASE")):  # tagged by hand first
+    for index, tag in enumerate(("EXTRA", "DNA", "PHASE")):  # tagged by hand against its header
         nb.channel_grid.cells[(odd, index)].value = tag
     answer_all(nb)
     rows = nb.channel_grid.by_repeat
@@ -272,3 +272,64 @@ def test_4_a_folder_name_paired_into_different_repeats_flags_its_row_and_fills_n
         ("rep2", 3), tuple(u for u in nb.channel_grid.layouts if u.key[1] == "rep2")
     )
     assert not any(u.channels for u in nb.draft_answers.units.values())
+
+
+def _listed_unit(tmp_path):
+    """Open the contradicting design and click rep2's row: drug/rep2/t1 is listed."""
+    root, masks, out = _experiment(tmp_path, names=_contradicting)
+    nb = opened(root, masks, out)
+    set_labels(nb, list(EXTRA))  # one more label, to change a tag without a duplicate
+    _set_row(nb, ("rep2", 3), TAGS)
+    odd = ("drug", "rep2", "t1")
+    assert list(nb.channel_grid.by_repeat.listed()) == [odd]
+    return nb, odd
+
+
+def _tag(nb, unit, tags):
+    for index, tag in enumerate(tags):
+        nb.channel_grid.cells[(unit, index)].value = tag
+
+
+def test_5_a_listed_unit_leaves_the_list_when_its_tags_are_changed_and_restored(
+    tmp_path, statement_off
+):
+    nb, odd = _listed_unit(tmp_path)
+    rows = nb.channel_grid.by_repeat
+    _tag(nb, odd, ("ACTIN", "DNA", "PHASE"))  # the header's own order: answered
+    assert not rows.listed()
+    _tag(nb, odd, ("EXTRA", "DNA", "PHASE"))  # changed to what the header contradicts: listed
+    assert list(rows.listed()) == [odd]
+    _tag(nb, odd, ("ACTIN", "DNA", "PHASE"))  # restored: the current answer fits the header
+    assert not rows.listed()
+    nb.channel_grid.refresh()
+    assert "not filled" not in rows.message
+
+
+def test_5_a_change_of_the_image_type_alone_keeps_the_unit_listed(tmp_path, statement_off):
+    from dataclasses import replace
+
+    nb, odd = _listed_unit(tmp_path)
+    rows = nb.channel_grid.by_repeat
+    answers = nb.draft_answers
+    units = dict(answers.units)
+    units[odd] = replace(units.get(odd) or UnitAnswer((None,) * 3), image_type="channels")
+    assert nb._answer(replace(answers, units=units))  # same tags, another image type
+    nb.channel_grid.refresh()
+    assert list(rows.listed()) == [odd]  # its tags did not change: still not answered
+
+
+def test_5_a_unit_tagged_to_its_header_before_the_click_is_not_listed_after_change_and_restore(
+    tmp_path, statement_off
+):
+    root, masks, out = _experiment(tmp_path, names=_contradicting)
+    nb = opened(root, masks, out)
+    set_labels(nb, list(EXTRA))
+    odd = ("drug", "rep2", "t1")
+    _tag(nb, odd, ("ACTIN", "DNA", "PHASE"))  # the header's own order, before any click
+    _set_row(nb, ("rep2", 3), TAGS)  # the row contradicts the header, but the unit fits it
+    rows = nb.channel_grid.by_repeat
+    assert not rows.listed()
+    _tag(nb, odd, ("EXTRA", "DNA", "PHASE"))
+    assert list(rows.listed()) == [odd]
+    _tag(nb, odd, ("ACTIN", "DNA", "PHASE"))
+    assert not rows.listed()

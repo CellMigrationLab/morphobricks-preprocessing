@@ -10,8 +10,8 @@ the row is flagged with each condition's repeat and fills nothing.
 
 Each unit's header is still checked against the row: a unit whose header contradicts it is
 listed with the contradiction and not filled, never guessed. The list always shows the current
-state: a listed unit leaves it once its answer changes (the user tagged it), and while any unit
-is listed the description is not published (:meth:`RepeatRows.listed`).
+state: a listed unit leaves it once its current tags fit its header (the user tagged it), and
+while any unit is listed the description is not published (:meth:`RepeatRows.listed`).
 
 - **Fast mode** (Spec ADR 0006): a row offers only the units outside the layout (another
   channel count, a refused header, or switched to their own); units that fit the layout are
@@ -32,11 +32,13 @@ from typing import TYPE_CHECKING
 import ipywidgets as widgets
 
 from . import notebook_style as ui
-from .channel_matrix import REFUSED, difference_text
+from .channel_labels import tags_of
+from .channel_matrix import REFUSED, difference_text, differences
 from .notebook_channels_view import CHOOSE, columns, unit_name
 from .repeat_tags import GroupKey, pairing_collision, repeat_fill, repeat_groups, repeat_shown
 
 if TYPE_CHECKING:
+    from .channel_labels import UnitLayout
     from .draft_answers import UnitKey
     from .notebook_channels_grid import TagGrid
 
@@ -52,17 +54,31 @@ class RepeatRows:
         self.pending: dict[GroupKey, list[str | None]] = {}
         self.drops: dict[GroupKey, list[widgets.Dropdown]] = {}
         self.buttons: dict[GroupKey, widgets.Button] = {}
-        self.refused: dict[UnitKey, tuple[str, object]] = {}
-        """Units a row did not fill: the contradiction, and the unit's answer at that click."""
+        self.refused: dict[UnitKey, tuple[str, UnitLayout, UnitLayout]] = {}
+        """Units a row did not fill: the contradiction, the unit and its row's first unit.
+
+        Only which units a click refused is remembered; whether one is still listed is read from
+        its current tags against its header (:meth:`listed`), never from what happened since.
+        """
         self.notice = ""
         """A one-shot message of the last click (shown once, then cleared)."""
         self.message = ""
         """What the rows say now: the last notice and every unit still listed."""
 
     def listed(self) -> dict[UnitKey, str]:
-        """Return the units still listed: not filled, and not answered by the user since."""
-        units = self.grid.store.answers().units
-        return {k: text for k, (text, kept) in self.refused.items() if units.get(k) == kept}
+        """Return the units still listed: refused by a row, and not answered in agreement.
+
+        Derived from the current answers on every call: a unit is listed while its tags are
+        incomplete or contradict its header, and leaves the list when they fit it, however it got
+        there (an image type alone changes nothing).
+        """
+        answers = self.grid.store.answers()
+        out = {}
+        for key, (text, layout, lead) in self.refused.items():
+            tags = tags_of(layout, answers.units.get(key))
+            if None in tags or differences(layout, tags, lead, self.grid.labels, answers.channels):
+                out[key] = text
+        return out
 
     def _offered(self) -> dict:
         """Return the rows: every repeat unticked; in fast mode only units outside the layout."""
@@ -176,7 +192,8 @@ class RepeatRows:
         save, cells, refused = repeat_fill(answers, group, named, self.grid.labels)
         for unit, found in refused.items():
             text = "; ".join(html.escape(difference_text(d)) for d in found)
-            self.refused[unit] = (text, answers.units.get(unit))
+            layout = next(u for u in group if u.key == unit)
+            self.refused[unit] = (text, layout, group[0])
         for unit in save:
             self.refused.pop(unit, None)
         if not save:
