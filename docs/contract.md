@@ -1283,6 +1283,29 @@ returns can be declared, checked or reused as a run's mask, and its record has n
 stated, not refused (nothing is reused in memory). **For MorphoBricks runs the run route
 (§15.3, with lineage) remains the route.**
 
+### 15.5 Segmentation hand-off (masks made by an outside tool, by channel ID)
+
+`morphobricks_preprocessing.segmentation_handoff` and `.segmentation_record` (numpy and
+tifffile only; no segmentation tool is imported or required) are what a segmentation notebook
+needs from this brick. They make no decision for the tool and guess nothing.
+
+| Function | Rule |
+|---|---|
+| `images_to_segment(inputs, mask_type, masks_root)` | The run's images with no mask of that type: none in the image's folder of `<type>/` named as its position ID (§1), in any case and with any TIFF extension (§15 pairing). Excluded images are not in the run, so never listed. Refuses a masks folder that breaks the folder rules (§15 Folder), and a mask type that is not one folder name. |
+| `segmentation_input(inputs, channel_ids, fov, z=0, t=0)` | The channels **by canonical ID** as a `(C, Y, X)` array of the stored values, in the order of `channel_ids`. Resolved with `RunInputs.resolve_request(Request(channel_ids))` and `require()`: every refusal of the resolver passes through with its code and message (`A_SCOPE_INCOMPLETE` for a channel some images lack: choose channels every image has; `A_RGB_NOT_SUPPORTED`). Each channel is read at the C index the image stores it at (`FovSelection.index_of`), never at a position. An image with Z or T above 1 is refused: 2D only. |
+| `mask_path(masks_root, mask_type, fov)` | `<masks>/<type>/<the image's folders>/<position ID>.tif` (the first layout of §15). |
+| `write_mask(masks_root, mask_type, fov, labels, inputs, *, overwrite=False)` | Checks the labels first, then writes: 2D, the image's Y and X (header only), an integer or boolean type (floating point is refused even when whole), values from 0 to 2,147,483,647. Writes `int32` with zlib compression and the axes named `YX`, to a temporary file moved into place, so a reader never sees half a mask. An existing mask (or another TIFF of the same image name) is refused unless `overwrite=True`, and then only the file at `mask_path` is replaced. The masks folder may not be inside the experiment or the output folder, nor hold either (the folder rules of §15 and `masks_inside_output`). Images with Z or T above 1 are refused. |
+
+`<masks>/<type>/segmentation_record.json` (`SegmentationRecord`, `write_record`, `read_record`,
+`record_version` 1) is provenance only: `mask_type`, `tool` and `tool_version`, `model`
+(`name`, `file` or null, `sha256`), `parameters` (a JSON object), `channel_ids`, `device`
+(`cuda`, `cpu` or `mps`, always stated), `run_folder`, `run_manifest_sha256`, and `images` (the
+image's path relative to the experiment, `status` `written`, `skipped` or `failed`, and a
+`message`, required for `failed`). It is checked on writing and on reading; an unknown
+version, an unknown or missing key, or a value outside its set is refused, never repaired. The
+masks step skips this file silently (it is not a mask), and nothing reads it to decide
+anything.
+
 ## 16. Shared rules for other bricks (MorphoBricks D86)
 
 Rules every MorphoBricks brick applies in one way, so they live here as public functions

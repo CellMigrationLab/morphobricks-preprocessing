@@ -16,6 +16,18 @@ old pin are refused with `spec_commit_mismatch`, as at every re-pin.
 
 ### Added
 
+- **Segmentation hand-off** (owner request of 21 November 2026, step 1 of the Cellpose notebook
+  plan): `segmentation_handoff` and `segmentation_record` (numpy and tifffile only; no
+  segmentation tool is imported). `images_to_segment` lists the run's images that have no mask
+  of a type yet, `segmentation_input` reads channels **by canonical ID** through
+  `resolve_request` as `(C, Y, X)` stored values (the resolver's refusals unchanged, 2D only),
+  `write_mask` writes a checked label image as a zlib-compressed `int32` `YX` TIFF at
+  `<masks>/<type>/<image's folders>/<position ID>.tif`, atomically and never over an existing
+  mask unless asked (a masks folder inside the experiment or the output folder is refused), and
+  `SegmentationRecord` with `write_record` and `read_record` keeps one versioned
+  `segmentation_record.json` per mask type. The masks step skips that file silently instead of
+  warning `mask_without_image`. Contract §15.5.
+
 - **Tag this repeat folder (all conditions)** on *Tag channels* (owner request of 20 November
   2026): one row of tags per biological-repeat **folder name** and channel count; set once, it
   is saved for every condition's imaging units in that folder (technical repeats included),

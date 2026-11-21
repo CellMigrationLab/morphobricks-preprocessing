@@ -235,6 +235,14 @@ from .run_inputs_request import (
     ResolvedRequest,
     VolumeNotSupportedError,
 )
+from .segmentation_handoff import images_to_segment, mask_path, segmentation_input, write_mask
+from .segmentation_record import (
+    SegmentationError,
+    SegmentationRecord,
+    SegmentedImage,
+    read_record,
+    write_record,
+)
 from .sources import check_sources
 from .unrecorded import UnrecordedFiles, unrecorded_files
 from .validation import Severity, ValidationIssue, has_errors
@@ -345,6 +353,9 @@ __all__ = [
     "MaskContradictsRepresentationError",
     "MaskUncheckedError",
     "RgbNotSupportedError",
+    "SegmentationError",
+    "SegmentationRecord",
+    "SegmentedImage",
     "VolumeNotSupportedError",
     "RunReportUnreadableError",
     "RunStoppedError",
@@ -363,6 +374,10 @@ __all__ = [
     "ResolvedRequest",
     "UnrecordedFiles",
     "UnrecordedFilesError",
+    "images_to_segment",
+    "mask_path",
+    "read_record",
+    "segmentation_input",
     "unrecorded_files",
     "Fov",
     "LazyImage",
@@ -468,7 +483,9 @@ __all__ = [
     "write_calibration",
     "write_experiment_design",
     "write_manifest",
+    "write_mask",
     "write_mask_report",
+    "write_record",
     "write_target_refusal",
     "zarr_available",
 ]

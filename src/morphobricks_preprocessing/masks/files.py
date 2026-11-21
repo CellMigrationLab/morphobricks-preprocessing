@@ -27,6 +27,7 @@ from ..name_issues import (
     is_nfc,
     non_nfc_mask_types_issue,
 )
+from ..segmentation_record import RECORD_FILENAME
 from ..validation import ValidationIssue, agree, error, has_errors, plural, warning
 from ..zarr_input import (
     NgffError,
@@ -147,8 +148,9 @@ def _folder_masks(
     image the warning ``mask_of_excluded_image``: neither is used (design v0.4 §3 keeps the
     severity of every existing check). ``images`` are the analysed images' paths (excluded
     images left out). Links are followed only inside the masks folder (:mod:`..links`). The
-    conversion helpers' ``mask_lineage.jsonl`` and temporary files are skipped silently, like
-    system files (:func:`..mask_lineage.is_conversion_file`, Spec ADR 0005 BM12).
+    conversion helpers' ``mask_lineage.jsonl`` and temporary files and a segmentation tool's
+    ``segmentation_record.json`` are skipped silently, like system files
+    (:func:`..mask_lineage.is_conversion_file`, Spec ADR 0005 BM12; contract §15.5).
     """
     by_key, by_leaf = {}, {}
     for leaf in discovery.leaves:
@@ -193,8 +195,8 @@ def _folder_masks(
 
 
 def _skipped(name: str) -> bool:
-    """Return True for system files and the conversion helpers' lineage and temporary files."""
-    return is_system_name(name) or is_conversion_file(name)
+    """Return True for system, conversion-helper and ``segmentation_record.json`` files (§15.5)."""
+    return is_system_name(name) or is_conversion_file(name) or name == RECORD_FILENAME
 
 
 def _suffix_matches(relative: Path, by_leaf: Mapping[str, list]) -> list[tuple[str, str]]:
