@@ -382,3 +382,21 @@ def test_a_normal_channel_near_a_failed_one_is_not_half_of_a_swap():
     # Without the partner's ratio (any nearer is enough) the same data are called a swap.
     loose = check_channel_identity(found, ChannelIdentitySettings(partner_ratio=1.0))
     assert {i.code for i in loose.issues} == {POSSIBLE_CHANNEL_SWAP}
+
+
+def test_a_sparse_bright_channel_copied_into_another_slot_is_a_close_look_alike():
+    # Spots: a low median and a high top percentile, so its log offset differs a lot from
+    # Actin's. A unit whose Actin holds Spots data is measured against Spots' reference on
+    # Spots' scale: a clear look-alike at a small distance.
+    spots = (5.0, 2.0, 5000.0)
+
+    def copied(unit, stains):
+        stains["Spots"] = spots
+        if unit == SWAPPED:
+            stains["Actin"] = spots
+        return stains
+
+    report = check_channel_identity(experiment(edit=copied))
+    (found,) = report.findings
+    assert (found.code, found.channel, found.nearest) == (POSSIBLE_CHANNEL_SWAP, "Actin", "Spots")
+    assert found.nearest_distance < 0.5

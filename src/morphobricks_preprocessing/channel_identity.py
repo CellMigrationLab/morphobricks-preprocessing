@@ -11,8 +11,13 @@ the median over the unit's images of three log values: ``level`` = log(median + 
 offset ``o`` is :data:`OFFSET_FRACTION` of the channel's own median high percentile in its pixel
 type (at least one count for integer types, below which nothing is measured), so the log is
 scale-free: 16-bit and 0-1 float images give the same verdicts for the same relative
-differences, and a bright channel does not change a dim channel's verdict. The saturated
-fraction is kept beside the signature but is not compared (``saturated_image`` covers it).
+differences (while the integer floor is not in effect, that is when the channel's median high
+percentile is above about 333 counts), and a bright channel does not change a dim channel's
+verdict. A unit's channel measured against another channel's reference is summarised again
+with that channel's offset, so the two are on one scale. **Limit:** float images converted
+from integer data whose medians are near zero get no floor and can give false "unlike others"
+warnings. The saturated fraction is kept beside the signature but is not compared
+(``saturated_image`` covers it).
 
 **Reference.** For a unit and a channel: the per-component median and scaled MAD (1.4826 x MAD,
 at least ``mad_floor``) of that channel's signatures in the *other* units of the same condition
@@ -33,7 +38,6 @@ is guessed or filled in.
 
 from __future__ import annotations
 
-import math
 from collections.abc import Iterable, Mapping
 from dataclasses import replace
 from typing import NamedTuple
@@ -202,14 +206,22 @@ def _signature(
             continue  # no finite pixels: named by the intensity checks
         if low < 0:
             return NotChecked(unit, channel, "it has negative intensities")
-        rows.append(tuple(math.log(v + offset) for v in (median, high, high - low)))
+        rows.append((median, high, high - low))
         if image.saturated_fraction[k] is not None:
             saturated.append(image.saturated_fraction[k])
     if not rows:
         return NotChecked(unit, channel, "no image of the unit has finite pixels in it")
-    level, bright, spread = (float(v) for v in np.median(np.array(rows), axis=0))
+    raw = tuple(rows)
+    level, bright, spread = (float(v) for v in log_values(raw, offset))
     fraction = float(np.median(saturated)) if saturated else None
-    return ChannelSignature(unit, channel, dtype, level, bright, spread, fraction, len(rows))
+    return ChannelSignature(
+        unit, channel, dtype, level, bright, spread, fraction, len(rows), offset, raw
+    )
+
+
+def log_values(raw: tuple[tuple[float, float, float], ...], offset: float) -> np.ndarray:
+    """Return the median over images of ``log(value + offset)`` of each component."""
+    return np.median(np.log(np.array(raw) + offset), axis=0)
 
 
 def _others(pool: list[ChannelSignature], unit: Unit) -> list[ChannelSignature]:
@@ -266,7 +278,9 @@ def _place(
     """Measure one unit channel against its own reference and every other channel's.
 
     ``off`` are the components over the limits: a z-score over ``outlier_limit`` and a log
-    difference of at least ``min_log_difference``.
+    difference of at least ``min_log_difference``. Against another channel's reference the
+    unit's values are summarised again with that channel's offset (from its pool), so a
+    channel's data are compared with another channel on that channel's scale.
     """
     values, limit = signature.values, settings.outlier_limit
     differences = values - own[0]
@@ -280,7 +294,9 @@ def _place(
         if dtype == signature.dtype and channel != signature.channel:
             other = _reference(pools, signature, channel, settings)
             if other is not None:
-                others[channel] = (_distance(values, other), other[2])
+                offset = pools[(dtype, channel)][0].offset
+                again = log_values(signature.raw, offset)
+                others[channel] = (_distance(again, other), other[2])
     return _Place(signature, own, _distance(values, own), off, others, frozenset(channels))
 
 
@@ -388,6 +404,7 @@ __all__ = [
     "describe_settings",
     "not_compared_text",
     "channel_offsets",
+    "log_values",
     "recorded_settings",
     "settings_entry",
     "unit_signatures",

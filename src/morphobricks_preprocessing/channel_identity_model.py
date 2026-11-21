@@ -149,6 +149,11 @@ class ChannelSignature:
         Median over the images that have one; None when none has (not compared).
     images
         The images the signature is the median of.
+    offset
+        The offset added before the log (:func:`.channel_identity.channel_offsets`).
+    raw
+        Per image, ``(median, high, high - low)`` as summarised, so the signature can be taken
+        again with another channel's offset; not compared.
     """
 
     unit: Unit
@@ -159,6 +164,8 @@ class ChannelSignature:
     spread: float
     saturated_fraction: float | None
     images: int
+    offset: float = 0.0
+    raw: tuple[tuple[float, float, float], ...] = field(default=(), compare=False, repr=False)
 
     @property
     def values(self) -> np.ndarray:

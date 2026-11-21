@@ -22,8 +22,10 @@ old pin are refused with `spec_commit_mismatch`, as at every re-pin.
   compared with the same channel of the other units of its condition (signature: a scale-free
   log of the median, the high percentile and the high minus low percentile, with an offset of
   0.3 % of the channel's own median high percentile (at least one count for integer types), so
-  16-bit and 0-1 float images give the same verdicts and bright channels do not hide dim
-  ones; median/MAD reference without the unit itself, across the experiment with fewer than 3
+  16-bit and 0-1 float images give the same verdicts (while the integer floor is not in
+  effect) and bright channels do not hide dim ones; a unit's channel is measured against another
+  channel's reference on that channel's scale; known limit: float images converted from integer
+  data with medians near zero can give false `channel_unlike_others` warnings; median/MAD reference without the unit itself, across the experiment with fewer than 3
   units in the condition, and said so). New warnings
   `channel_unlike_others` (with the nearest channel, or a channel the unit does not have) and
   `possible_channel_swap` (a mutual pair is one warning, or a clear look-alike of another
