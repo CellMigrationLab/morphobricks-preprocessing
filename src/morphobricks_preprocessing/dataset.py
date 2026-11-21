@@ -226,6 +226,19 @@ def default_repeat_groups(repeats: Iterable[BiologicalRepeat]) -> dict[tuple[str
     return {repeat.key: repeat.biological_repeat for repeat in repeats}
 
 
+def canonical_repeat_groups(
+    keys: Iterable[tuple[str, str]], pairing: Mapping[tuple[str, str], str] | None = None
+) -> dict[tuple[str, str], str]:
+    """Return the canonical biological repeat of each ``(condition, source repeat folder)``.
+
+    The one lookup of the saved pairing (``DraftAnswers.pairing``, the rule of
+    ``Draft.paired``): a folder in ``pairing`` joins the repeat it names, any other stays in
+    the repeat named after its own folder.
+    """
+    paired = pairing or {}
+    return {key: paired.get(key, key[1]) for key in keys}
+
+
 def balance_table(
     repeats: Iterable[BiologicalRepeat], repeat_groups: Mapping[tuple[str, str], str] | None = None
 ) -> BalanceTable:
@@ -240,7 +253,7 @@ def balance_table(
         or every folder when None, form groups named after the folder.
     """
     repeats = list(repeats)
-    groups = default_repeat_groups(repeats) | dict(repeat_groups or {})
+    groups = canonical_repeat_groups((r.key for r in repeats), repeat_groups)
     merged: dict[tuple[str, str], list] = {}
     for repeat in repeats:
         cell = merged.setdefault((groups[repeat.key], repeat.condition), [0, 0, []])

@@ -86,6 +86,21 @@ old pin are refused with `spec_commit_mismatch`, as at every re-pin.
   override the user answers for that unit (`notebook_channels_view.note_user_units`); a
   no-click tag from header names never does.
 
+### Fixed
+
+- **Tag this repeat folder (all conditions)** (#366, after #363):
+  - A row never fills an acquisition whose images disagree (other header names or colour, or
+    another channel count within the unit: `uniform` or `counts_agree` false); it lists the
+    unit and says its images must be corrected or separated, and the description is not saved
+    while it is listed (`repeat_tags.repeat_apart`, reusing `channel_matrix.eligible` and `apart_reason`).
+  - A pairing collision is decided from the whole membership of the repeat folder name, before
+    the units are grouped by channel count and before fast mode filters them, and is
+    re-checked on the button: every row of the folder is flagged and fills nothing
+    (`repeat_tags.repeat_members`, `dataset.canonical_repeat_groups`, the one lookup of the saved pairing).
+  - A refusal is dropped only after the save that fitted the unit succeeded; a failed save no
+    longer clears the contradiction, so the unit stays listed and *Check and save* still
+    refuses.
+
 ### Changed
 
 - **Draft file version 4** (`morphobricks.draft.json`): the keys `channel_layout` and

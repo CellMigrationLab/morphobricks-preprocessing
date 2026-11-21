@@ -35,7 +35,15 @@ from . import notebook_style as ui
 from .channel_labels import tags_of
 from .channel_matrix import REFUSED, difference_text, differences
 from .notebook_channels_view import CHOOSE, columns, unit_name
-from .repeat_tags import GroupKey, pairing_collision, repeat_fill, repeat_groups, repeat_shown
+from .repeat_tags import (
+    GroupKey,
+    pairing_collision,
+    repeat_apart,
+    repeat_fill,
+    repeat_groups,
+    repeat_members,
+    repeat_shown,
+)
 
 if TYPE_CHECKING:
     from .channel_labels import UnitLayout
@@ -54,11 +62,13 @@ class RepeatRows:
         self.pending: dict[GroupKey, list[str | None]] = {}
         self.drops: dict[GroupKey, list[widgets.Dropdown]] = {}
         self.buttons: dict[GroupKey, widgets.Button] = {}
-        self.refused: dict[UnitKey, tuple[str, UnitLayout, UnitLayout]] = {}
+        self.refused: dict[UnitKey, tuple[str, UnitLayout, UnitLayout | None]] = {}
         """Units a row did not fill: the contradiction, the unit and its row's first unit.
 
+        The first unit is None for a unit whose images disagree (:func:`.repeat_tags.repeat_apart`).
         Only which units a click refused is remembered; whether one is still listed is read from
-        its current tags against its header (:meth:`listed`), never from what happened since.
+        its current tags against its header (:meth:`listed`), never from what happened since. A
+        unit leaves this record only after a save that fitted it succeeded (:meth:`apply`).
         """
         self.notice = ""
         """A one-shot message of the last click (shown once, then cleared)."""
@@ -70,11 +80,16 @@ class RepeatRows:
 
         Derived from the current answers on every call: a unit is listed while its tags are
         incomplete or contradict its header, and leaves the list when they fit it, however it got
-        there (an image type alone changes nothing).
+        there (an image type alone changes nothing). A unit whose images disagree stays listed
+        while they do: no tags make it one header.
         """
         answers = self.grid.store.answers()
         out = {}
         for key, (text, layout, lead) in self.refused.items():
+            if lead is None:
+                if repeat_apart((layout,)):
+                    out[key] = text
+                continue
             tags = tags_of(layout, answers.units.get(key))
             if None in tags or differences(layout, tags, lead, self.grid.labels, answers.channels):
                 out[key] = text
@@ -101,8 +116,9 @@ class RepeatRows:
         listed = ui.status(
             "error",
             f"{len(lines)} imaging unit(s) not filled: their header contradicts their repeat "
-            "folder's row. Nothing is reordered or guessed; tag them on their own. The "
-            "description is not saved while they are listed.",
+            "folder's row, or their images do not agree with each other. Nothing is reordered "
+            "or guessed; tag the first on their own, and correct or separate the images of the "
+            "others. The description is not saved while they are listed.",
             lines,
             raw=True,
         )
@@ -115,7 +131,8 @@ class RepeatRows:
             ui.help_text(
                 f"<b>{ACTION}</b>: set the channels of one repeat folder once; every "
                 "condition's imaging units in it take these tags (each unit keeps its own list). "
-                "A unit whose header contradicts the row is listed, not filled."
+                "A unit whose header contradicts the row, or whose images disagree, is listed, "
+                "not filled."
                 + (
                     " In fast mode only the units outside the layout are offered."
                     if self.grid.same_channels.value
@@ -137,7 +154,7 @@ class RepeatRows:
         shown = repeat_shown(answers, group)
         tags = self.pending.get(key) or list(shown or (None,) * count)
         self.pending[key] = tags
-        collision = pairing_collision(answers, group)
+        collision = pairing_collision(answers, repeat_members(self.grid.layouts, repeat))
         note = "every unit already holds these tags" if shown else "not set for every unit"
         if collision:
             note = (
@@ -181,7 +198,8 @@ class RepeatRows:
         tags = self.pending.get(key, [])
         named = [t for t in tags if t]
         answers = self.grid.store.answers()
-        if pairing_collision(answers, group) is not None:
+        members = repeat_members(self.grid.layouts, key[0])  # the whole folder name, not this row
+        if pairing_collision(answers, members) is not None:
             return False
         if len(named) != len(tags) or len(set(named)) != len(named):
             self.notice = ui.status(
@@ -194,12 +212,16 @@ class RepeatRows:
             text = "; ".join(html.escape(difference_text(d)) for d in found)
             layout = next(u for u in group if u.key == unit)
             self.refused[unit] = (text, layout, group[0])
-        for unit in save:
-            self.refused.pop(unit, None)
+        for unit, why in repeat_apart(group).items():
+            layout = next(u for u in group if u.key == unit)
+            self.refused[unit] = (html.escape(why), layout, None)
         if not save:
             self.grid.refresh()
             return False
         ok = self.grid.commit(save, cells)
+        if ok:  # a refusal is dropped only once the save that fitted the unit succeeded
+            for unit in save:
+                self.refused.pop(unit, None)
         if ok and self.grid.same_channels.value:  # the user's action: tagged on their own
             self.grid.matrix.own.update(save)
             self.grid.matrix.sync_statement()
