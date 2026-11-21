@@ -3,11 +3,13 @@
 As soon as a run has read one file, its rows are staged in the output folder's staging
 folder ``.staging``: the rows as a small ``plane_histograms.csv`` written with the
 normalization brick's writer (the same writer and reader as the table, so a resumed row is
-the row the run would compute), then a JSON record naming the file, its row key
+the row the run would compute) and its image QC rows as a small ``image_qc.csv`` (contract
+§19), then a JSON record naming the file, its row key
 (:class:`.fingerprint.RowKey`: fingerprint, labels, axes, roles, ``axes_from``, read path,
 bins and histogram settings, and in a ``verify_content`` run the content SHA-256), the
 pixel type, the table's schema version, the versions of the two packages that compute
-rows, the planes whose range check failed, and the SHA-256 of the rows file. The record is
+rows and the version of the QC metrics, the planes whose range check failed, and the SHA-256
+of the two rows files. The record is
 written last, so a staged entry without one is incomplete and never used.
 
 The next run (after a crash, a kill or a lost Colab session) reuses a staged file's rows
@@ -23,6 +25,7 @@ import hashlib
 import json
 import logging
 import shutil
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -37,13 +40,16 @@ from morphobricks_normalization.records import PlaneRecord
 
 from .._io import write_text_atomic
 from ..fingerprint import RowKey
+from ..image_qc import QC_VERSION
+from ..image_qc_table import QcRow, read_image_qc, write_image_qc
 from ..manifest import NarrowRange, file_sha256, package_versions
 
 logger = logging.getLogger(__name__)
 
 STAGING_FOLDER = ".staging"
 """The staging folder in the output folder (removed once a run publishes)."""
-STAGING_VERSION = "1"
+STAGING_VERSION = "2"
+"""Version 2 adds the image QC rows; a version 1 record is discarded (rows read again)."""
 _ROW_PACKAGES = ("morphobricks-preprocessing", "morphobricks-normalization")
 """The packages whose versions a staged file's rows depend on."""
 
@@ -62,12 +68,15 @@ class StagedFile:
         Its rows, one per XYC plane.
     narrow
         Its channel planes whose range check found the central range too narrow.
+    qc
+        Its image QC rows (contract §19).
     """
 
     relative_path: str
     key: dict
     records: tuple[PlaneRecord, ...]
     narrow: tuple[NarrowRange, ...]
+    qc: tuple[QcRow, ...] = ()
 
 
 def staging_key(key: RowKey, dtype: str) -> dict:
@@ -84,8 +93,8 @@ def staging_key(key: RowKey, dtype: str) -> dict:
     -------
     dict
         The row key (with the content SHA-256 only in a ``verify_content`` run), the pixel
-        type, the table's schema version and the versions of the packages that compute
-        rows, normalised through JSON so it compares with a record.
+        type, the table's schema version, the version of the QC metrics and the versions of
+        the packages that compute rows, normalised through JSON so it compares with a record.
     """
     row = asdict(key)
     if row["content_sha256"] is None:  # not a verify_content run: the key as before
@@ -94,6 +103,7 @@ def staging_key(key: RowKey, dtype: str) -> dict:
         "row_key": row,
         "dtype": dtype,
         "schema_version": SCHEMA_VERSION,
+        "qc_version": QC_VERSION,
         "versions": dict(_row_versions()),
     }
     return json.loads(json.dumps(data, sort_keys=True))
@@ -102,10 +112,11 @@ def staging_key(key: RowKey, dtype: str) -> dict:
 def stage_file(
     output: Path,
     key: dict,
-    records: list[PlaneRecord],
-    narrow: list[NarrowRange],
+    records: Sequence[PlaneRecord],
+    narrow: Sequence[NarrowRange],
+    qc: Sequence[QcRow],
 ) -> None:
-    """Stage one file's rows: its rows file first, then the record naming them.
+    """Stage one file's rows: its rows files first, then the record naming them.
 
     Parameters
     ----------
@@ -113,8 +124,8 @@ def stage_file(
         The output folder (its lock held).
     key
         :func:`staging_key` of the file as it was read.
-    records, narrow
-        Its rows and its narrow-range checks.
+    records, narrow, qc
+        Its rows, its narrow-range checks and its image QC rows.
     """
     folder = output / STAGING_FOLDER
     folder.mkdir(exist_ok=True)
@@ -122,12 +133,14 @@ def stage_file(
     stem = _stem(relative)
     # The file's own channel IDs: a staged file is read back on its own, never merged as bytes.
     ids = sorted({channel for record in records for channel in record.channels})
-    rows = write_plane_histograms(records, folder / f"{stem}.csv", channel_ids=ids)
+    rows = write_plane_histograms(list(records), folder / f"{stem}.csv", channel_ids=ids)
+    qc_rows = write_image_qc(qc, folder / f"{stem}.qc.csv")
     record = {
         "staging_version": STAGING_VERSION,
         "relative_path": relative,
         "key": key,
         "rows_sha256": file_sha256(rows),
+        "qc_sha256": file_sha256(qc_rows),
         "narrow_histogram_ranges": [entry.to_dict() for entry in narrow],
     }
     write_text_atomic(folder / f"{stem}.json", json.dumps(record, sort_keys=True) + "\n")
@@ -166,8 +179,9 @@ def load_staged(output: Path) -> tuple[dict[str, StagedFile], dict[str, str]]:
         staged[found.relative_path] = found
     named = {_stem(rel) for rel in staged}
     for rows in folder.glob("*.csv"):
-        if rows.stem not in named:
-            _remove(rows.with_suffix(".json"))
+        stem = rows.name.split(".", 1)[0]  # <stem>.csv and <stem>.qc.csv
+        if stem not in named:
+            _remove(folder / f"{stem}.json")
     return staged, discarded
 
 
@@ -184,6 +198,7 @@ def discard_staged(output: Path, relative_path: str) -> None:
     stem = output / STAGING_FOLDER / _stem(relative_path)
     stem.with_suffix(".json").unlink(missing_ok=True)
     stem.with_suffix(".csv").unlink(missing_ok=True)
+    stem.with_suffix(".qc.csv").unlink(missing_ok=True)
 
 
 def clear_staging(output: Path) -> None:
@@ -223,8 +238,15 @@ def _read_staged(path: Path) -> StagedFile:
     records = tuple(read_plane_histograms(rows))
     if not records or any(r.source_relative_path != relative for r in records):
         raise ValueError("its rows are not the file's")
+    qc_rows = path.with_suffix(".qc.csv")
+    if file_sha256(qc_rows) != data["qc_sha256"]:
+        raise ValueError("its image QC rows file is not the one it names")
+    qc = tuple(read_image_qc(qc_rows))
+    keys = {(r.plane_id, channel) for r in records for channel in r.channels}
+    if sorted(row.key for row in qc) != sorted(keys):
+        raise ValueError("its image QC rows are not its rows'")
     narrow = tuple(NarrowRange.from_dict(e) for e in data["narrow_histogram_ranges"])
-    return StagedFile(relative, dict(data["key"]), records, narrow)
+    return StagedFile(relative, dict(data["key"]), records, narrow, qc)
 
 
 def _staged_name(record: Path) -> str:
@@ -242,6 +264,7 @@ def _remove(record: Path) -> None:
     """Remove a staged record and its rows file."""
     record.unlink(missing_ok=True)
     record.with_suffix(".csv").unlink(missing_ok=True)
+    record.with_suffix(".qc.csv").unlink(missing_ok=True)
 
 
 def _stem(relative_path: str) -> str:

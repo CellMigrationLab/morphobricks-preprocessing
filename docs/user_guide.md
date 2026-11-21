@@ -1014,6 +1014,17 @@ The default output folder is next to the experiment folder:
   the image does not have is blank; each channel also has its underflow and overflow, zero
   unless the robust range is used). A table written by an earlier version is recomputed on the next
   run; later bricks ask you to run this brick again on it.
+- **`image_qc.csv`:** one row per plane and channel with image QC metrics measured while the
+  histograms are computed (no extra read): the share of the plane above its Otsu threshold
+  (`foreground_fraction`, with `otsu_separation` to tell a real foreground from noise), the
+  histogram's `entropy`, focus (`normalized_variance`, `tenengrad`, `laplacian_variance`,
+  `local_focus_median`, `local_focus_p10`), the correlation of each pixel with its neighbours
+  1, 4 and 16 pixels away (structure size) and how uneven the field is (`tile_mean_cv`). They
+  do not depend on brightness (an 8-bit and a 16-bit copy give the same values) and are for
+  review only: nothing is excluded because of them. A blank value means the metric is not
+  defined for that plane (for example a plane of one value), never zero. Planes read in blocks
+  are marked `read_in_blocks`; their neighbour metrics leave out the pixel pairs across block
+  edges. Definitions in [contract.md](contract.md) §19.
 - **`experiment_design.csv`:** one row per biological-repeat folder of each condition: its
   repeat group, whether its condition is a control, its image and technical-repeat counts,
   and whether and when the repeat group was confirmed. Derived from the saved description and

@@ -142,6 +142,12 @@ src/morphobricks_preprocessing/
   image_type.py     image type (P4): FLUORESCENCE/RGB, review_image_type (suggestion from
                     TiffMetadata.rgb_samples and the confirmed roles, whether RGB is possible via the
                     brick's check_rgb), image_type_issues (rgb_not_possible)
+  image_qc.py       per-plane image QC metrics (contract §19), measured from the histogram pass's
+                    blocks (run/rows.py _measure taps the first pass, no extra read): PlaneQc,
+                    ImageQc, histogram_metrics (Otsu, separation, entropy); image_qc_sums.py
+                    (BlockSums: one cache-blocked sweep of shifted dot products), image_qc_moments.py
+                    (Moments/CoMoments, combined across blocks), image_qc_table.py (image_qc.csv,
+                    strict reader), image_qc_record.py (the manifest's image_qc entry)
   intensity.py      intensity checks (P5): check_intensities/check_table (the brick's image_summaries
                     and intensity_checks, IntensityReport), repeat_boxes and repeat_distributions for
                     the notebook's plots, intensity_text for the CLI

@@ -20,6 +20,8 @@ from morphobricks_normalization.records import PlaneRecord
 from ..axes import (
     AxisMapping,
 )
+from ..image_qc_record import IMAGE_QC_FILENAME, same_metrics
+from ..image_qc_table import ImageQcFormatError, QcRow, read_image_qc
 from ..manifest import (
     MANIFEST_FILENAME,
     ManifestFormatError,
@@ -130,6 +132,37 @@ def _load_previous(
     by_file: dict[str, list[PlaneRecord]] = {}
     for record in rows:
         by_file.setdefault(record.source_relative_path, []).append(record)
+    return by_file, None
+
+
+def _load_previous_qc(
+    output: Path, manifest: RunManifest, earlier: dict[str, list[PlaneRecord]]
+) -> tuple[dict[str, list[QcRow]], str | None]:
+    """Load the earlier run's image QC rows by file, and say why they cannot be reused.
+
+    They follow the histogram table's reuse rule (contract §19): the earlier rows are reused
+    only with the image QC table the manifest names (its SHA-256), measured by the same
+    metric definitions (version and settings), and holding one row for each channel of each
+    earlier histogram row; otherwise every row is recomputed, with the reason.
+    """
+    entry, path = manifest.image_qc, output / IMAGE_QC_FILENAME
+    if entry is None:
+        return {}, "the earlier run has no image QC table (image_qc.csv)"
+    if not same_metrics(entry):
+        return {}, "the image QC metrics changed since the earlier run"
+    if not path.exists() or file_sha256(path) != entry["sha256"]:
+        return {}, "the image QC table was changed or replaced after the earlier run"
+    try:
+        rows = read_image_qc(path)
+    except ImageQcFormatError:
+        logger.warning("Cannot read %s", path, exc_info=True)
+        return {}, "the earlier image QC table could not be read"
+    keys = {(r.plane_id, c) for records in earlier.values() for r in records for c in r.channels}
+    if sorted(row.key for row in rows) != sorted(keys):
+        return {}, "the earlier image QC table does not match the histogram table"
+    by_file: dict[str, list[QcRow]] = {}
+    for row in rows:
+        by_file.setdefault(row.relative_path, []).append(row)
     return by_file, None
 
 

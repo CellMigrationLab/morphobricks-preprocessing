@@ -34,6 +34,8 @@ from .axes import AxisMapping
 from .description_record import KEY as DESCRIPTION_KEY
 from .description_record import recorded_description
 from .image_names import position_id
+from .image_qc_record import KEY as IMAGE_QC_KEY
+from .image_qc_record import recorded_image_qc
 from .inventory import INVENTORY_KEY, source_signature
 from .lab_links import KEY as LAB_LINKS_KEY
 from .lab_links import recorded_lab_links
@@ -230,28 +232,20 @@ class RunManifest:
     written_at
         When the manifest was written (UTC, ISO 8601).
     experiment_design_sha256
-        SHA-256 of the ``experiment_design.csv`` written with this run, or None
-        when the run had no experiment design (or in manifests written before it
-        was recorded).
+        SHA-256 of the ``experiment_design.csv`` written with this run, or None.
     masks
-        The masks of the images when masks were given (contract §15): the masks
-        folder, the mask types and one entry per mask (image, type, path,
-        source); None otherwise. The key is left out of the file when None.
+        The masks of the images when masks were given (contract §15): the masks folder, the
+        mask types and one entry per mask; None otherwise (the key is then left out).
     image_type
-        ``"fluorescence"`` or ``"rgb"``, as the user confirmed it
-        (:mod:`.image_type`); None when the run was not given one (or in
-        manifests written before it was recorded).
+        ``"fluorescence"`` or ``"rgb"``, as confirmed (:mod:`.image_type`), or None.
     channels_from_rgb_samples
         True when the channel axis is the RGB samples axis of images stored as
         RGB colour; None in manifests written before it was recorded.
     intensity_checks
-        The limits of the intensity checks run on the table (:mod:`.intensity`);
-        None in manifests written before they were recorded.
+        The limits of the intensity checks run on the table (:mod:`.intensity`), or None.
     narrow_ranges
-        The channel planes whose central intensity range covered fewer bins
-        than the range check's limit (``narrow_histogram_range``), sorted by
-        plane and channel; empty when there were none (and in manifests
-        written before they were recorded).
+        The channel planes whose central intensity range covered fewer bins than the range
+        check's limit (``narrow_histogram_range``), sorted by plane and channel.
     conversion_record_sha256
         SHA-256 of the conversion record in the experiment root, when the experiment is
         a copy tree of named-axis copies (design v0.4 §5); None otherwise.
@@ -266,6 +260,9 @@ class RunManifest:
     lab_links
         The lab-tool links the user gave the run (:mod:`.lab_links`), provenance only; None
         (key left out) if none.
+    image_qc
+        The image QC table written with the run (:mod:`.image_qc_record`: file, SHA-256,
+        metric version and settings); None (key left out) in manifests written before it.
     schema_version
         Version of the CSV format.
     manifest_version
@@ -292,6 +289,7 @@ class RunManifest:
     experiment_description: dict | None = None
     projection: dict | None = None
     lab_links: dict | None = None
+    image_qc: dict | None = None
     schema_version: str = SCHEMA_VERSION
     manifest_version: str = MANIFEST_VERSION
 
@@ -364,6 +362,7 @@ class RunManifest:
         optional = {"masks": self.masks, DESCRIPTION_KEY: self.experiment_description}
         optional[PROJECTION_KEY] = self.projection
         optional[LAB_LINKS_KEY] = recorded_lab_links(self.lab_links)
+        optional[IMAGE_QC_KEY] = recorded_image_qc(self.image_qc)
         data.update({key: value for key, value in optional.items() if value is not None})
         return data
 
@@ -396,11 +395,7 @@ class RunManifest:
                 csv_sha256=str(data["csv_sha256"]),
                 versions={str(k): str(v) for k, v in data.get("versions", {}).items()},
                 written_at=str(data.get("written_at", "")),
-                experiment_design_sha256=(
-                    None
-                    if data.get("experiment_design_sha256") is None
-                    else str(data["experiment_design_sha256"])
-                ),
+                experiment_design_sha256=optional_text(data.get("experiment_design_sha256")),
                 masks=recorded_masks(data.get("masks")),
                 image_type=None if data.get("image_type") is None else str(data["image_type"]),
                 channels_from_rgb_samples=(
@@ -422,6 +417,7 @@ class RunManifest:
                 experiment_description=recorded_description(data.get(DESCRIPTION_KEY)),
                 projection=recorded_projection(data.get(PROJECTION_KEY)),
                 lab_links=recorded_lab_links(data.get(LAB_LINKS_KEY)),
+                image_qc=recorded_image_qc(data.get(IMAGE_QC_KEY)),
                 schema_version=str(data["schema_version"]),
                 manifest_version=str(version),
             )

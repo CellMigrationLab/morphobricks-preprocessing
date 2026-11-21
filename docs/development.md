@@ -111,6 +111,9 @@ recorded with its seed), the speed-up paired by round with its spread, the peak 
 distribution, CPUs pinned with `--cpus` (`taskset`) where available, the load average
 recorded in the report quoted with the numbers, and identical output digests in every run
 (the tool exits 1 otherwise). `--phases` times the calling thread's steps of a run.
+`tools/benchmark_image_qc.py` times the histogram step with and without the image QC metrics
+(contract §19) against a checkout without them (`--baseline-src`), whole and in blocks, and
+exits 1 unless every run writes the same `plane_histograms.csv`.
 
 ## Spec conformance tests
 

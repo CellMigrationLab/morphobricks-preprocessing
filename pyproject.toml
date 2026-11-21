@@ -132,6 +132,11 @@ baseline = "tools/code_rules_baseline.json"
 # pure: no I/O, no UI; io: reads or writes files; ui: notebook and command line, no
 # computing; orchestration: ties the others together.
 "morphobricks_preprocessing" = "orchestration"
+"morphobricks_preprocessing.image_qc" = "pure"
+"morphobricks_preprocessing.image_qc_moments" = "pure"
+"morphobricks_preprocessing.image_qc_record" = "pure"
+"morphobricks_preprocessing.image_qc_sums" = "pure"
+"morphobricks_preprocessing.image_qc_table" = "io"
 "morphobricks_preprocessing.__main__" = "ui"
 "morphobricks_preprocessing._io" = "io"
 "morphobricks_preprocessing.axes" = "pure"

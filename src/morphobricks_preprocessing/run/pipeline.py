@@ -35,6 +35,8 @@ from ..discovery_report import (
     RunOutcome,
     build_report,
 )
+from ..image_qc_record import IMAGE_QC_FILENAME, image_qc_entry
+from ..image_qc_table import write_image_qc
 from ..intensity import IntensityReport, check_intensities
 from ..lab_links import LabLinks
 from ..manifest import (
@@ -503,6 +505,7 @@ def _write_generation(
     described = run.description
     per_file = Counter(record.source_relative_path for record in records)
     csv_path = write_plane_histograms(records, staged / OUTPUT_FILENAME, channel_ids=ids)
+    qc_sha256 = file_sha256(write_image_qc(rows.qc, staged / IMAGE_QC_FILENAME))
     design_sha256 = None
     if design is not None:
         design_sha256 = file_sha256(write_experiment_design(design, staged / DESIGN_FILENAME))
@@ -528,6 +531,7 @@ def _write_generation(
         projection=_projection(pre),
         experiment_description=manifest_entry(described, masks, run.output, len(rows.entries)),
         lab_links=None if run.lab_links is None else run.lab_links.to_dict(),
+        image_qc=image_qc_entry(qc_sha256),
         manifest_version=MANIFEST_VERSION,
     )
     manifest = _kept_time(manifest, run.previous[0])
@@ -559,7 +563,8 @@ def _replaced(run: _Run, masks: dict | None) -> dict[str, str]:
     ``mask_relationships.json`` is removed when the masks changed since the earlier run
     (or nothing usable records them), and in ``full`` mode, which recomputes every check.
     """
-    names = [OUTPUT_FILENAME, MANIFEST_FILENAME, REPORT_FILENAME, REPORT_TEXT_FILENAME]
+    names = [OUTPUT_FILENAME, IMAGE_QC_FILENAME, MANIFEST_FILENAME, REPORT_FILENAME]
+    names.append(REPORT_TEXT_FILENAME)
     if run.checked.design is not None:
         names.append(DESIGN_FILENAME)
     replaced = {name: "replaced" for name in names if name in run.found}

@@ -20,6 +20,7 @@ from ..dataset import check_dataset
 from ..design import DesignTable, design_issues, reconcile_design
 from ..discovery_report import RunOutcome
 from ..fingerprint import unchanged_confirmation
+from ..image_qc_table import QcRow
 from ..image_type import ImageTypeReview, image_type_issues, review_image_type
 from ..manifest import FileEntry, NarrowRange, RunManifest, RunSettings
 from ..mask_checks import mask_issues
@@ -31,7 +32,7 @@ from .modes import FULL
 from .preflight import Preflight
 from .recorded import ResolvedInputs
 from .resume import FileJob, changed_during_check, new_rows
-from .reuse import _load_previous
+from .reuse import _load_previous, _load_previous_qc
 from .rows import _bin_count
 from .workers import Workers
 
@@ -174,6 +175,8 @@ class Rows:
     ----------
     records, narrow
         The table's rows and the channel planes whose range check failed.
+    qc
+        The image QC row of every channel of every row (contract §19).
     found
         The files compared with the earlier run's.
     read
@@ -212,6 +215,7 @@ class Rows:
     discarded: Mapping[str, str] = field(default_factory=dict)
     workers: int = 1
     refused: ValidationIssue | None = None
+    qc: list[QcRow] = field(default_factory=list)
 
 
 def compute_rows(
@@ -252,6 +256,9 @@ def compute_rows(
     review, root = checked.review, pre.discovery.root
     dtype = pre.metadata.dtype.name
     earlier, reason = _load_previous(output, previous, settings, review.mapping, dtype, mode)
+    earlier_qc: dict[str, list[QcRow]] = {}
+    if reason is None:  # the image QC table follows the histogram table's reuse rule
+        earlier_qc, reason = _load_previous_qc(output, previous[0], earlier)
     in_blocks = {p for i in checked.issues if i.code == "planes_read_in_blocks" for p in i.paths}
     entries = file_entries(pre, review, root, in_blocks, checked.channels)
     # Strict reuse: each image's content SHA-256 joins its row key; an unreadable one fails.
@@ -259,8 +266,10 @@ def compute_rows(
     found = compare_with_previous(entries, previous[0], earlier, reason is not None, settings, root)
     records: list[PlaneRecord] = []
     narrow: list[NarrowRange] = []
+    qc: list[QcRow] = []
     for rel in found.unchanged if not reason else ():
         records.extend(earlier[rel])
+        qc.extend(earlier_qc.get(rel, ()))
         # Kept rows keep the range checks they were written with.
         narrow.extend(entry for entry in previous[0].narrow_ranges if entry.relative_path == rel)
     job = FileJob(pre, review, settings, entries, output, mode == FULL)
@@ -289,6 +298,7 @@ def compute_rows(
         discarded=dict(sorted(new.discarded.items())),
         workers=new.workers,
         refused=new.refused,
+        qc=[*qc, *new.qc],
     )
 
 

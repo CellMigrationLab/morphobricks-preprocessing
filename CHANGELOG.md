@@ -16,6 +16,20 @@ old pin are refused with `spec_commit_mismatch`, as at every re-pin.
 
 ### Added
 
+- **Image QC metrics per plane and channel, computed in the histogram pass** (MorphoFeature
+  design `image-qc-metrics-2026-11-21`, metrics 1-8): a new run-folder table `image_qc.csv`, one
+  row per plane and channel, with `foreground_fraction` (Otsu, with `otsu_threshold` and
+  `otsu_separation`), `entropy`, `normalized_variance`, `tenengrad`, `laplacian_variance`,
+  `correlation_1/4/16`, `local_focus_median/p10` and `tile_mean_cv`, scale-free and measured
+  from the blocks the histogram already reads (no extra read; `image_qc`, `image_qc_sums`,
+  `image_qc_moments`, `image_qc_table`, `image_qc_record`). The manifest gains the optional key
+  `image_qc` (file, SHA-256, `qc_version` and settings; manifest version stays 5). The table
+  follows the histogram step's reuse and resume rules: staging version 2 stages it with the
+  rows (a version 1 staged record is discarded and read again), and a run whose earlier
+  manifest has no `image_qc` entry recomputes every row once. `tools/benchmark_image_qc.py`
+  times the histogram step with and without the metrics on identical outputs. The
+  power-spectrum slope (PLLS) is not included (cost). Contract §19, user guide §6.
+
 - **Tag this repeat folder (all conditions)** on *Tag channels* (owner request of 20 November
   2026): one row of tags per biological-repeat **folder name** and channel count; set once, it
   is saved for every condition's imaging units in that folder (technical repeats included),

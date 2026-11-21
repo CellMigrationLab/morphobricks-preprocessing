@@ -459,8 +459,7 @@ def test_intensity_checks_follow_a_successful_run(tmp_path):
     assert not ui.is_visible(nb.run_checks.card)
     nb.run()
     assert sorted(p.name for p in out.iterdir() if "report" not in p.name) == [
-        "experiment_design.csv",
-        "morphobricks.toml",
+        *("experiment_design.csv", "image_qc.csv", "morphobricks.toml"),
         "plane_histograms.csv",
         "run_manifest.json",
     ]

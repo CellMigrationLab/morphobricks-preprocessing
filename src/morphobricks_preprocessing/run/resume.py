@@ -28,6 +28,7 @@ from morphobricks_normalization.records import PlaneRecord
 
 from ..axes import AxisReview
 from ..fingerprint import Fingerprint, RowKey, current_fingerprint
+from ..image_qc_table import QcRow
 from ..manifest import FileEntry, NarrowRange, RunSettings
 from ..planes import PlaneReadError
 from ..source_content import current_content
@@ -50,6 +51,8 @@ class NewRows:
     ----------
     records, narrow
         Their rows and narrow-range checks.
+    qc
+        The image QC rows of their channel planes (contract §19).
     read
         The files whose pixels were read.
     resumed
@@ -73,6 +76,7 @@ class NewRows:
 
     records: list[PlaneRecord] = field(default_factory=list)
     narrow: list[NarrowRange] = field(default_factory=list)
+    qc: list[QcRow] = field(default_factory=list)
     read: list[str] = field(default_factory=list)
     resumed: list[str] = field(default_factory=list)
     failed: list[str] = field(default_factory=list)
@@ -202,6 +206,7 @@ def _resumed(job: FileJob, rel: str, key: dict, earlier: StagedFile | None, foun
     if not job.full and earlier.key == key and unchanged:
         found.records.extend(earlier.records)
         found.narrow.extend(earlier.narrow)
+        found.qc.extend(earlier.qc)
         found.resumed.append(rel)
         return True
     found.discarded[rel] = _why_discarded(earlier.key, key, job.full, unchanged)
@@ -248,7 +253,9 @@ def _read_in_workers(
         for future in as_completed(futures):
             result = future.result()  # a worker's exception is raised here, in this thread
             if result.status == READ:
-                stage_file(job.output, keys[result.relative_path], result.rows, result.ranges)
+                stage_file(
+                    job.output, keys[result.relative_path], result.rows, result.ranges, result.qc
+                )
             results[result.relative_path] = result
             if progress is not None:
                 progress(done, total, result.relative_path)
@@ -274,8 +281,8 @@ class FileRead:
     status
         ``"read"``, ``"failed"`` (its pixels could not be read) or ``"changed"`` (it changed
         while it was read: never staged or published).
-    rows, ranges
-        Its rows and narrow-range checks; empty unless read.
+    rows, ranges, qc
+        Its rows, narrow-range checks and image QC rows; empty unless read.
     failures
         When failed: each plane and channel that could not be measured, with the cause, or
         the file and the cause when it could not be read plane by plane.
@@ -286,6 +293,7 @@ class FileRead:
     rows: tuple[PlaneRecord, ...] = ()
     ranges: tuple[NarrowRange, ...] = ()
     failures: tuple[str, ...] = ()
+    qc: tuple[QcRow, ...] = ()
 
 
 def _read_checked(job: FileJob, rel: str) -> FileRead:
@@ -309,7 +317,7 @@ def _read_between_fingerprints(job: FileJob, rel: str) -> FileRead:
     expected = Fingerprint.recorded(job.entries[rel])
     labels = job.entries[rel].labels
     try:
-        rows, ranges = _read_file(
+        rows, ranges, qc = _read_file(
             root / rel,
             rel,
             labels,
@@ -329,13 +337,13 @@ def _read_between_fingerprints(job: FileJob, rel: str) -> FileRead:
         and current_content(root / rel) != job.entries[rel].content_sha256
     ):
         return FileRead(rel, CHANGED)
-    return FileRead(rel, READ, tuple(rows), tuple(ranges))
+    return FileRead(rel, READ, tuple(rows), tuple(ranges), qc=tuple(qc))
 
 
 def _take(job: FileJob, key: dict, result: FileRead, found: NewRows) -> None:
     """Stage a file's rows when it was read, and add what happened to ``found``."""
     if result.status == READ:
-        stage_file(job.output, key, list(result.rows), list(result.ranges))
+        stage_file(job.output, key, result.rows, result.ranges, result.qc)
     _add(result, found)
 
 
@@ -350,6 +358,7 @@ def _add(result: FileRead, found: NewRows) -> None:
     else:
         found.records.extend(result.rows)
         found.narrow.extend(result.ranges)
+        found.qc.extend(result.qc)
         found.read.append(rel)
 
 
