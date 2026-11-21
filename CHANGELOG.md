@@ -16,6 +16,21 @@ old pin are refused with `spec_commit_mismatch`, as at every re-pin.
 
 ### Added
 
+- **Channel-identity check after the run** (contract §14.1, design
+  `channel-identity-check-2026-11-21` in MorphoFeature's `claude/restart-doc`): from the image
+  summaries the intensity checks already make (no pixel read), every imaging unit's channel is
+  compared with the same channel of the other units of its condition (signature: log1p of the
+  median, the high percentile and the high minus low percentile; median/MAD reference without the
+  unit itself, across the experiment with fewer than 3 units in the condition, and said so).
+  New warnings `channel_unlike_others` and `possible_channel_swap` (a mutual swap is one
+  warning), never blocking, in the run report and `RunResult.channel_identity`, printed by
+  `run` and shown in the notebook under **Do the channels look like themselves?** with a plot
+  of brightness against contrast (flagged units circled and labelled, swaps drawn with an
+  arrow). Units of different pixel types are not compared; channels with too few reference
+  units are listed as not checked. The limits (`ChannelIdentitySettings`: 3.5, 3, 0.05) are
+  recorded in the manifest's new optional key `channel_identity`, beside `intensity_checks`
+  (manifest version unchanged).
+
 - **The description's fast mode** (experiment-v1 4.3a, 4.4): the optional top-level table
   `channel_layout` (`channels`, `image_type`, `confirmed_on`) and the unit key `channels_from`
   (`experiment` or `unit`) are read, validated (`E_FAST_LAYOUT_MISMATCH`,

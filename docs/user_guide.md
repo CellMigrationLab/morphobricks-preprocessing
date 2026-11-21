@@ -564,7 +564,11 @@ the same bytes in every file except that time (and the manifest SHA-256 the repo
 
 After writing, `run` prints the intensity checks of the table, grouped by kind, each with
 the channel, the image or biological repeat and the values compared, and what to do once
-per kind; it draws no plots (the notebook does).
+per kind; it draws no plots (the notebook does). Then it prints the channel check: each
+imaging unit's channels compared with the same channels of the other units of its condition,
+with `channel_unlike_others` and `possible_channel_swap` warnings (for example "channels DAPI
+and GFP look swapped") and the channels it could not check; the notebook draws them under
+**Do the channels look like themselves?**. Warnings only: nothing is changed or blocked.
 
 **Exit status.** Every command (`check`, `run`, `masks`, `calibrate`, `describe` and
 `convert`) exits with status 1 when it prints an error, and with 0 otherwise: warnings,
@@ -1243,6 +1247,8 @@ continues.
 | `repeat_intensity_shift` | Warning (intensity check) | A biological repeat is brighter or darker than the other repeats of its condition. Check whether it was prepared or acquired differently; normalising per biological repeat in later bricks removes such differences. |
 | `saturated_image` | Warning (intensity check) | More than the limit (default 1 %) of an image's pixels in a channel are at the largest value of its pixel type, so their true intensity is lost. Check the exposure, gain or laser power. |
 | `no_intensity_spread` | Warning (intensity check) | An image's channel has the same 1st and 99.8th percentile (empty or blank), so it cannot be normalised on its own. Check the channel, or exclude the image. |
+| `channel_unlike_others` | Warning (channel check) | One imaging unit's channel does not look like the same channel in the other units of its condition (its level, brightness or contrast differ). Look at that unit's images in that channel: check its channel tag, and whether the stain, exposure or acquisition differed. Nothing is changed or blocked. |
+| `possible_channel_swap` | Warning (channel check) | One imaging unit's channel looks like another channel of the other units (for example "DAPI and GFP look swapped"): its channel tags may be in the wrong order. Check the unit's channels against how its images were acquired; if they are swapped, correct them in the experiment description and run again. Nothing is changed or blocked. |
 | `channel_without_finite_pixels` | Warning (intensity check) | An image's channel has no finite pixels (every value NaN or infinite), so its intensities were not checked and it cannot be normalised from its own pixels. Exclude the image, or fix the channel in the source data and run again. |
 | `channel_names_differ` | Error | Channel names differ between images at the same channel number, so different stains would be pooled as one channel. Spaces at the start or end of a name are ignored (and noted in the manifest); otherwise names must match exactly, and names that differ only in inner spaces are quoted and reported as such. Check the channel order; export the images again with the same channel order and names, or exclude the images whose channels differ. |
 | `non_finite_pixels` | Warning | NaN or infinite pixels are left out of the histograms and counted. |
