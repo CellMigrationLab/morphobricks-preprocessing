@@ -1,13 +1,16 @@
-"""Tag a whole biological repeat at once, for every condition (owner, 20 November 2026; pure).
+"""Tag a whole repeat folder at once, for every condition (owner, 20 November 2026; pure).
 
-On *Tag channels*, one row of tags per biological repeat and channel count: the user sets it
+On *Tag channels*, one row of tags per repeat **folder** and channel count: the user sets it
 once and it is saved, as the user's tags, for every imaging unit of that repeat in every
 condition and every technical repeat (experiment-v1 4.4: each unit still holds its own list;
 the file format does not change). It is a shortcut for tagging those units one by one, never a
 guess:
 
-- the units are grouped by the biological-repeat **folder label** and their channel count, so a
-  unit with another channel count is in another row, never filled from this one;
+- the units are grouped by the biological-repeat **folder label** (*Tag channels* comes before
+  the pairing on *Design*) and their channel count, so a unit with another channel count is in
+  another row, never filled from this one; when a saved pairing puts one folder name of
+  different conditions into different biological repeats, the row is flagged and not filled
+  (:func:`pairing_collision`);
 - each unit's header names are checked against the row (:func:`.channel_matrix.differences`,
   the first unit of the row being the reference for names that say no label): a unit whose
   header contradicts it is listed with the contradiction, and not filled;
@@ -83,4 +86,16 @@ def repeat_shown(answers: DraftAnswers, group: Sequence[UnitLayout]) -> tuple[st
     return None if None in tags else tuple(t for t in tags if t is not None)
 
 
-__all__ = ["GroupKey", "repeat_fill", "repeat_groups", "repeat_shown"]
+def pairing_collision(answers: DraftAnswers, group: Sequence[UnitLayout]) -> dict[str, str] | None:
+    """Return each condition's biological repeat when one folder name maps to several, else None.
+
+    The row's units share a repeat folder name; the saved pairing (``answers.pairing``, a
+    folder paired under another repeat's label) may put the folders of different conditions
+    into different biological repeats. Then the row is not one repeat: it is flagged with
+    each condition's repeat and never fills anything.
+    """
+    found = {u.key[0]: answers.pairing.get((u.key[0], u.key[1]), u.key[1]) for u in group}
+    return dict(sorted(found.items())) if len(set(found.values())) > 1 else None
+
+
+__all__ = ["GroupKey", "pairing_collision", "repeat_fill", "repeat_groups", "repeat_shown"]

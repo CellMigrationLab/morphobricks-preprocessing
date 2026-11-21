@@ -19,9 +19,9 @@ for each of its folders, the same tags into the draft that tagging the folders o
 
 On a reopen, new folders whose header is that of a saved, fully tagged block offer **Tag like
 the saved group** (one click, never automatic, PR 17c). A block whose header names equal the
-labels is pre-tagged, a suggestion until the user confirms it. **Tag this biological repeat
-(all conditions)** sets one repeat's tags at once (:mod:`.notebook_channels_repeat`). The page
-is complete when every channel and image type is answered.
+labels is pre-tagged, a suggestion until the user confirms it. **Tag this repeat folder
+(all conditions)** sets a repeat folder's tags at once (:mod:`.notebook_channels_repeat`).
+The page is complete when every channel and image type is answered.
 
 The card reads and saves through an :class:`.notebook_channels_view.AnswerStore`. The image
 type is answered by :class:`.notebook_channels_type.ImageTypeColumn`: placed in each folder row,

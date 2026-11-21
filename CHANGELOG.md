@@ -16,16 +16,19 @@ old pin are refused with `spec_commit_mismatch`, as at every re-pin.
 
 ### Added
 
-- **Tag this biological repeat (all conditions)** on *Tag channels* (owner request of 20
-  November 2026): one row of tags per biological repeat and channel count; set once, it is
-  saved for every condition's imaging units of that repeat (technical repeats included), each
-  unit keeping its own list (`repeat_tags`, `notebook_channels_repeat`). Each unit's header is
-  checked against the row: a contradiction is listed and the unit is not filled; a unit with
-  another channel count is in another row. In fast mode the rows are offered for the repeats
-  outside the layout and the units they fill are tagged on their own (`channels_from =
-  "unit"`), the way to describe repeats with an extra channel; unticked, a row for every
-  repeat. On a reopen a row shows the tags all its units already hold (a convenience; the
-  description format does not change).
+- **Tag this repeat folder (all conditions)** on *Tag channels* (owner request of 20 November
+  2026): one row of tags per biological-repeat **folder name** and channel count; set once, it
+  is saved for every condition's imaging units in that folder (technical repeats included),
+  each unit keeping its own list (`repeat_tags`, `notebook_channels_repeat`). Each unit's
+  header is checked against the row: a contradiction is listed (always the current state) and
+  the unit is not filled, and the description is not saved while any is listed; a unit with
+  another channel count is in another row. Rows are keyed by folder name (*Tag channels* comes
+  before the pairing): when a saved pairing puts one folder name of different conditions into
+  different biological repeats, the row is flagged with each condition's repeat and fills
+  nothing. In fast mode a row offers only the units outside the layout, and those it fills
+  are tagged on their own (`channels_from = "unit"`) once saved, the way to describe repeats
+  with an extra channel; unticked, a row for every repeat folder. On a reopen a row shows the
+  tags all its units already hold (a convenience; the description format does not change).
 
 - **The description's fast mode** (experiment-v1 4.3a, 4.4): the optional top-level table
   `channel_layout` (`channels`, `image_type`, `confirmed_on`) and the unit key `channels_from`
