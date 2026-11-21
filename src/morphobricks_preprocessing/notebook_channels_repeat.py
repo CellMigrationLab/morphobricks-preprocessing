@@ -1,0 +1,210 @@
+"""*Tag channels*: **Tag this repeat folder (all conditions)**, one row per repeat folder.
+
+Owner request of 20 November 2026: pick one biological-repeat folder (for example ``rep2``)
+and set its channel list once; it is saved, as the user's tags, for every condition's imaging
+units in that folder, technical repeats included (:mod:`.repeat_tags`). One row per repeat
+folder name and channel count; a unit with another channel count is in its own row. The rows
+are keyed by the **folder name** (*Tag channels* comes before the pairing on *Design*): when a
+saved pairing puts that folder name of different conditions into different biological repeats,
+the row is flagged with each condition's repeat and fills nothing.
+
+Each unit's header is still checked against the row: a unit whose header contradicts it is
+listed with the contradiction and not filled, never guessed. The list always shows the current
+state: a listed unit leaves it once its current tags fit its header (the user tagged it), and
+while any unit is listed the description is not published (:meth:`RepeatRows.listed`).
+
+- **Fast mode** (Spec ADR 0006): a row offers only the units outside the layout (another
+  channel count, a refused header, or switched to their own); units that fit the layout are
+  never touched by it. Setting the row is the user's action for each unit it fills, which is
+  then tagged on its own (``channels_from = "unit"``), once the save succeeds.
+- **Strict mode** (the statement unticked): a row for every repeat folder, a shortcut that
+  fills every unit of it across conditions, each unit saved with its own tags.
+
+On reopening, a row shows the tags every unit of its repeat folder already holds, as a
+convenience only: the saved data are per unit (the description format does not change).
+"""
+
+from __future__ import annotations
+
+import html
+from typing import TYPE_CHECKING
+
+import ipywidgets as widgets
+
+from . import notebook_style as ui
+from .channel_labels import tags_of
+from .channel_matrix import REFUSED, difference_text, differences
+from .notebook_channels_view import CHOOSE, columns, unit_name
+from .repeat_tags import GroupKey, pairing_collision, repeat_fill, repeat_groups, repeat_shown
+
+if TYPE_CHECKING:
+    from .channel_labels import UnitLayout
+    from .draft_answers import UnitKey
+    from .notebook_channels_grid import TagGrid
+
+ACTION = "Tag this repeat folder (all conditions)"
+
+
+class RepeatRows:
+    """The rows of tags per repeat folder, drawn under the tag grid."""
+
+    def __init__(self, grid: TagGrid) -> None:
+        self.grid = grid
+        self.box = widgets.VBox()
+        self.pending: dict[GroupKey, list[str | None]] = {}
+        self.drops: dict[GroupKey, list[widgets.Dropdown]] = {}
+        self.buttons: dict[GroupKey, widgets.Button] = {}
+        self.refused: dict[UnitKey, tuple[str, UnitLayout, UnitLayout]] = {}
+        """Units a row did not fill: the contradiction, the unit and its row's first unit.
+
+        Only which units a click refused is remembered; whether one is still listed is read from
+        its current tags against its header (:meth:`listed`), never from what happened since.
+        """
+        self.notice = ""
+        """A one-shot message of the last click (shown once, then cleared)."""
+        self.message = ""
+        """What the rows say now: the last notice and every unit still listed."""
+
+    def listed(self) -> dict[UnitKey, str]:
+        """Return the units still listed: refused by a row, and not answered in agreement.
+
+        Derived from the current answers on every call: a unit is listed while its tags are
+        incomplete or contradict its header, and leaves the list when they fit it, however it got
+        there (an image type alone changes nothing).
+        """
+        answers = self.grid.store.answers()
+        out = {}
+        for key, (text, layout, lead) in self.refused.items():
+            tags = tags_of(layout, answers.units.get(key))
+            if None in tags or differences(layout, tags, lead, self.grid.labels, answers.channels):
+                out[key] = text
+        return out
+
+    def _offered(self) -> dict:
+        """Return the rows: every repeat unticked; in fast mode only units outside the layout."""
+        grid = self.grid
+        colour = {u.key for u in grid.layouts if grid.colour(u)}
+        groups = repeat_groups(grid.layouts, colour)
+        if not grid.same_channels.value:
+            return groups
+        _, apart = grid.matrix.groups()
+        outside = {u.key for u in apart} | grid.matrix.own
+        outside |= {k for k, row in grid.matrix.rows.items() if row.state == REFUSED}
+        kept = {k: tuple(u for u in g if u.key in outside) for k, g in groups.items()}
+        return {k: g for k, g in kept.items() if g}
+
+    def build(self, width: int) -> None:
+        """Draw one row per offered repeat folder and channel count, and the current state."""
+        self.drops, self.buttons = {}, {}
+        groups = self._offered() if self.grid.labels else {}
+        lines = [f"{html.escape(unit_name(k))}: {text}" for k, text in self.listed().items()]
+        listed = ui.status(
+            "error",
+            f"{len(lines)} imaging unit(s) not filled: their header contradicts their repeat "
+            "folder's row. Nothing is reordered or guessed; tag them on their own. The "
+            "description is not saved while they are listed.",
+            lines,
+            raw=True,
+        )
+        self.message = self.notice + (listed if lines else "")
+        self.notice = ""
+        if not groups:
+            self.box.children = [widgets.HTML(self.message)] if self.message else []
+            return
+        rows: list[widgets.Widget] = [
+            ui.help_text(
+                f"<b>{ACTION}</b>: set the channels of one repeat folder once; every "
+                "condition's imaging units in it take these tags (each unit keeps its own list). "
+                "A unit whose header contradicts the row is listed, not filled."
+                + (
+                    " In fast mode only the units outside the layout are offered."
+                    if self.grid.same_channels.value
+                    else ""
+                )
+            )
+        ]
+        rows += [self._row(key, group, width) for key, group in groups.items()]
+        if self.message:
+            rows.append(widgets.HTML(self.message))
+        box = widgets.VBox(rows)
+        box.add_class("mb-tag-block")
+        self.box.children = [box]
+
+    def _row(self, key: GroupKey, group: tuple, width: int) -> widgets.Widget:
+        """Build one row: the folder and the units it sets, one dropdown per C index, the button."""
+        repeat, count = key
+        answers = self.grid.store.answers()
+        shown = repeat_shown(answers, group)
+        tags = self.pending.get(key) or list(shown or (None,) * count)
+        self.pending[key] = tags
+        collision = pairing_collision(answers, group)
+        note = "every unit already holds these tags" if shown else "not set for every unit"
+        if collision:
+            note = (
+                "paired with different biological repeats: "
+                + ", ".join(f"{c} → {r}" for c, r in collision.items())
+                + "; tag each condition's units on their own"
+            )
+        units = ", ".join(unit_name(u.key) for u in group)
+        info = widgets.HTML(
+            f"<b>{html.escape(repeat)}</b>: {count} channel(s); sets {len(group)} imaging "
+            f"unit(s): {html.escape(units)}<div class='mb-help'>{html.escape(note)}</div>"
+        )
+        options = [(CHOOSE, None), *((label, label) for label in self.grid.labels)]
+        drops = []
+        cells: list[widgets.Widget] = [info]
+        for index in range(width):
+            if index >= count:
+                cells.append(widgets.HTML(""))
+                continue
+            value = tags[index] if tags[index] in self.grid.labels else None
+            drop = widgets.Dropdown(
+                options=options, value=value, layout=widgets.Layout(width="99%")
+            )
+            drop.observe(lambda c, k=key, i=index: self._picked(k, i, c["new"]), "value")
+            drops.append(drop)
+            cells.append(widgets.VBox([drop, widgets.HTML(f"<b>C{index}</b>")]))
+        button = ui.button(f" {ACTION}", style="info", icon="check")
+        button.layout = widgets.Layout(width="auto")
+        button.disabled = collision is not None  # no silent fill across biological repeats
+        button.on_click(lambda _, k=key, g=group: self.apply(k, g))
+        self.drops[key], self.buttons[key] = drops, button
+        cells.append(button)
+        return widgets.GridBox(cells, layout=columns(width))
+
+    def _picked(self, key: GroupKey, index: int, value: str | None) -> None:
+        """Note one tag of a row; nothing is saved before the row's button (one action)."""
+        self.pending[key][index] = value
+
+    def apply(self, key: GroupKey, group: tuple) -> bool:
+        """Save the row's tags for every offered unit its header does not contradict."""
+        tags = self.pending.get(key, [])
+        named = [t for t in tags if t]
+        answers = self.grid.store.answers()
+        if pairing_collision(answers, group) is not None:
+            return False
+        if len(named) != len(tags) or len(set(named)) != len(named):
+            self.notice = ui.status(
+                "error", "Not saved.", ["Tag every channel of the row, each label once."]
+            )
+            self.grid.refresh()
+            return False
+        save, cells, refused = repeat_fill(answers, group, named, self.grid.labels)
+        for unit, found in refused.items():
+            text = "; ".join(html.escape(difference_text(d)) for d in found)
+            layout = next(u for u in group if u.key == unit)
+            self.refused[unit] = (text, layout, group[0])
+        for unit in save:
+            self.refused.pop(unit, None)
+        if not save:
+            self.grid.refresh()
+            return False
+        ok = self.grid.commit(save, cells)
+        if ok and self.grid.same_channels.value:  # the user's action: tagged on their own
+            self.grid.matrix.own.update(save)
+            self.grid.matrix.sync_statement()
+            self.grid.refresh()
+        return ok
+
+
+__all__ = ["ACTION", "RepeatRows"]

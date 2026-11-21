@@ -353,6 +353,19 @@ editing, or the confirmed ones. An image that cannot be drawn gets a sentence sa
    **Add another layout** tags several units with one other number of channels with a row of
    their own. Colour (RGB) folders keep their own path. On a reopen, a new unit without header
    names is shown filled and saved only by **Tag the new units like the first tagged unit**.
+   **Tag this repeat folder (all conditions)**: one row of tags per biological-repeat folder
+   name (and channel count). Set the row once (for example the four channels of `rep2`, whose
+   acquisitions have an extra channel) and click the button: every condition's acquisitions in
+   that folder, technical repeats included, take these tags, each keeping its own list. An
+   acquisition with another number of channels is in its own row; one whose header names
+   contradict the row is listed and not filled, and the description is not saved while it is
+   listed (tag it on its own). The rows go by folder name, since the channels are tagged
+   before the pairing: if you pair the `rep2` folders of different conditions with different
+   biological repeats, the row says so and fills nothing; tag those conditions on their own.
+   In fast mode a row offers only the acquisitions that do not fit the layout, and those it
+   fills are tagged on their own (checked as in the strict mode); unticked, a row is offered
+   for every repeat folder. On a reopen, a row shows the tags every acquisition of its folder
+   already holds (only a convenience: what is saved is per acquisition).
    Untick the statement for the strict per-unit page, exactly as before (the units fast mode
    tagged from their headers with no click are untagged again: their header is a proposal to
    confirm, as before; your own tags stay): folders with identical
