@@ -32,11 +32,16 @@ UNITS = [
 ]
 
 
-def summary(unit, index, stains, dtype="uint16", jitter=None):
-    """One image of ``unit`` with ``stains``: {channel: (median, low, high)}, scaled by jitter."""
+def summary(unit, index, stains, dtype="uint16", jitter=None, unit_scale=None):
+    """One image of ``unit`` with ``stains``: {channel: (median, low, high)}, scaled by jitter.
+
+    ``unit_scale`` scales each channel of the unit (between-unit variation); ``jitter`` adds an
+    image-to-image factor of about 4 %.
+    """
     channels = tuple(sorted(stains))
+    unit_scale = unit_scale or {}
     scale = 1.0 if jitter is None else float(jitter.lognormal(0.0, 0.04))
-    values = [tuple(scale * v for v in stains[c]) for c in channels]
+    values = [tuple(scale * unit_scale.get(c, 1.0) * v for v in stains[c]) for c in channels]
     return ImageSummary(
         source_relative_path=f"{'/'.join(unit)}/img_{index}.tif",
         condition=unit.condition,
@@ -53,14 +58,20 @@ def summary(unit, index, stains, dtype="uint16", jitter=None):
     )
 
 
-def experiment(units=UNITS, edit=None, dtype=None, images=3, seed=0):
-    """Summaries of every unit; ``edit(unit, stains)`` may change one unit's stains."""
+def experiment(units=UNITS, edit=None, dtype=None, images=3, seed=0, unit_sd=0.0, noise=True):
+    """Summaries of every unit; ``edit(unit, stains)`` may change one unit's stains.
+
+    ``unit_sd`` is the between-unit variation: each unit's channel is scaled by a lognormal
+    factor of that log standard deviation (0.1 is about 10 %).
+    """
     rng = np.random.default_rng(seed)
     found = []
     for unit in units:
         stains = dict(STAINS) if edit is None else edit(unit, dict(STAINS))
         kind = "uint16" if dtype is None else dtype(unit)
-        found += [summary(unit, i, stains, kind, rng) for i in range(images)]
+        scale = {c: float(rng.lognormal(0.0, unit_sd)) for c in stains} if unit_sd else None
+        jitter = rng if noise else None
+        found += [summary(unit, i, stains, kind, jitter, scale) for i in range(images)]
     return found
 
 
@@ -77,8 +88,10 @@ def test_consistent_units_give_no_finding():
     report = check_channel_identity(experiment())
     assert report.findings == () and report.not_checked == ()
     assert report.validation_issues() == []
-    assert len(report.units) == 8 and len(report.signatures) == 24
-    assert "every channel looks like itself" in channel_identity_text(report)
+    assert len(report.units) == 8 and len(report.signatures) == 24 and report.compared == 24
+    assert "24 unit channels compared: each looks like the same channel" in (
+        channel_identity_text(report)
+    )
 
 
 def test_two_swapped_channels_give_one_mutual_swap():
@@ -93,6 +106,8 @@ def test_two_swapped_channels_give_one_mutual_swap():
     assert issue.code == POSSIBLE_CHANNEL_SWAP and not issue.is_error
     assert issue.paths == ("ctrl/rep2/t1",)
     assert "channels DAPI and GFP look swapped" in issue.message
+    assert issue.message.count("distance") == 2  # both channels' distances are given
+    assert "swapped" in issue.message and "nearest" not in issue.message.casefold()
 
 
 def test_a_dim_channel_is_unlike_the_others_but_no_swap():
@@ -108,9 +123,93 @@ def test_a_dim_channel_is_unlike_the_others_but_no_swap():
     (issue,) = report.validation_issues()
     assert issue.code == CHANNEL_UNLIKE_OTHERS
     assert "its level and brightness and contrast differ" in issue.message
+    assert "swapped" not in issue.message
 
 
-def test_a_treatment_of_a_whole_condition_is_never_a_finding():
+def test_an_all_zero_channel_is_unlike_the_others():
+    def zero(unit, stains):
+        if unit == SWAPPED:
+            stains["Actin"] = (0.0, 0.0, 0.0)
+        return stains
+
+    report = check_channel_identity(experiment(edit=zero))
+    (found,) = report.findings
+    assert (found.code, found.unit, found.channel) == (CHANNEL_UNLIKE_OTHERS, SWAPPED, "Actin")
+    assert found.resembles is None
+
+
+def test_a_unit_between_two_channels_is_unlike_the_others_with_its_nearest_channel():
+    # DAPI three quarters of the way to Actin on the log scale: unlike DAPI, nearer Actin, but
+    # not clearly within Actin, so it is no swap.
+    def between(unit, stains):
+        if unit == SWAPPED:
+            dapi, actin = np.log(stains["DAPI"]), np.log(stains["Actin"])
+            stains["DAPI"] = tuple(np.exp(dapi + 0.74 * (actin - dapi)))
+        return stains
+
+    report = check_channel_identity(experiment(edit=between, noise=False))
+    (found,) = report.findings
+    assert (found.code, found.channel, found.nearest) == (CHANNEL_UNLIKE_OTHERS, "DAPI", "Actin")
+    assert not found.clear and found.nearest_distance < found.distance
+    (issue,) = report.validation_issues()
+    assert issue.message.endswith("Nearest channel: Actin.") and "swapped" not in issue.message
+
+
+def test_a_channel_like_one_the_unit_does_not_have_is_no_swap():
+    # Units of rep2 have a fourth channel, Cy5; a rep1 unit's Actin looks like Cy5.
+    cy5 = (60.0, 20.0, 300.0)
+
+    def stains(unit, found):
+        if unit.biological_repeat == "rep2":
+            found["Cy5"] = cy5
+        if unit == UNITS[0]:  # ctrl/rep1/t1, without Cy5
+            found["Actin"] = cy5
+        return found
+
+    report = check_channel_identity(experiment(edit=stains))
+    (found,) = report.findings
+    assert (found.code, found.unit, found.channel) == (CHANNEL_UNLIKE_OTHERS, UNITS[0], "Actin")
+    assert found.nearest == "Cy5" and found.nearest_absent and found.clear
+    (issue,) = report.validation_issues()
+    assert "It looks like Cy5, a channel this unit does not have." in issue.message
+    assert "swap" not in issue.message
+
+
+def test_the_same_experiment_in_16_bits_and_as_0_to_1_floats_gives_the_same_findings():
+    def edit(unit, stains):
+        stains = swap_dapi_gfp(unit, stains)
+        if unit == UNITS[5]:
+            stains["Actin"] = tuple(0.2 * v for v in stains["Actin"])
+        return stains
+
+    def floats(unit, stains):
+        return {c: tuple(v / 65535 for v in values) for c, values in edit(unit, stains).items()}
+
+    def verdicts(report):
+        return [
+            (f.code, f.unit, f.channel, f.nearest, f.mutual, round(f.distance, 6))
+            for f in report.findings
+        ]
+
+    sixteen = check_channel_identity(experiment(edit=edit))
+    as_float = check_channel_identity(experiment(edit=floats, dtype=lambda unit: "float32"))
+    assert len(sixteen.findings) == 3  # the mutual pair and the dim channel
+    assert verdicts(as_float) == verdicts(sixteen)
+    assert [i.code for i in as_float.issues] == [i.code for i in sixteen.issues]
+
+
+def test_with_realistic_unit_variation_only_real_swaps_are_reported():
+    # Every unit's channel varies by about 10 % (log sd 0.1); seeded, small and fast.
+    for seed in range(20):
+        consistent = check_channel_identity(experiment(seed=seed, unit_sd=0.1))
+        assert consistent.issues == (), seed
+        swapped = check_channel_identity(experiment(edit=swap_dapi_gfp, seed=seed, unit_sd=0.1))
+        assert [(i.code, i.paths) for i in swapped.issues] == [
+            (POSSIBLE_CHANNEL_SWAP, (SWAPPED.label,))
+        ], seed
+
+
+def test_a_treatment_of_a_whole_condition_is_not_a_finding():
     def treated(unit, stains):
         if unit.condition == "treated":  # GFP three times brighter, DAPI halved
             stains["GFP"] = tuple(3 * v for v in stains["GFP"])
@@ -118,10 +217,11 @@ def test_a_treatment_of_a_whole_condition_is_never_a_finding():
         return stains
 
     assert check_channel_identity(experiment(edit=treated)).findings == ()
-    # Compared across conditions instead (one unit per condition), it would be reported.
-    lonely = [Unit(c, "rep1", "t1") for c in ("ctrl", "treated")] + UNITS[4:7]
+    # With one unit in its condition, ctrl/rep1/t1 is compared with the four treated units
+    # (across conditions), and the treatment is then reported, saying so.
+    lonely = [UNITS[0], *UNITS[4:8]]
     across = check_channel_identity(experiment(lonely, edit=treated))
-    assert {f.unit for f in across.findings} == {Unit("ctrl", "rep1", "t1")}
+    assert {f.unit for f in across.findings} == {UNITS[0]}
     assert all(f.across_conditions for f in across.findings)
     assert "compared across conditions" in across.validation_issues()[0].message
 
@@ -158,7 +258,10 @@ def test_too_few_units_are_not_checked():
     assert report.findings == ()
     assert len(report.not_checked) == 9  # 3 units x 3 channels
     assert all("fewer than 3 other units" in n.reason for n in report.not_checked)
-    assert "Not checked (9):" in channel_identity_text(report)
+    text = channel_identity_text(report)
+    assert "Not checked (9):" in text and report.compared == 0
+    assert "Channel identity: no channel could be checked" in text
+    assert "looks like" not in text
 
 
 def test_negative_intensities_and_blank_channels_are_not_checked():
@@ -181,12 +284,21 @@ def test_negative_intensities_and_blank_channels_are_not_checked():
 
 
 def test_the_limits_are_typed_and_recorded_exactly():
-    settings = ChannelIdentitySettings(outlier_limit=5, min_reference=4, mad_floor=0.1)
+    settings = ChannelIdentitySettings(
+        outlier_limit=5, min_reference=4, mad_floor=0.1, min_log_difference=1, swap_limit=1.5
+    )
     assert recorded_settings(settings_entry(settings)) == settings
     assert settings_entry(None) is None and recorded_settings(None) is None
     with pytest.raises(ValueError, match="channel identity limits"):
         ChannelIdentitySettings.from_dict({"outlier_limit": 3.5})  # never defaulted
-    for bad in ({"outlier_limit": 0}, {"min_reference": 0}, {"mad_floor": float("nan")}):
+    bad_limits = (
+        {"outlier_limit": 0},
+        {"min_reference": 0},
+        {"mad_floor": float("nan")},
+        {"min_log_difference": -1},
+        {"swap_ratio": 0.5},
+    )
+    for bad in bad_limits:
         with pytest.raises(ValueError):
             ChannelIdentitySettings(**bad)
     # Changing a limit recomputes nothing: the same summaries, another verdict.

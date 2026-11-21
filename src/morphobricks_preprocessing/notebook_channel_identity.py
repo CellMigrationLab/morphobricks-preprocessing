@@ -24,16 +24,17 @@ except ImportError as exc:  # pragma: no cover - depends on the environment
     ) from exc
 
 from . import notebook_style as ui
-from .channel_identity import (
+from .channel_identity import check_channel_identity
+from .channel_identity_model import (
     CHANNEL_IDENTITY_CODES,
     POSSIBLE_CHANNEL_SWAP,
-    TITLES,
     ChannelFinding,
     ChannelIdentityReport,
     ChannelSignature,
-    channel_centre,
+)
+from .channel_identity_text import (
+    TITLES,
     channel_identity_summary,
-    check_channel_identity,
     describe_settings,
     not_compared_text,
 )
@@ -61,8 +62,10 @@ class ChannelIdentityView:
                 ui.help_text(
                     "Each imaging unit's channels are compared with the same channels of the "
                     "other units of its condition (median, high percentile and contrast, on a "
-                    "log scale), so a treatment effect is never reported. A channel that looks "
-                    "like another channel may have been tagged wrongly. Warnings only."
+                    "log scale), so a treatment effect is not reported when the condition has "
+                    "at least 3 other units. A channel that looks like another channel may "
+                    "have been tagged wrongly. A swap made in every unit of a condition is not "
+                    "found: it is what that condition looks like. Warnings only."
                 ),
                 self.status,
                 self.findings,
@@ -78,12 +81,12 @@ class ChannelIdentityView:
             channel_identity_summary(report),
             f"Limits: {describe_settings(report.settings)}.",
         ]
-        kind = "warn" if report.findings else "ok"
-        title = (
-            "Some channels do not look like themselves."
-            if report.findings
-            else ("Every channel checked looks like itself.")
-        )
+        if not report.compared:
+            kind, title = "info", "No channel could be checked."
+        elif report.findings:
+            kind, title = "warn", "Some channels do not look like themselves."
+        else:
+            kind, title = "ok", "Every channel compared looks like itself."
         self.status.value = ui.status(kind, title, lines)
         self.findings.value = channel_identity_html(report)
         self.plot.value = channel_identity_png(report, labels) or b""
@@ -172,7 +175,7 @@ def channel_identity_png(
             color=INK,
             linewidth=1.4,
             linestyle="--",
-            label="possible swap: from its channel's cluster",
+            label="possible swap: from its reference (other units of its condition)",
         ),
     ]
     figure.legend(handles=handles, loc="outside lower center", ncols=3, fontsize=8, frameon=False)
@@ -201,24 +204,24 @@ def _draw_type(axes: object, report: ChannelIdentityReport, dtype: str, style: d
     for signature in signatures:
         found = report.finding(signature.unit, signature.channel)
         if found is not None:
-            _draw_finding(axes, report, signature, found, style[signature.channel])
-    axes.set_xlabel("Brightness: log(1 + high percentile)", fontsize=9)
-    axes.set_ylabel("Contrast: log(1 + high - low percentile)", fontsize=9)
+            _draw_finding(axes, signature, found, style[signature.channel])
+    axes.set_xlabel("Brightness: log of the high percentile", fontsize=9)
+    axes.set_ylabel("Contrast: log of (high - low percentile)", fontsize=9)
     axes.tick_params(labelsize=8)
     axes.grid(alpha=0.3)
 
 
 def _draw_finding(
     axes: object,
-    report: ChannelIdentityReport,
     signature: ChannelSignature,
     found: ChannelFinding,
     look: tuple[str, str],
 ) -> None:
-    """Circle and label a flagged point; for a swap, an arrow from its channel's cluster.
+    """Circle and label a flagged point; for a swap, an arrow from the reference it was compared to.
 
-    The arrow starts at the middle of the tag's own cluster (the other units) and ends at the
-    point, which lies in or near the cluster of the channel it looks like.
+    The arrow starts at the centre of the reference the check used for this unit and channel
+    (the other units of its condition, or of the experiment) and ends at the point, which lies
+    in or near the cluster of the channel it looks like.
     """
     point = (signature.bright, signature.spread)
     axes.scatter(*point, s=70, color=look[0], marker=look[1], edgecolors=INK, zorder=5)
@@ -241,10 +244,8 @@ def _draw_finding(
             "alpha": 0.85,
         },
     )
-    start = None
-    if found.resembles is not None:
-        start = channel_centre(report, signature.channel, signature.dtype, without=signature.unit)
-    if start is not None:
+    if found.code == POSSIBLE_CHANNEL_SWAP:
+        start = found.reference[1:]
         # Curved, so the two arrows of a mutual swap do not lie on each other.
         arrow = {"arrowstyle": "-|>", "color": INK, "linewidth": 1.4, "linestyle": "--"}
         arrow["connectionstyle"] = "arc3,rad=0.2"

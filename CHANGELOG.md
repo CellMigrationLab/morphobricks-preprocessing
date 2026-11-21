@@ -19,17 +19,21 @@ old pin are refused with `spec_commit_mismatch`, as at every re-pin.
 - **Channel-identity check after the run** (contract §14.1, design
   `channel-identity-check-2026-11-21` in MorphoFeature's `claude/restart-doc`): from the image
   summaries the intensity checks already make (no pixel read), every imaging unit's channel is
-  compared with the same channel of the other units of its condition (signature: log1p of the
-  median, the high percentile and the high minus low percentile; median/MAD reference without the
-  unit itself, across the experiment with fewer than 3 units in the condition, and said so).
-  New warnings `channel_unlike_others` and `possible_channel_swap` (a mutual swap is one
-  warning), never blocking, in the run report and `RunResult.channel_identity`, printed by
-  `run` and shown in the notebook under **Do the channels look like themselves?** with a plot
-  of brightness against contrast (flagged units circled and labelled, swaps drawn with an
-  arrow). Units of different pixel types are not compared; channels with too few reference
-  units are listed as not checked. The limits (`ChannelIdentitySettings`: 3.5, 3, 0.05) are
-  recorded in the manifest's new optional key `channel_identity`, beside `intensity_checks`
-  (manifest version unchanged).
+  compared with the same channel of the other units of its condition (signature: a scale-free
+  log of the median, the high percentile and the high minus low percentile, so 8-bit, 16-bit
+  and 0-1 float images give the same verdicts; median/MAD reference without the unit itself,
+  across the experiment with fewer than 3 units in the condition, and said so). New warnings
+  `channel_unlike_others` (with the nearest channel, or a channel the unit does not have) and
+  `possible_channel_swap` (a mutual pair is one warning, or a clear look-alike of another
+  channel of the unit), never blocking, in the run report and `RunResult.channel_identity`,
+  printed by `run` and shown in the notebook under **Do the channels look like themselves?**
+  with a plot of brightness against contrast (flagged units circled and labelled, swaps drawn
+  with an arrow from the reference used). Units of different pixel types are not compared;
+  channels with too few reference units are listed as not checked; a swap made in every unit
+  of a condition is not found. The limits (`ChannelIdentitySettings`: `outlier_limit` 3.5,
+  `min_reference` 3, `mad_floor` 0.2, `min_log_difference` 0.6, `swap_limit` 1.0,
+  `swap_ratio` 3.0, chosen with a false-positive simulation) are recorded in the manifest's new
+  optional key `channel_identity`, beside `intensity_checks` (manifest version unchanged).
 
 - **The description's fast mode** (experiment-v1 4.3a, 4.4): the optional top-level table
   `channel_layout` (`channels`, `image_type`, `confirmed_on`) and the unit key `channels_from`

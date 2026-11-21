@@ -93,7 +93,7 @@ def test_the_command_line_prints_the_channel_warnings(swapped_run, capsys):
     root, _ = swapped_run
     assert main(["run", str(root), "--axes", "CYX"]) == 0
     out = capsys.readouterr().out
-    assert "Channel identity: 5 units checked: 1 channel warning." in out
+    assert "Channel identity: 10 unit channels compared: 1 channel warning." in out
     assert "(possible_channel_swap, 1):" in out
     assert "In unit ctrl/rep1/t3, channels ch1 and ch2 look swapped" in out
     out.encode("ascii")  # Windows consoles

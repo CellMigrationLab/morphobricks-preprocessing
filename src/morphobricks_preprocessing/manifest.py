@@ -31,7 +31,7 @@ from morphobricks_normalization.ranges import HistogramSettings
 from ._io import file_sha256 as file_sha256  # re-exported (moved)
 from ._io import write_text_atomic
 from .axes import AxisMapping
-from .channel_identity import ChannelIdentitySettings, recorded_settings, settings_entry
+from .channel_identity_model import ChannelIdentitySettings, recorded_settings, settings_entry
 from .description_record import KEY as DESCRIPTION_KEY
 from .description_record import recorded_description
 from .image_names import position_id
