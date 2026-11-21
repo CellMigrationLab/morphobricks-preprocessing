@@ -218,7 +218,13 @@ class _CheckSaveScreen(_ReplicateBoxes):
             self._check = self._candidate_check(answers)
         self.todo.value = todo_html(*todo)
         self.checks.value = checks_html(self._check) or self._blocked(state)
-        ready = self._check is not None and self._check.can_publish and not self._moves_open()
+        rows = self.channel_grid.by_repeat.listed()  # a repeat folder's row left units unfilled
+        ready = (
+            self._check is not None
+            and self._check.can_publish
+            and not self._moves_open()
+            and not rows
+        )
         self.save_button.disabled = not ready or self._saved_current()
         self.save_note.value = (
             fast_block_html(self._check)
@@ -238,10 +244,16 @@ class _CheckSaveScreen(_ReplicateBoxes):
             line = f"{plural(missing, 'answer')} still missing (listed above the button)"
             return [line, *self._open_change_lines()]
         fast = () if self._check is None else self._check.fast_refusals
+        rows = self.channel_grid.by_repeat.listed()
         return (
             self._open_change_lines()
             or self._unseen_lines()
             or (["fast mode: every image must fit the channel list (listed below)"] if fast else [])
+            or (
+                [f"{len(rows)} imaging unit(s) a repeat folder's row did not fill: see Channels"]
+                if rows
+                else []
+            )
             or ["these answers are refused: see the red message above the button"]
         )
 
