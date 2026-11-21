@@ -38,6 +38,12 @@ from .calibration import (
     review_calibration,
 )
 from .calibration_io import CalibrationFormatError, read_calibration
+from .channel_identity import (
+    CHANNEL_IDENTITY_CODES,
+    ChannelIdentityReport,
+    ChannelIdentitySettings,
+    check_channel_identity,
+)
 from .conversion import ConversionResult, convert_experiment
 from .conversion_plan import ConversionPreview, preview_conversion
 from .conversion_record import (
@@ -259,6 +265,7 @@ __all__ = [
     "AXIS_CHECK_CODES",
     "AXIS_ERROR_CODES",
     "CALIBRATION_FILENAME",
+    "CHANNEL_IDENTITY_CODES",
     "CONSISTENCY_CODES",
     "CONVERSION_RECORD_FILENAME",
     "DEFAULT_MEMORY_LIMIT",
@@ -294,6 +301,8 @@ __all__ = [
     "CalibrationEntry",
     "CalibrationFormatError",
     "CalibrationReview",
+    "ChannelIdentityReport",
+    "ChannelIdentitySettings",
     "CompressionNotBoundedError",
     "ConversionRecord",
     "ConversionRecordError",
@@ -381,6 +390,7 @@ __all__ = [
     "balance_table",
     "biological_repeats",
     "calibration_entry",
+    "check_channel_identity",
     "check_dataset",
     "check_identity_case",
     "check_identity_text",

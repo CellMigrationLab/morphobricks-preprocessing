@@ -30,6 +30,7 @@ from morphobricks_normalization.ranges import (
 
 from .axes import AxisMapping, reference_axes
 from .axis_review import review_axes
+from .channel_identity import channel_identity_text
 from .discovery import default_output_folder
 from .image_type import IMAGE_TYPES, RGB, ImageTypeReview, review_image_type
 from .intensity import intensity_text
@@ -413,6 +414,8 @@ def run_command(args: argparse.Namespace) -> int:
     if result.intensity is not None:
         print()
         print(intensity_text(result.intensity))
+    if result.channel_identity is not None:
+        print(f"\n{channel_identity_text(result.channel_identity)}")
     return 0 if result.written else 1
 
 
