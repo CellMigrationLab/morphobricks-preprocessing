@@ -248,7 +248,11 @@ def write_mask(
         (any exception, ``KeyboardInterrupt`` too), the write is rolled back under the lock:
         an overwritten mask is restored byte for byte from a hidden copy kept beside it
         (``.<name>.previous.<random>``, removed once the callback returns), a new mask is
-        removed; then the error propagates.
+        removed; then the error propagates. The rollback happens on EVERY exception, even if the
+        callback had already durably committed its provenance: a callback that commits must
+        reconcile its own post-commit failures (and not raise) before returning or raising.
+        The provenance record is written atomically (replaced) but not fsynced, so a power
+        loss can lose it: this is not a durability guarantee.
 
     Returns
     -------
