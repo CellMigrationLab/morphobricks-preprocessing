@@ -609,8 +609,10 @@ def test_372_b_a_changed_reference_header_is_compared_with_the_current_reference
     assert "is ‘Z’" in rows.listed()[gone] and "is ‘X’" not in rows.listed()[gone]
     _rewrite_header(root, lead, ["P", "Q", "Ch3"])  # the reference now names what the unit names
     _recheck(nb)
-    assert set(rows.listed()) == {kept}  # no contradiction left: the old reference is not kept
-    assert gone not in rows.refused
+    assert set(rows.listed()) == {gone, kept}  # no contradiction left, but not tagged yet
+    assert "incomplete" in rows.listed()[gone]
+    _tag(nb, gone, TAGS)  # tagged as its reference: it fits the row, and leaves the list
+    assert gone not in rows.listed()  # (its sibling's header now names the same labels)
 
 
 def test_372_c_a_recheck_that_changes_nothing_keeps_every_unresolved_refusal(
@@ -623,3 +625,25 @@ def test_372_c_a_recheck_that_changes_nothing_keeps_every_unresolved_refusal(
         nb.channel_grid.layouts, nb.channel_grid.labels, nb.channel_grid.rows.thumbs
     )  # the screen reopened: still unresolved, still listed
     assert set(rows.listed()) == {gone, kept}
+
+
+def test_372_d_a_refusal_survives_a_switch_to_fast_mode_and_a_reopen(tmp_path, statement_off):
+    nb, _, rows, gone, kept = _refused_twice(tmp_path)
+    grid = nb.channel_grid
+    grid.same_channels.value = True  # fast mode: the rows offer only units outside the layout
+    grid.open(grid.layouts, grid.labels, grid.rows.thumbs)
+    # the reference is the whole row's, not the lone offered unit: the contradiction stands
+    assert set(rows.listed()) == {gone, kept}
+
+
+def test_372_e_a_refusal_stays_listed_while_the_units_own_tags_are_incomplete(
+    tmp_path, statement_off
+):
+    nb, root, rows, gone, kept = _refused_twice(tmp_path)
+    _rewrite_header(root, ("ctrl", "rep2", "t1"), ["P", "Q", "Ch3"])  # no contradiction left
+    _recheck(nb)
+    grid = nb.channel_grid
+    unit = nb.draft_answers.units.get(gone)
+    assert unit is None or not all(unit.channels)  # its own tags are not confirmed
+    assert gone in rows.listed() and gone in rows.refused  # listed while they are incomplete
+    assert not grid.complete  # never counted as tagged

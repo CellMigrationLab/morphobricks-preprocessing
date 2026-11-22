@@ -27,6 +27,7 @@ convenience only: the saved data are per unit (the description format does not c
 from __future__ import annotations
 
 import html
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, NamedTuple
 
 import ipywidgets as widgets
@@ -120,16 +121,19 @@ class RepeatRows:
         disagree now is refused for that (:func:`.repeat_tags.repeat_apart`), and one whose
         images agree again is dropped; any other keeps its row's *current* reference
         (:func:`.repeat_tags.repeat_lead`) and is kept only while its header still contradicts
-        the row's tags at the click, or its own tags (:func:`.channel_matrix.differences`). A
+        the row's tags at the click, or its own tags (:func:`.channel_matrix.differences`), or
+        its own tags are incomplete. The reference is taken from the whole row, not only from
+        the units a mode offers. A
         surviving contradiction is never cleared because the screen reopened.
         """
         grid, kept = self.grid, {}
-        rows = self._offered() if grid.labels else {}
+        offered = {u.key for g in self._offered().values() for u in g} if grid.labels else set()
+        rows = self._rows()  # the whole row: its reference never depends on the mode
         answers = grid.store.answers()
         for key, old in self.refused.items():
             group = next((g for g in rows.values() if any(u.key == key for u in g)), ())
             layout = next((u for u in group if u.key == key), None)
-            if layout is None:
+            if layout is None or key not in offered:
                 continue
             why = repeat_apart(group).get(key)
             if why is not None:
@@ -142,15 +146,21 @@ class RepeatRows:
             found = differences(layout, old.tags, lead, grid.labels, answers.channels)
             found = found or differences(layout, own, lead, grid.labels, answers.channels)
             if found:
-                text = "; ".join(html.escape(difference_text(d)) for d in found)
-                kept[key] = Refusal(text, layout, lead, old.tags)
+                kept[key] = Refusal(_found_text(found), layout, lead, old.tags)
+            elif None in own:  # listed while its own tags are incomplete (:meth:`listed`)
+                kept[key] = Refusal("its own tags are incomplete", layout, lead, old.tags)
         self.refused = kept
+
+    def _rows(self) -> dict:
+        """Return every repeat folder and channel count with all its units, in any mode."""
+        grid = self.grid
+        colour = {u.key for u in grid.layouts if grid.colour(u)}
+        return repeat_groups(grid.layouts, colour)
 
     def _offered(self) -> dict:
         """Return the rows: every repeat unticked; in fast mode only units outside the layout."""
         grid = self.grid
-        colour = {u.key for u in grid.layouts if grid.colour(u)}
-        groups = repeat_groups(grid.layouts, colour)
+        groups = self._rows()
         if not grid.same_channels.value:
             return groups
         _, apart = grid.matrix.groups()
@@ -267,9 +277,10 @@ class RepeatRows:
             return False
         save, cells, refused = repeat_fill(answers, group, named, self.grid.labels)
         for unit, found in refused.items():
-            text = "; ".join(html.escape(difference_text(d)) for d in found)
             layout = next(u for u in group if u.key == unit)
-            self.refused[unit] = Refusal(text, layout, repeat_lead(group), tuple(named))
+            self.refused[unit] = Refusal(
+                _found_text(found), layout, repeat_lead(group), tuple(named)
+            )
         for unit, why in repeat_apart(group).items():
             layout = next(u for u in group if u.key == unit)
             self.refused[unit] = Refusal(html.escape(why), layout, None, tuple(named))
@@ -285,6 +296,11 @@ class RepeatRows:
             self.grid.matrix.sync_statement()
             self.grid.refresh()
         return ok
+
+
+def _found_text(found: Sequence) -> str:
+    """Return the refusal text of a unit's contradictions, one sentence each."""
+    return "; ".join(html.escape(difference_text(d)) for d in found)
 
 
 __all__ = ["ACTION", "RepeatRows"]

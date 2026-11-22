@@ -125,9 +125,12 @@ old pin are refused with `spec_commit_mismatch`, as at every re-pin.
   current reference (`repeat_lead`, `repeat_apart`, `differences`); a surviving contradiction
   is kept, with its text worded against the reference as read now, and a unit that no longer
   contradicts is dropped. A removed unit no longer blocks publishing. The row now says "N units
-  eligible for this row" (it fills only those whose tags pass the header check). Tests: a
-  parameterised `balance_table` pairing regression (missing pairing, case-distinct labels,
-  unused pairing keys).
+  eligible for this row" (it fills only those whose tags pass the header check). The
+  reference is the whole row's in fast mode too, and a unit with incomplete own tags stays
+  listed. Tests: a parameterised `balance_table` pairing regression (missing pairing,
+  case-distinct labels, unused pairing keys); the `test_372_*` notebook tests in
+  `tests/test_notebook_tag_by_repeat.py` (removed unit, changed reference, unchanged recheck,
+  fast-mode reopen, incomplete own tags).
 
 - **Tag this repeat folder (all conditions)** (#366, after #363):
   - A row never fills an acquisition whose images disagree (other header names or colour, or
