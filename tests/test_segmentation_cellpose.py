@@ -12,7 +12,6 @@ import hashlib
 import json
 import subprocess
 import sys
-from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -30,23 +29,13 @@ from morphobricks_preprocessing.segmentation_handoff import (
     resolve_segmentation,
 )
 from morphobricks_preprocessing.segmentation_record import SegmentationError, read_record
-from test_segmentation_handoff import EXTRA_FIRST, MASKS_SECTION, REPEAT_2
-from test_stage3_channels import LEVELS, described_run, extra_stain
+from test_segmentation_handoff import MASKS_SECTION, REPEAT_2
+from test_stage3_channels import LEVELS
 
 
 @pytest.fixture
-def run(tmp_path):
-    data = extra_stain().replace(*EXTRA_FIRST)
-    result, out, _ = described_run(tmp_path, data)
-    assert result.written, [(i.code, i.message) for i in result.issues]
-    base = out.parent
-    return SimpleNamespace(
-        inputs=RunInputs.open(out),
-        out=out,
-        experiment=base / "exp",
-        masks=base / "masks",
-        data=data,
-    )
+def run(mixed_run):
+    return mixed_run
 
 
 @pytest.fixture

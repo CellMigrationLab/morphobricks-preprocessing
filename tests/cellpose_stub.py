@@ -16,6 +16,9 @@ from types import SimpleNamespace
 import numpy as np
 
 from morphobricks_preprocessing import segmentation_cellpose_model as model_module
+from morphobricks_preprocessing.run_inputs import RunInputs
+from test_segmentation_handoff import EXTRA_FIRST
+from test_stage3_channels import described_run, extra_stain
 
 BUILTINS = ("cpsam_v2", "cpsam", "cpdino", "cpdino-vitb")
 
@@ -132,3 +135,22 @@ def custom_model(tmp_path, name="my_model"):
     path.parent.mkdir(exist_ok=True)
     path.write_bytes(weights_bytes(name))
     return path
+
+
+def mixed_run(tmp_path):
+    """Run the owner's mixed-channel case: DNA, ACTIN and TUB everywhere, EXTRA first in one repeat.
+
+    Returns a namespace with the opened ``inputs``, the ``out`` (run), ``experiment`` and ``masks``
+    folders and the description ``data``.
+    """
+    data = extra_stain().replace(*EXTRA_FIRST)
+    result, out, _ = described_run(tmp_path, data)
+    assert result.written, [(i.code, i.message) for i in result.issues]
+    base = out.parent
+    return SimpleNamespace(
+        inputs=RunInputs.open(out),
+        out=out,
+        experiment=base / "exp",
+        masks=base / "masks",
+        data=data,
+    )

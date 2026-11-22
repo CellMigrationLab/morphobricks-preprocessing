@@ -386,7 +386,7 @@ def run_batch(
     progress
         Called as ``progress(done, total, image)`` before each image and once at the end.
     batch_id
-        The record's batch ID; by default the start time (UTC).
+        The record's batch ID; by default the start time (UTC, to the microsecond).
 
     Raises
     ------
@@ -398,7 +398,7 @@ def run_batch(
     missing = {
         f.relative_path for f in images_to_segment(job.inputs, job.mask_type, job.masks_root)
     }
-    started = batch_id or datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    started = batch_id or datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
     entries: list[SegmentedImage] = []
     try:
         for done, fov in enumerate(chosen):

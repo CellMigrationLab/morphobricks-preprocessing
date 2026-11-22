@@ -11,6 +11,7 @@ loaded.
 from __future__ import annotations
 
 import functools
+import html
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -55,9 +56,14 @@ def stops(method: Callable[P, T]) -> Callable[P, T]:
     return wrapper
 
 
-def _card(kind: str, title: str, lines: tuple[str, ...] = ()) -> widgets.HTML:
+def _verbatim(text: str) -> str:
+    """Return ``text`` as an HTML block that keeps its line breaks and shows it unchanged."""
+    return f"<pre style='white-space:pre-wrap;margin:0'>{html.escape(text)}</pre>"
+
+
+def _card(kind: str, title: str, lines: tuple[str, ...] = (), *, raw: bool = False) -> widgets.HTML:
     """Return a status card as a widget, with the notebook's look."""
-    return widgets.HTML(f"<div class='mb-root'>{status(kind, title, lines)}</div>")
+    return widgets.HTML(f"<div class='mb-root'>{status(kind, title, lines, raw=raw)}</div>")
 
 
 class ChannelPicker:
@@ -108,7 +114,9 @@ class ChannelPicker:
             note = _card("ok", "Channels: " + ", ".join(self.channel_ids))
         except REFUSALS as exc:
             self.plan, self.refusal = None, str(exc)
-            note = _card("error", "These channels cannot be used", (self.refusal,))
+            note = _card(
+                "error", "These channels cannot be used", (_verbatim(self.refusal),), raw=True
+            )
         self.message.value = note.value
 
     def box(self) -> widgets.VBox:
