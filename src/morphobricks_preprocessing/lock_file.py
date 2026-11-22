@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import os
 import socket
+import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
@@ -31,11 +32,16 @@ class LockHolder:
         Its process ID on that computer (0 when the lock file cannot be read).
     started_at
         When it took the lock (UTC, ISO 8601), or empty when unknown.
+    token
+        A random ID of this one holding (``uuid4`` hex), so two holders of the same process and
+        second (two threads, a lock deleted and retaken) are never taken for each other; empty
+        for a lock file written without one (an older run lock).
     """
 
     host: str
     pid: int
     started_at: str = ""
+    token: str = ""
 
     def describe(self) -> str:
         """Name the holder in words, e.g. ``"process 412 on lab-pc, since 2026-11-02T10:00"``."""
@@ -69,7 +75,12 @@ def read_holder(path: Path) -> LockHolder | None:
     """
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-        return LockHolder(str(data["host"]), int(data["pid"]), str(data.get("started_at", "")))
+        return LockHolder(
+            str(data["host"]),
+            int(data["pid"]),
+            str(data.get("started_at", "")),
+            str(data.get("token", "")),
+        )
     except FileNotFoundError:
         return None
     except (OSError, ValueError, KeyError, TypeError):
@@ -81,8 +92,9 @@ def exclusive_lock(path: Path) -> Iterator[LockHolder]:
     """Hold the lock file ``path`` for the block: created with ``O_CREAT | O_EXCL``.
 
     It records this process as its holder and is removed when the block ends, also on an
-    error, but only while it still names this process (a lock another writer took after a
-    user deleted this one is never removed). It never waits.
+    error, but only while it still names this holder, token included (a lock another writer
+    took after a user deleted this one is never removed, even from the same process). It never
+    waits.
 
     Raises
     ------
@@ -90,7 +102,10 @@ def exclusive_lock(path: Path) -> Iterator[LockHolder]:
         When the file exists: another writer holds it (named by its holder).
     """
     holder = LockHolder(
-        socket.gethostname(), os.getpid(), datetime.now(UTC).isoformat(timespec="seconds")
+        socket.gethostname(),
+        os.getpid(),
+        datetime.now(UTC).isoformat(timespec="seconds"),
+        uuid.uuid4().hex,
     )
     try:
         handle = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)

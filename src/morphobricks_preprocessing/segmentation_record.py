@@ -25,7 +25,7 @@ import json
 import re
 import uuid
 from collections.abc import Iterator
-from contextlib import ExitStack, contextmanager
+from contextlib import AbstractContextManager, ExitStack, contextmanager
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -411,26 +411,32 @@ def new_batch_id() -> str:
 
 
 @contextmanager
-def _record_lock(path: Path) -> Iterator[None]:
-    """Hold an exclusive lock file beside the record for the block; refuse if it is held.
+def hold_lock(lock: Path, what: str) -> Iterator[None]:
+    """Hold the exclusive lock file ``lock`` for the block; refuse at once if it is held.
 
     The run's own lock (:func:`.lock_file.exclusive_lock`): created with ``O_CREAT | O_EXCL``,
     removed at the end (also on an error) while it still names this writer, never waited on.
     It protects the writers of one computer; a file system shared by several computers (a
     Drive folder open in two Colab sessions) does not make the exclusive create reliable.
+    ``what`` names what is being written, for the refusal that names the holder.
     """
-    path.parent.mkdir(parents=True, exist_ok=True)
+    lock.parent.mkdir(parents=True, exist_ok=True)
     stack = ExitStack()
     try:
-        stack.enter_context(exclusive_lock(path.with_name(RECORD_LOCK_FILENAME)))
+        stack.enter_context(exclusive_lock(lock))
     except LockHeldError as held:
         raise SegmentationError(
-            f"The record {path} is being written by {held.holder.describe()} "
+            f"{what} is being written by {held.holder.describe()} "
             f"({held.path.name} exists). Wait for it to finish and write again; if no writer "
             f"is running (it was killed), delete {held.path} yourself."
         ) from None
     with stack:
         yield
+
+
+def _record_lock(path: Path) -> AbstractContextManager[None]:
+    """Hold the lock beside the record ``path`` for the block (:func:`hold_lock`)."""
+    return hold_lock(path.with_name(RECORD_LOCK_FILENAME), f"The record {path}")
 
 
 def record_path(masks_root: str | Path, mask_type: str) -> Path:

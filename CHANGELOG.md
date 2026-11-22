@@ -38,6 +38,16 @@ old pin are refused with `spec_commit_mismatch`, as at every re-pin.
   and a type spelled two ways are refused before writing; a mask is claimed with an exclusive create and
   then moved into place, so it is never silently replaced and needs no hard links (Google Drive). The masks step skips that file silently instead of
   warning `mask_without_image` (only directly in a type folder). "Has a mask" is decided by the run's own pairing (either layout, any case), `write_mask` refuses a twin elsewhere and never replaces a mask another writer made in between, and `resolve_segmentation` / `SegmentationPlan` resolve the channels once for a batch. The pairing also counts the label images inside OME-Zarr images and applies the run's own `_name_issues` and `_duplicate_issues` (no second copy of the rules), so an OME-Zarr image that has a `labels/Cells` mask is not listed and is refused by `write_mask`. `write_record` holds an exclusive lock file (`.segmentation_record.lock`, refused at once when held, removed only while it still names this writer) while it rewrites the record; it is the run's own lock, now in `lock_file.py` (`exclusive_lock`, `LockHolder`, `read_holder`) and shared with `run/lock.py`, and `new_batch_id()` makes a batch ID unique even within one second. The exclusive create and the lock protect writers on one computer only, not two Colab sessions on one Drive folder. Contract §15.5.
+- **Segmentation hand-off, audit fixes (PR #367)**: the helper now applies the run's own
+  `_description_name_issues` to every discovered mask type (an unrelated type `NA` or a decomposed
+  name is refused by `images_to_segment` and `write_mask` as the next described run refuses it,
+  `R_MASK_TYPE_NAME_INVALID`); `write_mask` holds one exclusive per-type write lock
+  (`<masks>/<type>/.segmentation_write.lock`, refused at once, never waited on) from the twin check
+  to the published mask in both modes, so a default writer can no longer replace the finished mask
+  of a concurrent `overwrite=True` writer (contract §15.5 also documents the transient zero-byte
+  placeholder and that preprocessing must not run on the masks folder during a batch). `LockHolder`
+  gains a random `token`, written in the lock file and compared on removal (a lock without one,
+  from an older run, still reads, token `""`).
 - **Channel-identity check after the run** (contract §14.1, design
   `channel-identity-check-2026-11-21` in MorphoFeature's `claude/restart-doc`): from the image
   summaries the intensity checks already make (no pixel read), every imaging unit's channel is

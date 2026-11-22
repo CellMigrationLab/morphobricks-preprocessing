@@ -463,7 +463,7 @@ def test_two_writers_one_claims_the_name_and_the_other_is_refused(run, monkeypat
     def second_writer_in_the_window(source, destination, **kwargs):
         if os.fspath(destination) == os.fspath(target) and "size" not in seen:
             seen["size"] = target.stat().st_size  # the claim is an empty file, not half a mask
-            with pytest.raises(SegmentationError, match="already exists"):
+            with pytest.raises(SegmentationError, match="is being written by"):  # the type's lock
                 write_mask(run.masks, "Cells", fov, labels_like(run, fov, 9), run.inputs)
         return real(source, destination, **kwargs)
 

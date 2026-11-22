@@ -1340,9 +1340,25 @@ file silently when it is directly in a type folder (it is not a mask; the same n
 warns `mask_without_image`), and nothing reads it to decide anything.
 
 The helper refuses what the run would refuse, before writing: an ambiguous mask or a link
-leaving the folder, a mask type spelled in two ways (`mask_names_differ_in_case`) and an image
-with two masks of the type (`duplicate_mask`). A mask is never silently replaced: without `overwrite` the name is claimed exclusively, so
-it works on a file system without hard links (a Google Drive mount) too.
+leaving the folder, **any discovered mask type** that cannot be a `source_type` (the run's
+`_description_name_issues`: `R_MASK_TYPE_NAME_INVALID`, a decomposed name; also for a type
+other than the one asked for), a mask type spelled in two ways (`mask_names_differ_in_case`)
+and an image with two masks of the type (`duplicate_mask`). A mask is never silently replaced:
+without `overwrite` the name is claimed exclusively, so it works on a file system without hard
+links (a Google Drive mount) too.
+
+`write_mask` holds one exclusive write lock per mask type, `<masks>/<type>/.segmentation_write.lock`
+(the run's lock file mechanism, `lock_file.exclusive_lock`), from the check for another mask of
+the image to the published file, **in both modes**: an overwriting writer and a default writer
+can never replace each other's mask. A held lock is refused at once, naming its holder, and
+never waited on; a killed writer leaves it, and the message says to delete it. Like the
+record's lock it is a dot-file, skipped by the masks step. A lock holder carries a random
+token, so a lock deleted and retaken is never removed by its earlier holder. Limits: the lock
+protects the writers of one computer (not a Drive folder open in two Colab sessions); a
+reader may briefly see a **zero-byte placeholder** at the mask's name while a mask is being
+written (the claim before the move); and preprocessing must **not be run on the masks folder
+during a batch** (a run could read that placeholder or a half-written batch). A placeholder
+left by a killed writer is deleted by hand.
 
 ## 16. Shared rules for other bricks (MorphoBricks D86)
 

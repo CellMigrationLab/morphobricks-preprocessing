@@ -24,6 +24,8 @@ from __future__ import annotations
 
 import os
 import tempfile
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -35,13 +37,23 @@ from .discovery import discover_experiment
 from .folder_rules import masks_folder_issues
 from .links import relative_inside
 from .masks import FOLDER
-from .masks.files import _duplicate_issues, _folder_masks, _label_masks, _name_issues
+from .masks.files import (
+    _description_name_issues,
+    _duplicate_issues,
+    _folder_masks,
+    _label_masks,
+    _name_issues,
+)
 from .masks.model import MaskFile
 from .metadata import OME_ZARR, TiffMetadata
 from .run_inputs import Fov, RunInputs
 from .run_inputs_request import FovSelection, Request
-from .segmentation_record import SegmentationError, check_mask_type
+from .segmentation_record import SegmentationError, check_mask_type, hold_lock
 from .zarr_input import is_zarr_name
+
+WRITE_LOCK_FILENAME = ".segmentation_write.lock"
+"""The lock a writer holds in a type folder from the twin check to the published mask. A
+dot-file, so the run's masks discovery skips it like the record's lock."""
 
 INT32_MAX = 2_147_483_647
 """The largest label every brick accepts (contract §15, §16)."""
@@ -208,7 +220,9 @@ def write_mask(
     integer or boolean type, with values from 0 to 2,147,483,647. They are written as a
     zlib-compressed ``int32`` TIFF with the axes named ``YX``, to a temporary file and then
     moved into place, so a reader never sees half a mask. Nothing is converted other than the
-    integer width and nothing is filled.
+    integer width and nothing is filled. One writer at a time works on a mask type: its write
+    lock is held from the check for another mask of the image to the published file, in both
+    modes, so an overwriting writer and a default one can never replace each other's mask.
 
     Parameters
     ----------
@@ -235,39 +249,77 @@ def write_mask(
     SegmentationError
         For labels that are not 2D, not the image's size, floating point or complex, negative
         or too large; an image with more than one Z plane or time point; a mask that exists
-        without ``overwrite`` (or another TIFF of the same name); or a masks folder inside the
-        experiment or the output folder.
+        without ``overwrite`` (or another TIFF of the same name); a masks folder inside the
+        experiment or the output folder; or another writer holding the type's write lock
+        (``<masks>/<type>/.segmentation_write.lock``), which is refused at once and names the
+        holder.
     """
     target = mask_path(masks_root, mask_type, fov)
     _check_folders(inputs, masks_root)
     _check_2d(fov)
     data = _checked_labels(labels, inputs.plane_shape(fov), fov.relative_path)
-    wanted = target.relative_to(masks_root).as_posix()
-    twins = sorted(
-        m.path for m in _paired(inputs, masks_root, mask_type) if m.image == fov.relative_path
-    )
-    if twins and (not overwrite or twins != [wanted]):
-        raise SegmentationError(
-            f"The {mask_type} mask of {fov.relative_path} already exists "
-            f"({', '.join(twins)} in {masks_root}). Use overwrite=True to replace {wanted}; "
-            "a mask of this image and type in another place or case, or in the other layout, "
-            "must be moved away first (the next run would refuse both as duplicate_mask)."
+    type_folder = Path(masks_root) / mask_type
+    with (
+        _no_empty_folders_if_refused(type_folder, target.parent),
+        hold_lock(type_folder / WRITE_LOCK_FILENAME, f"The {mask_type} masks in {masks_root}"),
+    ):  # one writer per type for the twin check, the claim and the publish, in both modes
+        wanted = target.relative_to(masks_root).as_posix()
+        twins = sorted(
+            m.path for m in _paired(inputs, masks_root, mask_type) if m.image == fov.relative_path
         )
-    target.parent.mkdir(parents=True, exist_ok=True)
-    handle, temporary = tempfile.mkstemp(
-        prefix=f".{target.name}.", suffix=".tmp", dir=target.parent
-    )
-    os.close(handle)
-    try:
-        tifffile.imwrite(
-            temporary, data, photometric="minisblack", compression="zlib", metadata={"axes": "YX"}
+        if twins and (not overwrite or twins != [wanted]):
+            raise SegmentationError(
+                f"The {mask_type} mask of {fov.relative_path} already exists "
+                f"({', '.join(twins)} in {masks_root}). Use overwrite=True to replace {wanted}; "
+                "a mask of this image and type in another place or case, or in the other layout, "
+                "must be moved away first (the next run would refuse both as duplicate_mask)."
+            )
+        target.parent.mkdir(parents=True, exist_ok=True)
+        handle, temporary = tempfile.mkstemp(
+            prefix=f".{target.name}.", suffix=".tmp", dir=target.parent
         )
-        give_output_mode(temporary, target)
-        _publish(Path(temporary), target, overwrite, f"The {mask_type} mask of {fov.relative_path}")
-    except BaseException:
-        Path(temporary).unlink(missing_ok=True)
-        raise
+        os.close(handle)
+        try:
+            tifffile.imwrite(
+                temporary,
+                data,
+                photometric="minisblack",
+                compression="zlib",
+                metadata={"axes": "YX"},
+            )
+            give_output_mode(temporary, target)
+            _publish(
+                Path(temporary), target, overwrite, f"The {mask_type} mask of {fov.relative_path}"
+            )
+        except BaseException:
+            Path(temporary).unlink(missing_ok=True)
+            raise
     return target
+
+
+@contextmanager
+def _no_empty_folders_if_refused(type_folder: Path, leaf: Path) -> Iterator[None]:
+    """Remove the folders this call created (``type_folder`` down to ``leaf``) if it is refused.
+
+    A refused write leaves nothing behind, not even the empty folders the lock needed.
+    """
+    created = None  # the topmost folder this call has to make
+    for folder in (type_folder, *type_folder.parents):
+        if folder.exists():
+            break
+        created = folder
+    try:
+        yield
+    except SegmentationError:
+        folder = leaf
+        while created is not None and (folder == created or created in folder.parents):
+            try:
+                if folder.exists():  # a folder not made yet (refused before it) is skipped
+                    folder.rmdir()
+            except OSError:
+                break  # not empty: something else is in it
+            folder = folder.parent
+        raise
 
 
 def _publish(temporary: Path, target: Path, overwrite: bool, what: str) -> None:
@@ -311,11 +363,13 @@ def _paired(inputs: RunInputs, masks_root: str | os.PathLike, mask_type: str) ->
     Built from the discovery the run uses: the TIFF masks of the masks folder
     (:func:`.masks.files._folder_masks`) and the label images of the OME-Zarr images
     (:func:`.masks.files._label_masks`), then the run's own checks on them
-    (:func:`.masks.files._name_issues`, :func:`.masks.files._duplicate_issues`), so the rules
-    are the run's and exist once. Refused here as the run refuses them: an ambiguous mask or a
-    link leaving the folder (any error of the pairing), a label group that cannot be read, the
-    type spelled in two ways (``mask_names_differ_in_case``, ``mask_type`` itself counted) and
-    an image with two masks of one type (``duplicate_mask``), whichever the two sources.
+    (:func:`.masks.files._name_issues`, :func:`.masks.files._description_name_issues`,
+    :func:`.masks.files._duplicate_issues`), so the rules are the run's and exist once. Refused
+    here as the run refuses them: an ambiguous mask or a link leaving the folder (any error of
+    the pairing), a label group that cannot be read, any discovered mask type that cannot be a
+    ``source_type`` (``R_MASK_TYPE_NAME_INVALID``, a decomposed name), the type spelled in two
+    ways (``mask_names_differ_in_case``, ``mask_type`` itself counted) and an image with two
+    masks of one type (``duplicate_mask``), whichever the two sources.
 
     Raises
     ------
@@ -342,7 +396,12 @@ def _paired(inputs: RunInputs, masks_root: str | os.PathLike, mask_type: str) ->
             "reports them as unreadable_mask. Repair or remove them first."
         )
     asked = MaskFile("", mask_type, mask_type, FOLDER)  # the spelling being asked for counts too
-    issues = [*issues, *_name_issues([*found, asked]), *_duplicate_issues(found)]
+    issues = [
+        *issues,
+        *_name_issues([*found, asked]),
+        *_description_name_issues(found),
+        *_duplicate_issues(found),
+    ]
     refusing = [issue for issue in issues if issue.is_error]
     if refusing:
         first = refusing[0]
