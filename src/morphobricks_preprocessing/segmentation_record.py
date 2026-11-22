@@ -306,8 +306,11 @@ def _batch(data: object) -> dict[str, Any]:
         raise SegmentationError("images must be a list.")
     for entry in data["images"]:
         _image(entry)
-    images = [entry["image"] for entry in data["images"]]
-    twice = sorted({name for name in images if images.count(name) > 1})
+    seen: set[str] = set()
+    repeated: set[str] = set()
+    for entry in data["images"]:
+        (repeated if entry["image"] in seen else seen).add(entry["image"])
+    twice = sorted(repeated)
     if twice:
         raise SegmentationError(
             f"The batch {data['batch_id']!r} has more than one entry for {', '.join(twice)}; "

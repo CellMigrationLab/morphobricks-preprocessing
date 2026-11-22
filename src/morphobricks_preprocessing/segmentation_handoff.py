@@ -23,6 +23,7 @@ converted: wrong labels are refused before anything is written.
 from __future__ import annotations
 
 import os
+import shutil
 import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -241,8 +242,11 @@ def write_mask(
     on_published
         Called with the published mask's path right after it is published, while the type's
         write lock is still held (so the file cannot be replaced meanwhile: hash or stamp it
-        here). Not called when the write is refused. An error it raises propagates; the mask
-        stays published and the caller decides what to do with it.
+        here, and write its provenance). Not called when the write is refused. If it raises
+        (any exception, ``KeyboardInterrupt`` too), the write is rolled back under the lock:
+        an overwritten mask is restored byte for byte from a hidden copy kept beside it
+        (``.<name>.previous.<random>``, removed once the callback returns), a new mask is
+        removed; then the error propagates.
 
     Returns
     -------
@@ -257,7 +261,7 @@ def write_mask(
         without ``overwrite`` (or another TIFF of the same name); a masks folder inside the
         experiment or the output folder; or another writer holding the type's write lock
         (``<masks>/<type>/.segmentation_write.lock``), which is refused at once and names the
-        holder.
+        holder; or a rollback that could not restore or remove the mask (naming the files).
     """
     target = mask_path(masks_root, mask_type, fov)
     _check_folders(inputs, masks_root)
@@ -269,27 +273,93 @@ def write_mask(
         # one writer per type for the twin check, the claim and the publish, in both modes
         _refuse_twins(inputs, masks_root, mask_type, fov, target, overwrite)
         target.parent.mkdir(parents=True, exist_ok=True)
-        handle, temporary = tempfile.mkstemp(
-            prefix=f".{target.name}.", suffix=".tmp", dir=target.parent
-        )
-        os.close(handle)
+        what = f"The {mask_type} mask of {fov.relative_path}"
+        backup = _keep_backup(target) if overwrite and target.is_file() else None
         try:
-            tifffile.imwrite(
-                temporary,
-                data,
-                photometric="minisblack",
-                compression="zlib",
-                metadata={"axes": "YX"},
-            )
-            give_output_mode(temporary, target)
-            _publish(
-                Path(temporary), target, overwrite, f"The {mask_type} mask of {fov.relative_path}"
-            )
+            _write_and_publish(data, target, overwrite, what)
         except BaseException:
-            Path(temporary).unlink(missing_ok=True)
+            _drop_backup(backup, target)  # nothing was replaced: the earlier mask is at the target
             raise
         if on_published is not None:
-            on_published(target)  # still under the lock; an error propagates, the mask stays
+            try:
+                on_published(target)  # still under the lock
+            except BaseException:
+                _roll_back(target, backup)  # still under the lock; loud if it cannot
+                raise
+        _drop_backup(backup, target)
+    return target
+
+
+def _write_and_publish(data: np.ndarray, target: Path, overwrite: bool, what: str) -> None:
+    """Write ``data`` to a temporary file beside ``target``, then publish it there."""
+    handle, temporary = tempfile.mkstemp(
+        prefix=f".{target.name}.", suffix=".tmp", dir=target.parent
+    )
+    os.close(handle)
+    try:
+        tifffile.imwrite(
+            temporary, data, photometric="minisblack", compression="zlib", metadata={"axes": "YX"}
+        )
+        give_output_mode(temporary, target)
+        _publish(Path(temporary), target, overwrite, what)
+    except BaseException:
+        Path(temporary).unlink(missing_ok=True)
+        raise
+
+
+def _keep_backup(target: Path) -> Path:
+    """Copy the mask at ``target`` to a hidden file beside it and return the copy's path.
+
+    A copy, not a move, so the earlier mask stays at its name until the new one replaces it in
+    one move (a process killed meanwhile leaves the earlier mask and a stray dot-file, which
+    the masks step skips). ``.<name>.previous.<random>``, the temporary-name pattern.
+    """
+    handle, backup = tempfile.mkstemp(prefix=f".{target.name}.previous.", dir=target.parent)
+    os.close(handle)
+    try:
+        shutil.copyfile(target, backup)
+        give_output_mode(backup, target)  # restored with the earlier mask's mode
+    except BaseException:
+        Path(backup).unlink(missing_ok=True)
+        raise
+    return Path(backup)
+
+
+def _drop_backup(backup: Path | None, target: Path) -> None:
+    """Remove the hidden copy of the earlier mask once ``target`` holds a mask to keep."""
+    if backup is None:
+        return
+    try:
+        backup.unlink(missing_ok=True)
+    except OSError as error:
+        raise SegmentationError(
+            f"{target} is in place, but the copy of the earlier mask, {backup}, could not be "
+            f"removed ({error}); delete it by hand."
+        ) from error
+
+
+def _roll_back(target: Path, backup: Path | None) -> None:
+    """Undo a publish whose caller failed: put ``backup`` back at ``target``, or remove it.
+
+    Called under the type's write lock. A failure is raised as a SegmentationError naming the
+    files, never ignored; the backup is then kept.
+    """
+    try:
+        if backup is None:
+            target.unlink(missing_ok=True)
+        else:
+            os.replace(backup, target)
+    except OSError as error:
+        if backup is None:
+            raise SegmentationError(
+                f"The new mask {target} could not be removed after its caller failed ({error}); "
+                "delete it by hand: it has no provenance."
+            ) from error
+        raise SegmentationError(
+            f"The earlier mask could not be restored from {backup} to {target} after the "
+            f"caller failed ({error}); {target} holds the new mask, which has no provenance. "
+            f"Move {backup} to {target} by hand."
+        ) from error
     return target
 
 
