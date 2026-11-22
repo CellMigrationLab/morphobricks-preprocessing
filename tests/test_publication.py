@@ -105,9 +105,9 @@ def test_a_failure_before_the_commit_keeps_the_earlier_generation(tmp_path, monk
 
     with monkeypatch.context() as patch:
         target = {
-            "csv": (run_module.pipeline, "write_plane_histograms", broken),
+            "csv": (run_module.outputs, "write_plane_histograms", broken),
             "hash": (generation, "file_sha256", broken_hash),
-            "manifest": (run_module.pipeline, "write_manifest", broken),
+            "manifest": (run_module.outputs, "write_manifest", broken),
             "record": (generation, "write_text_atomic", broken),
             "commit": (os, "replace", broken_commit),
         }[failure]

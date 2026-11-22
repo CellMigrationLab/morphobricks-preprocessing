@@ -11,6 +11,7 @@ pytest.importorskip("matplotlib")
 from morphobricks_normalization.csv_io import read_plane_histograms
 
 from described_tree import describe_tree  # noqa: E402
+from memory_limits import block_limit  # noqa: E402
 from morphobricks_preprocessing import Plane, notebook_ui, read_manifest
 from morphobricks_preprocessing import notebook_style as ui  # noqa: E402
 from morphobricks_preprocessing.axes import AxisMapping  # noqa: E402
@@ -459,8 +460,7 @@ def test_intensity_checks_follow_a_successful_run(tmp_path):
     assert not ui.is_visible(nb.run_checks.card)
     nb.run()
     assert sorted(p.name for p in out.iterdir() if "report" not in p.name) == [
-        "experiment_design.csv",
-        "morphobricks.toml",
+        *("experiment_design.csv", "image_qc.csv", "morphobricks.toml"),
         "plane_histograms.csv",
         "run_manifest.json",
     ]
@@ -739,9 +739,8 @@ def small_estimate(root):
 def test_plan_names_images_read_in_blocks(tmp_path, monkeypatch):
     root = large_planes_experiment(tmp_path)
     nb = checked(root)
-    set_memory_limit(nb, small_estimate(root))
-    # Before the axis roles are confirmed the planes are not known yet.
-    assert "read in blocks" not in nb.plan.value
+    set_memory_limit(nb, block_limit(small_estimate(root), (8, 8), 64))
+    assert "read in blocks" not in nb.plan.value  # planes not known before the axis roles
 
     def fail(*args, **kwargs):
         raise AssertionError("pixel data was read")

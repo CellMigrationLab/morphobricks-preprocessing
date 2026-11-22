@@ -20,10 +20,13 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Image Processing",
 ]
 dependencies = [
-    "numpy>=1.24",
+    # 2.0: the image QC sums use numpy.vecdot (contract §19). The suite passes with the lowest
+    # floors of every dependency below on Python 3.11 and numpy 2.0.0 (matplotlib 3.7 and
+    # scikit-image 0.22 do not import with NumPy 2, hence their floors).
+    "numpy>=2.0",
     "tifffile>=2023.7.10",
     # Counting the connected pieces of each mask label in the optional mask step.
-    "scipy>=1.10",
+    "scipy>=1.13",
     # The measured decoders of every compressed TIFF the bounded readers read (#356; owner
     # decision of 18 November 2026): deflate, LZMA, LZW and JPEG (libjpeg-turbo 3), checked at
     # run time by codec_bounds.decoder_unmeasured.
@@ -36,7 +39,7 @@ dependencies = [
 [project.optional-dependencies]
 notebook = [
     "ipywidgets>=7.7,<9",
-    "matplotlib>=3.7",
+    "matplotlib>=3.8.4",
 ]
 zarr = [
     "zarr>=2.18",
@@ -46,6 +49,9 @@ zarr = [
 # requirement's URL (pip refuses two direct URLs for one package).
 he-mask = [
     "morphobricks-normalization[histology] @ git+https://github.com/CellMigrationLab/morphobricks-normalization.git@v0.7.1",
+    # Normalization's histology extra allows scikit-image 0.22, which does not import with
+    # NumPy 2 (checked); 0.24 is the first release that does.
+    "scikit-image>=0.24",
 ]
 dev = [
     "pytest>=7.4",
@@ -132,6 +138,12 @@ baseline = "tools/code_rules_baseline.json"
 # pure: no I/O, no UI; io: reads or writes files; ui: notebook and command line, no
 # computing; orchestration: ties the others together.
 "morphobricks_preprocessing" = "orchestration"
+"morphobricks_preprocessing.image_qc" = "pure"
+"morphobricks_preprocessing.image_qc_moments" = "pure"
+"morphobricks_preprocessing.image_qc_record" = "pure"
+"morphobricks_preprocessing.image_qc_sums" = "pure"
+"morphobricks_preprocessing.image_qc_table" = "io"
+"morphobricks_preprocessing.plane_binning" = "pure"
 "morphobricks_preprocessing.__main__" = "ui"
 "morphobricks_preprocessing._io" = "io"
 "morphobricks_preprocessing.axes" = "pure"
@@ -320,6 +332,7 @@ baseline = "tools/code_rules_baseline.json"
 "morphobricks_preprocessing.intensity" = "io"
 "morphobricks_preprocessing.manifest" = "io"
 "morphobricks_preprocessing.manifest_fields" = "pure"
+"morphobricks_preprocessing.manifest_files" = "io"
 "morphobricks_preprocessing.lab_links" = "pure"
 "morphobricks_preprocessing.lab_links_file" = "io"
 "morphobricks_preprocessing.manifest_versions" = "pure"
@@ -416,6 +429,8 @@ baseline = "tools/code_rules_baseline.json"
 "morphobricks_preprocessing.run.result" = "pure"
 "morphobricks_preprocessing.run.reuse" = "io"
 "morphobricks_preprocessing.run.output_guard" = "io"
+"morphobricks_preprocessing.run.outputs" = "io"
+"morphobricks_preprocessing.run.state" = "orchestration"
 "morphobricks_preprocessing.run.rows" = "io"
 "morphobricks_preprocessing.run.workers" = "io"
 "morphobricks_preprocessing.run.arguments" = "orchestration"

@@ -14,7 +14,7 @@ import pytest
 
 from described_tree import run_described
 from morphobricks_preprocessing.run import RunMode
-from morphobricks_preprocessing.run import pipeline as pipeline_module
+from morphobricks_preprocessing.run import outputs as outputs_module
 from morphobricks_preprocessing.run import workers as workers_module
 
 WRITTEN_AT = "2026-11-16T12:00:00+00:00"
@@ -34,7 +34,7 @@ class FixedClock(datetime):
 @pytest.fixture(autouse=True)
 def fixed_clock(monkeypatch):
     """Every run writes ``written_at`` = :data:`WRITTEN_AT`; set ``fixed_clock.at`` to move it."""
-    monkeypatch.setattr(pipeline_module, "datetime", FixedClock)
+    monkeypatch.setattr(outputs_module, "datetime", FixedClock)
     monkeypatch.setattr(FixedClock, "at", datetime.fromisoformat(WRITTEN_AT))
     return FixedClock
 
