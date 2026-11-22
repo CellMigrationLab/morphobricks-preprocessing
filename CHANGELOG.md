@@ -23,6 +23,12 @@ old pin are refused with `spec_commit_mismatch`, as at every re-pin.
 
 ### Added
 
+- **Tag by repeat: override a listed unit** (owner requirement): from the list of units whose
+  headers disagree with their repeat's row, **Override this unit (start from the row's tags)**
+  opens the unit's tags prefilled with the row's, header names shown and disagreements
+  highlighted. The unit counts as tagged only after **Confirm these tags**; the confirmation
+  lapses if the unit's tags, its header, the reference's header or the saved aliases change
+  (`repeat_tags.Override`, `override_holds`; `notebook_channels_override`).
 - **Channel-identity check after the run** (contract §14.1, design
   `channel-identity-check-2026-11-21` in MorphoFeature's `claude/restart-doc`): from the image
   summaries the intensity checks already make (no pixel read), every imaging unit's channel is

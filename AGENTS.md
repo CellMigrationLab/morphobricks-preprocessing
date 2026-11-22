@@ -445,6 +445,11 @@ src/morphobricks_preprocessing/
                             tuned per unit (edited), contradictions refused and tagged on their
                             own; channel_matrix.py (pure) its rules (trusted, layout_groups,
                             matrix_rows, set_template, fill)
+  notebook_channels_override.py the per-unit override of a unit the repeat rows list: an editor
+                            that starts from the row's tags, shows each header name and
+                            highlights the C indices where it disagrees; nothing is saved or
+                            counted until Confirm (repeat_tags.Override, override_holds: the
+                            confirmation lapses when tags, headers or aliases change)
   strict_draft.py           fast mode unticked (pure): StrictShadow, the strict page's draft kept
                             beside the draft; every user save applies the same change to both
                             (channel_answers.tagged, patched), no-click tags the draft only;

@@ -27,7 +27,8 @@ Nothing here reads a file or a widget.
 
 from __future__ import annotations
 
-from collections.abc import Collection, Sequence
+from collections.abc import Collection, Mapping, Sequence
+from typing import NamedTuple
 
 from .channel_labels import UnitLayout, tags_of
 from .channel_matrix import Difference, apart_reason, differences, eligible
@@ -36,6 +37,36 @@ from .draft_answers import DraftAnswers, UnitKey
 
 GroupKey = tuple[str, int]
 """A row: the biological-repeat folder label and the channel count of its units."""
+
+
+class Override(NamedTuple):
+    """A listed unit's tags the user confirmed, and the disagreements they confirmed them with."""
+
+    tags: tuple[str, ...]
+    found: tuple[Difference, ...]
+    """What the header said against these tags at the confirmation (never read as a pass)."""
+
+
+def override_holds(
+    override: Override | None,
+    layout: UnitLayout,
+    tags: Sequence[str | None],
+    lead: UnitLayout,
+    labels: Collection[str],
+    channels: Mapping,
+) -> bool:
+    """Return True while the user's confirmation still covers the unit as it is read now.
+
+    It covers the unit only when its tags are the confirmed ones and the header disagreements
+    against them are exactly those confirmed. A difference carries the header name and the
+    reference's name, so a later change of the unit's header, of the reference's header, of the
+    saved aliases or of the tags voids it: the unit is listed again, never counted unasked.
+    """
+    return (
+        override is not None
+        and tuple(tags) == override.tags
+        and differences(layout, tags, lead, labels, channels) == override.found
+    )
 
 
 def repeat_groups(
@@ -149,6 +180,8 @@ def pairing_collision(answers: DraftAnswers, group: Sequence[UnitLayout]) -> dic
 
 __all__ = [
     "GroupKey",
+    "Override",
+    "override_holds",
     "pairing_collision",
     "repeat_fill",
     "repeat_groups",

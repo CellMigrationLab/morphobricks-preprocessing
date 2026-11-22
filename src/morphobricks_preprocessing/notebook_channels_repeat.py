@@ -35,9 +35,11 @@ import ipywidgets as widgets
 from . import notebook_style as ui
 from .channel_labels import tags_of
 from .channel_matrix import REFUSED, difference_text, differences
+from .notebook_channels_override import OverrideEditor
 from .notebook_channels_view import CHOOSE, columns, unit_name
 from .repeat_tags import (
     GroupKey,
+    override_holds,
     pairing_collision,
     repeat_apart,
     repeat_fill,
@@ -84,6 +86,8 @@ class RepeatRows:
         unit leaves this record after a save that fitted it succeeded (:meth:`apply`), or when
         the layouts change and it is gone or no longer contradicts its row (:meth:`reconcile`).
         """
+        self.override = OverrideEditor(self)
+        """The per-unit override of a listed unit (:mod:`.notebook_channels_override`)."""
         self.notice = ""
         """A one-shot message of the last click (shown once, then cleared)."""
         self.message = ""
@@ -109,6 +113,9 @@ class RepeatRows:
                     out[key] = text
                 continue
             tags = tags_of(layout, answers.units.get(key))
+            confirmed = self.override.confirmed.get(key)
+            if override_holds(confirmed, layout, tags, lead, self.grid.labels, answers.channels):
+                continue  # the user confirmed these tags (:mod:`.notebook_channels_override`)
             if None in tags or differences(layout, tags, lead, self.grid.labels, answers.channels):
                 out[key] = text
         return out
@@ -150,6 +157,7 @@ class RepeatRows:
             elif None in own:  # listed while its own tags are incomplete (:meth:`listed`)
                 kept[key] = Refusal("its own tags are incomplete", layout, lead, old.tags)
         self.refused = kept
+        self.override.confirmed = {k: v for k, v in self.override.confirmed.items() if k in kept}
 
     def _rows(self) -> dict:
         """Return every repeat folder and channel count with all its units, in any mode."""
@@ -185,8 +193,9 @@ class RepeatRows:
         )
         self.message = self.notice + (listed if lines else "")
         self.notice = ""
+        override = self.override.build(width)
         if not groups:
-            self.box.children = [widgets.HTML(self.message)] if self.message else []
+            self.box.children = [*([widgets.HTML(self.message)] if self.message else []), *override]
             return
         rows: list[widgets.Widget] = [
             ui.help_text(
@@ -204,6 +213,7 @@ class RepeatRows:
         rows += [self._row(key, group, width) for key, group in groups.items()]
         if self.message:
             rows.append(widgets.HTML(self.message))
+        rows += override
         box = widgets.VBox(rows)
         box.add_class("mb-tag-block")
         self.box.children = [box]
@@ -269,10 +279,8 @@ class RepeatRows:
         members = repeat_members(self.grid.layouts, key[0])  # the whole folder name, not this row
         if pairing_collision(answers, members) is not None:
             return False
-        if len(named) != len(tags) or len(set(named)) != len(named):
-            self.notice = ui.status(
-                "error", "Not saved.", ["Tag every channel of the row, each label once."]
-            )
+        if (why := self._row_error(tags)) is not None:
+            self.notice = ui.status("error", "Not saved.", [why])
             self.grid.refresh()
             return False
         save, cells, refused = repeat_fill(answers, group, named, self.grid.labels)
@@ -287,10 +295,24 @@ class RepeatRows:
         if not save:
             self.grid.refresh()
             return False
-        ok = self.grid.commit(save, cells)
+        ok = self._commit_user(save, cells)
         if ok:  # a refusal is dropped only once the save that fitted the unit succeeded
             for unit in save:
                 self.refused.pop(unit, None)
+                self.override.confirmed.pop(unit, None)
+        return ok
+
+    @staticmethod
+    def _row_error(tags: Sequence[str | None]) -> str | None:
+        """Return why tags cannot be saved (a channel untagged or a label twice), else None."""
+        named = [t for t in tags if t]
+        if len(named) != len(tags) or len(set(named)) != len(named):
+            return "Tag every channel of the row, each label once."
+        return None
+
+    def _commit_user(self, save: dict, cells: list) -> bool:
+        """Save units' tags as the user's action; in fast mode they are then tagged on their own."""
+        ok = self.grid.commit(save, cells)
         if ok and self.grid.same_channels.value:  # the user's action: tagged on their own
             self.grid.matrix.own.update(save)
             self.grid.matrix.sync_statement()

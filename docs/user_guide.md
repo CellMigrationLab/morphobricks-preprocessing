@@ -365,6 +365,12 @@ editing, or the confirmed ones. An image that cannot be drawn gets a sentence sa
    before the pairing: if you pair the `rep2` folders of different conditions with different
    biological repeats, every row of that folder (whatever its channel count) says so and
    fills nothing; tag those conditions on their own.
+   From a listed acquisition, **Override this unit (start from the row's tags)** opens that
+   acquisition's tags with the row's tags filled in. Under each channel the header name is
+   shown, and an orange box marks where it disagrees, so you change only what is different.
+   Nothing is saved while you edit; the acquisition counts as tagged only after **Confirm these
+   tags** (every channel tagged, each label once). If the header or the tags change later, it
+   is listed again.
    In fast mode a row offers only the acquisitions that do not fit the layout, and those it
    fills are tagged on their own (checked as in the strict mode); unticked, a row is offered
    for every repeat folder. On a reopen, a row shows the tags every acquisition of its folder
