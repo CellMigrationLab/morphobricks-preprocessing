@@ -1,0 +1,349 @@
+"""The widgets and the one object behind the Cellpose notebook (``MorphoBricks_Cellpose.ipynb``).
+
+Every code cell of the notebook is one call on :class:`CellposeWorkflow`; the logic is in
+:mod:`.segmentation_cellpose` (and the hand-off it builds on), this module only shows it: the
+channel dropdowns, the preview figure, the progress line and the final table. A refusal of the
+hand-off or of the run is shown **verbatim** and stops the cell (:class:`CellStop`). Needs the
+``notebook`` extra (``ipywidgets``, ``matplotlib``); Cellpose is imported only when a model is
+loaded.
+"""
+
+from __future__ import annotations
+
+import functools
+import time
+from collections.abc import Callable
+from pathlib import Path
+from typing import ParamSpec, TypeVar
+
+import ipywidgets as widgets
+import numpy as np
+from IPython.display import display
+from matplotlib.figure import Figure
+
+from . import segmentation_cellpose as cp
+from .notebook_progress import progress_html
+from .notebook_style import STYLE_CSS, status, table, tiles
+from .run_inputs import RunInputs, RunInputsError
+from .segmentation_handoff import SegmentationPlan, images_to_segment, resolve_segmentation
+from .segmentation_record import SegmentationError, check_mask_type
+
+NONE = "(none)"
+P = ParamSpec("P")
+T = TypeVar("T")
+REFUSALS = (SegmentationError, RunInputsError)
+"""What the hand-off and the run refuse with; their messages are shown unchanged."""
+
+
+class CellStop(RuntimeError):
+    """Stop a notebook cell with its message on one line, without a traceback."""
+
+    def _render_traceback_(self) -> list:
+        return [str(self)]
+
+
+def stops(method: Callable[P, T]) -> Callable[P, T]:
+    """Turn a refusal of the hand-off or of the run into a :class:`CellStop` with its message."""
+
+    @functools.wraps(method)
+    def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
+        try:
+            return method(*args, **kwargs)
+        except REFUSALS as exc:
+            raise CellStop(str(exc)) from exc
+
+    return wrapper
+
+
+def _card(kind: str, title: str, lines: tuple[str, ...] = ()) -> widgets.HTML:
+    """Return a status card as a widget, with the notebook's look."""
+    return widgets.HTML(f"<div class='mb-root'>{status(kind, title, lines)}</div>")
+
+
+class ChannelPicker:
+    """Up to three dropdowns of the run's channel IDs, resolved by ID as soon as they change.
+
+    The options are the channel IDs of the run; one that not every image has says so, and
+    choosing it shows the resolver's refusal (``A_SCOPE_INCOMPLETE``) unchanged under the
+    dropdowns. :attr:`plan` is the resolved selection, or None while the choice is refused.
+    """
+
+    def __init__(self, inputs: RunInputs) -> None:
+        """Build the dropdowns for ``inputs`` and resolve the first choice."""
+        self.inputs = inputs
+        coverage = cp.channel_coverage(inputs)
+        shared = [c for c, (have, total) in coverage.items() if have == total]
+        options = [
+            (c if have == total else f"{c} (in {have} of {total} images)", c)
+            for c, (have, total) in coverage.items()
+        ]
+        first = shared[0] if shared else next(iter(coverage), "")
+        self.dropdowns = [
+            widgets.Dropdown(options=options, value=first, description="Channel 1"),
+            *(
+                widgets.Dropdown(
+                    options=[(NONE, ""), *options], value="", description=f"Channel {n}"
+                )
+                for n in (2, 3)
+            ),
+        ]
+        self.message = widgets.HTML()
+        self.plan: SegmentationPlan | None = None
+        self.refusal = ""
+        for dropdown in self.dropdowns:
+            dropdown.observe(self._changed, names="value")
+        self._changed()
+
+    @property
+    def channel_ids(self) -> tuple[str, ...]:
+        """The chosen channel IDs, in the order of the dropdowns (blank ones left out)."""
+        return tuple(d.value for d in self.dropdowns if d.value)
+
+    def _changed(self, _change: object = None) -> None:
+        """Resolve the choice; show what was resolved, or the refusal verbatim."""
+        try:
+            cp.check_channel_count(self.channel_ids)
+            self.plan = resolve_segmentation(self.inputs, self.channel_ids)
+            self.refusal = ""
+            note = _card("ok", "Channels: " + ", ".join(self.channel_ids))
+        except REFUSALS as exc:
+            self.plan, self.refusal = None, str(exc)
+            note = _card("error", "These channels cannot be used", (self.refusal,))
+        self.message.value = note.value
+
+    def box(self) -> widgets.VBox:
+        """Return the dropdowns and the message under them."""
+        return widgets.VBox([*self.dropdowns, self.message])
+
+
+def preview_figure(stack: np.ndarray, labels: np.ndarray, channel_ids: tuple[str, ...]) -> Figure:
+    """Return the preview: each channel (display contrast only) and the outlines of the labels.
+
+    The contrast stretch is for the eye: the stack that was segmented, and the masks, are the
+    stored values and are never changed by it.
+    """
+    shown = cp.display_contrast(stack)
+    outlines = cp.label_outlines(labels)
+    figure = Figure(figsize=(4 * (len(shown) + 1), 4))
+    axes = figure.subplots(1, len(shown) + 1, squeeze=False)[0]
+    for axis, channel, name in zip(axes, shown, channel_ids, strict=False):
+        axis.imshow(channel, cmap="gray", vmin=0, vmax=1)
+        axis.set_title(f"{name} (display contrast)")
+    overlay = np.repeat(shown[0][..., None], 3, axis=-1)
+    overlay[outlines] = (1.0, 0.85, 0.0)
+    axes[-1].imshow(overlay)
+    axes[-1].set_title(f"Cellpose: {int(labels.max())} objects")
+    for axis in axes:
+        axis.axis("off")
+    figure.tight_layout()
+    return figure
+
+
+class CellposeWorkflow:
+    """The Cellpose notebook's state: the run, the channels, the model and the batch.
+
+    Each notebook cell calls one method; a method that needs an earlier cell says which one.
+    ``shown`` keeps the HTML of every card shown (for tests and for reading the notebook back).
+    """
+
+    def __init__(self) -> None:
+        """Start with nothing chosen."""
+        self.inputs: RunInputs | None = None
+        self.masks_root: Path | None = None
+        self.mask_type = ""
+        self.picker: ChannelPicker | None = None
+        self.loaded: cp.LoadedModel | None = None
+        self.settings: cp.Settings | None = None
+        self.result: cp.BatchResult | None = None
+        self.shown: list[str] = []
+
+    def _show(self, widget: widgets.Widget) -> None:
+        """Display ``widget`` (the style sheet goes first, once)."""
+        if not self.shown:
+            display(widgets.HTML(STYLE_CSS))
+        self.shown.append(getattr(widget, "value", ""))
+        display(widget)
+
+    def _need(self, what: str, cell: int) -> None:
+        """Refuse a step whose earlier cell has not run."""
+        missing = {
+            "run": self.inputs is None,
+            "channels": self.picker is None,
+            "model": self.loaded is None,
+        }[what]
+        if missing:
+            raise SegmentationError(f"Run cell {cell} first.")
+
+    @stops
+    def open(self, run_folder: str, masks_folder: str) -> None:
+        """Open the run and say what it holds (cell 3)."""
+        if not masks_folder.strip():
+            raise SegmentationError("Give the masks folder (outside the experiment and the run).")
+        inputs = cp.open_run(run_folder)
+        self.inputs, self.masks_root = inputs, Path(masks_folder.strip())
+        self.picker = self.loaded = self.result = None
+        coverage = cp.channel_coverage(inputs)
+        lines = [
+            f"{c}: in {have} of {total} images" + ("" if have == total else " (partial)")
+            for c, (have, total) in coverage.items()
+        ]
+        deep = cp.non_2d_images(inputs)
+        if deep:
+            lines.append(
+                f"{len(deep)} image(s) have Z or T above 1 and will fail: segmentation here is "
+                f"2D only ({deep[0]}...)."
+            )
+        self._show(
+            _card(
+                "warn" if deep else "ok", f"Run opened: {len(inputs.fovs())} images", tuple(lines)
+            )
+        )
+
+    @stops
+    def choose_channels(self, mask_type: str) -> None:
+        """Check the mask type and show the channel dropdowns (cell 4)."""
+        self._need("run", 3)
+        check_mask_type(mask_type)
+        todo = images_to_segment(self.inputs, mask_type, self.masks_root)
+        self.mask_type, self.loaded = mask_type, None
+        self.picker = ChannelPicker(self.inputs)
+        self._show(
+            _card(
+                "info",
+                f"Mask type {mask_type}: {len(todo)} of {len(self.inputs.fovs())} images "
+                "have no mask yet",
+            )
+        )
+        self._show(self.picker.box())
+
+    @stops
+    def set_settings(
+        self,
+        diameter: str,
+        flow_threshold: float,
+        cellprob_threshold: float,
+        normalize: bool,
+        batch_size: int,
+    ) -> None:
+        """Check the inference settings (cell 5); a blank diameter is the model's native scale."""
+        self.settings = cp.Settings(
+            cp.diameter_from_text(diameter),
+            flow_threshold,
+            cellprob_threshold,
+            normalize,
+            batch_size,
+        )
+
+    @stops
+    def load(
+        self,
+        model: str,
+        custom_model_file: str,
+        device: str,
+        download_weights: bool,
+        install_dino: bool,
+    ) -> None:
+        """Say what loading does, then load the verified model (cell 5)."""
+        self._need("channels", 4)
+        if self.picker.plan is None:
+            raise SegmentationError(self.picker.refusal)
+        if self.settings is None:
+            raise SegmentationError("Set the settings first: run set_settings in cell 5.")
+        chosen = custom_model_file.strip() or model
+        if install_dino and chosen in cp.DINO_MODELS:
+            self._show(_card("info", "Installing DINOv3", (" ".join(cp.dinov3_install_command()),)))
+            cp.install_dinov3()
+        self._show(
+            _card(
+                "info",
+                f"Loading {chosen} on {device}",
+                (
+                    "Built-in weights are downloaded from Hugging Face on first use; they are "
+                    "downloaded only if the download box is ticked.",
+                ),
+            )
+        )
+        self.loaded = cp.load_model(chosen, device, allow_download=download_weights)
+        loaded, diameter = self.loaded, self.settings.diameter
+        self._show(
+            _card(
+                "ok",
+                f"Model {loaded.name} loaded on {loaded.device}",
+                (
+                    f"Weights file: {loaded.file}",
+                    f"SHA-256: {loaded.sha256}",
+                    f"Network {loaded.backbone}, tile size {loaded.tile_size}",
+                    "Diameter: "
+                    + (
+                        f"{diameter:g} pixels"
+                        if diameter is not None
+                        else "blank = " + cp.NATIVE_SCALE
+                    ),
+                ),
+            )
+        )
+
+    @stops
+    def preview(self, image: str = "") -> None:
+        """Segment one image and show it with the outlines; nothing is written (cell 6)."""
+        self._need("model", 5)
+        fovs = self.inputs.fovs()
+        todo = images_to_segment(self.inputs, self.mask_type, self.masks_root)
+        by_path = {f.relative_path: f for f in fovs}
+        if image.strip() and image.strip() not in by_path:
+            raise SegmentationError(
+                f"{image.strip()!r} is not an image of this run. Leave it blank, or use a path "
+                f"such as {fovs[0].relative_path}."
+            )
+        fov = by_path[image.strip()] if image.strip() else (todo or fovs)[0]
+        stack = self.picker.plan.read(fov)
+        labels = cp.segment_image(self.loaded, self.settings, stack)
+        self._show(_card("info", f"Preview of {fov.relative_path} (nothing is written)"))
+        display(preview_figure(stack, labels, self.picker.plan.channel_ids))
+
+    @stops
+    def run(self, overwrite: bool = False) -> cp.BatchResult:
+        """Segment the images, write the masks and the record, and show the table (cell 7)."""
+        self._need("model", 5)
+        job = cp.SegmentationJob(
+            self.inputs,
+            self.picker.plan,
+            self.loaded,
+            self.settings,
+            self.mask_type,
+            self.masks_root,
+            overwrite,
+        )
+        bar = widgets.HTML()
+        display(bar)
+        started = time.monotonic()
+
+        def progress(done: int, total: int, item: str) -> None:
+            bar.value = progress_html("Segmenting", done, total, item, time.monotonic() - started)
+
+        self.result = result = cp.run_batch(job, progress=progress)
+        counts = result.counts()
+        rows = [["Image", "Status", "Message"], *map(list, result.rows())]
+        failed = counts["failed"]
+        self._show(
+            widgets.HTML(
+                "<div class='mb-root'>"
+                + tiles(
+                    [
+                        ("✅", str(counts["written"]), "written"),
+                        ("⏩", str(counts["skipped"]), "skipped"),
+                        ("❌", str(failed), "failed"),
+                    ]
+                )
+                + table(rows)
+                + "</div>"
+            )
+        )
+        return result
+
+    @stops
+    def next_steps(self) -> None:
+        """Say what to do now that the masks are made (the closing cell)."""
+        self._need("channels", 4)
+        lines = cp.next_steps_lines(self.mask_type, self.masks_root)
+        self._show(_card("info", "Next steps", lines))
