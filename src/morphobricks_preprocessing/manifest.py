@@ -12,9 +12,9 @@ format is described in ``docs/contract.md`` §9.
 The manifest also records, for information only, each file's channel names and
 significant bits, the SHA-256 of the experiment design used (so later bricks can check it
 was not changed), the image type the user confirmed (which later bricks normalize by), the
-limits of the intensity checks, the histogram range the table was binned with, and the
-planes whose central intensity range was too narrow (follow-up P6), so a later run that
-keeps their rows still reports them. For projected copies it records the projection.
+limits of the intensity and channel-identity checks, the histogram range the table was binned
+with, and the planes whose central intensity range was too narrow (follow-up P6), so a later
+run that keeps their rows still reports them. For projected copies it records the projection.
 """
 
 from __future__ import annotations
@@ -31,6 +31,7 @@ from morphobricks_normalization.ranges import HistogramSettings
 from ._io import file_sha256 as file_sha256  # re-exported (moved)
 from ._io import write_text_atomic
 from .axes import AxisMapping
+from .channel_identity_model import ChannelIdentitySettings, recorded_settings, settings_entry
 from .description_record import KEY as DESCRIPTION_KEY
 from .description_record import recorded_description
 from .image_names import position_id
@@ -232,20 +233,28 @@ class RunManifest:
     written_at
         When the manifest was written (UTC, ISO 8601).
     experiment_design_sha256
-        SHA-256 of the ``experiment_design.csv`` written with this run, or None.
+        SHA-256 of the ``experiment_design.csv`` written with this run, or None when the run
+        had no experiment design (or in manifests written before it was recorded).
     masks
-        The masks of the images when masks were given (contract §15): the masks folder, the
-        mask types and one entry per mask; None otherwise (the key is then left out).
+        The masks of the images when masks were given (contract §15): the masks
+        folder, the mask types and one entry per mask (image, type, path,
+        source); None otherwise. The key is left out of the file when None.
     image_type
-        ``"fluorescence"`` or ``"rgb"``, as confirmed (:mod:`.image_type`), or None.
+        ``"fluorescence"`` or ``"rgb"``, as the user confirmed it (:mod:`.image_type`); None
+        when the run was not given one (or in manifests written before it was recorded).
     channels_from_rgb_samples
         True when the channel axis is the RGB samples axis of images stored as
         RGB colour; None in manifests written before it was recorded.
     intensity_checks
-        The limits of the intensity checks run on the table (:mod:`.intensity`), or None.
+        The limits of the intensity checks run on the table (:mod:`.intensity`);
+        None in manifests written before they were recorded.
+    channel_identity
+        The limits of the channel-identity check (:mod:`.channel_identity`); None before it.
     narrow_ranges
-        The channel planes whose central intensity range covered fewer bins than the range
-        check's limit (``narrow_histogram_range``), sorted by plane and channel.
+        The channel planes whose central intensity range covered fewer bins
+        than the range check's limit (``narrow_histogram_range``), sorted by
+        plane and channel; empty when there were none (and in manifests
+        written before they were recorded).
     conversion_record_sha256
         SHA-256 of the conversion record in the experiment root, when the experiment is
         a copy tree of named-axis copies (design v0.4 §5); None otherwise.
@@ -283,6 +292,7 @@ class RunManifest:
     image_type: str | None = None
     channels_from_rgb_samples: bool | None = None
     intensity_checks: IntensityCheckSettings | None = None
+    channel_identity: ChannelIdentitySettings | None = None
     narrow_ranges: tuple[NarrowRange, ...] = ()
     conversion_record_sha256: str | None = None
     calibration_sha256: str | None = None
@@ -354,6 +364,7 @@ class RunManifest:
             "intensity_checks": (
                 None if self.intensity_checks is None else self.intensity_checks.to_dict()
             ),
+            "channel_identity": settings_entry(self.channel_identity),
             "narrow_histogram_ranges": [entry.to_dict() for entry in self.narrow_ranges],
             "conversion_record_sha256": self.conversion_record_sha256,
             "calibration_sha256": self.calibration_sha256,
@@ -408,6 +419,7 @@ class RunManifest:
                     if data.get("intensity_checks") is None
                     else IntensityCheckSettings.from_dict(data["intensity_checks"])
                 ),
+                channel_identity=recorded_settings(data.get("channel_identity")),
                 narrow_ranges=tuple(
                     NarrowRange.from_dict(entry)
                     for entry in data.get("narrow_histogram_ranges") or ()

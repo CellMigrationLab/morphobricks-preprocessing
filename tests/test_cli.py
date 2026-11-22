@@ -144,7 +144,8 @@ def test_run_prints_the_intensity_checks(tmp_path, capsys):
     assert "  - Image ctrl/rep1/img_5.tif, channel ch1: its " in out
     assert out.count("What to do: Look at the image") == 1
     # drug is brighter than ctrl, but conditions are never compared.
-    assert "drug/rep1" not in out.split("Intensity checks:")[1]
+    intensity = out.split("Intensity checks:")[1].split("Channel identity:")[0]
+    assert "drug/rep1" not in intensity
     args = ["run", str(root), "--axes", "CYX", "--outlier-limit", "50"]
     args += ["--saturation-limit", "0.2", "--min-images", "3"]
     assert main_described(args) == 0

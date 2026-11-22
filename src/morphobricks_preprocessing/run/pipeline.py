@@ -25,6 +25,7 @@ from morphobricks_normalization.ranges import HistogramSettings
 
 from ..axes import AxisMapping
 from ..axis_check import ConfirmedAxes
+from ..channel_identity import ChannelIdentityReport, check_channel_identity
 from ..design import DESIGN_FILENAME, write_experiment_design
 from ..discovery import check_output_folder, default_output_folder
 from ..discovery_report import (
@@ -91,6 +92,7 @@ from .steps import Checked, Rows, compute_rows, counts, header_checks, outcome_o
 from .workers import Workers
 
 logger = logging.getLogger(__name__)
+_Checks = tuple[IntensityReport, ChannelIdentityReport]
 
 
 def run_experiment(  # noqa: PLR0913
@@ -346,11 +348,11 @@ def _with_mask_content(run: _Run) -> _Run:
     return run
 
 
-def _report(
-    run: _Run, outcome: RunOutcome, intensity: IntensityReport | None = None
-) -> DiscoveryReport:
-    """Build the run's report, with the intensity checks once the table is checked."""
-    found = [] if intensity is None else [_as_warning(issue) for issue in intensity.issues]
+def _report(run: _Run, outcome: RunOutcome, checks: _Checks | None = None) -> DiscoveryReport:
+    """Build the run's report, with the intensity and channel checks once the table is checked."""
+    found = []
+    if checks is not None:
+        found = [*map(_as_warning, checks[0].issues), *checks[1].validation_issues()]
     return build_report(
         run.pre,
         run.output,
@@ -395,13 +397,16 @@ def _publish(run: _Run, base: RunOutcome, rows: Rows, settings: RunSettings) -> 
     records = sorted(rows.records, key=_row_order)
     # From the rows in memory: no image is read again.
     intensity = check_intensities(records, run.inputs.intensity_settings)
+    identity = check_channel_identity(intensity.summaries)  # its default limits, recorded
     masks = None if pre.masks is None else mask_manifest(pre.masks, pre.discovery.root)
     outcome = replace(outcome_of(rows, base), replaced=_replaced(run, masks))
     removes = [name for name in (MASK_REPORT_FILENAME,) if name in outcome.replaced]
     final_check = _final_content_check(run, rows, settings)
     try:
         with staged_generation(output, removes, final_check) as staged:
-            sha256 = _write_generation(run, rows, settings, records, (masks, intensity), staged)
+            sha256 = _write_generation(
+                run, rows, settings, records, (masks, intensity, identity), staged
+            )
             changed = changed_since(rows.entries, pre.discovery.root)
             if changed:
                 raise _SourcesChangedError(changed)
@@ -409,7 +414,7 @@ def _publish(run: _Run, base: RunOutcome, rows: Rows, settings: RunSettings) -> 
             changed = [] if pre.masks is None else changed_masks(pre.masks, pre.discovery.root)
             if changed:
                 raise _SourcesChangedError(changed, masks=True)
-            report = replace(_report(run, outcome, intensity), status=WRITTEN)
+            report = replace(_report(run, outcome, (intensity, identity)), status=WRITTEN)
             write_report(replace(report, manifest_sha256=sha256), staged)
     except _SourcesChangedError as exc:
         issue = (mask_changed_issue if exc.masks else changed_issue)(exc.paths, exc.compared)
@@ -431,6 +436,7 @@ def _publish(run: _Run, base: RunOutcome, rows: Rows, settings: RunSettings) -> 
         design=design,
         image_type=run.inputs.image_type,
         intensity=intensity,
+        channel_identity=identity,
         mode=run.mode,
         replaced=tuple(sorted(outcome.replaced)),
         input_changes=run.inputs.changes,
@@ -492,16 +498,16 @@ def _write_generation(
     rows: Rows,
     settings: RunSettings,
     records: list,
-    checks: tuple[dict | None, IntensityReport],
+    checks: tuple[dict | None, IntensityReport, ChannelIdentityReport],
     staged: Path,
 ) -> str:
     """Write the table, design and manifest into the publication folder.
 
-    ``checks`` are the masks entry and the intensity checks. Returns the manifest's
+    ``checks`` are the masks entry, the intensity and the channel checks. Returns the manifest's
     SHA-256 (the report, which names it, is written once the images are checked again).
     """
     pre, design, ids = run.pre, run.checked.design, run.checked.channel_ids
-    masks, intensity = checks
+    masks, intensity, identity = checks
     described = run.description
     per_file = Counter(record.source_relative_path for record in records)
     csv_path = write_plane_histograms(records, staged / OUTPUT_FILENAME, channel_ids=ids)
@@ -525,6 +531,7 @@ def _write_generation(
         image_type=run.inputs.image_type,
         channels_from_rgb_samples=run.checked.type_review.channels_from_rgb_samples,
         intensity_checks=intensity.settings,
+        channel_identity=identity.settings,
         narrow_ranges=tuple(rows.narrow),
         calibration_sha256=pre.calibration.sha256,
         conversion_record_sha256=None if pre.conversion is None else pre.conversion.sha256,
