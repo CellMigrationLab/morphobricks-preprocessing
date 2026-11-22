@@ -9,6 +9,7 @@ from morphobricks_normalization.csv_io import (
     OUTPUT_FILENAME,
 )
 
+from ..channel_identity import ChannelIdentityReport
 from ..design import (
     DESIGN_FILENAME,
     DesignTable,
@@ -59,6 +60,10 @@ class RunResult:
     intensity
         The intensity checks of the written table (warnings, never errors), or
         None when nothing was written.
+    channel_identity
+        The channel-identity check of the written table (:mod:`..channel_identity`): whether
+        each unit's channels look like the same channels of the other units (warnings, never
+        errors, kept apart from ``issues`` like ``intensity``), or None when nothing was written.
     mode
         ``"restart"`` or ``"full"``.
     replaced
@@ -93,6 +98,7 @@ class RunResult:
     design: DesignTable | None = None
     image_type: str | None = None
     intensity: IntensityReport | None = None
+    channel_identity: ChannelIdentityReport | None = None
     mode: str = RESTART
     replaced: tuple[str, ...] = ()
     input_changes: tuple[InputChange, ...] = ()
