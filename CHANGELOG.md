@@ -8,6 +8,13 @@ v0.5.1: no run before v0.5.1 is read.)
 
 ## Unreleased
 
+**One header-name rule (#368).** Whether a raw header name is a confirmed name of a channel is now
+decided by one function, `description_identity.header_name_matches` (equal after NFC, never trimmed,
+never case-folded), used by the notebook's channel matrix, the fast layout, the physical check and
+reconciliation. Before, the notebook compared saved aliases literally, so an alias saved in one Unicode
+spelling and found in the other (composed vs decomposed) was accepted on publication but not recognised
+by the notebook. The three local `nfc` helpers are gone (one `nfc`, in `description_identity`).
+
 **Fast mode (Spec ADR 0006, owner decisions FC1-FC4), reader and image checks.** The Spec pin
 moves from `bf68d30` to `232fb38` (MorphoBricks-Spec `main`: the ADR 0006 amendment of
 experiment-v1, accepted by the owner on 20 November 2026, Spec #53). No format version changes: experiment-v1 stays version 1 (an amendment, like

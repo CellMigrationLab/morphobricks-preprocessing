@@ -19,13 +19,13 @@ reported before ``R_UNIT_NOT_HOMOGENEOUS`` (owner answer of 14 November 2026).
 
 from __future__ import annotations
 
-import unicodedata
 from collections import Counter
 from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from types import MappingProxyType
 
 from .description import Description, Unit
+from .description_identity import header_name_matches, nfc
 from .discovery import DiscoveryResult
 from .fast_layout import FAST_LAYOUT_CONTRADICTION
 from .image_names import position_id
@@ -146,11 +146,6 @@ class PhysicalReport:
         return not self.issues
 
 
-def nfc(text: str) -> str:
-    """Return the NFC form of ``text``, a comparison key only (never stored)."""
-    return unicodedata.normalize("NFC", text)
-
-
 def _name(name: str | None) -> str | None:
     return nfc(name) if name else None
 
@@ -238,7 +233,7 @@ def _evidence_issues(
             continue
         for index, (channel, name) in enumerate(zip(unit.channels, layout.names, strict=False)):
             known = description.channels[channel].header_names or ()
-            if name and nfc(name) not in {nfc(entry) for entry in known}:
+            if name and not header_name_matches(name, known):
                 what = (
                     f"header name {name!r} at C{index} (the image's header "
                     f"names: {_quoted(layout.names)}) is not a confirmed name of channel "

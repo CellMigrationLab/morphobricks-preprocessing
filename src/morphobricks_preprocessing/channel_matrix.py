@@ -29,6 +29,7 @@ from dataclasses import dataclass
 
 from .channel_answers import with_tags
 from .channel_labels import UnitLayout, aliases, header_label, tags_of
+from .description_identity import header_name_matches
 from .draft_answers import ChannelAnswer, DraftAnswers, UnitKey
 
 SAME = "same"
@@ -134,7 +135,11 @@ def name_label(
     exact = header_label(name, labels)
     if exact is not None:
         return exact
-    found = [k for k in labels if name in (channels.get(k, ChannelAnswer()).header_names or ())]
+    found = [
+        k
+        for k in labels
+        if header_name_matches(name, channels.get(k, ChannelAnswer()).header_names or ())
+    ]
     return found[0] if len(found) == 1 else None
 
 
