@@ -412,7 +412,7 @@ def test_b3_a_row_does_not_fill_a_unit_with_conflicting_headers_or_counts(tmp_pa
     assert "corrected or separated" in shown
     drawn = repr(rows.box.children)  # before any click it already says what it will not fill
     assert "2 unit(s) with disagreeing images will not be filled" in drawn
-    assert "sets 2 imaging unit(s)" in drawn
+    assert "2 unit(s) eligible for this row" in drawn
     nb.channel_grid.refresh()
     assert set(rows.listed()) == set(mixed)  # still listed on every redraw
 
@@ -547,3 +547,6 @@ def test_b5_a_corrective_save_the_grid_refuses_keeps_the_unit_listed(
     monkeypatch.setattr(type(grid), "commit", lambda self, tags, cells: False)
     assert not rows.apply(("rep2", 3), group)
     assert list(rows.listed()) == [odd]
+
+
+# --- the refusals after a folder re-check (#372) ----------------------------------------------

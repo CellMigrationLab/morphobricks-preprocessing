@@ -180,8 +180,8 @@ class TagGrid:
         if self.place_types:
             self.types.open(layouts)
         self.detail.children = []
-        # fast mode: headers naming every channel, then the statement they and the tick give
-        changed = self.matrix.trust_headers() | self.matrix.sync_statement()
+        changed = self.matrix.trust_headers() | self.matrix.sync_statement()  # fast mode
+        self.by_repeat.reconcile()  # refusals of units removed or changed by a re-check
         self.refresh()
         if changed:
             self._on_change()
