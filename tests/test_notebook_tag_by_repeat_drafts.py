@@ -146,3 +146,77 @@ def test_stale_entries_after_the_folder_changed_are_dropped_or_re_referenced(tmp
     review = _review(out)
     assert set(review.refused) == {OTHER} and review.refused[OTHER].reference != ref
     assert _untagged(fresh, OTHER)
+
+
+# Switching only the output folder (the same experiment) ---------------------------------------
+
+
+def _output_b_refusing_other(root, out, tmp_path, name):
+    """An output folder B for the same experiment: its draft refuses OTHER, confirms nothing."""
+    out_b = tmp_path / f"out_{name}"
+    out_b.mkdir()
+    answers = answers_from_bytes((out / DRAFT_FILENAME).read_bytes())
+    only_other = {OTHER: answers.tag_review.refused[OTHER]}
+    review = replace(answers.tag_review, confirmed={}, refused=only_other)
+    answers_b = replace(answers, tag_review=review)
+    (out_b / DRAFT_FILENAME).write_bytes(answers_to_bytes(answers_b))
+    return out_b
+
+
+def test_pointing_only_the_output_at_another_draft_never_tags_its_refused_unit(tmp_path):
+    _, root, masks, out = _saved_fast(tmp_path)
+    nb = opened(root, masks, out)  # a restart on A (GONE confirmed, aliases saved)
+    out_b = _output_b_refusing_other(root, out, tmp_path, "b")
+    grid, rows = nb.channel_grid, nb.channel_grid.by_repeat
+    before_b = (out_b / DRAFT_FILENAME).read_bytes()
+    nb.output.value = str(out_b)  # the same experiment, another output (and draft)
+    assert not rows.other_draft()  # the grid reopened on B: its own record, not A's
+    assert set(rows.refused) == {OTHER} and not rows.override.confirmed
+    grid.same_channels.value = False
+    grid.same_channels.value = True  # untick and retick the statement
+    assert OTHER in rows.listed() and _untagged(nb, OTHER)
+    assert not nb.save_experiment()  # the refused unit still stops the save
+    assert _review(out_b).refused.keys() == {OTHER}
+    assert answers_from_bytes((out_b / DRAFT_FILENAME).read_bytes()).units.get(OTHER) in (
+        None,
+        answers_from_bytes(before_b).units.get(OTHER),
+    )
+
+
+def test_trusting_headers_with_the_memory_of_another_draft_restores_first(tmp_path):
+    _, root, masks, out = _saved_fast(tmp_path)
+    nb = opened(root, masks, out)
+    out_b = _output_b_refusing_other(root, out, tmp_path, "c")
+    grid, rows = nb.channel_grid, nb.channel_grid.by_repeat
+    nb.output.value = str(out_b)
+    rows.draft = ("another", "draft")  # memory that is another draft's, whatever the way here
+    assert rows.other_draft()
+    grid.matrix.trust_headers()  # a caller that never reopened the grid
+    assert not rows.other_draft() and set(rows.refused) == {OTHER}
+    assert OTHER in rows.listed() and _untagged(nb, OTHER)
+
+
+def test_the_save_is_refused_while_the_memory_belongs_to_another_draft(tmp_path):
+    _, root, masks, out = _saved_fast(tmp_path)
+    nb = opened(root, masks, out)
+    rows = nb.channel_grid.by_repeat
+    rows.override.confirmed.clear()
+    rows.refused.clear()  # nothing listed: only the draft check can stop the save
+    rows.draft = ("another", "draft")
+    nb._refresh_check_save()
+    assert nb.save_button.disabled
+    assert "another draft" in nb.save_blocker.value
+
+
+def test_pointing_the_output_back_at_the_first_draft_restores_its_record(tmp_path):
+    _, root, masks, out = _saved_fast(tmp_path)
+    nb = opened(root, masks, out)
+    saved_a = _review(out)
+    out_b = _output_b_refusing_other(root, out, tmp_path, "d")
+    rows = nb.channel_grid.by_repeat
+    nb.output.value = str(out_b)
+    assert set(rows.override.confirmed) == set()
+    nb.output.value = str(out)  # back to A, the output only
+    assert _review(out) == saved_a
+    assert set(rows.refused) == {GONE, OTHER} and set(rows.override.confirmed) == {GONE}
+    assert set(rows.listed()) == {OTHER} and _untagged(nb, OTHER)

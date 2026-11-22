@@ -169,7 +169,19 @@ class _ChannelsStep:
         bound = tuple(
             sorted((u.image, pre.header_fingerprints.get(u.image)) for u in layouts if u.image)
         )
-        key = (str(pre.discovery.root), self.confirmed_mapping, layouts, slots, tuple(names), bound)
+        # The draft is part of the key: the grid reopens on another draft of the same experiment
+        # (only the output folder changed) and restores that draft's tag review, never keeps the
+        # memory of the one before.
+        draft = self.channel_grid.by_repeat.draft_id()
+        key = (
+            str(pre.discovery.root),
+            self.confirmed_mapping,
+            layouts,
+            slots,
+            tuple(names),
+            bound,
+            draft,
+        )
         if key == self._channels_key:
             self._refresh_masks_screen()
             return

@@ -23,6 +23,11 @@ old pin are refused with `spec_commit_mismatch`, as at every re-pin.
 
 ### Added
 
+- **Tag by repeat: another output folder is another draft** (owner requirement): pointing only the
+  output folder at another draft of the same experiment reopens the channel grid on that draft
+  (the draft is part of its reopening key), so its refused units stay listed and untagged; the
+  header trust restores the draft's own record first when the memory is another draft's
+  (`MatrixView.trust_headers`), and the save stays refused until it is.
 - **Tag by repeat: override a listed unit** (owner requirement): from the list of units whose
   headers disagree with their repeat's row, **Override this unit (start from the row's tags)**
   opens the unit's tags prefilled with the row's, header names shown and disagreements

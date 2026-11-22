@@ -206,9 +206,9 @@ class RepeatRows:
 
     def other_draft(self) -> bool:
         """Return True when the draft open now is not the one the record in memory belongs to."""
-        return self._draft_id() != self.draft
+        return self.draft_id() != self.draft
 
-    def _draft_id(self) -> object:
+    def draft_id(self) -> object:
         """Return which draft the store holds (None for a store that cannot tell)."""
         which = getattr(self.grid.store, "draft_id", None)
         return which() if which is not None else None
@@ -243,7 +243,7 @@ class RepeatRows:
         """
         if self.other_draft():
             self._forget()
-            self.draft = self._draft_id()
+            self.draft = self.draft_id()
         review = self.grid.store.answers().tag_review
         if review is None or self.refused:
             return

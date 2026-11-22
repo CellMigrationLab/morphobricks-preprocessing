@@ -224,6 +224,7 @@ class _CheckSaveScreen(_ReplicateBoxes):
             and self._check.can_publish
             and not self._moves_open()
             and not rows
+            and not self.channel_grid.by_repeat.other_draft()  # its refusals are not read yet
         )
         self.save_button.disabled = not ready or self._saved_current()
         self.save_note.value = (
@@ -239,6 +240,8 @@ class _CheckSaveScreen(_ReplicateBoxes):
         """Return what stops the save button now (shown beside it), or nothing when saved."""
         if not self.save_button.disabled or self._saved_current():
             return []  # saved already (the green line says so): nothing is blocked
+        if self.channel_grid.by_repeat.other_draft():
+            return ["the tag review is another draft's: open Channels again for this draft"]
         missing = len(todo[0]) + len(todo[1])
         if missing:  # and the Channels questions waiting, so none is found only afterwards
             line = f"{plural(missing, 'answer')} still missing (listed above the button)"
