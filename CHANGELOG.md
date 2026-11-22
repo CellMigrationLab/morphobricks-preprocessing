@@ -79,7 +79,9 @@ old pin are refused with `spec_commit_mismatch`, as at every re-pin.
   of a concurrent `overwrite=True` writer (contract §15.5 also documents the transient zero-byte
   placeholder and that preprocessing must not run on the masks folder during a batch). `LockHolder`
   gains a random `token`, written in the lock file and compared on removal (a lock without one,
-  from an older run, still reads, token `""`).
+  from an older run, still reads, token `""`). `write_mask(..., on_published=callable)` calls it with the
+  published path while the write lock is still held (not when refused; its error propagates, the mask
+  stays), so a caller can hash or stamp the file before another writer can replace it.
 - **Channel-identity check after the run** (contract §14.1, design
   `channel-identity-check-2026-11-21` in MorphoFeature's `claude/restart-doc`): from the image
   summaries the intensity checks already make (no pixel read), every imaging unit's channel is
