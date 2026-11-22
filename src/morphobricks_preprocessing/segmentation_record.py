@@ -22,12 +22,10 @@ defaulted. A mask type is checked with the rules every brick applies to a name
 from __future__ import annotations
 
 import json
-import os
 import re
-import socket
 import uuid
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -35,6 +33,7 @@ from typing import Any
 
 from ._io import file_sha256, write_text_atomic
 from .discovery import IdentityError, check_identity_text
+from .lock_file import LockHeldError, exclusive_lock
 from .name_issues import is_nfc
 
 RECORD_VERSION = 1
@@ -415,31 +414,23 @@ def new_batch_id() -> str:
 def _record_lock(path: Path) -> Iterator[None]:
     """Hold an exclusive lock file beside the record for the block; refuse if it is held.
 
-    The file is created with ``O_CREAT | O_EXCL`` (as the run's lock is) and removed at the
-    end, also on an error. It never waits: a held lock is refused at once, naming its holder.
+    The run's own lock (:func:`.lock_file.exclusive_lock`): created with ``O_CREAT | O_EXCL``,
+    removed at the end (also on an error) while it still names this writer, never waited on.
     It protects the writers of one computer; a file system shared by several computers (a
     Drive folder open in two Colab sessions) does not make the exclusive create reliable.
     """
-    lock = path.with_name(RECORD_LOCK_FILENAME)
     path.parent.mkdir(parents=True, exist_ok=True)
+    stack = ExitStack()
     try:
-        handle = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
-    except FileExistsError:
-        try:
-            holder = lock.read_text(encoding="utf-8").strip() or "an unknown writer"
-        except OSError:
-            holder = "an unknown writer"
+        stack.enter_context(exclusive_lock(path.with_name(RECORD_LOCK_FILENAME)))
+    except LockHeldError as held:
         raise SegmentationError(
-            f"The record {path} is being written by {holder} ({lock.name} exists). Wait for "
-            "it to finish and write again; if no writer is running (it was killed), delete "
-            f"{lock} yourself."
+            f"The record {path} is being written by {held.holder.describe()} "
+            f"({held.path.name} exists). Wait for it to finish and write again; if no writer "
+            f"is running (it was killed), delete {held.path} yourself."
         ) from None
-    try:
-        with os.fdopen(handle, "w", encoding="utf-8") as stream:
-            stream.write(f"process {os.getpid()} on {socket.gethostname()}\n")
+    with stack:
         yield
-    finally:
-        lock.unlink(missing_ok=True)
 
 
 def record_path(masks_root: str | Path, mask_type: str) -> Path:
