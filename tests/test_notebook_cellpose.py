@@ -69,8 +69,9 @@ def with_params(number, params):
     """Return cell ``number`` with its Colab form fields set to ``params`` (each must exist)."""
     text = source(number)
     for name, value in params.items():
+        line = f"{name} = {value!r}"  # a function, so backslashes (Windows paths) stay as given
         text, count = re.subn(
-            rf"^{name} = .*?(  # @param.*)$", rf"{name} = {value!r}\1", text, flags=re.M
+            rf"^{name} = .*?(  # @param.*)$", lambda m, line=line: line + m[1], text, flags=re.M
         )
         assert count == 1, f"cell {number + 1} has no form field {name}"
     return text
