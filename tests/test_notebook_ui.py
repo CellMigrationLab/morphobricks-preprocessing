@@ -11,6 +11,7 @@ pytest.importorskip("matplotlib")
 from morphobricks_normalization.csv_io import read_plane_histograms
 
 from described_tree import describe_tree  # noqa: E402
+from memory_limits import block_limit  # noqa: E402
 from morphobricks_preprocessing import Plane, notebook_ui, read_manifest
 from morphobricks_preprocessing import notebook_style as ui  # noqa: E402
 from morphobricks_preprocessing.axes import AxisMapping  # noqa: E402
@@ -738,7 +739,7 @@ def small_estimate(root):
 def test_plan_names_images_read_in_blocks(tmp_path, monkeypatch):
     root = large_planes_experiment(tmp_path)
     nb = checked(root)
-    set_memory_limit(nb, small_estimate(root))
+    set_memory_limit(nb, block_limit(small_estimate(root), (8, 8), 64))
     # Before the axis roles are confirmed the planes are not known yet.
     assert "read in blocks" not in nb.plan.value
 

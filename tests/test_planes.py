@@ -6,6 +6,7 @@ import pytest
 import tifffile
 from morphobricks_normalization.histogram import compute_plane_histogram, estimate_histogram_memory
 
+from memory_limits import block_limit
 from morphobricks_preprocessing import (
     DEFAULT_MEMORY_LIMIT,
     AxisMapping,
@@ -25,6 +26,7 @@ from morphobricks_preprocessing import (
     tiff_pieces,
 )
 from morphobricks_preprocessing import planes as planes_module
+from morphobricks_preprocessing.image_qc import qc_memory
 from tiff_tree import write_data, write_file
 
 DTYPES = ["int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64"]
@@ -325,8 +327,9 @@ def test_memory_estimate_covers_page_plane_and_histogram(tmp_path):
     # The finished bin counts of the plane's three channels are kept for its row.
     assert layout.channel_count == 3
     finished = 3 * 8 * 256
+    qc = qc_memory(60, 70, False)
     assert layout.memory_estimate == (
-        layout.page_nbytes + layout.encoded_nbytes + 60 * 70 + histogram + finished
+        layout.page_nbytes + layout.encoded_nbytes + 60 * 70 + histogram + finished + qc
     )
 
 
@@ -433,7 +436,8 @@ def test_check_planes_reports_planes_read_in_blocks(tmp_path, monkeypatch):
     for cls in (tifffile.TiffFile, tifffile.TiffPage, tifffile.TiffFrame, tifffile.TiffPageSeries):
         monkeypatch.setattr(cls, "asarray", fail)
     monkeypatch.setattr(tiff_pieces, "_read_segment", fail)
-    (found,) = check_planes(tmp_path, review, memory_limit=small)
+    limit = block_limit(small, (8, 8), 64)
+    (found,) = check_planes(tmp_path, review, memory_limit=limit)
     assert found.code == "planes_read_in_blocks"
     assert found.severity is Severity.WARNING
     assert found.paths == ("c/big.tif",)

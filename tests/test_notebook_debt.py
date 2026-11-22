@@ -8,6 +8,7 @@ from one owner function, so the notebook and its tests use the same maths.
 import numpy as np
 import pytest
 
+from memory_limits import block_limit
 from morphobricks_preprocessing import prefill_mapping
 from morphobricks_preprocessing.axes import AxisMapping
 from morphobricks_preprocessing.notebook_values import plane_counts, value_range
@@ -41,7 +42,9 @@ def test_plane_layouts_and_memory_plan(tmp_path):
     mapping = prefill_mapping("ZYX")
     small = plane_layout(root / "small.tif", mapping, bin_count=65_536).memory_estimate
     files = {"big.tif": mapping, "small.tif": mapping, "broken.tif": mapping}
-    layouts = plane_layouts(root, files, memory_limit=small, bin_count=65_536)
+    layouts = plane_layouts(
+        root, files, memory_limit=block_limit(small, (8, 8), 64), bin_count=65_536
+    )
     assert list(layouts) == ["big.tif", "small.tif"]  # an unreadable layout is left out
     plan = memory_plan(layouts)
     assert plan.blocked == ("big.tif",) and plan.over == () and plan.need == 0
