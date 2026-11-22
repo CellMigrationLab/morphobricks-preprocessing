@@ -269,29 +269,36 @@ def write_mask(
 def _publish(temporary: Path, target: Path, overwrite: bool, what: str) -> None:
     """Move the finished ``temporary`` file to ``target``; never over a file unless asked.
 
-    Without ``overwrite`` the file is hard-linked (which fails if ``target`` exists, in one
-    step), so two writers cannot replace each other's mask between a check and the move. A
-    file system without hard links (some network mounts, such as a Google Drive mount) is
-    refused: there is no way to publish without the risk of replacing, and a silent
-    replacement is never made.
+    Without ``overwrite`` the name is first **claimed** with an exclusive create
+    (``O_CREAT | O_EXCL``, one step that fails if anything is there, a link included), then
+    the finished file is moved over our own empty placeholder. Two writers cannot both claim
+    the name, so neither replaces the other's mask, and this needs no hard links (a Google
+    Drive mount has none). A reader never sees half a mask: the real file arrives in one
+    move. For that instant the name holds an empty file; if the move fails the placeholder is
+    removed again (only while it is still empty, so another writer's file is never touched).
+    A process killed between the claim and the move leaves the empty file, which the next
+    write refuses as an existing mask: delete it, then write again.
     """
     if overwrite:
         os.replace(temporary, target)
         return
     try:
-        os.link(temporary, target)
+        claimed = os.open(target, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o666)
     except FileExistsError:
         raise SegmentationError(
             f"{what} appeared at {target} while it was being written; nothing was replaced. "
             "Use overwrite=True to replace it."
         ) from None
-    except OSError as exc:
-        raise SegmentationError(
-            f"{what} was not written: this file system cannot publish a file without the risk "
-            f"of replacing another ({exc}). Write the masks to a folder on a local disk and "
-            "copy them, or use overwrite=True if replacing is what you want."
-        ) from None
-    temporary.unlink()
+    try:
+        os.close(claimed)
+        os.replace(temporary, target)
+    except BaseException:
+        try:
+            if target.stat().st_size == 0:  # still our placeholder, not another writer's mask
+                target.unlink()
+        except OSError:
+            pass
+        raise
 
 
 def _paired(inputs: RunInputs, masks_root: str | os.PathLike, mask_type: str) -> list[MaskFile]:

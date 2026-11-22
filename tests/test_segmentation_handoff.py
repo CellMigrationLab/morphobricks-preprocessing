@@ -396,37 +396,84 @@ def test_a_masks_folder_the_run_would_refuse_is_refused(run, tmp_path):
 # Publishing never replaces a mask another writer made in between ----------------------------
 
 
-def test_a_mask_that_appears_before_publishing_is_never_replaced(run, monkeypatch):
+def test_a_mask_that_appears_before_claiming_is_never_replaced(run, monkeypatch):
     fov = run.inputs.fovs()[0]
     target = mask_path(run.masks, "Cells", fov)
-    real = os.link
+    real = os.open
 
-    def racing(source, destination, **kwargs):
-        destination = os.fspath(destination)
-        with open(destination, "wb") as other:  # the other writer's mask, made after our check
-            other.write(b"other writer")
-        return real(source, destination, **kwargs)
+    def racing(path, flags, *args, **kwargs):
+        if os.fspath(path) == os.fspath(target):
+            with open(target, "wb") as other:  # the other writer's mask, made after our check
+                other.write(b"other writer")
+        return real(path, flags, *args, **kwargs)
 
-    monkeypatch.setattr(os, "link", racing)
+    monkeypatch.setattr(os, "open", racing)
     with pytest.raises(SegmentationError, match="appeared"):
         write_mask(run.masks, "Cells", fov, labels_like(run, fov), run.inputs)
     assert target.read_bytes() == b"other writer"
     assert sorted(os.listdir(target.parent)) == [target.name]  # our temporary file is gone
 
 
-def test_without_hard_links_the_mask_is_refused_and_nothing_is_written(run, monkeypatch):
+def test_two_writers_one_claims_the_name_and_the_other_is_refused(run, monkeypatch):
+    fov = run.inputs.fovs()[0]
+    target = mask_path(run.masks, "Cells", fov)
+    real, seen = os.replace, {}
+
+    def second_writer_in_the_window(source, destination, **kwargs):
+        if os.fspath(destination) == os.fspath(target) and "size" not in seen:
+            seen["size"] = target.stat().st_size  # the claim is an empty file, not half a mask
+            with pytest.raises(SegmentationError, match="already exists"):
+                write_mask(run.masks, "Cells", fov, labels_like(run, fov, 9), run.inputs)
+        return real(source, destination, **kwargs)
+
+    monkeypatch.setattr(os, "replace", second_writer_in_the_window)
+    write_mask(run.masks, "Cells", fov, labels_like(run, fov, 4), run.inputs)
+    assert seen["size"] == 0
+    assert tifffile.imread(target).max() == 4  # the first writer's mask, untouched by the second
+    assert os.listdir(target.parent) == [target.name]
+
+
+def test_a_failure_after_the_claim_leaves_no_placeholder_and_no_temporary_file(run, monkeypatch):
+    fov = run.inputs.fovs()[0]
+
+    def failing(source, destination, **kwargs):
+        raise OSError(errno.EIO, "disk error")
+
+    monkeypatch.setattr(os, "replace", failing)
+    with pytest.raises(OSError, match="disk error"):
+        write_mask(run.masks, "Cells", fov, labels_like(run, fov), run.inputs)
+    assert os.listdir(mask_path(run.masks, "Cells", fov).parent) == []
+    monkeypatch.undo()
+    write_mask(run.masks, "Cells", fov, labels_like(run, fov), run.inputs)  # nothing blocks it
+
+
+def test_a_failed_move_keeps_a_file_another_writer_put_there(run, monkeypatch):
+    fov = run.inputs.fovs()[0]
+    target = mask_path(run.masks, "Cells", fov)
+
+    def failing(source, destination, **kwargs):
+        target.write_bytes(b"other writer")  # replaced our placeholder with a real mask
+        raise OSError(errno.EIO, "disk error")
+
+    monkeypatch.setattr(os, "replace", failing)
+    with pytest.raises(OSError, match="disk error"):
+        write_mask(run.masks, "Cells", fov, labels_like(run, fov), run.inputs)
+    assert target.read_bytes() == b"other writer"
+
+
+def test_without_hard_links_the_mask_is_written_and_never_replaced(run, monkeypatch):
     fov = run.inputs.fovs()[0]
 
     def no_links(*args, **kwargs):
         raise OSError(errno.EPERM, "hard links are not supported here")
 
-    monkeypatch.setattr(os, "link", no_links)
-    with pytest.raises(SegmentationError, match="cannot publish a file without the risk"):
-        write_mask(run.masks, "Cells", fov, labels_like(run, fov, 4), run.inputs)
-    folder = mask_path(run.masks, "Cells", fov).parent
-    assert os.listdir(folder) == []  # no mask, no temporary file
-    write_mask(run.masks, "Cells", fov, labels_like(run, fov, 4), run.inputs, overwrite=True)
-    assert tifffile.imread(mask_path(run.masks, "Cells", fov)).max() == 4  # asked for it
+    monkeypatch.setattr(os, "link", no_links)  # a Google Drive mount
+    target = write_mask(run.masks, "Cells", fov, labels_like(run, fov, 4), run.inputs)
+    assert tifffile.imread(target).max() == 4
+    assert os.listdir(target.parent) == [target.name]
+    with pytest.raises(SegmentationError, match="already exists"):
+        write_mask(run.masks, "Cells", fov, labels_like(run, fov, 5), run.inputs)
+    assert tifffile.imread(target).max() == 4
 
 
 # The record file is skipped at the type folder's root only ------------------------------------

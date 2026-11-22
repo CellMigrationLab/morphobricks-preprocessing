@@ -28,8 +28,8 @@ old pin are refused with `spec_commit_mismatch`, as at every re-pin.
   append-only `segmentation_record.json` per mask type (a batch per run of the tool, each
   written mask with its SHA-256, so a second model never erases the first's provenance); a mask
   type is checked like any discovered one (`NA`, whitespace, NFC); duplicate and ambiguous masks
-  and a type spelled two ways are refused before writing; a file system without hard links is
-  refused, never silently replaced. The masks step skips that file silently instead of
+  and a type spelled two ways are refused before writing; a mask is claimed with an exclusive create and
+  then moved into place, so it is never silently replaced and needs no hard links (Google Drive). The masks step skips that file silently instead of
   warning `mask_without_image` (only directly in a type folder). "Has a mask" is decided by the run's own pairing (either layout, any case), `write_mask` refuses a twin elsewhere and never replaces a mask another writer made in between, and `resolve_segmentation` / `SegmentationPlan` resolve the channels once for a batch. Contract §15.5.
 
 - **Tag this repeat folder (all conditions)** on *Tag channels* (owner request of 20 November

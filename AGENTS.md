@@ -249,7 +249,7 @@ src/morphobricks_preprocessing/
   segmentation_handoff.py images_to_segment (the run's own mask pairing), segmentation_input and
                     resolve_segmentation/SegmentationPlan (channels by canonical ID through
                     resolve_request), mask_path and write_mask (a checked, compressed int32 YX TIFF,
-                    atomic, never over an existing mask unless asked) for a segmentation
+                    atomic, claimed exclusively, never over an existing mask unless asked) for a segmentation
                     notebook; numpy and tifffile only (contract §15.5); segmentation_record.py
                     SegmentationRecord/SegmentationBatch and the append-only history file
                     <masks>/<type>/segmentation_record.json (mask type checked like a discovered one)
