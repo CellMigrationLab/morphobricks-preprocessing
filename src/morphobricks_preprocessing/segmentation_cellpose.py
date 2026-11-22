@@ -44,6 +44,7 @@ import numpy as np
 from ._io import file_sha256
 from .manifest import MANIFEST_FILENAME
 from .run_inputs import Fov, RunInputs
+from .segmentation_cellpose_commit import check_newest, is_recorded, replaced_earlier_mask
 from .segmentation_cellpose_model import (
     BUILTIN_MODELS,
     CELLPOSE_VERSION,
@@ -76,6 +77,7 @@ from .segmentation_handoff import (
     SegmentationPlan,
     images_to_segment,
     mask_path,
+    stray_backups,
     write_mask,
 )
 from .segmentation_record import (
@@ -334,21 +336,29 @@ def _segment_one(
     """
     image = fov.relative_path
     state: dict[str, Any] = {}
+    root, kind = job.masks_root, job.mask_type
+    strays = frozenset(stray_backups(root, kind))
 
     def commit(path: Path) -> None:  # under the type's write lock, right after the publish
         try:
-            entry = SegmentedImage(image, "written", mask_sha256=mask_sha256(path))
-            _check_newest(job, batch_id, image)
+            entry = state["pending"] = SegmentedImage(
+                image, "written", mask_sha256=mask_sha256(path)
+            )
+            state["replaced"] = replaced_earlier_mask(root, kind, strays)  # exact, under the lock
+            check_newest(root, kind, batch_id, image)
             _write_batch(job, batch_id, [*entries, entry])
+            state["entry"] = entry
         except BaseException as exc:
+            pending = state.get("pending")
+            if pending is not None and is_recorded(root, kind, batch_id, pending):
+                # write_record saved the file and then failed: mask and record agree, keep both
+                state["entry"], state["late"] = pending, exc
+                return
             state["error"] = exc
             raise
-        state["entry"] = entry
 
-    replaced = False
     try:
         labels = segment_image(job.loaded, job.settings, job.plan.read(fov))
-        replaced = job.overwrite and mask_path(job.masks_root, job.mask_type, fov).is_file()
         write_mask(
             job.masks_root,
             job.mask_type,
@@ -360,46 +370,37 @@ def _segment_one(
         )
     except BaseException as exc:
         if "entry" in state:  # written and recorded; only the earlier mask's copy is left over
-            return state["entry"], f"{type(exc).__name__}: {exc}"
+            return _after_commit(entries, state["entry"], exc)
         if "error" not in state:  # nothing was published
             if isinstance(exc, Exception):  # reported in the table, never dropped
                 return SegmentedImage(image, "failed", f"{type(exc).__name__}: {exc}"), ""
             raise
         error = state["error"]
         if exc is error:  # write_mask rolled back
-            note = ROLLED_BACK_RESTORED if replaced else ROLLED_BACK_REMOVED
+            note = ROLLED_BACK_RESTORED if state.get("replaced") else ROLLED_BACK_REMOVED
         else:  # the rollback failed: its error names the files
             note = f"WARNING: the rollback failed and the mask has NO provenance: {exc}"
         failed = SegmentedImage(image, "failed", f"{type(error).__name__}: {error}. {note}")
         if not isinstance(error, Exception):
             raise
         return failed, failed.message
+    if "late" in state:  # the record was saved, then something failed: stop, keep the mask
+        return _after_commit(entries, state["entry"], state["late"])
     return state["entry"], ""
 
 
-def _check_newest(job: SegmentationJob, batch_id: str, image: str) -> None:
-    """Refuse an entry for ``image`` that would not be its newest (a later batch wrote it).
+def _after_commit(
+    entries: list[SegmentedImage], entry: SegmentedImage, exc: BaseException
+) -> tuple[SegmentedImage, str]:
+    """Stop the batch after a failure that came once ``entry`` was recorded and its mask kept.
 
-    ``SegmentationRecord.latest`` orders batches as recorded, and a batch keeps the place of its
-    first write. Called under the type's write lock, where no other cooperating batch records a
-    written mask.
+    An error is reported in the table and stops the batch. An interrupt (``KeyboardInterrupt``)
+    is raised again, with the image in ``entries`` first so the final record keeps its entry.
     """
-    if not record_path(job.masks_root, job.mask_type).exists():
-        return
-    batches = read_record(job.masks_root, job.mask_type).batches
-    ids = [b.batch_id for b in batches]
-    if batch_id not in ids:
-        return  # appended: the newest
-    later = [
-        b.batch_id
-        for b in batches[ids.index(batch_id) + 1 :]
-        if any(e.image == image and e.status == "written" for e in b.images)
-    ]
-    if later:
-        raise SegmentationError(
-            f"The batch {later[-1]!r}, recorded after the batch {batch_id!r} started, wrote "
-            f"{image}; an entry of this batch would not be the newest. Start a new batch."
-        )
+    if isinstance(exc, Exception):
+        return entry, f"{type(exc).__name__}: {exc}"
+    entries.append(entry)
+    raise exc
 
 
 def _batch(job: SegmentationJob, batch_id: str, images: list[SegmentedImage]) -> SegmentationBatch:

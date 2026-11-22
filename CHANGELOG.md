@@ -109,6 +109,15 @@ old pin are refused with `spec_commit_mismatch`, as at every re-pin.
   new mask stayed and the earlier one was lost; now the target's inode says whether the move happened
   and the earlier mask is restored (a new mask removed). New `stray_backups(masks_root, mask_type)`
   lists `.<name>.previous.<random>` copies left by killed processes; they are reported, never deleted.
+- **Cellpose batch: the mask and its record stay together when `write_record` fails after saving**
+  (review of #375). If the record file was saved and then the call raised (`OSError` releasing the
+  lock, `KeyboardInterrupt` after the replace, or an interrupt before the entry was noted), the
+  callback re-reads the record; when the image's latest entry is this batch with this SHA-256 the mask
+  is kept (not rolled back), an error stops the batch and an interrupt is raised again with the image
+  in the final record. An interrupt after a successful commit is no longer swallowed. Whether an
+  earlier mask was replaced (the table's "restored" or "removed" note) is read under the write lock.
+  The notebook's batch summary lists stray `.previous` copies (`stray_backups`), never deleting them.
+  New `segmentation_cellpose_commit` module (`check_newest` moved there).
 - **Channel-identity check after the run** (contract §14.1, design
   `channel-identity-check-2026-11-21` in MorphoFeature's `claude/restart-doc`): from the image
   summaries the intensity checks already make (no pixel read), every imaging unit's channel is

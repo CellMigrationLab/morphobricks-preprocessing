@@ -27,7 +27,12 @@ from .notebook_progress import progress_html
 from .notebook_style import STYLE_CSS, status, table, tiles
 from .preview_render import as_colour, display_panel, outline
 from .run_inputs import RunInputs, RunInputsError
-from .segmentation_handoff import SegmentationPlan, images_to_segment, resolve_segmentation
+from .segmentation_handoff import (
+    SegmentationPlan,
+    images_to_segment,
+    resolve_segmentation,
+    stray_backups,
+)
 from .segmentation_record import SegmentationError, check_mask_type
 
 NONE = "(none)"
@@ -362,6 +367,9 @@ class CellposeWorkflow:
         failed = counts["failed"]
         if result.stopped:
             self._show(_card("error", "The batch stopped early", (result.stopped,)))
+        if strays := stray_backups(self.masks_root, self.mask_type):  # reported, never deleted
+            names = ", ".join(p.name for p in strays)
+            self._show(_card("warn", f"Copies of earlier masks left by a stopped run: {names}"))
         self._show(
             widgets.HTML(
                 "<div class='mb-root'>"

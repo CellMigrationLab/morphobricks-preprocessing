@@ -411,6 +411,19 @@ def test_failures_are_in_the_final_table_and_the_batch_goes_on(cells):
     }
 
 
+def test_the_batch_summary_reports_stray_backups_and_deletes_none(cells):
+    open_and_choose(cells)
+    run_cell(cells.ns, MODEL, device="cpu")
+    folder = cells.run.masks / "Cells"
+    folder.mkdir(parents=True)
+    stray = folder / ".a.tif.previous.k3j2h1"  # left by a killed overwrite
+    stray.write_bytes(b"earlier")
+    run_cell(cells.ns, BATCH)
+    shown = cells.ns["workflow"].shown
+    assert any("Copies of earlier masks" in card and stray.name in card for card in shown)
+    assert stray.read_bytes() == b"earlier"
+
+
 def test_a_preview_names_an_image_of_the_run_or_is_refused(cells):
     open_and_choose(cells)
     run_cell(cells.ns, MODEL, device="cpu")
