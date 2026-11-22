@@ -24,21 +24,25 @@ from __future__ import annotations
 
 import os
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
 import tifffile
 
 from ._io import give_output_mode
+from .discovery import discover_experiment
 from .folder_rules import masks_folder_issues
 from .links import relative_inside
+from .masks import FOLDER
+from .masks.files import _folder_masks
+from .masks.model import MaskFile
 from .run_inputs import Fov, RunInputs
-from .run_inputs_request import Request
+from .run_inputs_request import FovSelection, Request
 from .segmentation_record import SegmentationError, check_mask_type
 
 INT32_MAX = 2_147_483_647
 """The largest label every brick accepts (contract §15, §16)."""
-_SUFFIXES = (".ome.tiff", ".ome.tif", ".tiff", ".tif")  # the TIFF names pairing accepts (§15)
 
 
 def images_to_segment(
@@ -46,9 +50,11 @@ def images_to_segment(
 ) -> tuple[Fov, ...]:
     """Return the run's images that have no mask of ``mask_type`` yet, sorted by path.
 
-    An image has a mask when its folder in the mask type's folder holds a TIFF named as the
-    image's position ID, in any case and with any TIFF extension (the pairing of contract
-    §15). Excluded images are not in the run and are never listed.
+    "Has a mask" is decided by preprocessing's own pairing of the masks folder
+    (:func:`.masks.files._folder_masks`, the one the run and the mask step use), so this list
+    and the next run can never disagree: either layout of contract §15, any case in the
+    folders, the name and the type, any TIFF extension. Excluded images are not in the run and
+    are never listed.
 
     Parameters
     ----------
@@ -62,20 +68,75 @@ def images_to_segment(
     Raises
     ------
     SegmentationError
-        For a mask type that is not one folder name, or a masks folder inside the
-        experiment or the output folder (or holding them).
+        For a mask type that is not one folder name, a masks folder inside the experiment or
+        the output folder (or holding them), or a masks folder the run itself would refuse
+        (an ambiguous mask, a link leaving the folder).
     """
     check_mask_type(mask_type)
     _check_folders(inputs, masks_root)
-    folders: dict[Path, frozenset[str]] = {}
-    found = []
-    for fov in inputs.fovs():
-        folder = _folder(masks_root, mask_type, fov)
-        if folder not in folders:
-            folders[folder] = _stems(folder)
-        if fov.key[3].casefold() not in folders[folder]:
-            found.append(fov)
-    return tuple(found)
+    made = {m.image for m in _paired(inputs, masks_root, mask_type)}
+    return tuple(fov for fov in inputs.fovs() if fov.relative_path not in made)
+
+
+@dataclass(frozen=True)
+class SegmentationPlan:
+    """The channels of one request resolved once for the whole run, read image by image.
+
+    Attributes
+    ----------
+    inputs
+        The opened run.
+    channel_ids
+        The canonical channel IDs, in the order they are returned.
+    selections
+        The resolver's selection of each image, by its path relative to the experiment.
+    """
+
+    inputs: RunInputs
+    channel_ids: tuple[str, ...]
+    selections: dict[str, FovSelection]
+
+    def read(self, fov: Fov, z: int = 0, t: int = 0) -> np.ndarray:
+        """Read the planned channels of one image as a ``(C, Y, X)`` array of stored values.
+
+        Each channel is read at the C index this image stores it at
+        (``FovSelection.index_of``), in the order of :attr:`channel_ids`; nothing is scaled
+        or converted.
+
+        Raises
+        ------
+        SegmentationError
+            For an image with more than one Z plane or time point, or one not in the run.
+        """
+        _check_2d(fov)
+        chosen = self.selections.get(fov.relative_path)
+        if chosen is None:
+            raise SegmentationError(f"{fov.relative_path} is not an image of this run.")
+        plane = self.inputs.read_plane(fov, z=z, t=t)
+        return np.stack([plane[chosen.index_of(channel_id)] for channel_id in self.channel_ids])
+
+
+def resolve_segmentation(
+    inputs: RunInputs, channel_ids: tuple[str, ...] | list[str]
+) -> SegmentationPlan:
+    """Resolve ``channel_ids`` by ID for the whole run once; read each image with ``plan.read``.
+
+    Resolving costs a pass over the run's manifest, so a batch resolves once and reads many
+    images (:func:`segmentation_input` resolves on every call).
+
+    Raises
+    ------
+    SegmentationError
+        For no channel, or a channel twice.
+    RunInputsError
+        The resolver's refusal, with its code and message unchanged (``A_SCOPE_INCOMPLETE``
+        for a channel some images lack, ``A_RGB_NOT_SUPPORTED``, ...).
+    """
+    ids = tuple(channel_ids)
+    if not ids or len(set(ids)) != len(ids):
+        raise SegmentationError("Name at least one channel ID, each once.")
+    selections = inputs.resolve_request(Request(ids)).require()
+    return SegmentationPlan(inputs, ids, {s.relative_path: s for s in selections})
 
 
 def segmentation_input(
@@ -87,6 +148,8 @@ def segmentation_input(
     read at the C index **this image** stores it at (``FovSelection.index_of``), so a channel
     that sits at another position in other repeats is still the same stain. The result is in
     the order of ``channel_ids``, with the stored pixel type: nothing is scaled or converted.
+    It resolves on every call: a batch calls :func:`resolve_segmentation` once and reads each
+    image with ``plan.read``.
 
     Parameters
     ----------
@@ -107,16 +170,8 @@ def segmentation_input(
         The resolver's refusal, with its code and message unchanged (``A_SCOPE_INCOMPLETE``
         for a channel some images lack, ``A_RGB_NOT_SUPPORTED``, ...).
     """
-    ids = tuple(channel_ids)
-    if not ids or len(set(ids)) != len(ids):
-        raise SegmentationError("Name at least one channel ID, each once.")
     _check_2d(fov)
-    selections = inputs.resolve_request(Request(ids)).require()
-    chosen = next((s for s in selections if s.relative_path == fov.relative_path), None)
-    if chosen is None:
-        raise SegmentationError(f"{fov.relative_path} is not an image of this run.")
-    plane = inputs.read_plane(fov, z=z, t=t)
-    return np.stack([plane[chosen.index_of(channel_id)] for channel_id in ids])
+    return resolve_segmentation(inputs, channel_ids).read(fov, z=z, t=t)
 
 
 def mask_path(masks_root: str | os.PathLike, mask_type: str, fov: Fov) -> Path:
@@ -183,12 +238,16 @@ def write_mask(
     _check_folders(inputs, masks_root)
     _check_2d(fov)
     data = _checked_labels(labels, inputs.plane_shape(fov), fov.relative_path)
-    others = sorted(n for n in _names(target.parent) if _stem(n) == fov.key[3].casefold())
-    if others and (not overwrite or others != [target.name]):
+    wanted = target.relative_to(masks_root).as_posix()
+    twins = sorted(
+        m.path for m in _paired(inputs, masks_root, mask_type) if m.image == fov.relative_path
+    )
+    if twins and (not overwrite or twins != [wanted]):
         raise SegmentationError(
             f"The {mask_type} mask of {fov.relative_path} already exists "
-            f"({', '.join(others)} in {target.parent}). Use overwrite=True to replace "
-            f"{target.name}; a file with another name must be moved away first."
+            f"({', '.join(twins)} in {masks_root}). Use overwrite=True to replace {wanted}; "
+            "a mask of this image and type in another place or case, or in the other layout, "
+            "must be moved away first (the next run would refuse both as duplicate_mask)."
         )
     target.parent.mkdir(parents=True, exist_ok=True)
     handle, temporary = tempfile.mkstemp(
@@ -200,11 +259,60 @@ def write_mask(
             temporary, data, photometric="minisblack", compression="zlib", metadata={"axes": "YX"}
         )
         give_output_mode(temporary, target)
-        os.replace(temporary, target)
+        _publish(Path(temporary), target, overwrite, f"The {mask_type} mask of {fov.relative_path}")
     except BaseException:
         Path(temporary).unlink(missing_ok=True)
         raise
     return target
+
+
+def _publish(temporary: Path, target: Path, overwrite: bool, what: str) -> None:
+    """Move the finished ``temporary`` file to ``target``; never over a file unless asked.
+
+    Without ``overwrite`` the file is hard-linked (which fails if ``target`` exists, in one
+    step), so two writers cannot replace each other's mask between a check and the move. A
+    file system without hard links (some network mounts) falls back to the check just made
+    before writing, then :func:`os.replace`.
+    """
+    if overwrite:
+        os.replace(temporary, target)
+        return
+    try:
+        os.link(temporary, target)
+    except FileExistsError:
+        raise SegmentationError(
+            f"{what} appeared at {target} while it was being written; nothing was replaced. "
+            "Use overwrite=True to replace it."
+        ) from None
+    except OSError:  # no hard links here: the earlier check is all there is
+        if target.exists():
+            raise SegmentationError(f"{what} exists at {target}; nothing was replaced.") from None
+        os.replace(temporary, target)
+        return
+    temporary.unlink()
+
+
+def _paired(inputs: RunInputs, masks_root: str | os.PathLike, mask_type: str) -> list[MaskFile]:
+    """Return the TIFF masks of ``mask_type`` that preprocessing's pairing finds (any case).
+
+    Uses the run's own function (:func:`.masks.files._folder_masks`) on the experiment as it
+    is now and the recorded images, so both layouts of contract §15 and any case count, exactly
+    as at the next run. A masks folder the run would refuse is refused here too.
+    """
+    folder = Path(masks_root)
+    if not folder.is_dir():
+        return []
+    discovery = discover_experiment(inputs.experiment_root, inputs.output_folder)
+    found, issues = _folder_masks(
+        folder.resolve(), discovery, {entry.relative_path for entry in inputs.files}
+    )
+    refusing = [issue for issue in issues if issue.is_error]
+    if refusing:
+        first = refusing[0]
+        raise SegmentationError(f"{first.message} {first.action} ({first.code})")
+    return [
+        m for m in found if m.source == FOLDER and m.mask_type.casefold() == mask_type.casefold()
+    ]
 
 
 def _checked_labels(labels: np.ndarray, shape: tuple[int, int], image: str) -> np.ndarray:
@@ -261,25 +369,3 @@ def _check_folders(inputs: RunInputs, masks_root: str | os.PathLike) -> None:
 def _folder(masks_root: str | os.PathLike, mask_type: str, fov: Fov) -> Path:
     """Return the folder of ``fov``'s mask: the type's folder plus the image's own folders."""
     return Path(masks_root, mask_type, *Path(fov.relative_path).parent.parts)
-
-
-def _names(folder: Path) -> list[str]:
-    """Return the names of the files in ``folder`` (none if it does not exist)."""
-    try:
-        return [e.name for e in os.scandir(folder) if e.is_file()]
-    except FileNotFoundError:
-        return []
-
-
-def _stem(name: str) -> str | None:
-    """Return a TIFF file's name without its extension, lower case; None for other files."""
-    lower = name.casefold()
-    for suffix in _SUFFIXES:
-        if lower.endswith(suffix):
-            return lower[: -len(suffix)]
-    return None
-
-
-def _stems(folder: Path) -> frozenset[str]:
-    """Return the lower-case stems of the TIFF files in ``folder``."""
-    return frozenset(s for s in map(_stem, _names(folder)) if s is not None)

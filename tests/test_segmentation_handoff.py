@@ -7,6 +7,7 @@ see at once which stain a plane holds, whatever its position.
 """
 
 import dataclasses
+import errno
 import json
 import os
 from types import SimpleNamespace
@@ -23,6 +24,7 @@ from morphobricks_preprocessing.run_inputs import RunInputs, RunInputsError
 from morphobricks_preprocessing.segmentation_handoff import (
     images_to_segment,
     mask_path,
+    resolve_segmentation,
     segmentation_input,
     write_mask,
 )
@@ -384,3 +386,159 @@ def test_write_record_refuses_another_masks_type_than_the_records(run):
         write_record(run.masks, "Nuclei", record())
     with pytest.raises(SegmentationError, match="one folder"):
         write_record(run.masks, "../x", record(mask_type="../x"))
+
+
+# The pairing is the run's own: any case, either layout (review of #367) ------------------------
+
+
+def twin_cases(run):
+    """Return the existing masks of ``img0`` that the run would pair, each in its own tree."""
+    return {
+        "other case": run.masks / "cells" / "control" / "biological_repeat_1" / "img0.tif",
+        "second layout": run.masks / "Control" / "Biological_repeat_1" / "img0_Cells.tif",
+    }
+
+
+@pytest.mark.parametrize("case", ["other case", "second layout"])
+def test_a_mask_the_run_would_pair_counts_as_made(run, case):
+    fovs = run.inputs.fovs()
+    first = fovs[0]
+    assert first.relative_path == "Control/Biological_repeat_1/img0.tif"
+    twin = twin_cases(run)[case]
+    twin.parent.mkdir(parents=True)
+    twin.write_bytes(b"")
+    assert images_to_segment(run.inputs, "Cells", run.masks) == fovs[1:]
+    assert images_to_segment(run.inputs, "CELLS", run.masks) == fovs[1:]  # a type is one name
+    for overwrite in (False, True):
+        with pytest.raises(SegmentationError, match="already exists") as caught:
+            write_mask(
+                run.masks, "Cells", first, labels_like(run, first), run.inputs, overwrite=overwrite
+            )
+        assert twin.relative_to(run.masks).as_posix() in str(caught.value)
+    assert not mask_path(run.masks, "Cells", first).exists()
+
+
+def test_overwrite_replaces_only_the_file_at_mask_path_and_refuses_a_twin_elsewhere(run):
+    first = run.inputs.fovs()[0]
+    path = write_mask(run.masks, "Cells", first, labels_like(run, first, 1), run.inputs)
+    write_mask(run.masks, "Cells", first, labels_like(run, first, 2), run.inputs, overwrite=True)
+    assert tifffile.imread(path).max() == 2
+    twin = twin_cases(run)["second layout"]
+    twin.parent.mkdir(parents=True)
+    twin.write_bytes(b"")
+    before = path.read_bytes()
+    with pytest.raises(SegmentationError, match="img0_Cells.tif"):
+        write_mask(
+            run.masks, "Cells", first, labels_like(run, first, 3), run.inputs, overwrite=True
+        )
+    assert path.read_bytes() == before and twin.read_bytes() == b""
+
+
+def test_a_masks_folder_the_run_would_refuse_is_refused(run, tmp_path):
+    fovs = run.inputs.fovs()
+    outside = tmp_path / "elsewhere.tif"
+    outside.write_bytes(b"")
+    folder = run.masks / "Cells" / "Control" / "Biological_repeat_1"
+    folder.mkdir(parents=True)
+    (folder / "img1.tif").symlink_to(outside)  # a link leaving the masks folder (§1 links)
+    with pytest.raises(SegmentationError, match="link"):
+        images_to_segment(run.inputs, "Cells", run.masks)
+    with pytest.raises(SegmentationError, match="link"):
+        write_mask(run.masks, "Cells", fovs[5], labels_like(run, fovs[5]), run.inputs)
+    assert not mask_path(run.masks, "Cells", fovs[5]).exists()
+
+
+# Publishing never replaces a mask another writer made in between ----------------------------
+
+
+def test_a_mask_that_appears_before_publishing_is_never_replaced(run, monkeypatch):
+    fov = run.inputs.fovs()[0]
+    target = mask_path(run.masks, "Cells", fov)
+    real = os.link
+
+    def racing(source, destination, **kwargs):
+        destination = os.fspath(destination)
+        with open(destination, "wb") as other:  # the other writer's mask, made after our check
+            other.write(b"other writer")
+        return real(source, destination, **kwargs)
+
+    monkeypatch.setattr(os, "link", racing)
+    with pytest.raises(SegmentationError, match="appeared"):
+        write_mask(run.masks, "Cells", fov, labels_like(run, fov), run.inputs)
+    assert target.read_bytes() == b"other writer"
+    assert sorted(os.listdir(target.parent)) == [target.name]  # our temporary file is gone
+
+
+def test_without_hard_links_the_mask_is_still_written(run, monkeypatch):
+    fov = run.inputs.fovs()[0]
+
+    def no_links(*args, **kwargs):
+        raise OSError(errno.EPERM, "hard links are not supported here")
+
+    monkeypatch.setattr(os, "link", no_links)
+    path = write_mask(run.masks, "Cells", fov, labels_like(run, fov, 4), run.inputs)
+    assert tifffile.imread(path).max() == 4
+    assert sorted(os.listdir(path.parent)) == [path.name]
+    with pytest.raises(SegmentationError, match="already exists"):  # the check still refuses
+        write_mask(run.masks, "Cells", fov, labels_like(run, fov), run.inputs)
+
+
+# The record file is skipped at the type folder's root only ------------------------------------
+
+
+def test_a_stray_file_named_like_the_record_still_gets_its_warning(run):
+    for fov in run.inputs.fovs():
+        write_mask(run.masks, "Cells", fov, labels_like(run, fov, 3), run.inputs)
+    write_record(run.masks, "Cells", record())
+    stray = run.masks / "Cells" / "Control" / RECORD_FILENAME
+    stray.write_text("{}", encoding="utf-8")
+    (run.out / "morphobricks.toml").write_bytes(run.data + MASKS_SECTION)
+    again = run_described(run.experiment, MAPPING, output_folder=run.out, masks_folder=run.masks)
+    assert again.written, [(i.code, i.message) for i in again.issues]
+    (warning,) = [i for i in again.issues if i.code == "mask_without_image"]
+    assert list(warning.paths) == [f"Cells/Control/{RECORD_FILENAME}"]
+
+
+# One resolution for a whole batch ----------------------------------------------------------------
+
+
+def test_a_plan_reads_what_segmentation_input_reads(run):
+    plan = resolve_segmentation(run.inputs, ["TUB", "DNA"])
+    assert plan.channel_ids == ("TUB", "DNA")
+    for fov in run.inputs.fovs():
+        np.testing.assert_array_equal(
+            plan.read(fov), segmentation_input(run.inputs, ("TUB", "DNA"), fov)
+        )
+
+
+def test_a_batch_resolves_once(run, monkeypatch):
+    calls = []
+    original = RunInputs.resolve_request
+
+    def counting(self, request):
+        calls.append(request)
+        return original(self, request)
+
+    monkeypatch.setattr(RunInputs, "resolve_request", counting)
+    plan = resolve_segmentation(run.inputs, ("DNA",))
+    for fov in run.inputs.fovs():
+        plan.read(fov)
+    assert len(calls) == 1
+    segmentation_input(run.inputs, ("DNA",), run.inputs.fovs()[0])
+    assert len(calls) == 2  # the one-image form resolves on every call
+
+
+def test_a_plan_refuses_as_the_resolver_does_and_as_the_wrapper_does(run):
+    with pytest.raises(RunInputsError) as caught:
+        resolve_segmentation(run.inputs, ("DNA", "EXTRA"))
+    assert getattr(caught.value, "code", None) == "A_SCOPE_INCOMPLETE"
+    for ids in ((), ("DNA", "DNA")):
+        with pytest.raises(SegmentationError, match="at least one channel"):
+            resolve_segmentation(run.inputs, ids)
+    plan = resolve_segmentation(run.inputs, ("DNA",))
+    fov = dataclasses.replace(run.inputs.fovs()[0], t_count=2)
+    with pytest.raises(SegmentationError, match="2D only"):
+        plan.read(fov)
+    other = dataclasses.replace(run.inputs.fovs()[0], relative_path="nowhere.tif")
+    with pytest.raises(SegmentationError, match="not an image of this run"):
+        plan.read(other)

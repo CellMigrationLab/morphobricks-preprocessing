@@ -26,7 +26,7 @@ old pin are refused with `spec_commit_mismatch`, as at every re-pin.
   mask unless asked (a masks folder inside the experiment or the output folder is refused), and
   `SegmentationRecord` with `write_record` and `read_record` keeps one versioned
   `segmentation_record.json` per mask type. The masks step skips that file silently instead of
-  warning `mask_without_image`. Contract §15.5.
+  warning `mask_without_image` (only directly in a type folder). "Has a mask" is decided by the run's own pairing (either layout, any case), `write_mask` refuses a twin elsewhere and never replaces a mask another writer made in between, and `resolve_segmentation` / `SegmentationPlan` resolve the channels once for a batch. Contract §15.5.
 
 - **Tag this repeat folder (all conditions)** on *Tag channels* (owner request of 20 November
   2026): one row of tags per biological-repeat **folder name** and channel count; set once, it

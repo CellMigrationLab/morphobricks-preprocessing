@@ -246,7 +246,8 @@ src/morphobricks_preprocessing/
                     masks.binary.label_binary; Spec ADR 0005) and objects_read_plan (its
                     peak memory from the header: stored plane, int32 result and
                     labelling_bytes; #316)
-  segmentation_handoff.py images_to_segment, segmentation_input (channels by canonical ID through
+  segmentation_handoff.py images_to_segment (the run's own mask pairing), segmentation_input and
+                    resolve_segmentation/SegmentationPlan (channels by canonical ID through
                     resolve_request), mask_path and write_mask (a checked, compressed int32 YX TIFF,
                     atomic, never over an existing mask unless asked) for a segmentation
                     notebook; numpy and tifffile only (contract §15.5); segmentation_record.py

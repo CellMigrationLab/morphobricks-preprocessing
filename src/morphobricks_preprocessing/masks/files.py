@@ -148,9 +148,10 @@ def _folder_masks(
     image the warning ``mask_of_excluded_image``: neither is used (design v0.4 §3 keeps the
     severity of every existing check). ``images`` are the analysed images' paths (excluded
     images left out). Links are followed only inside the masks folder (:mod:`..links`). The
-    conversion helpers' ``mask_lineage.jsonl`` and temporary files and a segmentation tool's
-    ``segmentation_record.json`` are skipped silently, like system files
-    (:func:`..mask_lineage.is_conversion_file`, Spec ADR 0005 BM12; contract §15.5).
+    conversion helpers' ``mask_lineage.jsonl`` and temporary files are skipped silently, like
+    system files (:func:`..mask_lineage.is_conversion_file`, Spec ADR 0005 BM12), and so is a
+    segmentation tool's ``segmentation_record.json`` directly in a type folder (contract
+    §15.5); the same name anywhere else is an unpaired file and warns.
     """
     by_key, by_leaf = {}, {}
     for leaf in discovery.leaves:
@@ -164,6 +165,8 @@ def _folder_masks(
     links = LinkGuard(folder, "masks folder")
     for path, real in links.files(folder, _skipped):
         relative = path.relative_to(folder)  # a broken link is kept: its reader names it
+        if len(relative.parts) == 2 and relative.name == RECORD_FILENAME:
+            continue  # a segmentation tool's provenance, at the type folder's root only (§15.5)
         if not is_tiff_name(path.name):
             (loose if len(relative.parts) == 1 else unpaired).append(relative.as_posix())
             continue
@@ -195,8 +198,8 @@ def _folder_masks(
 
 
 def _skipped(name: str) -> bool:
-    """Return True for system, conversion-helper and ``segmentation_record.json`` files (§15.5)."""
-    return is_system_name(name) or is_conversion_file(name) or name == RECORD_FILENAME
+    """Return True for system files and the conversion helpers' lineage and temporary files."""
+    return is_system_name(name) or is_conversion_file(name)
 
 
 def _suffix_matches(relative: Path, by_leaf: Mapping[str, list]) -> list[tuple[str, str]]:
