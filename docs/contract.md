@@ -1388,17 +1388,21 @@ and `weights_source` (the Hugging Face URL Cellpose uses; null for a model file)
 of its default branch on 22 November 2026, which is **not verified against `cpdino`**; Cellpose
 imports it only when first imported, so the runtime is restarted after installing it.
 Two-dimensional images only. **A mask the batch publishes is never left without its record
-entry**: each mask is hashed and the record (the batch so far, the same batch ID growing) is
-written right after it is published, before the next image starts. If hashing or that write
-fails, the mask is removed again, only while it is still the file the batch wrote (inode,
-modification time and size taken right after publication, under the type's write lock), the image
-is `failed` with the error and the statement that the mask was removed (with `overwrite`, the
-earlier mask it replaced is gone), the images not yet started are `failed` as `not started`, and
-the batch stops (`BatchResult.stopped`). If the mask cannot be removed or is no longer the batch's
-file, the entry says so loudly (`WARNING: a mask exists WITHOUT provenance at <path>`). A mask is
-therefore never `failed` while left on disk. A retry without `overwrite` skips a mask that has a
-`written` entry in the record and reports one that has none as `skipped` with `exists without
-provenance (not made by a recorded batch)`; the model that made it is not guessed.
+entry**: each mask's SHA-256 and the record write (the batch so far, the same batch ID growing)
+happen in `write_mask`'s `on_published`, **under the type's write lock**, before the next image
+starts (lock order: the type's write lock, then the record's lock; never the reverse). So a
+second batch cannot publish this type between a mask and its record entry, and the latest record
+entry of an image always names the bytes on disk. An entry that would not be the image's newest
+(a batch recorded after this one started already wrote the image) is refused. If hashing,
+that check or the record write fails, even by an interrupt, `write_mask` rolls the write back under
+the same lock (an overwritten mask restored byte for byte, a new one removed; a rollback that
+cannot is a loud error naming the files), the image is `failed` with the error and `rolled back:
+earlier mask restored` or `rolled back: the new mask was removed`, the images not yet started are
+`failed` as `not started`, and the batch stops (`BatchResult.stopped`). A retry without
+`overwrite` shows an existing mask as `skipped` only when its SHA-256 is that of its latest
+`written` entry; otherwise (no entry: `exists without provenance (not made by a recorded batch)`,
+another SHA-256, a twin elsewhere, or not readable) it is `needs_attention` in the table and the
+counts (recorded as `skipped` with that reason); the model that made it is not guessed.
 
 ## 16. Shared rules for other bricks (MorphoBricks D86)
 

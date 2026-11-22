@@ -22,8 +22,10 @@ rest of what an audit of the Cellpose hand-off asked for:
   on ``mps``. That is Cellpose's own behaviour, not refused; it is recorded as a note.
 - **Record.** Every effective setting goes into the batch's parameters
   (:func:`inference_parameters`), every image into the batch with its outcome, written, skipped
-  or failed with the error (:func:`run_batch`); nothing is dropped. The full normalisation,
-  the flow iterations, and whether built-in weights were downloaded (and from where) are in it.
+  or failed with the error (:func:`run_batch`); nothing is dropped. Each mask's hash and record
+  entry are written under the type's write lock; a failure there rolls the mask back. The full
+  normalisation, the flow iterations, and whether built-in weights were downloaded (and from
+  where) are in it.
 
 Mask paths, pairing, the mask-type rules, writing, the folder rules and the record are the
 hand-off's own (:mod:`.segmentation_handoff`, :mod:`.segmentation_record`); nothing is repeated.
@@ -71,7 +73,6 @@ from .segmentation_cellpose_settings import (
     rescale_factor,
 )
 from .segmentation_handoff import (
-    WRITE_LOCK_FILENAME,
     SegmentationPlan,
     images_to_segment,
     mask_path,
@@ -83,7 +84,6 @@ from .segmentation_record import (
     SegmentationRecord,
     SegmentedImage,
     check_mask_type,
-    hold_lock,
     mask_sha256,
     new_batch_id,
     read_record,
@@ -129,6 +129,11 @@ IMAGE_SKIPPED = "a mask of this type is already there; not replaced (overwrite i
 IMAGE_UNRECORDED = (
     "exists without provenance (not made by a recorded batch); not replaced (overwrite is off)"
 )
+NEEDS_ATTENTION = "needs_attention"
+"""The table's outcome for an existing mask that is not shown to be its latest recorded one
+(recorded ``skipped`` with the reason: the record's statuses are the hand-off's)."""
+ROLLED_BACK_RESTORED = "rolled back: earlier mask restored"
+ROLLED_BACK_REMOVED = "rolled back: the new mask was removed"
 
 
 # --- one image --------------------------------------------------------------------------------
@@ -283,22 +288,29 @@ class BatchResult:
     record
         The record file, or None when no image was handled.
     stopped
-        Why the batch stopped early (a mask that could not be hashed or recorded was withdrawn),
-        or an empty string when every image was handled.
+        Why the batch stopped early (a mask that could not be hashed or recorded was rolled
+        back), or an empty string when every image was handled.
+    attention
+        The images whose existing mask was not replaced and is not shown to be its latest
+        recorded one (no entry, another SHA-256, not checked): ``needs_attention`` in the table.
     """
 
     batch: SegmentationBatch
     record: Path | None
     stopped: str = ""
+    attention: frozenset[str] = frozenset()
 
     def rows(self) -> tuple[tuple[str, str, str], ...]:
         """Return ``(image, status, message)`` for every image: nothing is left out."""
-        return tuple((i.image, i.status, i.message) for i in self.batch.images)
+        return tuple(
+            (i.image, NEEDS_ATTENTION if i.image in self.attention else i.status, i.message)
+            for i in self.batch.images
+        )
 
     def counts(self) -> dict[str, int]:
-        """Return how many images were written, skipped and failed."""
-        statuses = [i.status for i in self.batch.images]
-        return {s: statuses.count(s) for s in ("written", "skipped", "failed")}
+        """Return how many images were written, skipped (verified), need attention and failed."""
+        statuses = [status for _, status, _ in self.rows()]
+        return {s: statuses.count(s) for s in ("written", "skipped", NEEDS_ATTENTION, "failed")}
 
 
 def non_2d_images(inputs: RunInputs) -> tuple[str, ...]:
@@ -308,30 +320,35 @@ def non_2d_images(inputs: RunInputs) -> tuple[str, ...]:
 
 def _segment_one(
     job: SegmentationJob, fov: Fov, batch_id: str, entries: list[SegmentedImage]
-) -> tuple[SegmentedImage, bool]:
-    """Segment, write, hash and record one image; return its entry and whether to stop.
+) -> tuple[SegmentedImage, str]:
+    """Segment, write, hash and record one image; return its entry and why to stop (or "").
 
-    A mask this call published is recorded (the batch so far, with this image) before the next
-    image starts. Its identity stamp and SHA-256 are taken under ``write_mask``'s write lock
-    (``on_published``), so no other writer can replace the file in between. If hashing it or that
-    record write fails, even by an interrupt (``KeyboardInterrupt``: the notebook's stop button),
-    the mask is withdrawn (:func:`_withdraw`) and the batch stops (an interrupt is re-raised after
-    the withdrawal): no mask of this batch is ever left unrecorded. Any earlier failure (nothing
-    was published) is a ``failed`` entry and the batch goes on.
+    The SHA-256 and the record write (the batch so far, with this image) happen in
+    ``write_mask``'s ``on_published``, under the type's write lock (lock order: the write lock,
+    then the record's lock inside :func:`.segmentation_record.write_record`; never the reverse),
+    so no other writer can publish this type between the mask and its record entry. If hashing
+    or recording fails, even by an interrupt (``KeyboardInterrupt``: the notebook's stop button),
+    ``write_mask`` rolls the write back under that lock (an overwritten mask restored, a new one
+    removed) and the batch stops; an interrupt is raised again. A failure before anything was
+    published is a ``failed`` entry and the batch goes on.
     """
-    taken: dict[str, Any] = {}
+    image = fov.relative_path
+    state: dict[str, Any] = {}
 
-    def take(path: Path) -> None:  # under the write lock, right after the publish
-        taken["path"] = path
-        taken["stamp"] = _stamp(path)
-        taken["sha"] = mask_sha256(path)
-        if _stamp(path) != taken["stamp"]:
-            raise SegmentationError(f"The mask {path} changed while it was being hashed.")
+    def commit(path: Path) -> None:  # under the type's write lock, right after the publish
+        try:
+            entry = SegmentedImage(image, "written", mask_sha256=mask_sha256(path))
+            _check_newest(job, batch_id, image)
+            _write_batch(job, batch_id, [*entries, entry])
+        except BaseException as exc:
+            state["error"] = exc
+            raise
+        state["entry"] = entry
 
     replaced = False
     try:
         labels = segment_image(job.loaded, job.settings, job.plan.read(fov))
-        replaced = mask_path(job.masks_root, job.mask_type, fov).exists()
+        replaced = job.overwrite and mask_path(job.masks_root, job.mask_type, fov).is_file()
         write_mask(
             job.masks_root,
             job.mask_type,
@@ -339,62 +356,50 @@ def _segment_one(
             labels,
             job.inputs,
             overwrite=job.overwrite,
-            on_published=take,
+            on_published=commit,
         )
-        entry = SegmentedImage(fov.relative_path, "written", mask_sha256=taken["sha"])
-        _write_batch(job, batch_id, [*entries, entry])
     except BaseException as exc:
-        if "path" not in taken:  # nothing was published
+        if "entry" in state:  # written and recorded; only the earlier mask's copy is left over
+            return state["entry"], f"{type(exc).__name__}: {exc}"
+        if "error" not in state:  # nothing was published
             if isinstance(exc, Exception):  # reported in the table, never dropped
-                message = f"{type(exc).__name__}: {exc}"
-                return SegmentedImage(fov.relative_path, "failed", message), False
+                return SegmentedImage(image, "failed", f"{type(exc).__name__}: {exc}"), ""
             raise
-        failed = _withdraw(job, fov, taken["path"], taken.get("stamp"), replaced, exc)
-        if not isinstance(exc, Exception):
+        error = state["error"]
+        if exc is error:  # write_mask rolled back
+            note = ROLLED_BACK_RESTORED if replaced else ROLLED_BACK_REMOVED
+        else:  # the rollback failed: its error names the files
+            note = f"WARNING: the rollback failed and the mask has NO provenance: {exc}"
+        failed = SegmentedImage(image, "failed", f"{type(error).__name__}: {error}. {note}")
+        if not isinstance(error, Exception):
             raise
-        return failed, True
-    return entry, False
+        return failed, failed.message
+    return state["entry"], ""
 
 
-def _stamp(path: Path) -> tuple[int, int, int]:
-    """Return the identity of the file at ``path``: inode, modification time (ns) and size."""
-    found = path.stat()
-    return found.st_ino, found.st_mtime_ns, found.st_size
+def _check_newest(job: SegmentationJob, batch_id: str, image: str) -> None:
+    """Refuse an entry for ``image`` that would not be its newest (a later batch wrote it).
 
-
-def _withdraw(
-    job: SegmentationJob,
-    fov: Fov,
-    path: Path,
-    stamp: tuple[int, int, int] | None,
-    replaced: bool,
-    error: BaseException,
-) -> SegmentedImage:
-    """Remove the mask this call published, if it is still that file; the entry says what.
-
-    The file is removed only when its identity (:func:`_stamp`) is still the one taken right
-    after publication, under the type's write lock. When it cannot be removed, or is not shown
-    to be ours, the entry states loudly that a mask exists without provenance and where.
+    ``SegmentationRecord.latest`` orders batches as recorded, and a batch keeps the place of its
+    first write. Called under the type's write lock, where no other cooperating batch records a
+    written mask.
     """
-    what = f"{type(error).__name__}: {error}"
-    try:
-        with hold_lock(
-            path.parent / WRITE_LOCK_FILENAME, f"The {job.mask_type} masks in {job.masks_root}"
-        ):
-            ours = stamp is not None and path.exists() and _stamp(path) == stamp
-            if ours:
-                path.unlink()
-        if ours:
-            earlier = " It replaced an earlier mask, which is gone." if replaced else ""
-            note = f"The mask this batch wrote was removed, so none is left unrecorded.{earlier}"
-        else:
-            note = _UNRECORDED.format(path=path, why="it is not the file this batch wrote")
-    except (OSError, SegmentationError) as problem:
-        note = _UNRECORDED.format(path=path, why=f"it could not be removed ({problem})")
-    return SegmentedImage(fov.relative_path, "failed", f"{what}. {note}")
-
-
-_UNRECORDED = "WARNING: a mask exists WITHOUT provenance at {path}; {why}. It was NOT recorded."
+    if not record_path(job.masks_root, job.mask_type).exists():
+        return
+    batches = read_record(job.masks_root, job.mask_type).batches
+    ids = [b.batch_id for b in batches]
+    if batch_id not in ids:
+        return  # appended: the newest
+    later = [
+        b.batch_id
+        for b in batches[ids.index(batch_id) + 1 :]
+        if any(e.image == image and e.status == "written" for e in b.images)
+    ]
+    if later:
+        raise SegmentationError(
+            f"The batch {later[-1]!r}, recorded after the batch {batch_id!r} started, wrote "
+            f"{image}; an entry of this batch would not be the newest. Start a new batch."
+        )
 
 
 def _batch(job: SegmentationJob, batch_id: str, images: list[SegmentedImage]) -> SegmentationBatch:
@@ -424,25 +429,27 @@ def _write_batch(
     return batch, write_record(job.masks_root, job.mask_type, batch) if entries else None
 
 
-def _skip_note(job: SegmentationJob, fov: Fov, record: SegmentationRecord | None) -> str:
-    """Say why the mask of ``fov`` is not replaced: recorded, unrecorded, or changed since."""
+def _skip_note(
+    job: SegmentationJob, fov: Fov, record: SegmentationRecord | None
+) -> tuple[bool, str]:
+    """Say whether the existing mask of ``fov`` is its latest recorded one, and why not."""
     latest = record.latest(fov.relative_path) if record is not None else None
     if latest is None:
-        return IMAGE_UNRECORDED
+        return False, IMAGE_UNRECORDED
     path = mask_path(job.masks_root, job.mask_type, fov)
     if not path.is_file():  # a twin elsewhere pairs: the record says nothing about it
-        return IMAGE_SKIPPED
+        return False, f"a mask of this image is paired, but not at {path}; not checked"
     try:
         found = mask_sha256(path)
     except OSError as exc:
-        return f"exists, but could not be checked against its recorded provenance ({exc})"
+        return False, f"exists, but could not be checked against its recorded provenance ({exc})"
     expected = latest[1].mask_sha256
     if found != expected:
-        return (
+        return False, (
             f"exists, but differs from its recorded provenance (sha256 {found}, "
             f"recorded {expected})"
         )
-    return IMAGE_SKIPPED
+    return True, IMAGE_SKIPPED
 
 
 def run_batch(
@@ -454,14 +461,15 @@ def run_batch(
 ) -> BatchResult:
     """Segment images one at a time, write each mask and record every outcome.
 
-    Each mask is hashed and recorded (the batch so far) right after it is published, before the
-    next image starts. If that fails the mask is removed again (only if it is still the file
-    written), the image is ``failed`` with the error, the images not yet started are ``failed``
-    as not started, and the batch **stops** (``BatchResult.stopped`` says why): a mask is never
-    left without its record entry, and never reported ``failed`` while left on disk. Images that
-    already have a mask of the type are ``skipped`` (never replaced) unless ``job.overwrite``;
-    a mask with no entry in the record is skipped with a message saying it has no provenance, and
-    one whose SHA-256 differs from its latest recorded entry with a message saying it differs.
+    Each mask is hashed and recorded (the batch so far) right after it is published, under the
+    type's write lock, before the next image starts. If that fails the write is rolled back
+    under the same lock (an overwritten mask restored byte for byte, a new one removed), the
+    image is ``failed`` with the error and what the rollback did, the images not yet started
+    are ``failed`` as not started, and the batch **stops** (``BatchResult.stopped`` says why):
+    a mask is never left without its record entry. Images that already have a mask of the type
+    are not replaced unless ``job.overwrite``: ``skipped`` when the file's SHA-256 is that of
+    its latest recorded entry, else ``needs_attention`` in the table (recorded ``skipped`` with
+    the reason: no provenance, another SHA-256, or not checked).
     Any other image that fails is ``failed`` with the error and the batch goes on. The record is
     written even when the batch is interrupted, with the images done so far.
 
@@ -493,6 +501,7 @@ def run_batch(
     )
     started = batch_id or new_batch_id()
     entries: list[SegmentedImage] = []
+    attention: set[str] = set()
     stopped = ""
     try:
         for done, fov in enumerate(chosen):
@@ -500,14 +509,17 @@ def run_batch(
                 progress(done, len(chosen), fov.relative_path)
             image = fov.relative_path
             if not (job.overwrite or image in missing):
-                entries.append(SegmentedImage(image, "skipped", _skip_note(job, fov, record)))
+                verified, note = _skip_note(job, fov, record)
+                entries.append(SegmentedImage(image, "skipped", note))
+                if not verified:
+                    attention.add(image)
             elif stopped:
                 entries.append(SegmentedImage(image, "failed", f"not started: {stopped}"))
             else:
                 entry, stop = _segment_one(job, fov, started, entries)
                 entries.append(entry)
                 if stop:
-                    stopped = f"the batch stopped at {image}: {entry.message}"
+                    stopped = f"the batch stopped at {image}: {stop}"
         if progress is not None:
             progress(len(chosen), len(chosen), "")
     except BaseException as interrupted:
@@ -524,8 +536,8 @@ def run_batch(
         if not stopped:
             raise
         stopped += f" The record could not be written either: {exc}"
-        return BatchResult(_batch(job, started, entries), None, stopped)
-    return BatchResult(batch, record, stopped)
+        return BatchResult(_batch(job, started, entries), None, stopped, frozenset(attention))
+    return BatchResult(batch, record, stopped, frozenset(attention))
 
 
 # --- the run, the channels and what is shown --------------------------------------------------

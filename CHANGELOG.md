@@ -23,6 +23,15 @@ old pin are refused with `spec_commit_mismatch`, as at every re-pin.
 
 ### Added
 
+- **Cellpose notebook, provenance under the write lock (external audit of PR #375, 22 November
+  2026).** Each mask's SHA-256 and its record append now run in `write_mask`'s `on_published`,
+  under the type's write lock (then the record's lock; never the reverse), so two overlapping
+  batches can no longer leave a latest record entry naming one batch while the bytes on disk are
+  the other's. A hash, newest-entry or record failure (an interrupt too) makes `write_mask` roll
+  back under that lock (#397): an overwritten mask is restored byte for byte, a new one removed.
+  `_withdraw`, its identity stamp and its own (wrong-folder) lock are gone. An existing mask not
+  shown to be its latest recorded one is `needs_attention` in the table and counts, not
+  `skipped`. The fail-safe tests compare on-disk SHA-256 with the latest record entry.
 - **Cellpose notebook, review fixes (PR #375)**: the per-image hash/record step now catches
   `BaseException`, so a `KeyboardInterrupt` (stop button) between `write_mask` and the image's record
   write withdraws the mask (identity-checked) and then re-raises; the identity stamp and SHA-256 are

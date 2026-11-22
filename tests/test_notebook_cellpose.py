@@ -266,7 +266,12 @@ def test_the_cells_segment_a_mixed_run_end_to_end(cells):
     run_cell(cells.ns, BATCH)
     result = cells.ns["result"]
     fovs = run.inputs.fovs()
-    assert result.counts() == {"written": len(fovs), "skipped": 0, "failed": 0}
+    assert result.counts() == {
+        "written": len(fovs),
+        "skipped": 0,
+        "needs_attention": 0,
+        "failed": 0,
+    }
     assert len(cells.stub.calls) == 1 + len(fovs)
     table = workflow.shown[-1]
     assert all(f.relative_path in table for f in fovs) and "written" in table
@@ -389,11 +394,21 @@ def test_failures_are_in_the_final_table_and_the_batch_goes_on(cells):
     cells.stub.fail = fail_third
     run_cell(cells.ns, BATCH)
     result, fovs = cells.ns["result"], cells.run.inputs.fovs()
-    assert result.counts() == {"written": len(fovs) - 1, "skipped": 0, "failed": 1}
+    assert result.counts() == {
+        "written": len(fovs) - 1,
+        "skipped": 0,
+        "needs_attention": 0,
+        "failed": 1,
+    }
     table = cells.ns["workflow"].shown[-1]
     assert "RuntimeError: out of memory" in table and "failed" in table
     run_cell(cells.ns, BATCH)  # again: the written images are skipped, the failed one is redone
-    assert cells.ns["result"].counts() == {"written": 1, "skipped": len(fovs) - 1, "failed": 0}
+    assert cells.ns["result"].counts() == {
+        "written": 1,
+        "skipped": len(fovs) - 1,
+        "needs_attention": 0,
+        "failed": 0,
+    }
 
 
 def test_a_preview_names_an_image_of_the_run_or_is_refused(cells):

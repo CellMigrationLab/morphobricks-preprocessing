@@ -369,6 +369,7 @@ class CellposeWorkflow:
                     [
                         ("✅", str(counts["written"]), "written"),
                         ("⏩", str(counts["skipped"]), "skipped"),
+                        ("⚠️", str(counts[cp.NEEDS_ATTENTION]), "need attention"),
                         ("❌", str(failed), "failed"),
                     ]
                 )

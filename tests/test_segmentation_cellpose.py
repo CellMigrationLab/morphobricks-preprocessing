@@ -287,7 +287,12 @@ def test_channel_axis_is_0_and_the_stack_follows_the_requested_ids_on_a_mixed_ru
     job = make_job(run, ids=("TUB", "DNA"))
     result = cp.run_batch(job, batch_id="b1")
     fovs = run.inputs.fovs()
-    assert result.counts() == {"written": len(fovs), "skipped": 0, "failed": 0}
+    assert result.counts() == {
+        "written": len(fovs),
+        "skipped": 0,
+        "needs_attention": 0,
+        "failed": 0,
+    }
     assert {f.repeat_group for f in fovs} >= {REPEAT_2}  # the repeat that stores EXTRA first
     assert len(stub.calls) == len(fovs)
     for call in stub.calls:
@@ -428,7 +433,12 @@ def test_the_final_table_has_every_image_with_written_skipped_and_failed(run, st
     assert sorted(rows) == sorted(f.relative_path for f in fovs)  # nothing left out
     assert rows[fovs[0].relative_path] == ("skipped", cp.IMAGE_SKIPPED)
     assert rows[fovs[2].relative_path] == ("failed", "RuntimeError: out of memory")
-    assert result.counts() == {"written": len(fovs) - 2, "skipped": 1, "failed": 1}
+    assert result.counts() == {
+        "written": len(fovs) - 2,
+        "skipped": 1,
+        "needs_attention": 0,
+        "failed": 1,
+    }
     assert len(stub.calls) == len(fovs) - 1  # the skipped image was never segmented
     assert not mask_path(run.masks, "Cells", fovs[2]).exists()
     record = read_record(run.masks, "Cells")
