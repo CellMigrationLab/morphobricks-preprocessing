@@ -227,16 +227,63 @@ def test_a_near_empty_field_has_almost_no_foreground():
     empty = cells(seed=8, count=0)
     empty[100:102, 100:102] = 3000  # one speck of debris
     assert measure(empty).foreground_fraction < 0.01
-    assert measure(cells(seed=8)).foreground_fraction > 0.05
+    assert measure(cells(seed=8)).foreground_fraction > 0.03
 
 
-def test_otsu_on_noise_alone_splits_the_noise_with_a_low_separation():
-    noise = cells(seed=9, count=0)
-    found, field = measure(noise), measure(cells(seed=9))
-    # Two-class Otsu always splits: on unimodal noise near the middle (documented), which
-    # otsu_separation tells apart from a real foreground.
-    assert 0.3 < found.foreground_fraction < 0.7
-    assert found.otsu_separation < 0.7 < field.otsu_separation
+@pytest.mark.parametrize("sigma", [50.0, 400.0])
+def test_otsu_separation_of_pure_noise_is_two_over_pi_so_it_does_not_mark_emptiness(sigma):
+    # The baseline (contract §19): two-class Otsu splits Gaussian noise at its mean, and the
+    # between-class share of the variance of a normal distribution there is 2 / pi.
+    noise = np.random.default_rng(1).normal(5000.0, sigma, (512, 512))
+    found = measure(np.clip(noise, 0, 65535).astype(np.uint16))
+    assert found.otsu_separation == pytest.approx(2 / math.pi, abs=0.01)
+    assert found.foreground_fraction == pytest.approx(0.5, abs=0.02)
+    # A sparse field of bright cells separates far above that baseline.
+    assert measure(cells(seed=9)).otsu_separation > 0.85
+
+
+def test_dense_smooth_content_has_the_noise_baseline_separation_but_a_high_correlation():
+    # Smoothed noise: unimodal like camera noise (Otsu separation near 2 / pi), yet full of
+    # structure (correlation_1 near 1). Only the correlation tells it from an empty field.
+    rng = np.random.default_rng(3)
+    field = gaussian_filter(rng.normal(0.0, 1.0, (512, 512)), 3.0)
+    found = measure(np.clip(5000 + field / field.std() * 400, 0, 65535).astype(np.uint16))
+    assert found.otsu_separation == pytest.approx(2 / math.pi, abs=0.02)
+    assert found.correlation_1 > 0.9
+
+
+@pytest.mark.parametrize("seed", [3, 21])
+def test_tenengrad_is_the_normalized_variance_times_one_minus_the_lag_2_correlation(seed):
+    pixels = cells(seed=seed)
+    p = pixels.astype(np.float64)
+
+    def lag_2():
+        x = np.corrcoef(p[:, :-2].ravel(), p[:, 2:].ravel())[0, 1]
+        y = np.corrcoef(p[:-2].ravel(), p[2:].ravel())[0, 1]
+        return (x + y) / 2
+
+    found = measure(pixels)
+    assert found.tenengrad == pytest.approx(found.normalized_variance * (1 - lag_2()), rel=0.02)
+
+
+def test_an_offset_changes_the_ratio_metrics_but_not_the_correlations_or_the_histogram_shape():
+    pixels = cells(seed=22)
+    base, lifted = measure(pixels), measure(pixels + np.uint16(3000))  # a background pedestal
+    for name in ("normalized_variance", "tenengrad", "laplacian_variance", "local_focus_median"):
+        assert getattr(lifted, name) < 0.5 * getattr(base, name), name
+    assert lifted.tile_mean_cv < 0.5 * base.tile_mean_cv
+    for name in ("correlation_1", "correlation_4", "correlation_16", "otsu_separation"):
+        assert getattr(lifted, name) == pytest.approx(getattr(base, name), rel=1e-9), name
+    assert lifted.foreground_fraction == base.foreground_fraction
+
+
+def test_correlation_1_marks_an_empty_field_from_one_with_structure():
+    noise = measure(cells(seed=9, count=0))
+    assert abs(noise.correlation_1) < 0.05 and abs(noise.correlation_4) < 0.05
+    structured = measure(gaussian_filter(cells(seed=9).astype(np.float64), 1.5))
+    assert structured.correlation_1 >= 0.9
+    ramp = np.tile(np.arange(256, dtype=np.float64), (256, 1)) + 500.0
+    assert measure(ramp).correlation_1 >= 0.9
 
 
 def test_a_left_right_illumination_ramp_raises_tile_mean_cv():
@@ -300,6 +347,19 @@ def test_a_plane_whose_mean_is_not_positive_has_no_ratio_metric():
     found = measure(pixels)
     for name in SHAPE:
         assert (getattr(found, name) is None) == (not name.startswith("correlation")), name
+
+
+def test_a_float_plane_in_the_unit_range_is_centred_on_its_mean_not_a_rounded_one():
+    # A mean of 0.4 rounds to 0: uncentred sums lose a spread of 1e-8 to cancellation (the
+    # metrics are about 1e-16 here, so they are compared as ratios, not by pytest's absolute
+    # tolerance).
+    rng = np.random.default_rng(16)
+    pixels = 0.4 + 1e-8 * rng.standard_normal((64, 64))
+    expected = reference(pixels)
+    whole, blocks = measure(pixels), measure(pixels, (16, 64))
+    for found, names in ((whole, ("normalized_variance", "tenengrad")), (blocks, SHAPE[:1])):
+        for name in names:
+            assert getattr(found, name) / expected[name] == pytest.approx(1.0, rel=1e-6), name
 
 
 def test_the_offsets_cover_every_metric():

@@ -255,11 +255,13 @@ def compute_rows(
     """
     review, root = checked.review, pre.discovery.root
     dtype = pre.metadata.dtype.name
-    earlier, reason = _load_previous(output, previous, settings, review.mapping, dtype, mode)
+    in_blocks = {p for i in checked.issues if i.code == "planes_read_in_blocks" for p in i.paths}
+    earlier, reason = _load_previous(
+        output, previous, settings, review.mapping, dtype, mode, bool(in_blocks)
+    )
     earlier_qc: dict[str, list[QcRow]] = {}
     if reason is None:  # the image QC table follows the histogram table's reuse rule
         earlier_qc, reason = _load_previous_qc(output, previous[0], earlier)
-    in_blocks = {p for i in checked.issues if i.code == "planes_read_in_blocks" for p in i.paths}
     entries = file_entries(pre, review, root, in_blocks, checked.channels)
     # Strict reuse: each image's content SHA-256 joins its row key; an unreadable one fails.
     entries, unhashed = with_content(entries, root) if settings.verify_content else (entries, [])

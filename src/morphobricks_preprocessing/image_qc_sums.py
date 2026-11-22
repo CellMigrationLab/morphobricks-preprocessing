@@ -122,7 +122,7 @@ class BlockSums:
         height, width = self.shape
         reach = max((dy + (dx > 0) for dy, dx in self._flat), default=0)
         steps = {key: key[0] * width + key[1] for key in self._flat}
-        buffer = np.empty((BAND_ROWS + reach) * width)
+        buffer = np.empty((min(BAND_ROWS, height) + reach) * width)  # as qc_memory counts it
         edges = sorted({*row_edges, height})
         bands = []
         for start, stop in zip(edges[:-1], edges[1:], strict=True):

@@ -8,6 +8,17 @@ divided by the plane's mean or its square, so it does not change when the intens
 multiplied by a constant (an 8-bit, 16-bit or float copy of one image gives the same value);
 the raw intensities stay in the histogram table. Nothing is normalised before measuring.
 
+Scale-free only under pure multiplication: a pedestal or background offset ``I -> a*I + b``
+changes the mean, so it changes every metric divided by it (``normalized_variance``,
+``tenengrad``, ``laplacian_variance``, ``local_focus_*``, ``tile_mean_cv``); the correlations,
+the Otsu shares and the entropy are unchanged by it. ``tenengrad`` is, up to the plane's edge
+pixels, ``normalized_variance * (1 - rho_2)`` with ``rho_2`` the lag-2 Pearson correlation, so
+it adds no independent evidence of focus. ``otsu_separation`` of unimodal noise is ``2/pi``,
+so it does not tell an empty field from dense content; ``correlation_1`` (about 0 on camera
+noise, high with structure) does. ``local_focus_p10`` is content coverage in a sparse field,
+not focus. ``tenengrad`` uses central differences (not the Sobel operator) and the correlations
+are Pearson correlations of pixel pairs (not CellProfiler's Haralick correlation). Contract §19.
+
 :class:`PlaneQc` takes the plane's blocks as the histogram reads them (no extra read) and
 :meth:`PlaneQc.finish` adds the histogram metrics once the histogram is known. Every metric
 is built from sums that combine across blocks (:mod:`.image_qc_moments`), so a plane read in
@@ -24,7 +35,7 @@ import numpy as np
 from morphobricks_normalization.histogram import PlaneHistogram
 
 from .image_qc_moments import CoMoments, Moments
-from .image_qc_sums import BlockSums, Window, valid_window
+from .image_qc_sums import BAND_ROWS, BlockSums, Window, valid_window
 
 QC_VERSION = "1"
 """Version of the metric definitions; a change recomputes every row (contract §19)."""
@@ -42,8 +53,44 @@ OFFSETS = (
 )
 """Every neighbour offset ``(dy, dx)`` a pair sum is taken at (correlations, gradients and
 the Laplacian)."""
+REACH = max(dy + (dx > 0) for dy, dx in OFFSETS)
+"""Rows below a band of the sweep that the offsets reach (:mod:`.image_qc_sums`)."""
 MEASURED, NON_FINITE, NO_FINITE = "measured", "non_finite_pixels", "no_finite_pixels"
 """The values of ``qc_status``."""
+CONSTANT, NO_PAIRS, NO_VARIANCE = "constant_plane", "no_pairs", "no_variance"
+NON_POSITIVE_MEAN, TOO_SMALL = "non_positive_mean", "plane_too_small"
+REASONS = frozenset(
+    {NO_FINITE, NON_FINITE, CONSTANT, NO_PAIRS, NO_VARIANCE, NON_POSITIVE_MEAN, TOO_SMALL}
+)
+"""Why a metric is blank (``blank_reasons``): the status's two blanking causes, a plane of one
+value (no Otsu split), no pixel pair at the lag, a constant side of the pairs, a mean that is
+not positive (the ratio metrics) and a plane too small for the metric (a side under 3 pixels
+for the gradient and the Laplacian, under 16 for the tile metrics)."""
+
+
+def qc_memory(rows: int, cols: int, floating: bool) -> int:
+    """Return an upper bound of the working memory the QC sums of one block hold, in bytes.
+
+    Besides the block itself (counted with the pixels): the sweep's float64 band buffer of
+    ``min(BAND_ROWS, rows) + REACH`` rows, the column sums of each band and their temporaries,
+    the float64 copies of the thin strips and wrapped columns of the window and pair sums
+    (two operands, at most ``REACH`` rows or columns wide), NumPy's casting buffers (two
+    operands of 8192 float64: ``numpy.getbufsize``) and, for a float block, the boolean mask
+    of the finite scan (one byte per pixel). The terms are added, though some are freed
+    before others are made (measured with ``tracemalloc``, ``tests/test_image_qc_memory.py``).
+
+    Parameters
+    ----------
+    rows, cols
+        The block's (Y, X) shape.
+    floating
+        Whether its pixel type is a float type (the finite scan runs).
+    """
+    band = (min(BAND_ROWS, rows) + REACH) * cols * 8
+    columns = 4 * cols * 8
+    strips = 2 * 8 * REACH * (rows + cols)
+    casting = 2 * 8 * np.getbufsize()
+    return band + columns + strips + casting + (rows * cols if floating else 0)
 
 
 def qc_settings() -> dict:
@@ -66,9 +113,13 @@ class ImageQc:
         ``measured``; ``non_finite_pixels`` (a float plane with NaN or infinite pixels: the
         pixel metrics are left blank, the histogram metrics use the finite pixels); or
         ``no_finite_pixels`` (every metric blank).
+    reasons
+        ``(metric, reason)`` for every blank metric, in table order; the reasons are those
+        of :data:`REASONS`.
     """
 
     status: str
+    reasons: tuple[tuple[str, str], ...] = ()
     otsu_threshold: float | None = None
     otsu_separation: float | None = None
     foreground_fraction: float | None = None
@@ -84,8 +135,13 @@ class ImageQc:
     tile_mean_cv: float | None = None
 
 
-METRICS = tuple(f.name for f in fields(ImageQc) if f.name != "status")
+METRICS = tuple(f.name for f in fields(ImageQc) if f.name not in ("status", "reasons"))
 """The metric columns, in table order."""
+HISTOGRAM_METRICS = ("otsu_threshold", "otsu_separation", "foreground_fraction", "entropy")
+"""The metrics of the histogram; the others are measured from the pixels."""
+PIXEL_METRICS = tuple(name for name in METRICS if name not in HISTOGRAM_METRICS)
+RATIO_METRICS = tuple(name for name in PIXEL_METRICS if not name.startswith("correlation"))
+"""The pixel metrics divided by the mean or its square: blank when the mean is not positive."""
 
 
 class PlaneQc:
@@ -124,7 +180,10 @@ class PlaneQc:
         # A constant near the mean keeps the sums small (well conditioned); any value works.
         sample = pixels[:: max(1, pixels.shape[0] // 16), :: max(1, pixels.shape[1] // 16)]
         bands = self._tile_rows(y, pixels.shape[0])
-        offset = round(float(sample.mean()))
+        mean = float(sample.mean())
+        # Whole numbers keep the integer sums exact; a float plane is centred on its mean, which
+        # a rounded one would miss for data in [0, 1).
+        offset = mean if self.floating else float(round(mean))
         sums = BlockSums(pixels, offset, OFFSETS, [top for _, top in bands])
         self.pixels = self.pixels.merged(
             Moments.of_sums(pixels.size, sums.offset, sums.total, sums.total_sq)
@@ -186,23 +245,29 @@ class PlaneQc:
         if self.seen != self.shape[0] * self.shape[1]:
             raise ValueError(f"the QC pass saw {self.seen} pixels of a {self.shape} plane")
         if histogram.is_empty:
-            return ImageQc(NO_FINITE)
+            return ImageQc(NO_FINITE, reasons=tuple((name, NO_FINITE) for name in METRICS))
         found = histogram_metrics(histogram)
+        why = {name: CONSTANT for name in HISTOGRAM_METRICS if found[name] is None}
         if self.non_finite:
-            return ImageQc(NON_FINITE, **found)
-        return ImageQc(MEASURED, **found, **self._pixel_metrics())
+            why.update(dict.fromkeys(PIXEL_METRICS, NON_FINITE))
+            return ImageQc(NON_FINITE, **found, reasons=_in_order(why))
+        pixel, blank = self._pixel_metrics()
+        return ImageQc(MEASURED, **found, **pixel, reasons=_in_order({**why, **blank}))
 
-    def _pixel_metrics(self) -> dict[str, float | None]:
-        """Return the metrics of the pixel pass."""
+    def _pixel_metrics(self) -> tuple[dict[str, float | None], dict[str, str]]:
+        """Return the metrics of the pixel pass, and why each undefined one is."""
         mean = self.pixels.mean
-        found: dict[str, float | None] = {
-            f"correlation_{lag}": _mean_of(
-                self.pairs[lag, 0].correlation, self.pairs[lag, 1].correlation
-            )
-            for lag in LAGS
-        }
-        if self.pixels.n == 0 or mean <= 0.0:
-            return found  # the ratio metrics need a positive mean (contract §19)
+        found: dict[str, float | None] = {name: None for name in PIXEL_METRICS}
+        why: dict[str, str] = {}
+        for lag in LAGS:
+            pairs = [self.pairs[lag, axis] for axis in (0, 1)]
+            name = f"correlation_{lag}"
+            found[name] = _mean_of(pairs[0].correlation, pairs[1].correlation)
+            if found[name] is None:
+                why[name] = NO_PAIRS if min(p.n for p in pairs) == 0 else NO_VARIANCE
+        if self.pixels.n == 0 or mean <= 0.0:  # the ratio metrics need a positive mean
+            why.update(dict.fromkeys(RATIO_METRICS, NON_POSITIVE_MEAN))
+            return found, why
         square = mean * mean
         sx, nx, sy, ny = self.gradient
         found["normalized_variance"] = self.pixels.variance / square
@@ -218,7 +283,16 @@ class PlaneQc:
             means = np.array([tile.mean for tile in tiles])
             if means.mean() > 0.0:
                 found["tile_mean_cv"] = float(means.std() / means.mean())
-        return found
+        small = min(self.shape) < 2 * TILE_GRID
+        for name in RATIO_METRICS:
+            if found[name] is None:  # only tile_mean_cv has another cause: a tile mean of 0
+                why[name] = TOO_SMALL if small or name != "tile_mean_cv" else NON_POSITIVE_MEAN
+        return found, why
+
+
+def _in_order(why: dict[str, str]) -> tuple[tuple[str, str], ...]:
+    """Return the reasons as ``(metric, reason)`` pairs in table order."""
+    return tuple((name, why[name]) for name in METRICS if name in why)
 
 
 def _mean_of(a: float | None, b: float | None) -> float | None:

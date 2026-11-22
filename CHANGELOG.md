@@ -52,7 +52,15 @@ old pin are refused with `spec_commit_mismatch`, as at every re-pin.
   rows (a version 1 staged record is discarded and read again), and a run whose earlier
   manifest has no `image_qc` entry recomputes every row once. `tools/benchmark_image_qc.py`
   times the histogram step with and without the metrics on identical outputs. The
-  power-spectrum slope (PLLS) is not included (cost). Contract §19, user guide §6.
+  power-spectrum slope (PLLS) is not included (cost). Contract §19, user guide §6. Each blank
+  metric has a reason in the `blank_reasons` column (`constant_plane`, `no_pairs`,
+  `no_variance`, `non_positive_mean`, `plane_too_small`, `non_finite_pixels`,
+  `no_finite_pixels`), and the reader and writer refuse inconsistent status, metric and reason
+  combinations. The contract states what the metrics are not: scale-free only under pure
+  multiplication (an offset changes the ratio metrics), `otsu_separation` of noise is 2/pi (use
+  `correlation_1` for emptiness), `local_focus_p10` is content coverage, central-difference
+  Tenengrad (not Sobel), Pearson lag correlations (not Haralick), and the block tolerances are
+  observations, not guarantees.
 
 - **Tag this repeat folder (all conditions)** on *Tag channels* (owner request of 20 November
   2026): one row of tags per biological-repeat **folder name** and channel count; set once, it
@@ -126,6 +134,19 @@ old pin are refused with `spec_commit_mismatch`, as at every re-pin.
 
 ### Changed
 
+- **Another memory limit recomputes the rows when planes are read in blocks**: the image QC
+  neighbour metrics of a plane read in blocks depend on its blocks, so rows measured under
+  another limit were silently reused (and resumed). With the earlier run or this one reading any
+  plane in blocks, a changed `memory_limit` recomputes every row (reason in the report), and
+  staged rows of an image read in blocks are resumed only under their limit (`RowKey.block_limit`);
+  whole planes on both sides still keep their rows. The QC rows reused must also match the
+  histogram rows' full identity, not only plane ID and channel. The working memory of the QC sums
+  (`image_qc.qc_memory`) is part of the plane and block estimates (`plane_binning.Binning`), so
+  blocks are a little smaller; a float plane's sums are centred on its mean, not a rounded one.
+- **NumPy 2.0 or later** (the image QC sums use `numpy.vecdot`), with the dependency floors
+  raised to releases that import with NumPy 2: SciPy 1.13, Matplotlib 3.8.4 (`notebook`) and
+  scikit-image 0.24 (`he-mask`). Checked on Python 3.11 with the lowest versions of every
+  dependency and on 3.13 with the newest.
 - **Draft file version 4** (`morphobricks.draft.json`): the keys `channel_layout` and
   `switch_mode`, and a unit's `channels_from`. A version 3 draft is refused (`unknown_version`;
   it was written under the old Spec pin anyway, `spec_commit_mismatch`).

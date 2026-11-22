@@ -407,6 +407,9 @@ def _why_discarded(staged: dict, now: dict, full: bool, unchanged: bool) -> str:
         return "its rows were staged by another version"
     if staged.get("dtype") != now["dtype"]:
         return "the experiment's pixel type changed since its rows were staged"
+    limits = (staged.get("row_key", {}).get("block_limit"), now["row_key"].get("block_limit"))
+    if limits[0] != limits[1]:
+        return "its planes' block layout (the memory limit) changed since its rows were staged"
     return "its axis roles, labels, folder or row settings changed since its rows were staged"
 
 

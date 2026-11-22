@@ -30,6 +30,7 @@ from ..manifest import (
     file_sha256,
     read_manifest,
 )
+from ..planes import format_bytes
 from ..validation import ValidationIssue, error
 from .modes import FULL
 
@@ -102,10 +103,12 @@ def _load_previous(
     mapping: AxisMapping,
     dtype: str,
     mode: str,
+    blocks_now: bool = False,
 ) -> tuple[dict[str, list[PlaneRecord]], str | None]:
     """Load the earlier run's rows by file, and say why they cannot be reused.
 
     ``previous`` is :func:`read_previous`'s answer. In ``full`` mode no row is reused.
+    ``blocks_now``: whether this run reads any plane in blocks (see :func:`_settings_changed`).
     """
     manifest, missing = previous
     csv_path = output / OUTPUT_FILENAME
@@ -117,7 +120,8 @@ def _load_previous(
         return {}, "the earlier table uses a different format version"
     if manifest.dtype != dtype:
         return {}, f"the pixel type changed from {manifest.dtype} to {dtype}"
-    changed = _settings_changed(manifest.settings, settings)
+    blocked = blocks_now or any(f.read_in_blocks for f in manifest.files)
+    changed = _settings_changed(manifest.settings, settings, blocked)
     if changed is not None:
         return {}, changed
     if (manifest.mapping.axes, manifest.mapping.roles) != (mapping.axes, mapping.roles):
@@ -143,7 +147,9 @@ def _load_previous_qc(
     They follow the histogram table's reuse rule (contract §19): the earlier rows are reused
     only with the image QC table the manifest names (its SHA-256), measured by the same
     metric definitions (version and settings), and holding one row for each channel of each
-    earlier histogram row; otherwise every row is recomputed, with the reason.
+    earlier histogram row, with that row's full identity (position, image, Z, T, labels, path,
+    plane ID and channel, not only plane ID and channel); otherwise every row is recomputed,
+    with the reason.
     """
     entry, path = manifest.image_qc, output / IMAGE_QC_FILENAME
     if entry is None:
@@ -157,8 +163,10 @@ def _load_previous_qc(
     except ImageQcFormatError:
         logger.warning("Cannot read %s", path, exc_info=True)
         return {}, "the earlier image QC table could not be read"
-    keys = {(r.plane_id, c) for records in earlier.values() for r in records for c in r.channels}
-    if sorted(row.key for row in rows) != sorted(keys):
+    expected = [
+        QcRow.identity_of(r, c) for records in earlier.values() for r in records for c in r.channels
+    ]
+    if sorted(row.identity for row in rows) != sorted(expected):
         return {}, "the earlier image QC table does not match the histogram table"
     by_file: dict[str, list[QcRow]] = {}
     for row in rows:
@@ -166,11 +174,16 @@ def _load_previous_qc(
     return by_file, None
 
 
-def _settings_changed(before: RunSettings, now: RunSettings) -> str | None:
+def _settings_changed(before: RunSettings, now: RunSettings, blocked: bool = False) -> str | None:
     """Say which setting that changes every row (or how rows are reused) changed, or None.
 
     Turning content verification on or off recomputes every row: rows recorded without a
     content SHA-256 cannot be verified, and reuse never changes its rule silently.
+
+    The memory limit changes no histogram row, but it sets the blocks a plane is read in, and
+    the neighbour metrics of the image QC table leave out the pairs across a block edge
+    (contract §19): another limit recomputes every row when ``blocked`` (the earlier run or
+    this one reads a plane in blocks). With only whole planes on both sides it changes no row.
     """
     if before.bin_count != now.bin_count:
         return f"the bin count changed from {before.bin_count:,} to {now.bin_count:,}"
@@ -182,6 +195,12 @@ def _settings_changed(before: RunSettings, now: RunSettings) -> str | None:
     if before.verify_content != now.verify_content:
         state = "turned on" if now.verify_content else "turned off"
         return f"content verification (verify_content) was {state}"
+    if blocked and before.memory_limit != now.memory_limit:
+        return (
+            f"the memory limit changed from {format_bytes(before.memory_limit)} to "
+            f"{format_bytes(now.memory_limit)} (the image QC metrics of planes read in blocks "
+            "depend on the block layout)"
+        )
     return None
 
 

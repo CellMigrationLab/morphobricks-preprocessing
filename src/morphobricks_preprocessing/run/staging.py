@@ -97,8 +97,9 @@ def staging_key(key: RowKey, dtype: str) -> dict:
         the packages that compute rows, normalised through JSON so it compares with a record.
     """
     row = asdict(key)
-    if row["content_sha256"] is None:  # not a verify_content run: the key as before
-        del row["content_sha256"]
+    for name in ("content_sha256", "block_limit"):
+        if row[name] is None:  # not a verify_content run, or read whole: the key as before
+            del row[name]
     data = {
         "row_key": row,
         "dtype": dtype,
