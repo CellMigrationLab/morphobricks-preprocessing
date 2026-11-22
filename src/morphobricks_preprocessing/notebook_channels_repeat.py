@@ -27,7 +27,7 @@ convenience only: the saved data are per unit (the description format does not c
 from __future__ import annotations
 
 import html
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 import ipywidgets as widgets
 
@@ -54,6 +54,17 @@ if TYPE_CHECKING:
 ACTION = "Tag this repeat folder (all conditions)"
 
 
+class Refusal(NamedTuple):
+    """A unit a row did not fill: the contradiction, the unit, the row's reference and tags."""
+
+    text: str
+    layout: UnitLayout
+    lead: UnitLayout | None
+    """The row's reference unit; None for a unit whose images disagree (:func:`repeat_apart`)."""
+    tags: tuple[str, ...]
+    """The row's tags at the click (what the header was compared with)."""
+
+
 class RepeatRows:
     """The rows of tags per repeat folder, drawn under the tag grid."""
 
@@ -63,13 +74,14 @@ class RepeatRows:
         self.pending: dict[GroupKey, list[str | None]] = {}
         self.drops: dict[GroupKey, list[widgets.Dropdown]] = {}
         self.buttons: dict[GroupKey, widgets.Button] = {}
-        self.refused: dict[UnitKey, tuple[str, UnitLayout, UnitLayout | None]] = {}
-        """Units a row did not fill: the contradiction, the unit and its row's first unit.
+        self.refused: dict[UnitKey, Refusal] = {}
+        """Units a row did not fill: the contradiction, the unit, its row's first unit and tags.
 
         The first unit is None for a unit whose images disagree (:func:`.repeat_tags.repeat_apart`).
         Only which units a click refused is remembered; whether one is still listed is read from
         its current tags against its header (:meth:`listed`), never from what happened since. A
-        unit leaves this record only after a save that fitted it succeeded (:meth:`apply`).
+        unit leaves this record after a save that fitted it succeeded (:meth:`apply`), or when
+        the layouts change and it is gone or no longer contradicts its row (:meth:`reconcile`).
         """
         self.notice = ""
         """A one-shot message of the last click (shown once, then cleared)."""
@@ -87,8 +99,10 @@ class RepeatRows:
         answers = self.grid.store.answers()
         out = {}
         current = {u.key: u for u in self.grid.layouts}
-        for key, (text, stored, lead) in self.refused.items():
-            layout = current.get(key, stored)  # the unit as read now, not as at the click
+        for key, (text, _, lead, _) in self.refused.items():
+            layout = current.get(key)  # the unit as read now, never as at the click
+            if layout is None:
+                continue  # no longer in the experiment (:meth:`reconcile` drops it)
             if lead is None:
                 if repeat_apart((layout,)):
                     out[key] = text
@@ -97,6 +111,40 @@ class RepeatRows:
             if None in tags or differences(layout, tags, lead, self.grid.labels, answers.channels):
                 out[key] = text
         return out
+
+    def reconcile(self) -> None:
+        """Bring the refusals up to date with the grid's current layouts (on every opening).
+
+        The same rules as the click, on the layouts as read now: a unit no longer in any offered
+        row (removed from the folder, now colour or unusable) is dropped; a unit whose images
+        disagree now is refused for that (:func:`.repeat_tags.repeat_apart`), and one whose
+        images agree again is dropped; any other keeps its row's *current* reference
+        (:func:`.repeat_tags.repeat_lead`) and is kept only while its header still contradicts
+        the row's tags at the click, or its own tags (:func:`.channel_matrix.differences`). A
+        surviving contradiction is never cleared because the screen reopened.
+        """
+        grid, kept = self.grid, {}
+        rows = self._offered() if grid.labels else {}
+        answers = grid.store.answers()
+        for key, old in self.refused.items():
+            group = next((g for g in rows.values() if any(u.key == key for u in g)), ())
+            layout = next((u for u in group if u.key == key), None)
+            if layout is None:
+                continue
+            why = repeat_apart(group).get(key)
+            if why is not None:
+                kept[key] = Refusal(html.escape(why), layout, None, old.tags)
+                continue
+            lead = repeat_lead(group)
+            if old.lead is None or lead is None:
+                continue  # its images agree again: nothing to compare was ever clicked
+            own = tags_of(layout, answers.units.get(key))
+            found = differences(layout, old.tags, lead, grid.labels, answers.channels)
+            found = found or differences(layout, own, lead, grid.labels, answers.channels)
+            if found:
+                text = "; ".join(html.escape(difference_text(d)) for d in found)
+                kept[key] = Refusal(text, layout, lead, old.tags)
+        self.refused = kept
 
     def _offered(self) -> dict:
         """Return the rows: every repeat unticked; in fast mode only units outside the layout."""
@@ -174,8 +222,8 @@ class RepeatRows:
                 + ", ".join(unit_name(k) for k in apart)
             )
         info = widgets.HTML(
-            f"<b>{html.escape(repeat)}</b>: {count} channel(s); sets {len(fills)} imaging "
-            f"unit(s): {html.escape(units)}<div class='mb-help'>{html.escape(note)}</div>"
+            f"<b>{html.escape(repeat)}</b>: {count} channel(s); {len(fills)} unit(s) eligible "
+            f"for this row: {html.escape(units)}<div class='mb-help'>{html.escape(note)}</div>"
         )
         options = [(CHOOSE, None), *((label, label) for label in self.grid.labels)]
         drops = []
@@ -221,10 +269,10 @@ class RepeatRows:
         for unit, found in refused.items():
             text = "; ".join(html.escape(difference_text(d)) for d in found)
             layout = next(u for u in group if u.key == unit)
-            self.refused[unit] = (text, layout, repeat_lead(group))
+            self.refused[unit] = Refusal(text, layout, repeat_lead(group), tuple(named))
         for unit, why in repeat_apart(group).items():
             layout = next(u for u in group if u.key == unit)
-            self.refused[unit] = (html.escape(why), layout, None)
+            self.refused[unit] = Refusal(html.escape(why), layout, None, tuple(named))
         if not save:
             self.grid.refresh()
             return False

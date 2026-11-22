@@ -219,3 +219,46 @@ def test_the_notebook_balance_table_says_what_is_not_counted(tmp_path):
     text = balance_html(balance)
     assert "1 technical repeat<" in text and "Not counted: 1 excluded image" in text
     assert "ctrl/rep1/techB" in text
+
+
+def _repeat(condition, repeat, images):
+    from morphobricks_preprocessing.dataset import BiologicalRepeat
+
+    return BiologicalRepeat(condition, repeat, f"{condition}/{repeat}", images, 0)
+
+
+@pytest.mark.parametrize(
+    ("pairing", "extra", "cells"),
+    [
+        pytest.param(  # a pairing that names only one folder: the others keep their names
+            {("b", "rep2"): "rep1"},
+            [],
+            {("rep1", "a"): 2, ("rep2", "a"): 3, ("rep1", "b"): 2 + 4},
+            id="missing-pairing-falls-back-to-the-folder-name",
+        ),
+        pytest.param(  # labels differing only in case are different repeats, never merged
+            None,
+            [("a", "Rep1", 5)],
+            {
+                ("rep1", "a"): 2,
+                ("Rep1", "a"): 5,
+                ("rep2", "a"): 3,
+                ("rep1", "b"): 2,
+                ("rep2", "b"): 4,
+            },
+            id="case-distinct-labels",
+        ),
+        pytest.param(  # pairing keys of folders that do not exist change nothing
+            {("zzz", "rep9"): "rep1", ("a", "rep8"): "rep2"},
+            [],
+            {("rep1", "a"): 2, ("rep2", "a"): 3, ("rep1", "b"): 2, ("rep2", "b"): 4},
+            id="unused-extra-pairing-keys",
+        ),
+    ],
+)
+def test_balance_table_pairing_edge_cases(pairing, extra, cells):
+    repeats = [_repeat("a", "rep1", 2), _repeat("a", "rep2", 3), _repeat("b", "rep1", 2)]
+    repeats += [_repeat("b", "rep2", 4)]
+    repeats += [_repeat(*one) for one in extra]
+    table = balance_table(repeats, pairing)
+    assert {key: cell.image_count for key, cell in table.cells.items()} == cells

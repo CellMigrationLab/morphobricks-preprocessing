@@ -412,7 +412,7 @@ def test_b3_a_row_does_not_fill_a_unit_with_conflicting_headers_or_counts(tmp_pa
     assert "corrected or separated" in shown
     drawn = repr(rows.box.children)  # before any click it already says what it will not fill
     assert "2 unit(s) with disagreeing images will not be filled" in drawn
-    assert "sets 2 imaging unit(s)" in drawn
+    assert "2 unit(s) eligible for this row" in drawn
     nb.channel_grid.refresh()
     assert set(rows.listed()) == set(mixed)  # still listed on every redraw
 
@@ -547,3 +547,79 @@ def test_b5_a_corrective_save_the_grid_refuses_keeps_the_unit_listed(
     monkeypatch.setattr(type(grid), "commit", lambda self, tags, cells: False)
     assert not rows.apply(("rep2", 3), group)
     assert list(rows.listed()) == [odd]
+
+
+# --- the refusals after a folder re-check (#372) ----------------------------------------------
+
+
+def _recheck(nb):
+    """Check the experiment folder again in the same notebook, and confirm the axes again."""
+    nb.check_button.click()
+    nb.preview_checked.set(True)
+    nb.show_preview()
+    nb.confirm_button.click()
+
+
+def _two_odd(key):
+    """drug/rep1/t1 and drug/rep2/t1 name their channels (no label) differently from their rows."""
+    if key[0] == "drug" and key[2] == "t1":
+        return ["P", "Q", "Ch3"]
+    return ["X", "Y", "Ch3"]
+
+
+def _refused_twice(tmp_path):
+    root, masks, out = _experiment(tmp_path, names=_two_odd)
+    nb = opened(root, masks, out)
+    set_labels(nb, list(TAGS))
+    _set_row(nb, ("rep1", 3), TAGS)
+    _set_row(nb, ("rep2", 3), TAGS)
+    rows = nb.channel_grid.by_repeat
+    gone, kept = ("drug", "rep2", "t1"), ("drug", "rep1", "t1")
+    assert set(rows.listed()) == {gone, kept}
+    return nb, root, rows, gone, kept
+
+
+def test_372_a_a_unit_removed_by_a_recheck_leaves_the_list_a_surviving_one_stays(
+    tmp_path, statement_off
+):
+    import shutil
+
+    nb, root, rows, gone, kept = _refused_twice(tmp_path)
+    shutil.rmtree(root.joinpath(*gone))
+    _recheck(nb)  # the same notebook: the experiment folder is checked again
+    assert gone not in {u.key for u in nb.channel_grid.layouts}
+    assert set(rows.listed()) == {kept}  # the removed unit is not listed, the other still is
+    assert gone not in rows.refused and kept in rows.refused
+    nb.channel_grid.refresh()
+    assert "drug / rep2 / t1" not in rows.message and "drug / rep1 / t1" in rows.message
+
+
+def _rewrite_header(root, key, names):
+    write_channels(root.joinpath(*key, "a.tif"), names, KINDS4[:3], seed=UNITS.index(key) + 1)
+
+
+def test_372_b_a_changed_reference_header_is_compared_with_the_current_reference(
+    tmp_path, statement_off
+):
+    nb, root, rows, gone, kept = _refused_twice(tmp_path)
+    lead = ("ctrl", "rep2", "t1")  # the reference of the rep2 row
+    _rewrite_header(root, lead, ["Z", "Q", "Ch3"])  # another reference, still unlike
+    _recheck(nb)
+    assert set(rows.listed()) == {gone, kept}
+    assert "is ‘Z’" in rows.listed()[gone] and "is ‘X’" not in rows.listed()[gone]
+    _rewrite_header(root, lead, ["P", "Q", "Ch3"])  # the reference now names what the unit names
+    _recheck(nb)
+    assert set(rows.listed()) == {kept}  # no contradiction left: the old reference is not kept
+    assert gone not in rows.refused
+
+
+def test_372_c_a_recheck_that_changes_nothing_keeps_every_unresolved_refusal(
+    tmp_path, statement_off
+):
+    nb, _, rows, gone, kept = _refused_twice(tmp_path)
+    _recheck(nb)
+    assert set(rows.listed()) == {gone, kept}
+    nb.channel_grid.open(
+        nb.channel_grid.layouts, nb.channel_grid.labels, nb.channel_grid.rows.thumbs
+    )  # the screen reopened: still unresolved, still listed
+    assert set(rows.listed()) == {gone, kept}
