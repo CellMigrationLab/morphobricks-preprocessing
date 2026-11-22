@@ -10,8 +10,8 @@ from pathlib import Path
 
 from .segmentation_handoff import stray_backups
 from .segmentation_record import (
+    SegmentationBatch,
     SegmentationError,
-    SegmentedImage,
     read_record,
     record_path,
 )
@@ -42,23 +42,31 @@ def check_newest(masks_root: str | Path, mask_type: str, batch_id: str, image: s
         )
 
 
-def is_recorded(
-    masks_root: str | Path, mask_type: str, batch_id: str, entry: SegmentedImage
-) -> bool:
-    """Say whether the record on disk already has ``entry`` as its image's latest, from this batch.
+def is_recorded(masks_root: str | Path, mask_type: str, expected: SegmentationBatch) -> bool:
+    """Say whether the record on disk is what writing ``expected`` would have left.
 
-    ``write_record`` can save the file and then fail (releasing its lock, an interrupt after the
-    replace); the mask and the record then agree and the mask must not be rolled back. A record
-    that cannot be read is not shown to agree.
+    ``expected`` is the batch passed to ``write_record``, its last image the entry being
+    committed. ``write_record`` can save the file and then fail (releasing its lock, an
+    interrupt after the replace); the mask and the record then agree and the mask must not be
+    rolled back. That needs the whole of it: the record's batch of this ID has the provenance
+    of ``expected`` (the record's own ``same_provenance``: a refused reuse of the ID with
+    another model or settings is not shown to agree) and the image's latest written entry is
+    exactly this one (image, status, SHA-256). A record that cannot be read is not shown to
+    agree.
     """
+    entry = expected.images[-1]
     try:
         latest = read_record(masks_root, mask_type).latest(entry.image)
     except (OSError, SegmentationError):
         return False
+    if latest is None:
+        return False
+    batch, found = latest
     return (
-        latest is not None
-        and latest[0].batch_id == batch_id
-        and latest[1].mask_sha256 == entry.mask_sha256
+        batch.batch_id == expected.batch_id
+        and batch.same_provenance(expected)
+        and (found.image, found.status, found.mask_sha256)
+        == (entry.image, entry.status, entry.mask_sha256)
     )
 
 

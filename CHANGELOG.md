@@ -23,6 +23,15 @@ old pin are refused with `spec_commit_mismatch`, as at every re-pin.
 
 ### Added
 
+- **Cellpose notebook, a reused batch ID is not recovered as the old batch's (external audit B1,
+  22 November 2026).** When the record write failed, the recovery check compared only the latest
+  entry's batch ID and mask SHA-256, so a reused ID with another model or settings and identical
+  mask bytes (refused by `write_record`) was reported `written` under the earlier batch's
+  provenance. The check now needs the record's batch of that ID to have the expected batch's
+  provenance (`SegmentationBatch.same_provenance`) and the image's latest entry to be exactly the
+  expected one; otherwise the error propagates and `write_mask` rolls back. The earlier-mask note
+  still comes from a `stray_backups` diff read under the lock (`on_published` is not told whether
+  its writer made a backup; changing its signature is outside this fix).
 - **Cellpose notebook, provenance under the write lock (external audit of PR #375, 22 November
   2026).** Each mask's SHA-256 and its record append now run in `write_mask`'s `on_published`,
   under the type's write lock (then the record's lock; never the reverse), so two overlapping

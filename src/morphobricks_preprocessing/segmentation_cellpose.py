@@ -341,18 +341,18 @@ def _segment_one(
 
     def commit(path: Path) -> None:  # under the type's write lock, right after the publish
         try:
-            entry = state["pending"] = SegmentedImage(
-                image, "written", mask_sha256=mask_sha256(path)
-            )
+            entry = SegmentedImage(image, "written", mask_sha256=mask_sha256(path))
             state["replaced"] = replaced_earlier_mask(root, kind, strays)  # exact, under the lock
             check_newest(root, kind, batch_id, image)
-            _write_batch(job, batch_id, [*entries, entry])
+            state["expected"] = _batch(job, batch_id, [*entries, entry])
+            _write_batch(job, batch_id, [*entries, entry], state["expected"])
             state["entry"] = entry
         except BaseException as exc:
-            pending = state.get("pending")
-            if pending is not None and is_recorded(root, kind, batch_id, pending):
-                # write_record saved the file and then failed: mask and record agree, keep both
-                state["entry"], state["late"] = pending, exc
+            expected = state.get("expected")
+            if expected is not None and is_recorded(root, kind, expected):
+                # write_record saved the file and then failed: mask and record agree (the whole
+                # provenance of this batch, not just its ID), keep both
+                state["entry"], state["late"] = expected.images[-1], exc
                 return
             state["error"] = exc
             raise
@@ -423,10 +423,13 @@ def _batch(job: SegmentationJob, batch_id: str, images: list[SegmentedImage]) ->
 
 
 def _write_batch(
-    job: SegmentationJob, batch_id: str, entries: list[SegmentedImage]
+    job: SegmentationJob,
+    batch_id: str,
+    entries: list[SegmentedImage],
+    batch: SegmentationBatch | None = None,
 ) -> tuple[SegmentationBatch, Path | None]:
-    """Build the batch and write its record (none when no image was handled)."""
-    batch = _batch(job, batch_id, entries)
+    """Write the record of the batch (built here unless given; none when no image was handled)."""
+    batch = batch if batch is not None else _batch(job, batch_id, entries)
     return batch, write_record(job.masks_root, job.mask_type, batch) if entries else None
 
 
