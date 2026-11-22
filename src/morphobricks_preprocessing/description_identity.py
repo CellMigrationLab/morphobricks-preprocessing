@@ -9,7 +9,7 @@ repaired: the NFC form of a value is a comparison key only and never leaves this
 from __future__ import annotations
 
 import unicodedata
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 
 from .description_report import Issues, key_path
 from .description_rules import (
@@ -29,6 +29,17 @@ USED_KINDS = ("conditions", "channels", "repeats", "technical_repeats")
 def nfc(value: str) -> str:
     """Return the NFC form of ``value`` (a comparison key, never stored)."""
     return unicodedata.normalize("NFC", value)
+
+
+def header_name_matches(name: str, confirmed: Iterable[str]) -> bool:
+    """Return whether a raw header name is one of a channel's confirmed header names.
+
+    The one rule of experiment-v1 4.3 for every caller (the notebook's matrix, the fast layout,
+    the physical check and reconciliation): equal after NFC, never trimmed, never case-folded.
+    Only confirmed names count; a new alias is never trusted by itself.
+    """
+    key = nfc(name)
+    return any(nfc(entry) == key for entry in confirmed)
 
 
 class Identities:

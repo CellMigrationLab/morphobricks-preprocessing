@@ -12,11 +12,13 @@ import pytest
 
 from morphobricks_preprocessing.segmentation_record import (
     RECORD_FILENAME,
+    RECORD_LOCK_FILENAME,
     SegmentationBatch,
     SegmentationError,
     SegmentationRecord,
     SegmentedImage,
     mask_sha256,
+    new_batch_id,
     read_record,
     write_record,
 )
@@ -255,3 +257,43 @@ def test_write_record_refuses_a_record_of_another_type_on_disk(tmp_path):
     (other / RECORD_FILENAME).write_bytes(path.read_bytes())  # a Cells record in Nuclei/
     with pytest.raises(SegmentationError, match="is of mask type 'Cells', not 'Nuclei'"):
         write_record(tmp_path, "Nuclei", second())
+
+
+def test_a_held_lock_refuses_the_write_and_leaves_the_record_unchanged(tmp_path):
+    path = write_record(tmp_path, "Cells", batch())
+    before = path.read_bytes()
+    lock = path.with_name(RECORD_LOCK_FILENAME)
+    lock.write_text("process 7 on another-pc\n", encoding="utf-8")
+    with pytest.raises(SegmentationError, match="process 7 on another-pc"):
+        write_record(tmp_path, "Cells", second())
+    assert path.read_bytes() == before
+    assert lock.exists()  # the other writer's lock is never removed by a refused writer
+    lock.unlink()
+    write_record(tmp_path, "Cells", second())
+    assert len(read_record(tmp_path, "Cells").batches) == 2
+    assert not lock.exists()  # released after a successful write
+
+
+def test_the_lock_is_released_when_the_write_is_refused(tmp_path):
+    write_record(tmp_path, "Cells", batch())
+    with pytest.raises(SegmentationError, match="another way"):
+        write_record(tmp_path, "Cells", batch(tool="other"))
+    assert not (tmp_path / "Cells" / RECORD_LOCK_FILENAME).exists()
+
+
+def test_two_batches_made_in_the_same_second_get_different_ids(tmp_path, monkeypatch):
+    class Frozen:
+        @staticmethod
+        def now(tz=None):
+            return real.now(tz).replace(microsecond=0, second=0)
+
+    from morphobricks_preprocessing import segmentation_record as module
+
+    real = module.datetime
+    monkeypatch.setattr(module, "datetime", Frozen)
+    first, again = new_batch_id(), new_batch_id()
+    assert first != again
+    assert first.rsplit("-", 1)[0] == again.rsplit("-", 1)[0]  # the same stamp, another suffix
+    write_record(tmp_path, "Cells", batch(batch_id=first))
+    write_record(tmp_path, "Cells", batch(batch_id=again, tool_version="9"))  # no ID clash
+    assert [b.batch_id for b in read_record(tmp_path, "Cells").batches] == [first, again]

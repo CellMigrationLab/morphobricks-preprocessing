@@ -35,11 +35,13 @@ from .discovery import discover_experiment
 from .folder_rules import masks_folder_issues
 from .links import relative_inside
 from .masks import FOLDER
-from .masks.files import _folder_masks
+from .masks.files import _duplicate_issues, _folder_masks, _label_masks, _name_issues
 from .masks.model import MaskFile
+from .metadata import OME_ZARR, TiffMetadata
 from .run_inputs import Fov, RunInputs
 from .run_inputs_request import FovSelection, Request
 from .segmentation_record import SegmentationError, check_mask_type
+from .zarr_input import is_zarr_name
 
 INT32_MAX = 2_147_483_647
 """The largest label every brick accepts (contract §15, §16)."""
@@ -50,11 +52,13 @@ def images_to_segment(
 ) -> tuple[Fov, ...]:
     """Return the run's images that have no mask of ``mask_type`` yet, sorted by path.
 
-    "Has a mask" is decided by preprocessing's own pairing of the masks folder
-    (:func:`.masks.files._folder_masks`, the one the run and the mask step use), so this list
-    and the next run can never disagree: either layout of contract §15, any case in the
-    folders, the name and the type, any TIFF extension. Excluded images are not in the run and
-    are never listed.
+    "Has a mask" is decided by preprocessing's own pairing: the masks folder
+    (:func:`.masks.files._folder_masks`) and the label images inside OME-Zarr images
+    (:func:`.masks.files._label_masks`), the sources the run and the mask step use, so this
+    list and the next run can never disagree: either layout of contract §15, any case in the
+    folders, the name and the type, any TIFF extension. An OME-Zarr image with a label image of
+    the type has its mask and is not listed. Excluded images are not in the run and are never
+    listed.
 
     Parameters
     ----------
@@ -302,49 +306,49 @@ def _publish(temporary: Path, target: Path, overwrite: bool, what: str) -> None:
 
 
 def _paired(inputs: RunInputs, masks_root: str | os.PathLike, mask_type: str) -> list[MaskFile]:
-    """Return the TIFF masks of ``mask_type`` that preprocessing's pairing finds.
+    """Return the masks of ``mask_type`` that preprocessing's pairing finds, of any source.
 
-    Uses the run's own function (:func:`.masks.files._folder_masks`) on the experiment as it
-    is now and the recorded images, so both layouts of contract §15 and any case in the
-    folders and names count, exactly as at the next run. Refused here as the run refuses them:
-    an ambiguous mask or a link leaving the folder (any error of the pairing), the type
-    spelled in two ways (``mask_names_differ_in_case``), and an image with two masks of the
-    type (``duplicate_mask``).
+    Built from the discovery the run uses: the TIFF masks of the masks folder
+    (:func:`.masks.files._folder_masks`) and the label images of the OME-Zarr images
+    (:func:`.masks.files._label_masks`), then the run's own checks on them
+    (:func:`.masks.files._name_issues`, :func:`.masks.files._duplicate_issues`), so the rules
+    are the run's and exist once. Refused here as the run refuses them: an ambiguous mask or a
+    link leaving the folder (any error of the pairing), a label group that cannot be read, the
+    type spelled in two ways (``mask_names_differ_in_case``, ``mask_type`` itself counted) and
+    an image with two masks of one type (``duplicate_mask``), whichever the two sources.
 
     Raises
     ------
     SegmentationError
         For any of those, naming the files.
     """
-    folder = Path(masks_root)
-    if not folder.is_dir():
-        return []
     discovery = discover_experiment(inputs.experiment_root, inputs.output_folder)
-    found, issues = _folder_masks(
-        folder.resolve(), discovery, {entry.relative_path for entry in inputs.files}
-    )
+    paths = {entry.relative_path for entry in inputs.files}
+    found: list[MaskFile] = []
+    issues = []
+    folder = Path(masks_root)
+    if folder.is_dir():
+        found, issues = _folder_masks(folder.resolve(), discovery, paths)
+    zarr_images = {
+        path: TiffMetadata(relative_path=path, readable=True, kind=OME_ZARR)
+        for path in paths
+        if is_zarr_name(path.rsplit("/", 1)[-1])
+    }
+    labels, unreadable = _label_masks(discovery.root, zarr_images)
+    found = [*found, *labels]
+    if unreadable:
+        raise SegmentationError(
+            f"The label images of {', '.join(sorted(unreadable))} cannot be read; the run "
+            "reports them as unreadable_mask. Repair or remove them first."
+        )
+    asked = MaskFile("", mask_type, mask_type, FOLDER)  # the spelling being asked for counts too
+    issues = [*issues, *_name_issues([*found, asked]), *_duplicate_issues(found)]
     refusing = [issue for issue in issues if issue.is_error]
     if refusing:
         first = refusing[0]
-        raise SegmentationError(f"{first.message} {first.action} ({first.code})")
-    same = [
-        m for m in found if m.source == FOLDER and m.mask_type.casefold() == mask_type.casefold()
-    ]
-    spellings = sorted({m.mask_type for m in same} | {mask_type})
-    if len(spellings) > 1:
-        raise SegmentationError(
-            f"The mask type is spelled {' and '.join(map(repr, spellings))}: names that differ "
-            "only in case are refused by the run (mask_names_differ_in_case). Use one spelling "
-            "and rename the folders or files of the other."
-        )
-    images = [m.image for m in same]
-    twice = sorted({m.path for m in same if images.count(m.image) > 1})
-    if twice:
-        raise SegmentationError(
-            f"Some images already have two masks of the type {mask_type}: {', '.join(twice)}. "
-            "The run refuses this (duplicate_mask); keep one mask per image and type."
-        )
-    return same
+        named = f" ({', '.join(first.paths)})" if first.paths else ""
+        raise SegmentationError(f"{first.message}{named} {first.action} ({first.code})")
+    return [m for m in found if m.mask_type == mask_type]
 
 
 def _checked_labels(labels: np.ndarray, shape: tuple[int, int], image: str) -> np.ndarray:

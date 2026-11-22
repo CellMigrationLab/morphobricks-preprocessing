@@ -22,13 +22,13 @@ Pure: it compares two models and a plain description of the folders.
 
 from __future__ import annotations
 
-import unicodedata
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, replace
 from datetime import date
 from enum import StrEnum
 
 from .description import Description, Unit
+from .description_identity import header_name_matches
 from .description_transition import DATE, repeat_layout
 
 
@@ -248,14 +248,10 @@ def _channels_differ(
     if seen.header_names is None or unit.image_type == "rgb":
         return False
     for channel, name in zip(unit.channels, seen.header_names, strict=False):
-        known = {_nfc(entry) for entry in description.channels[channel].header_names or ()}
-        if name and _nfc(name) not in known:
+        known = description.channels[channel].header_names or ()
+        if name and not header_name_matches(name, known):
             return True
     return False
-
-
-def _nfc(text: str) -> str:
-    return unicodedata.normalize("NFC", text)
 
 
 def _member_counts(

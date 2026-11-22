@@ -8,6 +8,13 @@ v0.5.1: no run before v0.5.1 is read.)
 
 ## Unreleased
 
+**One header-name rule (#368).** Whether a raw header name is a confirmed name of a channel is now
+decided by one function, `description_identity.header_name_matches` (equal after NFC, never trimmed,
+never case-folded), used by the notebook's channel matrix, the fast layout, the physical check and
+reconciliation. Before, the notebook compared saved aliases literally, so an alias saved in one Unicode
+spelling and found in the other (composed vs decomposed) was accepted on publication but not recognised
+by the notebook. The three local `nfc` helpers are gone (one `nfc`, in `description_identity`).
+
 **Fast mode (Spec ADR 0006, owner decisions FC1-FC4), reader and image checks.** The Spec pin
 moves from `bf68d30` to `232fb38` (MorphoBricks-Spec `main`: the ADR 0006 amendment of
 experiment-v1, accepted by the owner on 20 November 2026, Spec #53). No format version changes: experiment-v1 stays version 1 (an amendment, like
@@ -48,7 +55,7 @@ old pin are refused with `spec_commit_mismatch`, as at every re-pin.
   type is checked like any discovered one (`NA`, whitespace, NFC); duplicate and ambiguous masks
   and a type spelled two ways are refused before writing; a mask is claimed with an exclusive create and
   then moved into place, so it is never silently replaced and needs no hard links (Google Drive). The masks step skips that file silently instead of
-  warning `mask_without_image` (only directly in a type folder). "Has a mask" is decided by the run's own pairing (either layout, any case), `write_mask` refuses a twin elsewhere and never replaces a mask another writer made in between, and `resolve_segmentation` / `SegmentationPlan` resolve the channels once for a batch. Contract §15.5.
+  warning `mask_without_image` (only directly in a type folder). "Has a mask" is decided by the run's own pairing (either layout, any case), `write_mask` refuses a twin elsewhere and never replaces a mask another writer made in between, and `resolve_segmentation` / `SegmentationPlan` resolve the channels once for a batch. The pairing also counts the label images inside OME-Zarr images and applies the run's own `_name_issues` and `_duplicate_issues` (no second copy of the rules), so an OME-Zarr image that has a `labels/Cells` mask is not listed and is refused by `write_mask`. `write_record` holds an exclusive lock file (`.segmentation_record.lock`, refused at once when held) while it rewrites the record, and `new_batch_id()` makes a batch ID unique even within one second. The exclusive create and the lock protect writers on one computer only, not two Colab sessions on one Drive folder. Contract §15.5.
 - **Channel-identity check after the run** (contract §14.1, design
   `channel-identity-check-2026-11-21` in MorphoFeature's `claude/restart-doc`): from the image
   summaries the intensity checks already make (no pixel read), every imaging unit's channel is

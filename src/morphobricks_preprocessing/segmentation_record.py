@@ -22,8 +22,14 @@ defaulted. A mask type is checked with the rules every brick applies to a name
 from __future__ import annotations
 
 import json
+import os
 import re
+import socket
+import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -35,6 +41,8 @@ RECORD_VERSION = 1
 """The version of the record this module writes and reads."""
 RECORD_FILENAME = "segmentation_record.json"
 """The record's name, directly inside the mask type's folder."""
+RECORD_LOCK_FILENAME = ".segmentation_record.lock"
+"""The lock a writer holds beside the record while it reads, changes and rewrites it."""
 DEVICES = ("cuda", "cpu", "mps")
 """The device the tool ran on, always stated (no silent fallback)."""
 STATUSES = ("written", "skipped", "failed")
@@ -76,7 +84,9 @@ class SegmentationBatch:
     Attributes
     ----------
     batch_id
-        The caller's identifier of the batch (for example its start time), unique in the file.
+        The identifier of the batch, unique in the file. Make it with :func:`new_batch_id`; an
+        identifier chosen by the caller (a start time to the second, say) must be unique too,
+        and a repeated one is refused only when the record is written, after the masks.
     tool, tool_version
         The segmentation tool and its exact version (e.g. ``cellpose``, ``4.2.1.1``).
     model_name
@@ -391,6 +401,47 @@ def mask_sha256(path: str | Path) -> str:
     return file_sha256(path)
 
 
+def new_batch_id() -> str:
+    """Return a batch ID that no other batch has: the UTC start time and a random suffix.
+
+    Two batches started in the same second still differ (``2026-11-21T10:00:00Z-3fa9c2d1``),
+    so a second batch is never refused for the ID after its masks were written.
+    """
+    stamp = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return f"{stamp}-{uuid.uuid4().hex[:8]}"
+
+
+@contextmanager
+def _record_lock(path: Path) -> Iterator[None]:
+    """Hold an exclusive lock file beside the record for the block; refuse if it is held.
+
+    The file is created with ``O_CREAT | O_EXCL`` (as the run's lock is) and removed at the
+    end, also on an error. It never waits: a held lock is refused at once, naming its holder.
+    It protects the writers of one computer; a file system shared by several computers (a
+    Drive folder open in two Colab sessions) does not make the exclusive create reliable.
+    """
+    lock = path.with_name(RECORD_LOCK_FILENAME)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        handle = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+    except FileExistsError:
+        try:
+            holder = lock.read_text(encoding="utf-8").strip() or "an unknown writer"
+        except OSError:
+            holder = "an unknown writer"
+        raise SegmentationError(
+            f"The record {path} is being written by {holder} ({lock.name} exists). Wait for "
+            "it to finish and write again; if no writer is running (it was killed), delete "
+            f"{lock} yourself."
+        ) from None
+    try:
+        with os.fdopen(handle, "w", encoding="utf-8") as stream:
+            stream.write(f"process {os.getpid()} on {socket.gethostname()}\n")
+        yield
+    finally:
+        lock.unlink(missing_ok=True)
+
+
 def record_path(masks_root: str | Path, mask_type: str) -> Path:
     """Return where the record of ``mask_type`` is, ``<masks>/<type>/segmentation_record.json``."""
     check_mask_type(mask_type)
@@ -427,7 +478,17 @@ def write_record(masks_root: str | Path, mask_type: str, batch: SegmentationBatc
         one drops or changes.
     """
     path = record_path(masks_root, mask_type)
-    earlier = read_record(masks_root, mask_type) if path.exists() else SegmentationRecord(mask_type)
+    with _record_lock(path):
+        earlier = (
+            read_record(masks_root, mask_type) if path.exists() else SegmentationRecord(mask_type)
+        )
+        record = _with_batch(earlier, batch)
+        text = json.dumps(record.to_dict(), indent=2, ensure_ascii=False, allow_nan=False)
+        return write_text_atomic(path, text + "\n", parents=True)
+
+
+def _with_batch(earlier: SegmentationRecord, batch: SegmentationBatch) -> SegmentationRecord:
+    """Return ``earlier`` with ``batch`` added or, for its own ID again, extended (or refuse)."""
     batches = list(earlier.batches)
     for index, old in enumerate(batches):
         if old.batch_id != batch.batch_id:
@@ -444,17 +505,15 @@ def write_record(masks_root: str | Path, mask_type: str, batch: SegmentationBatc
             problem = ""
         if problem:
             raise SegmentationError(
-                f"The batch {batch.batch_id!r} is already in the record of {mask_type} and "
-                f"{problem}. Give a new batch its own batch_id: earlier provenance is never "
+                f"The batch {batch.batch_id!r} is already in the record of {earlier.mask_type} "
+                f"and {problem}. Give a new batch its own batch_id: earlier provenance is never "
                 "replaced."
             )
         batches[index] = batch
         break
     else:
         batches.append(batch)
-    record = SegmentationRecord(mask_type, tuple(batches))
-    text = json.dumps(record.to_dict(), indent=2, ensure_ascii=False, allow_nan=False)
-    return write_text_atomic(path, text + "\n", parents=True)
+    return SegmentationRecord(earlier.mask_type, tuple(batches))
 
 
 def read_record(masks_root: str | Path, mask_type: str) -> SegmentationRecord:
