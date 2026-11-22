@@ -369,8 +369,17 @@ editing, or the confirmed ones. An image that cannot be drawn gets a sentence sa
    acquisition's tags with the row's tags filled in. Under each channel the header name is
    shown, and an orange box marks where it disagrees, so you change only what is different.
    Nothing is saved while you edit; the acquisition counts as tagged only after **Confirm these
-   tags** (every channel tagged, each label once). If the header or the tags change later, it
-   is listed again.
+   tags** (every channel tagged, each label once). If the acquisition's own header or its
+   tags change later, it is listed again.
+   A listed acquisition is counted only when you confirm *that* acquisition (**Confirm these
+   tags**, **Confirm the same tags**, or its own folder tagged on the grid). Confirming one
+   acquisition never counts another, and fast mode does not tag a listed acquisition from the
+   header names saved by confirming another: it stays listed with the same contradiction and
+   the same orange boxes. When a listed acquisition has the same header names, at every
+   channel, as one you confirmed, it says "same headers as *that one*, which you confirmed as
+   *tags*" and offers **Confirm the same tags**; when several listed acquisitions have them it
+   also offers **Confirm all N like it**. Nothing is counted until you click; the buttons save
+   exactly as **Confirm these tags** does (all N or none).
    In fast mode a row offers only the acquisitions that do not fit the layout, and those it
    fills are tagged on their own (checked as in the strict mode); unticked, a row is offered
    for every repeat folder. On a reopen, a row shows the tags every acquisition of its folder

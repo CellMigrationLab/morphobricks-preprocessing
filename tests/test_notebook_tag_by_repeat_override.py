@@ -13,7 +13,7 @@ import pytest
 from morphobricks_preprocessing.channel_labels import UnitLayout, tags_of
 from morphobricks_preprocessing.description import description_from_bytes
 from morphobricks_preprocessing.description_file import DESCRIPTION_FILENAME
-from morphobricks_preprocessing.repeat_tags import Override, override_holds
+from morphobricks_preprocessing.repeat_tags import Override, header_names, override_holds
 
 LABELS = ("DNA", "ACTIN", "PHASE")
 
@@ -22,23 +22,16 @@ def _layout(key, names):
     return UnitLayout(key, "/".join(key) + "/a.tif", 3, tuple(names))
 
 
-def test_pure_a_confirmation_holds_only_while_tags_and_both_headers_are_unchanged():
-    from morphobricks_preprocessing.channel_matrix import differences
-
-    lead = _layout(("ctrl", "rep2", "t1"), ("X", "Y", "Ch3"))
+def test_pure_a_confirmation_holds_only_while_tags_and_the_units_own_header_are_unchanged():
     unit = _layout(("drug", "rep2", "t1"), ("P", "Q", "Ch3"))
-    found = differences(unit, LABELS, lead, LABELS, {})
-    assert [d.index for d in found] == [0, 1]
-    confirmed = Override(LABELS, found)
-    assert override_holds(confirmed, unit, LABELS, lead, LABELS, {})
-    assert not override_holds(None, unit, LABELS, lead, LABELS, {})
-    other = ("ACTIN", "DNA", "PHASE")
-    assert not override_holds(confirmed, unit, other, lead, LABELS, {})  # other tags
-    assert not override_holds(confirmed, unit, (*LABELS[:2], None), lead, LABELS, {})
+    confirmed = Override(LABELS, header_names(unit))
+    assert confirmed.names == ("P", "Q", "Ch3")
+    assert override_holds(confirmed, unit, LABELS)
+    assert not override_holds(None, unit, LABELS)
+    assert not override_holds(confirmed, unit, ("ACTIN", "DNA", "PHASE"))  # other tags
+    assert not override_holds(confirmed, unit, (*LABELS[:2], None))
     moved = _layout(unit.key, ("P", "R", "Ch3"))  # the unit's header changed
-    assert not override_holds(confirmed, moved, LABELS, lead, LABELS, {})
-    other_lead = _layout(lead.key, ("Z", "Y", "Ch3"))  # the reference's header changed
-    assert not override_holds(confirmed, unit, LABELS, other_lead, LABELS, {})
+    assert not override_holds(confirmed, moved, LABELS)
 
 
 pytest.importorskip("ipywidgets")
@@ -209,16 +202,12 @@ def test_editing_after_the_confirmation_voids_it(tmp_path, statement_off):
     ov = _confirm_gone(nb, rows)
     grid = nb.channel_grid
     layout = next(u for u in grid.layouts if u.key == GONE)
-    lead = rows.refused[GONE].lead
-    channels = nb.draft_answers.channels
     held = tags_of(layout, nb.draft_answers.units[GONE])
-    assert override_holds(ov.confirmed[GONE], layout, held, lead, grid.labels, channels)
+    assert override_holds(ov.confirmed[GONE], layout, held)
     grid.cells[(GONE, 0)].value = "EXTRA"
     edited = tags_of(layout, nb.draft_answers.units[GONE])
     assert edited[0] == "EXTRA"
-    assert not override_holds(
-        ov.confirmed[GONE], layout, edited, lead, grid.labels, nb.draft_answers.channels
-    )
+    assert not override_holds(ov.confirmed[GONE], layout, edited)
 
 
 def test_a_recheck_that_changes_nothing_keeps_the_unit_unlisted(tmp_path, statement_off):
@@ -255,7 +244,9 @@ def test_a_removed_unit_drops_its_confirmation(tmp_path, statement_off):
     import shutil
 
     nb, root, _, rows = _listed(tmp_path)
-    rows.override.confirmed[GONE] = Override(TAGS, ())  # as if a confirmation were held
+    rows.override.confirmed[GONE] = Override(
+        TAGS, ("P", "Q", "Ch3")
+    )  # as if a confirmation were held
     shutil.rmtree(root.joinpath(*GONE))
     _recheck(nb)
     assert GONE not in rows.override.confirmed

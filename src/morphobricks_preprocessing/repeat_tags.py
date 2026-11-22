@@ -40,32 +40,32 @@ GroupKey = tuple[str, int]
 
 
 class Override(NamedTuple):
-    """A listed unit's tags the user confirmed, and the disagreements they confirmed them with."""
+    """A listed unit's confirmed tags, and the unit's own header names they were confirmed for."""
 
     tags: tuple[str, ...]
-    found: tuple[Difference, ...]
-    """What the header said against these tags at the confirmation (never read as a pass)."""
+    names: tuple[str | None, ...]
+    """The unit's own header name at each C index at the confirmation (read before the save)."""
+
+
+def header_names(layout: UnitLayout) -> tuple[str | None, ...]:
+    """Return a unit's own header name at each C index (None where it has none)."""
+    return tuple(layout.name(i) for i in range(layout.channels))
 
 
 def override_holds(
-    override: Override | None,
-    layout: UnitLayout,
-    tags: Sequence[str | None],
-    lead: UnitLayout,
-    labels: Collection[str],
-    channels: Mapping,
+    override: Override | None, layout: UnitLayout, tags: Sequence[str | None]
 ) -> bool:
     """Return True while the user's confirmation still covers the unit as it is read now.
 
-    It covers the unit only when its tags are the confirmed ones and the header disagreements
-    against them are exactly those confirmed. A difference carries the header name and the
-    reference's name, so a later change of the unit's header, of the reference's header, of the
-    saved aliases or of the tags voids it: the unit is listed again, never counted unasked.
+    It covers the unit only while its tags are the confirmed ones and its own header names are
+    the ones it was confirmed for. Nothing else voids it: aliases saved later for other units
+    neither lapse it nor stand in for it. A changed header or tag lists the unit again, never
+    counted unasked.
     """
     return (
         override is not None
         and tuple(tags) == override.tags
-        and differences(layout, tags, lead, labels, channels) == override.found
+        and header_names(layout) == override.names
     )
 
 
@@ -88,6 +88,7 @@ def repeat_fill(
     group: Sequence[UnitLayout],
     tags: Sequence[str],
     labels: Collection[str],
+    frozen: Mapping[UnitKey, Mapping] | None = None,
 ) -> tuple[dict[UnitKey, tuple[str, ...]], list[tuple[UnitKey, int]], dict]:
     """Return the tags to save for the row's units, the cells, and the units refused.
 
@@ -95,9 +96,11 @@ def repeat_fill(
     another label than the row's at its C index, or says none and is not the first unit's name
     there (:func:`.channel_matrix.differences`; the first unit is :func:`repeat_lead`). A unit
     whose images disagree (:func:`repeat_apart`) is neither filled nor listed here: the caller
-    names it separately.
+    names it separately. ``frozen`` holds, for a unit already refused, the aliases of the time of
+    its refusal: aliases saved since (by confirming or tagging other units) never clear it.
     """
     tags = tuple(tags)
+    frozen = frozen or {}
     save: dict[UnitKey, tuple[str, ...]] = {}
     cells: list[tuple[UnitKey, int]] = []
     refused: dict[UnitKey, tuple[Difference, ...]] = {}
@@ -106,7 +109,7 @@ def repeat_fill(
     for layout in group:
         if lead is None or layout.key in apart:
             continue
-        found = differences(layout, tags, lead, labels, answers.channels)
+        found = differences(layout, tags, lead, labels, frozen.get(layout.key, answers.channels))
         if found:
             refused[layout.key] = found
             continue
@@ -181,6 +184,7 @@ def pairing_collision(answers: DraftAnswers, group: Sequence[UnitLayout]) -> dic
 __all__ = [
     "GroupKey",
     "Override",
+    "header_names",
     "override_holds",
     "pairing_collision",
     "repeat_fill",

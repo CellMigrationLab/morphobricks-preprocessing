@@ -27,8 +27,15 @@ old pin are refused with `spec_commit_mismatch`, as at every re-pin.
   headers disagree with their repeat's row, **Override this unit (start from the row's tags)**
   opens the unit's tags prefilled with the row's, header names shown and disagreements
   highlighted. The unit counts as tagged only after **Confirm these tags**; the confirmation
-  lapses if the unit's tags, its header, the reference's header or the saved aliases change
-  (`repeat_tags.Override`, `override_holds`; `notebook_channels_override`).
+  holds while the unit's own tags and header names are unchanged (`repeat_tags.Override`,
+  `override_holds`; `notebook_channels_override`). A refused unit is counted only when the user
+  confirms that unit: aliases saved by confirming or tagging another unit never clear its
+  refusal, never tag it in fast mode (`RepeatRows.standing`) and never change its highlights
+  (the refusal keeps the aliases of its time, `Refusal.channels`; `repeat_fill(frozen=...)`). A
+  listed unit with the same header names, at every C index, as a confirmed one shows "same
+  headers as <unit>, which you confirmed as <tags>" with **Confirm the same tags**, and
+  **Confirm all N like it** when several are listed: one click each through the same
+  validation and save as the editor (all or none), never automatic.
 - **Channel-identity check after the run** (contract §14.1, design
   `channel-identity-check-2026-11-21` in MorphoFeature's `claude/restart-doc`): from the image
   summaries the intensity checks already make (no pixel read), every imaging unit's channel is

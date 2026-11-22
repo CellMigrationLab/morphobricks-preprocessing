@@ -449,7 +449,10 @@ src/morphobricks_preprocessing/
                             that starts from the row's tags, shows each header name and
                             highlights the C indices where it disagrees; nothing is saved or
                             counted until Confirm (repeat_tags.Override, override_holds: the
-                            confirmation lapses when tags, headers or aliases change)
+                            confirmation holds while the unit's tags and own header names are
+                            unchanged; one-click Confirm the same tags / Confirm all N like it for
+                            listed units with a confirmed unit's headers; a refusal keeps the
+                            aliases of its time)
   strict_draft.py           fast mode unticked (pure): StrictShadow, the strict page's draft kept
                             beside the draft; every user save applies the same change to both
                             (channel_answers.tagged, patched), no-click tags the draft only;

@@ -27,7 +27,7 @@ convenience only: the saved data are per unit (the description format does not c
 from __future__ import annotations
 
 import html
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, NamedTuple
 
 import ipywidgets as widgets
@@ -35,6 +35,7 @@ import ipywidgets as widgets
 from . import notebook_style as ui
 from .channel_labels import tags_of
 from .channel_matrix import REFUSED, difference_text, differences
+from .draft_answers import ChannelAnswer
 from .notebook_channels_override import OverrideEditor
 from .notebook_channels_view import CHOOSE, columns, unit_name
 from .repeat_tags import (
@@ -66,6 +67,12 @@ class Refusal(NamedTuple):
     """The row's reference unit; None for a unit whose images disagree (:func:`repeat_apart`)."""
     tags: tuple[str, ...]
     """The row's tags at the click (what the header was compared with)."""
+    channels: Mapping[str, ChannelAnswer]
+    """The labels and aliases when the unit was first refused: what its header is read against.
+
+    Aliases saved afterwards, by confirming or tagging other units, are not evidence for this
+    unit: only the user confirming it (or a changed image header) clears the refusal.
+    """
 
 
 class RepeatRows:
@@ -104,7 +111,7 @@ class RepeatRows:
         answers = self.grid.store.answers()
         out = {}
         current = {u.key: u for u in self.grid.layouts}
-        for key, (text, _, lead, _) in self.refused.items():
+        for key, (text, _, lead, _, _) in self.refused.items():
             layout = current.get(key)  # the unit as read now, never as at the click
             if layout is None:
                 continue  # no longer in the experiment (:meth:`reconcile` drops it)
@@ -114,7 +121,7 @@ class RepeatRows:
                 continue
             tags = tags_of(layout, answers.units.get(key))
             confirmed = self.override.confirmed.get(key)
-            if override_holds(confirmed, layout, tags, lead, self.grid.labels, answers.channels):
+            if override_holds(confirmed, layout, tags):
                 continue  # the user confirmed these tags (:mod:`.notebook_channels_override`)
             if None in tags or differences(layout, tags, lead, self.grid.labels, answers.channels):
                 out[key] = text
@@ -144,20 +151,46 @@ class RepeatRows:
                 continue
             why = repeat_apart(group).get(key)
             if why is not None:
-                kept[key] = Refusal(html.escape(why), layout, None, old.tags)
+                kept[key] = Refusal(html.escape(why), layout, None, old.tags, old.channels)
                 continue
             lead = repeat_lead(group)
             if old.lead is None or lead is None:
                 continue  # its images agree again: nothing to compare was ever clicked
             own = tags_of(layout, answers.units.get(key))
-            found = differences(layout, old.tags, lead, grid.labels, answers.channels)
+            found = self.contradictions(layout, old, lead)
             found = found or differences(layout, own, lead, grid.labels, answers.channels)
             if found:
-                kept[key] = Refusal(_found_text(found), layout, lead, old.tags)
+                kept[key] = Refusal(_found_text(found), layout, lead, old.tags, old.channels)
             elif None in own:  # listed while its own tags are incomplete (:meth:`listed`)
-                kept[key] = Refusal("its own tags are incomplete", layout, lead, old.tags)
+                kept[key] = Refusal(
+                    "its own tags are incomplete", layout, lead, old.tags, old.channels
+                )
         self.refused = kept
         self.override.confirmed = {k: v for k, v in self.override.confirmed.items() if k in kept}
+
+    def contradictions(self, layout: UnitLayout, refusal: Refusal, lead: UnitLayout) -> tuple:
+        """Return where the unit's header contradicts the row's tags at the click.
+
+        Read against the aliases of the refusal (:attr:`Refusal.channels`), never the ones
+        saved since: the one rule of :func:`.channel_matrix.differences`, on that snapshot.
+        """
+        return differences(layout, refusal.tags, lead, self.grid.labels, refusal.channels)
+
+    def standing(self) -> set[UnitKey]:
+        """Return the units whose refusal still stands, whatever aliases were saved since.
+
+        Fast mode does not tag these from their header names
+        (:meth:`.notebook_channels_matrix.MatrixView.trust_headers`): a refused unit counts only
+        once the user confirms it. A confirmed unit holds tags, so trusts nothing either way.
+        """
+        current = {u.key: u for u in self.grid.layouts}
+        return {
+            key
+            for key, old in self.refused.items()
+            if old.lead is not None
+            and key in current
+            and self.contradictions(current[key], old, old.lead)
+        }
 
     def _rows(self) -> dict:
         """Return every repeat folder and channel count with all its units, in any mode."""
@@ -283,15 +316,18 @@ class RepeatRows:
             self.notice = ui.status("error", "Not saved.", [why])
             self.grid.refresh()
             return False
-        save, cells, refused = repeat_fill(answers, group, named, self.grid.labels)
+        frozen = {k: old.channels for k, old in self.refused.items()}
+        save, cells, refused = repeat_fill(answers, group, named, self.grid.labels, frozen)
         for unit, found in refused.items():
             layout = next(u for u in group if u.key == unit)
+            snapshot = frozen.get(unit, answers.channels)  # kept from the first refusal
             self.refused[unit] = Refusal(
-                _found_text(found), layout, repeat_lead(group), tuple(named)
+                _found_text(found), layout, repeat_lead(group), tuple(named), snapshot
             )
         for unit, why in repeat_apart(group).items():
             layout = next(u for u in group if u.key == unit)
-            self.refused[unit] = Refusal(html.escape(why), layout, None, tuple(named))
+            snapshot = frozen.get(unit, answers.channels)
+            self.refused[unit] = Refusal(html.escape(why), layout, None, tuple(named), snapshot)
         if not save:
             self.grid.refresh()
             return False
