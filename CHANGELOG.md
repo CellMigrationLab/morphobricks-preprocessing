@@ -23,6 +23,11 @@ old pin are refused with `spec_commit_mismatch`, as at every re-pin.
 
 ### Added
 
+- **Cellpose notebook, review fixes (PR #375)**: the per-image hash/record step now catches
+  `BaseException`, so a `KeyboardInterrupt` (stop button) between `write_mask` and the image's record
+  write withdraws the mask (identity-checked) and then re-raises; the identity stamp and SHA-256 are
+  taken under `write_mask`'s write lock (`on_published`, PR #367); a retry compares a recorded mask's
+  SHA-256 with its latest record entry and reports "exists, but differs from its recorded provenance".
 - **Cellpose notebook, failure-safe record (external audit C6).** A published mask is never left
   without its record entry: each mask is hashed and recorded right after publication, before the
   next image; if that fails the mask is removed (only if still the file written; otherwise a

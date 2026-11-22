@@ -9,7 +9,7 @@ import pytest
 
 from cellpose_stub import install
 from morphobricks_preprocessing import segmentation_cellpose as cp
-from morphobricks_preprocessing.segmentation_handoff import mask_path
+from morphobricks_preprocessing.segmentation_handoff import WRITE_LOCK_FILENAME, mask_path
 from morphobricks_preprocessing.segmentation_record import SegmentationError, read_record
 from test_segmentation_cellpose import make_job
 
@@ -139,3 +139,45 @@ def test_a_diameter_that_gives_no_flow_iteration_is_refused_not_raised_to_one():
     assert cp.flow_iterations(cp.Settings(diameter=0.15)) == 1
     with pytest.raises(SegmentationError, match="less than one flow iteration"):
         cp.Settings(diameter=1e-300)
+
+
+def test_an_interrupt_between_publish_and_record_withdraws_the_mask_and_propagates(
+    run, stub, monkeypatch
+):
+    fovs = run.inputs.fovs()
+    fail_from(monkeypatch, "mask_sha256", 2, KeyboardInterrupt())  # the stop button, image 2
+    with pytest.raises(KeyboardInterrupt):
+        cp.run_batch(make_job(run), batch_id="b1")
+    assert on_disk(run) == recorded(run) == {fovs[0].relative_path}  # no unrecorded mask
+
+
+def test_the_stamp_and_the_hash_are_taken_under_the_write_lock(run, stub, monkeypatch):
+    lock = run.masks / "Cells" / WRITE_LOCK_FILENAME
+    seen = []
+    real_hash, real_stamp = cp.mask_sha256, cp._stamp
+
+    def hashing(path):
+        seen.append(("hash", lock.exists()))
+        return real_hash(path)
+
+    def stamping(path):
+        seen.append(("stamp", lock.exists()))
+        return real_stamp(path)
+
+    monkeypatch.setattr(cp, "mask_sha256", hashing)
+    monkeypatch.setattr(cp, "_stamp", stamping)
+    cp.run_batch(make_job(run), fovs=run.inputs.fovs()[:1], batch_id="b1")
+    assert seen and all(held for _, held in seen)
+
+
+def test_a_retry_reports_a_recorded_mask_that_differs_from_its_record(run, stub):
+    fovs = run.inputs.fovs()
+    cp.run_batch(make_job(run), fovs=fovs[:2], batch_id="b1")
+    changed = mask_path(run.masks, "Cells", fovs[1])
+    changed.write_bytes(b"replaced after the batch")  # recorded, but no longer that file
+    rows = {i: (s, m) for i, s, m in cp.run_batch(make_job(run), batch_id="b2").rows()}
+    assert rows[fovs[0].relative_path] == ("skipped", cp.IMAGE_SKIPPED)
+    status, message = rows[fovs[1].relative_path]
+    assert status == "skipped"
+    assert message.startswith("exists, but differs from its recorded provenance (sha256 ")
+    assert cp.mask_sha256(changed) in message

@@ -80,6 +80,7 @@ from .segmentation_handoff import (
 from .segmentation_record import (
     SegmentationBatch,
     SegmentationError,
+    SegmentationRecord,
     SegmentedImage,
     check_mask_type,
     hold_lock,
@@ -311,28 +312,47 @@ def _segment_one(
     """Segment, write, hash and record one image; return its entry and whether to stop.
 
     A mask this call published is recorded (the batch so far, with this image) before the next
-    image starts. If hashing it or that record write fails, the mask is withdrawn
-    (:func:`_withdraw`) and the batch stops: no mask of this batch is ever left unrecorded.
-    Any earlier failure (nothing was published) is a ``failed`` entry and the batch goes on.
+    image starts. Its identity stamp and SHA-256 are taken under ``write_mask``'s write lock
+    (``on_published``), so no other writer can replace the file in between. If hashing it or that
+    record write fails, even by an interrupt (``KeyboardInterrupt``: the notebook's stop button),
+    the mask is withdrawn (:func:`_withdraw`) and the batch stops (an interrupt is re-raised after
+    the withdrawal): no mask of this batch is ever left unrecorded. Any earlier failure (nothing
+    was published) is a ``failed`` entry and the batch goes on.
     """
+    taken: dict[str, Any] = {}
+
+    def take(path: Path) -> None:  # under the write lock, right after the publish
+        taken["path"] = path
+        taken["stamp"] = _stamp(path)
+        taken["sha"] = mask_sha256(path)
+        if _stamp(path) != taken["stamp"]:
+            raise SegmentationError(f"The mask {path} changed while it was being hashed.")
+
+    replaced = False
     try:
         labels = segment_image(job.loaded, job.settings, job.plan.read(fov))
-        target = mask_path(job.masks_root, job.mask_type, fov)
-        replaced = target.exists()
-        path = write_mask(
-            job.masks_root, job.mask_type, fov, labels, job.inputs, overwrite=job.overwrite
+        replaced = mask_path(job.masks_root, job.mask_type, fov).exists()
+        write_mask(
+            job.masks_root,
+            job.mask_type,
+            fov,
+            labels,
+            job.inputs,
+            overwrite=job.overwrite,
+            on_published=take,
         )
-    except Exception as exc:  # per-image failures are reported in the table, never dropped
-        return SegmentedImage(fov.relative_path, "failed", f"{type(exc).__name__}: {exc}"), False
-    stamp = None
-    try:
-        stamp = _stamp(path)
-        entry = SegmentedImage(fov.relative_path, "written", mask_sha256=mask_sha256(path))
-        if _stamp(path) != stamp:
-            raise SegmentationError(f"The mask {path} changed while it was being hashed.")
+        entry = SegmentedImage(fov.relative_path, "written", mask_sha256=taken["sha"])
         _write_batch(job, batch_id, [*entries, entry])
-    except Exception as exc:
-        return _withdraw(job, fov, path, stamp, replaced, exc), True
+    except BaseException as exc:
+        if "path" not in taken:  # nothing was published
+            if isinstance(exc, Exception):  # reported in the table, never dropped
+                message = f"{type(exc).__name__}: {exc}"
+                return SegmentedImage(fov.relative_path, "failed", message), False
+            raise
+        failed = _withdraw(job, fov, taken["path"], taken.get("stamp"), replaced, exc)
+        if not isinstance(exc, Exception):
+            raise
+        return failed, True
     return entry, False
 
 
@@ -348,7 +368,7 @@ def _withdraw(
     path: Path,
     stamp: tuple[int, int, int] | None,
     replaced: bool,
-    error: Exception,
+    error: BaseException,
 ) -> SegmentedImage:
     """Remove the mask this call published, if it is still that file; the entry says what.
 
@@ -404,12 +424,25 @@ def _write_batch(
     return batch, write_record(job.masks_root, job.mask_type, batch) if entries else None
 
 
-def _recorded_images(job: SegmentationJob) -> set[str]:
-    """Return the images whose mask has an entry in the record (``written`` by some batch)."""
-    if not record_path(job.masks_root, job.mask_type).exists():
-        return set()
-    record = read_record(job.masks_root, job.mask_type)
-    return {i.image for b in record.batches for i in b.images if i.status == "written"}
+def _skip_note(job: SegmentationJob, fov: Fov, record: SegmentationRecord | None) -> str:
+    """Say why the mask of ``fov`` is not replaced: recorded, unrecorded, or changed since."""
+    latest = record.latest(fov.relative_path) if record is not None else None
+    if latest is None:
+        return IMAGE_UNRECORDED
+    path = mask_path(job.masks_root, job.mask_type, fov)
+    if not path.is_file():  # a twin elsewhere pairs: the record says nothing about it
+        return IMAGE_SKIPPED
+    try:
+        found = mask_sha256(path)
+    except OSError as exc:
+        return f"exists, but could not be checked against its recorded provenance ({exc})"
+    expected = latest[1].mask_sha256
+    if found != expected:
+        return (
+            f"exists, but differs from its recorded provenance (sha256 {found}, "
+            f"recorded {expected})"
+        )
+    return IMAGE_SKIPPED
 
 
 def run_batch(
@@ -427,7 +460,8 @@ def run_batch(
     as not started, and the batch **stops** (``BatchResult.stopped`` says why): a mask is never
     left without its record entry, and never reported ``failed`` while left on disk. Images that
     already have a mask of the type are ``skipped`` (never replaced) unless ``job.overwrite``;
-    a mask with no entry in the record is skipped with a message saying it has no provenance.
+    a mask with no entry in the record is skipped with a message saying it has no provenance, and
+    one whose SHA-256 differs from its latest recorded entry with a message saying it differs.
     Any other image that fails is ``failed`` with the error and the batch goes on. The record is
     written even when the batch is interrupted, with the images done so far.
 
@@ -452,7 +486,11 @@ def run_batch(
     missing = {
         f.relative_path for f in images_to_segment(job.inputs, job.mask_type, job.masks_root)
     }
-    recorded = _recorded_images(job)
+    record = (
+        read_record(job.masks_root, job.mask_type)
+        if record_path(job.masks_root, job.mask_type).exists()
+        else None
+    )
     started = batch_id or new_batch_id()
     entries: list[SegmentedImage] = []
     stopped = ""
@@ -462,8 +500,7 @@ def run_batch(
                 progress(done, len(chosen), fov.relative_path)
             image = fov.relative_path
             if not (job.overwrite or image in missing):
-                note = IMAGE_SKIPPED if image in recorded else IMAGE_UNRECORDED
-                entries.append(SegmentedImage(image, "skipped", note))
+                entries.append(SegmentedImage(image, "skipped", _skip_note(job, fov, record)))
             elif stopped:
                 entries.append(SegmentedImage(image, "failed", f"not started: {stopped}"))
             else:
