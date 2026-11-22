@@ -23,11 +23,11 @@ list have. A name is evidence for a channel when it equals one of the channel's
 
 from __future__ import annotations
 
-import unicodedata
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 from .description import ChannelLayout, Description
+from .description_identity import header_name_matches
 
 FAST_LAYOUT_CONTRADICTION = "R_FAST_LAYOUT_CONTRADICTION"
 IMAGE_TYPE = "image_type"
@@ -95,15 +95,10 @@ class ChannelEvidence:
         }
 
 
-def nfc(text: str) -> str:
-    """Return the NFC form of ``text``: a comparison key only, never stored."""
-    return unicodedata.normalize("NFC", text)
-
-
 def is_evidence(name: str, channel: str, description: Description) -> bool:
     """Return whether a header name is a confirmed name of ``channel`` (section 4.3 rule)."""
     known = description.channels[channel].header_names or ()
-    return nfc(name) in {nfc(entry) for entry in known}
+    return header_name_matches(name, known)
 
 
 def _expected(channel: str, description: Description) -> str:
