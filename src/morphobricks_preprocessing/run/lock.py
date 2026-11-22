@@ -9,48 +9,20 @@ a run that was killed is removed only after the user confirms it is stale
 
 from __future__ import annotations
 
-import json
 import os
 import socket
 from collections.abc import Iterator
-from contextlib import contextmanager
-from dataclasses import asdict, dataclass
-from datetime import UTC, datetime
+from contextlib import ExitStack, contextmanager
 from pathlib import Path
 
+from ..lock_file import LockHeldError, LockHolder, exclusive_lock, read_holder
 from ..validation import ValidationIssue, error
 from .generation import finish_publication
 
 LOCK_FILENAME = ".morphobricks-preprocessing.lock"
 
 
-@dataclass(frozen=True)
-class LockHolder:
-    """The run holding an output folder's lock.
-
-    Attributes
-    ----------
-    host
-        The computer it runs on.
-    pid
-        Its process ID on that computer (0 when the lock file cannot be read).
-    started_at
-        When it took the lock (UTC, ISO 8601), or empty when unknown.
-    """
-
-    host: str
-    pid: int
-    started_at: str = ""
-
-    def describe(self) -> str:
-        """Name the holder in words, e.g. ``"process 412 on lab-pc, since 2026-11-02T10:00"``."""
-        if not self.pid:
-            return "a run whose lock file cannot be read"
-        since = f", since {self.started_at}" if self.started_at else ""
-        return f"process {self.pid} on {self.host}{since}"
-
-
-class OutputLockedError(RuntimeError):
+class OutputLockedError(LockHeldError):
     """Raised when another run holds the output folder's lock.
 
     Attributes
@@ -58,11 +30,6 @@ class OutputLockedError(RuntimeError):
     holder
         The run holding it.
     """
-
-    def __init__(self, path: Path, holder: LockHolder) -> None:
-        self.path = path
-        self.holder = holder
-        super().__init__(f"{path} is locked by {holder.describe()}")
 
 
 def read_lock(output_folder: str | os.PathLike) -> LockHolder | None:
@@ -78,14 +45,7 @@ def read_lock(output_folder: str | os.PathLike) -> LockHolder | None:
     LockHolder or None
         The holder; a lock file that cannot be read gives a holder with ``pid`` 0.
     """
-    path = Path(output_folder) / LOCK_FILENAME
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-        return LockHolder(str(data["host"]), int(data["pid"]), str(data.get("started_at", "")))
-    except FileNotFoundError:
-        return None
-    except (OSError, ValueError, KeyError, TypeError):
-        return LockHolder("", 0)
+    return read_holder(Path(output_folder) / LOCK_FILENAME)
 
 
 @contextmanager
@@ -115,26 +75,14 @@ def output_lock(output_folder: str | os.PathLike) -> Iterator[LockHolder]:
     PublicationIncompleteError
         When an unfinished publication's files cannot be moved into place.
     """
-    path = Path(output_folder) / LOCK_FILENAME
-    holder = LockHolder(
-        socket.gethostname(), os.getpid(), datetime.now(UTC).isoformat(timespec="seconds")
-    )
+    stack = ExitStack()
     try:
-        handle = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
-    except FileExistsError:
-        raise OutputLockedError(path, read_lock(output_folder) or LockHolder("", 0)) from None
-    try:
-        with os.fdopen(handle, "w", encoding="utf-8") as stream:
-            stream.write(json.dumps(asdict(holder)) + "\n")
-    except BaseException:
-        path.unlink(missing_ok=True)  # just created by this run: a lock it could not write
-        raise
-    try:
+        holder = stack.enter_context(exclusive_lock(Path(output_folder) / LOCK_FILENAME))
+    except LockHeldError as held:
+        raise OutputLockedError(held.path, held.holder) from None
+    with stack:
         finish_publication(Path(output_folder))
         yield holder
-    finally:
-        if read_lock(output_folder) == holder:
-            path.unlink(missing_ok=True)
 
 
 def remove_stale_lock(output_folder: str | os.PathLike) -> LockHolder | None:

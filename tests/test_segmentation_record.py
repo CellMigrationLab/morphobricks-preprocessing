@@ -10,6 +10,7 @@ import json
 
 import pytest
 
+from morphobricks_preprocessing.lock_file import LockHolder, exclusive_lock, read_holder
 from morphobricks_preprocessing.segmentation_record import (
     RECORD_FILENAME,
     RECORD_LOCK_FILENAME,
@@ -263,7 +264,7 @@ def test_a_held_lock_refuses_the_write_and_leaves_the_record_unchanged(tmp_path)
     path = write_record(tmp_path, "Cells", batch())
     before = path.read_bytes()
     lock = path.with_name(RECORD_LOCK_FILENAME)
-    lock.write_text("process 7 on another-pc\n", encoding="utf-8")
+    lock.write_text('{"host": "another-pc", "pid": 7, "started_at": ""}\n', encoding="utf-8")
     with pytest.raises(SegmentationError, match="process 7 on another-pc"):
         write_record(tmp_path, "Cells", second())
     assert path.read_bytes() == before
@@ -279,6 +280,14 @@ def test_the_lock_is_released_when_the_write_is_refused(tmp_path):
     with pytest.raises(SegmentationError, match="another way"):
         write_record(tmp_path, "Cells", batch(tool="other"))
     assert not (tmp_path / "Cells" / RECORD_LOCK_FILENAME).exists()
+
+
+def test_a_lock_another_writer_took_meanwhile_is_never_removed(tmp_path):
+    lock = tmp_path / RECORD_LOCK_FILENAME
+    with exclusive_lock(lock):
+        lock.unlink()  # the user deleted this writer's lock, and another writer took it
+        lock.write_text('{"host": "another-pc", "pid": 7, "started_at": ""}\n', encoding="utf-8")
+    assert read_holder(lock) == LockHolder("another-pc", 7)  # still the other writer's
 
 
 def test_two_batches_made_in_the_same_second_get_different_ids(tmp_path, monkeypatch):
