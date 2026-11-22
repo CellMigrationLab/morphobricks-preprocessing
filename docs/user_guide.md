@@ -359,9 +359,12 @@ editing, or the confirmed ones. An image that cannot be drawn gets a sentence sa
    that folder, technical repeats included, take these tags, each keeping its own list. An
    acquisition with another number of channels is in its own row; one whose header names
    contradict the row is listed and not filled, and the description is not saved while it is
-   listed (tag it on its own). The rows go by folder name, since the channels are tagged
+   listed (tag it on its own). An acquisition whose own images disagree (other header names or
+   another number of channels) is never filled either: it is listed, and its images must be
+   corrected or separated. The rows go by folder name, since the channels are tagged
    before the pairing: if you pair the `rep2` folders of different conditions with different
-   biological repeats, the row says so and fills nothing; tag those conditions on their own.
+   biological repeats, every row of that folder (whatever its channel count) says so and
+   fills nothing; tag those conditions on their own.
    In fast mode a row offers only the acquisitions that do not fit the layout, and those it
    fills are tagged on their own (checked as in the strict mode); unticked, a row is offered
    for every repeat folder. On a reopen, a row shows the tags every acquisition of its folder
@@ -577,7 +580,22 @@ the same bytes in every file except that time (and the manifest SHA-256 the repo
 
 After writing, `run` prints the intensity checks of the table, grouped by kind, each with
 the channel, the image or biological repeat and the values compared, and what to do once
-per kind; it draws no plots (the notebook does).
+per kind; it draws no plots (the notebook does). Then it prints the channel check: each
+imaging unit's channels compared with the same channels of the other units of its condition
+(a treatment effect is not reported when the condition has at least 3 other units), with
+`channel_unlike_others` and `possible_channel_swap` warnings (for example "channels DAPI and
+GFP look swapped") and the channels it could not check; the notebook draws them under
+**Do the channels look like themselves?**. A swap made in every unit of a condition is not
+found. Warnings only: nothing is changed or blocked.
+
+Read the warnings as prompts to look, not as verdicts. With very noisy data (units that differ
+by about 30 % per channel) false warnings are frequent: in a simulation, 171 of 300 runs
+without any swap gave a warning and 59 a false swap. Images stored as floating-point numbers
+but converted from whole-number data, with medians near zero (for example a sparse 8-bit
+channel stored as 0-1 floats), can give false "unlike others" warnings that the same images
+stored as 8-bit do not. The same experiment in 16 bits and as 0-1 floats gives the same
+findings only while the channel's high percentile is above about 333 counts; below that, the
+whole-number files have a floor that floats do not.
 
 **Exit status.** Every command (`check`, `run`, `masks`, `calibrate`, `describe` and
 `convert`) exits with status 1 when it prints an error, and with 0 otherwise: warnings,
@@ -1256,6 +1274,8 @@ continues.
 | `repeat_intensity_shift` | Warning (intensity check) | A biological repeat is brighter or darker than the other repeats of its condition. Check whether it was prepared or acquired differently; normalising per biological repeat in later bricks removes such differences. |
 | `saturated_image` | Warning (intensity check) | More than the limit (default 1 %) of an image's pixels in a channel are at the largest value of its pixel type, so their true intensity is lost. Check the exposure, gain or laser power. |
 | `no_intensity_spread` | Warning (intensity check) | An image's channel has the same 1st and 99.8th percentile (empty or blank), so it cannot be normalised on its own. Check the channel, or exclude the image. |
+| `channel_unlike_others` | Warning (channel check) | One imaging unit's channel does not look like the same channel in the other units of its condition: its level, brightness or contrast differ by about 1.8 times or more and by much more than the units usually differ. The message names the nearest other channel, or says it looks like a channel this unit does not have (for example a fourth channel only other repeats have). Look at that unit's images in that channel: check its channel tag and how the images were exported, and whether the stain, exposure or acquisition differed. Nothing is changed or blocked. With very noisy data (units differing by about 30 % per channel) false warnings are frequent (171 of 300 simulated runs without a swap warned); floats converted from whole numbers with medians near zero can warn falsely, and 16-bit and 0-1 float images agree only above the integer floor (a high percentile above about 333 counts). |
+| `possible_channel_swap` | Warning (channel check) | Two channels of one imaging unit look like each other's channel in the other units (for example "DAPI and GFP look swapped"), or one channel clearly looks like another channel of the same unit: its channel tags may be in the wrong order. Check the unit's channels against how its images were acquired; if they are swapped, correct them in the experiment description and run again. Nothing is changed or blocked. A swap made in every unit of a condition is not found: the check compares each unit with the other units of its condition. |
 | `channel_without_finite_pixels` | Warning (intensity check) | An image's channel has no finite pixels (every value NaN or infinite), so its intensities were not checked and it cannot be normalised from its own pixels. Exclude the image, or fix the channel in the source data and run again. |
 | `channel_names_differ` | Error | Channel names differ between images at the same channel number, so different stains would be pooled as one channel. Spaces at the start or end of a name are ignored (and noted in the manifest); otherwise names must match exactly, and names that differ only in inner spaces are quoted and reported as such. Check the channel order; export the images again with the same channel order and names, or exclude the images whose channels differ. |
 | `non_finite_pixels` | Warning | NaN or infinite pixels are left out of the histograms and counted. |

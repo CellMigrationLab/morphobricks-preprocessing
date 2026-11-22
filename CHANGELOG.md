@@ -31,6 +31,29 @@ old pin are refused with `spec_commit_mismatch`, as at every re-pin.
   and a type spelled two ways are refused before writing; a mask is claimed with an exclusive create and
   then moved into place, so it is never silently replaced and needs no hard links (Google Drive). The masks step skips that file silently instead of
   warning `mask_without_image` (only directly in a type folder). "Has a mask" is decided by the run's own pairing (either layout, any case), `write_mask` refuses a twin elsewhere and never replaces a mask another writer made in between, and `resolve_segmentation` / `SegmentationPlan` resolve the channels once for a batch. Contract §15.5.
+- **Channel-identity check after the run** (contract §14.1, design
+  `channel-identity-check-2026-11-21` in MorphoFeature's `claude/restart-doc`): from the image
+  summaries the intensity checks already make (no pixel read), every imaging unit's channel is
+  compared with the same channel of the other units of its condition (signature: a scale-free
+  log of the median, the high percentile and the high minus low percentile, with an offset of
+  0.3 % of the channel's own median high percentile (at least one count for integer types), so
+  16-bit and 0-1 float images give the same verdicts (while the integer floor is not in
+  effect) and bright channels do not hide dim ones; a unit's channel is measured against another
+  channel's reference on that channel's scale; known limit: float images converted from integer
+  data with medians near zero can give false `channel_unlike_others` warnings; median/MAD reference without the unit itself, across the experiment with fewer than 3
+  units in the condition, and said so). New warnings
+  `channel_unlike_others` (with the nearest channel, or a channel the unit does not have) and
+  `possible_channel_swap` (a mutual pair is one warning, or a clear look-alike of another
+  channel of the unit), never blocking, in the run report and `RunResult.channel_identity`,
+  printed by `run` and shown in the notebook under **Do the channels look like themselves?**
+  with a plot of brightness against contrast (flagged units circled and labelled, swaps drawn
+  with an arrow from the reference used). Units of different pixel types are not compared;
+  channels with too few reference units are listed as not checked; a swap made in every unit
+  of a condition is not found. The limits (`ChannelIdentitySettings`: `outlier_limit` 3.5,
+  `min_reference` 3, `mad_floor` 0.2, `min_log_difference` 0.6, `swap_limit` 1.0,
+  `swap_ratio` 3.0, `partner_ratio` 2.0, chosen with a false-positive simulation) are recorded
+  in the manifest's new optional key `channel_identity`, beside `intensity_checks` (manifest
+  version unchanged).
 
 - **Tag this repeat folder (all conditions)** on *Tag channels* (owner request of 20 November
   2026): one row of tags per biological-repeat **folder name** and channel count; set once, it
@@ -101,6 +124,24 @@ old pin are refused with `spec_commit_mismatch`, as at every re-pin.
 - **Only the user's action marks a unit `unit`:** a tag, an image type or the RGB header
   override the user answers for that unit (`notebook_channels_view.note_user_units`); a
   no-click tag from header names never does.
+
+### Fixed
+
+- **Tag this repeat folder (all conditions)** (#366, after #363):
+  - A row never fills an acquisition whose images disagree (other header names or colour, or
+    another channel count within the unit: `uniform` or `counts_agree` false); it lists the
+    unit and says its images must be corrected or separated, and the description is not saved
+    while it is listed (`repeat_tags.repeat_apart`, reusing `channel_matrix.eligible` and `apart_reason`).
+  - A pairing collision is decided from the whole membership of the repeat folder name, before
+    the units are grouped by channel count and before fast mode filters them, and is
+    re-checked on the button: every row of the folder is flagged and fills nothing
+    (`repeat_tags.repeat_members`, `dataset.canonical_repeat`, now also used by `published_answers` and `notebook_design`).
+  - A refusal is dropped only after the save that fitted the unit succeeded; a failed save no
+    longer clears the contradiction, so the unit stays listed and *Check and save* still
+    refuses.
+  - The row's reference unit is the first one whose images agree, never a unit that is
+    listed as disagreeing (`repeat_tags.repeat_lead`); the row says before any click which
+    units it will not fill.
 
 ### Changed
 

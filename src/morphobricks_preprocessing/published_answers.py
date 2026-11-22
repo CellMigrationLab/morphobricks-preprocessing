@@ -23,6 +23,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import replace
 
+from .dataset import canonical_repeat
 from .description import USED_KINDS, Description
 from .draft import Draft
 from .draft_answers import (
@@ -314,7 +315,9 @@ def resumed(
     (tagging them reopens it anyway, :func:`reasked`). Nothing is ticked here.
     """
     now = layouts(draft, kept)
-    left = {saved.pairing.get(key[:2], key[1]) for key in saved.units if key not in kept.units}
+    left = {
+        canonical_repeat(saved.pairing, *key[:2]) for key in saved.units if key not in kept.units
+    }
     changed = tuple(
         sorted(
             label
