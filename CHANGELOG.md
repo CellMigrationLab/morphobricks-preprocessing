@@ -104,6 +104,10 @@ old pin are refused with `spec_commit_mismatch`, as at every re-pin.
   restore or remove raises `SegmentationError` naming both files and keeps the copy. Before, a
   failed overwrite left the new mask published and the earlier valid mask was lost. The record's
   duplicate-image check is linear (a seen-set instead of `list.count` per entry).
+- **Docs: `on_published` rollback and record durability** (external audit, 22 November 2026): the
+  `write_mask` docstring and contract §15.5 say that the rollback happens on every callback exception
+  even after the callback committed (it must reconcile its own post-commit failures), and that the
+  record is replaced atomically but not fsynced (not a power-loss guarantee). Behaviour unchanged.
 - **`write_mask` decides its rollback from the file system** (review of #397): an interrupt right
   after the move but before `write_mask` returned used to delete the copy of the earlier mask, so the
   new mask stayed and the earlier one was lost; now the target's inode says whether the move happened
