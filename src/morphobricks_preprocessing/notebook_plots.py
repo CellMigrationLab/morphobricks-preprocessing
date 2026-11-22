@@ -36,6 +36,7 @@ from .intensity import (
     repeat_boxes,
     repeat_distributions,
 )
+from .notebook_channel_identity import ChannelIdentityView
 from .notebook_options import _CHECK_LABELS, _MAX_PLOTTED_GROUPS
 from .notebook_render import _label
 from .notebook_values import display_range
@@ -69,6 +70,7 @@ class IntensityPanel:
         self.tiles = widgets.HTML()
         self.findings = widgets.HTML()
         self._build_plots()
+        self.identity = ChannelIdentityView()
         self.card = ui.card(
             title,
             [
@@ -78,6 +80,7 @@ class IntensityPanel:
                 self.findings,
                 self.settings_box,
                 self.plots,
+                self.identity.box,
             ],
             visible=False,
         )
@@ -231,6 +234,7 @@ class IntensityPanel:
         self.records, self.report, self.labels = [], None, NO_LABELS
         self.status.value = self.tiles.value = self.findings.value = ""
         self.boxes.value = self.curves.value = b""
+        self.identity.clear()
         ui.set_visible(self.card, False)
 
     def fail(self, exc: Exception) -> None:
@@ -279,6 +283,7 @@ class IntensityPanel:
         )
         self.findings.value = intensity_findings_html(report, self.labels)
         ui.set_visible(self.plots, bool(report.summaries))
+        self.identity.show(report.summaries, self.labels)
         self._draw()
 
     def _draw(self) -> None:
