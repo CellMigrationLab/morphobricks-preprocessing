@@ -255,6 +255,7 @@ from .segmentation_record import (
     SegmentationRecord,
     SegmentedImage,
     mask_sha256,
+    new_batch_id,
     read_record,
     write_record,
 )
@@ -466,6 +467,7 @@ __all__ = [
     "mask_thresholds",
     "named_axes",
     "ngff_label_names",
+    "new_batch_id",
     "open_ngff",
     "open_ngff_labels",
     "pair_counts",

@@ -18,7 +18,7 @@ import tifffile
 
 from described_tree import check_masks, run_described
 from description_tree import MAPPING
-from morphobricks_preprocessing import Request
+from morphobricks_preprocessing import Request, prefill_mapping
 from morphobricks_preprocessing.manifest import MANIFEST_FILENAME
 from morphobricks_preprocessing.run_inputs import RunInputs, RunInputsError
 from morphobricks_preprocessing.segmentation_handoff import (
@@ -35,6 +35,7 @@ from morphobricks_preprocessing.segmentation_record import (
 )
 from test_segmentation_record import batch
 from test_stage3_channels import LEVELS, described_run, extra_stain
+from zarr_tree import write_labels, write_ngff
 
 EXTRA_FIRST = (
     b'channels = ["DNA", "ACTIN", "TUB", "EXTRA"]',
@@ -357,6 +358,33 @@ def test_a_type_spelled_in_two_ways_is_refused_as_the_run_refuses_it(run, spelli
     with pytest.raises(SegmentationError, match="mask_names_differ_in_case"):
         write_mask(run.masks, "Cells", first, labels_like(run, first), run.inputs)
     assert_only_the_twin_is_on_disk(run, twin)
+
+
+def test_an_ome_zarr_image_with_a_label_image_of_the_type_has_its_mask(tmp_path):
+    pytest.importorskip("zarr")  # runs with zarr 2 or 3 (OME-NGFF 0.4 labels)
+    image = np.zeros((6, 7), np.uint8)
+    labels = np.zeros((6, 7), np.uint16)
+    labels[1:3, 1:3] = 1
+    write_labels(write_ngff(tmp_path / "exp/ctrl/a.ome.zarr", image, "yx"), {"Cells": labels}, "yx")
+    write_ngff(tmp_path / "exp/ctrl/b.ome.zarr", image, "yx")
+    result = run_described(tmp_path / "exp", prefill_mapping("YX"))
+    assert result.written, result.issues
+    inputs = RunInputs.open(check_masks(result.output_folder))
+    masks = tmp_path / "masks"
+    by_path = {f.relative_path: f for f in inputs.fovs()}
+    assert set(by_path) == {"ctrl/a.ome.zarr", "ctrl/b.ome.zarr"}
+    # The run counts the label image as a's mask: a is not to be segmented again.
+    assert images_to_segment(inputs, "Cells", masks) == (by_path["ctrl/b.ome.zarr"],)
+    a = by_path["ctrl/a.ome.zarr"]
+    for overwrite in (False, True):
+        with pytest.raises(SegmentationError, match="already exists") as caught:
+            write_mask(masks, "Cells", a, labels, inputs, overwrite=overwrite)
+        assert "ctrl/a.ome.zarr/labels/Cells" in str(caught.value)
+    assert not masks.exists()
+    # b has none: its folder mask is written, and the next listing is then empty, no duplicate.
+    b = by_path["ctrl/b.ome.zarr"]
+    write_mask(masks, "Cells", b, labels, inputs)
+    assert images_to_segment(inputs, "Cells", masks) == ()
 
 
 def test_two_masks_of_one_image_and_type_are_refused_before_writing(run):
