@@ -263,7 +263,7 @@ def test_the_lock_is_released_when_a_run_fails(experiment, monkeypatch):
 
 
 def test_a_lock_that_cannot_be_written_is_not_left_behind(experiment, monkeypatch):
-    from morphobricks_preprocessing.run import lock as lock_module
+    from morphobricks_preprocessing import lock_file as lock_module
 
     def broken(*args, **kwargs):
         raise OSError("simulated: disk full")

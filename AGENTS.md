@@ -260,6 +260,13 @@ src/morphobricks_preprocessing/
                     masks.binary.label_binary; Spec ADR 0005) and objects_read_plan (its
                     peak memory from the header: stored plane, int32 result and
                     labelling_bytes; #316)
+  segmentation_handoff.py images_to_segment (the run's own mask pairing), segmentation_input and
+                    resolve_segmentation/SegmentationPlan (channels by canonical ID through
+                    resolve_request), mask_path and write_mask (a checked, compressed int32 YX TIFF,
+                    atomic, claimed exclusively, never over an existing mask unless asked) for a segmentation
+                    notebook; numpy and tifffile only (contract §15.5); segmentation_record.py
+                    SegmentationRecord/SegmentationBatch and the append-only history file
+                    <masks>/<type>/segmentation_record.json (mask type checked like a discovered one)
   mask_conversion.py RunInputs.binary_to_instances / classes_to_binary (Spec ADR 0005 BM12, step
                     2b): new mask files from a checked mask, refused before any read or write
                     (check_class_image, collisions, idempotent retry); mask_lineage.py their
