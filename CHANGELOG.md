@@ -96,10 +96,13 @@ old pin are refused with `spec_commit_mismatch`, as at every re-pin.
   - A pairing collision is decided from the whole membership of the repeat folder name, before
     the units are grouped by channel count and before fast mode filters them, and is
     re-checked on the button: every row of the folder is flagged and fills nothing
-    (`repeat_tags.repeat_members`, `dataset.canonical_repeat_groups`, the one lookup of the saved pairing).
+    (`repeat_tags.repeat_members`, `dataset.canonical_repeat`, now also used by `published_answers` and `notebook_design`).
   - A refusal is dropped only after the save that fitted the unit succeeded; a failed save no
     longer clears the contradiction, so the unit stays listed and *Check and save* still
     refuses.
+  - The row's reference unit is the first one whose images agree, never a unit that is
+    listed as disagreeing (`repeat_tags.repeat_lead`); the row says before any click which
+    units it will not fill.
 
 ### Changed
 

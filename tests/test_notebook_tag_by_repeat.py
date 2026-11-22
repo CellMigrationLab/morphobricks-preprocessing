@@ -21,6 +21,7 @@ from morphobricks_preprocessing.repeat_tags import (
     repeat_apart,
     repeat_fill,
     repeat_groups,
+    repeat_lead,
     repeat_shown,
 )
 
@@ -358,6 +359,23 @@ def test_b3_a_row_never_fills_a_unit_whose_images_disagree_pure():
     assert set(repeat_apart(group)) == {odd, short}
 
 
+def test_b3_the_reference_of_a_row_is_never_a_unit_whose_images_disagree():
+    from dataclasses import replace
+
+    names = ("Ch1", "Ch2", "Ch3")
+    mixed = replace(_layout(("ctrl", "rep2", "t1"), names=names), uniform=False)
+    group = (
+        mixed,
+        _layout(("ctrl", "rep2", "t2"), names=("n1", "n2", "n3")),
+        _layout(("drug", "rep2", "t2"), names=("n1", "n2", "n3")),
+    )
+    assert repeat_lead(group).key == ("ctrl", "rep2", "t2")
+    save, cells, refused = repeat_fill(DraftAnswers("absent", "0" * 40), group, TAGS, TAGS)
+    assert list(save) == [("ctrl", "rep2", "t2"), ("drug", "rep2", "t2")] and not refused
+    assert repeat_lead(group[:1]) is None  # all apart: nothing to compare, nothing filled
+    assert repeat_fill(DraftAnswers("absent", "0" * 40), group[:1], TAGS, TAGS)[0] == {}
+
+
 def _mixed_experiment(tmp_path):
     """rep2/t1 of ctrl and of drug each have two images that name different channels.
 
@@ -392,6 +410,9 @@ def test_b3_a_row_does_not_fill_a_unit_with_conflicting_headers_or_counts(tmp_pa
     assert "ctrl / rep2 / t1" in shown and "drug / rep2 / t1" in shown
     assert "its images do not all have one header" in shown  # the matrix's own reason
     assert "corrected or separated" in shown
+    drawn = repr(rows.box.children)  # before any click it already says what it will not fill
+    assert "2 unit(s) with disagreeing images will not be filled" in drawn
+    assert "sets 2 imaging unit(s)" in drawn
     nb.channel_grid.refresh()
     assert set(rows.listed()) == set(mixed)  # still listed on every redraw
 
@@ -503,3 +524,26 @@ def test_b5_a_failed_corrective_save_keeps_the_unit_listed_and_check_save_refusi
     assert not (out / DESCRIPTION_FILENAME).exists()
     assert rows.apply(("rep2", 3), group)  # the same corrective save, now succeeding
     assert not rows.listed()
+
+
+def test_b5_a_corrective_save_the_grid_refuses_keeps_the_unit_listed(
+    tmp_path, statement_off, monkeypatch
+):
+    def names(key):
+        return ["ACTIN", "DNA", "PHASE"] if key == ("drug", "rep2", "t1") else None
+
+    root, masks, out = _experiment(tmp_path, names=names)
+    nb = opened(root, masks, out)
+    set_labels(nb, list(EXTRA))
+    odd = ("drug", "rep2", "t1")
+    grid = nb.channel_grid
+    grid.tag_like([next(u for u in grid.layouts if u.key == odd)], ("EXTRA", "DNA", "PHASE"))
+    answer_all(nb)
+    rows = grid.by_repeat
+    _set_row(nb, ("rep2", 3), TAGS)
+    group = rows._offered()[("rep2", 3)]
+    for drop, tag in zip(rows.drops[("rep2", 3)], ("ACTIN", "DNA", "PHASE"), strict=True):
+        drop.value = tag
+    monkeypatch.setattr(type(grid), "commit", lambda self, tags, cells: False)
+    assert not rows.apply(("rep2", 3), group)
+    assert list(rows.listed()) == [odd]

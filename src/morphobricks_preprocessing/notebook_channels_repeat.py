@@ -41,6 +41,7 @@ from .repeat_tags import (
     repeat_apart,
     repeat_fill,
     repeat_groups,
+    repeat_lead,
     repeat_members,
     repeat_shown,
 )
@@ -85,7 +86,9 @@ class RepeatRows:
         """
         answers = self.grid.store.answers()
         out = {}
-        for key, (text, layout, lead) in self.refused.items():
+        current = {u.key: u for u in self.grid.layouts}
+        for key, (text, stored, lead) in self.refused.items():
+            layout = current.get(key, stored)  # the unit as read now, not as at the click
             if lead is None:
                 if repeat_apart((layout,)):
                     out[key] = text
@@ -162,9 +165,16 @@ class RepeatRows:
                 + ", ".join(f"{c} → {r}" for c, r in collision.items())
                 + "; tag each condition's units on their own"
             )
-        units = ", ".join(unit_name(u.key) for u in group)
+        apart = repeat_apart(group)
+        fills = [u for u in group if u.key not in apart]
+        units = ", ".join(unit_name(u.key) for u in fills)
+        if apart:
+            note += (
+                f"; {len(apart)} unit(s) with disagreeing images will not be filled: "
+                + ", ".join(unit_name(k) for k in apart)
+            )
         info = widgets.HTML(
-            f"<b>{html.escape(repeat)}</b>: {count} channel(s); sets {len(group)} imaging "
+            f"<b>{html.escape(repeat)}</b>: {count} channel(s); sets {len(fills)} imaging "
             f"unit(s): {html.escape(units)}<div class='mb-help'>{html.escape(note)}</div>"
         )
         options = [(CHOOSE, None), *((label, label) for label in self.grid.labels)]
@@ -211,7 +221,7 @@ class RepeatRows:
         for unit, found in refused.items():
             text = "; ".join(html.escape(difference_text(d)) for d in found)
             layout = next(u for u in group if u.key == unit)
-            self.refused[unit] = (text, layout, group[0])
+            self.refused[unit] = (text, layout, repeat_lead(group))
         for unit, why in repeat_apart(group).items():
             layout = next(u for u in group if u.key == unit)
             self.refused[unit] = (html.escape(why), layout, None)

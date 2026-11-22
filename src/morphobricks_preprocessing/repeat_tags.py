@@ -62,18 +62,20 @@ def repeat_fill(
 
     A unit is refused (listed with its contradictions, never filled) when a header name says
     another label than the row's at its C index, or says none and is not the first unit's name
-    there (:func:`.channel_matrix.differences`). A unit whose images disagree
-    (:func:`repeat_apart`) is neither filled nor listed here: the caller names it separately.
+    there (:func:`.channel_matrix.differences`; the first unit is :func:`repeat_lead`). A unit
+    whose images disagree (:func:`repeat_apart`) is neither filled nor listed here: the caller
+    names it separately.
     """
     tags = tuple(tags)
     save: dict[UnitKey, tuple[str, ...]] = {}
     cells: list[tuple[UnitKey, int]] = []
     refused: dict[UnitKey, tuple[Difference, ...]] = {}
     apart = repeat_apart(group)
+    lead = repeat_lead(group)
     for layout in group:
-        if layout.key in apart:
+        if lead is None or layout.key in apart:
             continue
-        found = differences(layout, tags, group[0], labels, answers.channels)
+        found = differences(layout, tags, lead, labels, answers.channels)
         if found:
             refused[layout.key] = found
             continue
@@ -82,8 +84,18 @@ def repeat_fill(
     return save, cells, refused
 
 
+def repeat_lead(group: Sequence[UnitLayout]) -> UnitLayout | None:
+    """Return the row's reference unit: the first one that is not apart, None when all are.
+
+    A unit whose images disagree has no single header, so it is never the reference the other
+    units' header names are compared with (:func:`repeat_apart`).
+    """
+    apart = repeat_apart(group)
+    return next((u for u in group if u.key not in apart), None)
+
+
 def repeat_apart(group: Sequence[UnitLayout]) -> dict[UnitKey, str]:
-    """Return why each unit of the row that is not eligible cannot be filled by it.
+    """Return why each unit of the row (a :func:`repeat_groups` row) cannot be filled by it.
 
     Eligibility and its reason are the channel screen's own (:func:`.channel_matrix.eligible`,
     :func:`.channel_matrix.apart_reason`): a unit whose images disagree (another header, or
@@ -94,7 +106,7 @@ def repeat_apart(group: Sequence[UnitLayout]) -> dict[UnitKey, str]:
     return {
         u.key: f"{apart_reason(u)}; its images must be corrected or separated"
         for u in group
-        if not eligible(u, ())
+        if not eligible(u, ()) and apart_reason(u)  # a row holds no unusable or colour unit
     }
 
 
@@ -140,6 +152,7 @@ __all__ = [
     "pairing_collision",
     "repeat_fill",
     "repeat_groups",
+    "repeat_lead",
     "repeat_members",
     "repeat_apart",
     "repeat_shown",
