@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import os
 import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -211,6 +212,7 @@ def write_mask(
     inputs: RunInputs,
     *,
     overwrite: bool = False,
+    on_published: Callable[[Path], None] | None = None,
 ) -> Path:
     """Write ``labels`` as the mask of ``mask_type`` for ``fov``, as preprocessing expects it.
 
@@ -236,6 +238,11 @@ def write_mask(
         The opened run (the image's size, and the experiment and output folders).
     overwrite
         Replace a mask that is already there. Without it an existing mask is refused.
+    on_published
+        Called with the published mask's path right after it is published, while the type's
+        write lock is still held (so the file cannot be replaced meanwhile: hash or stamp it
+        here). Not called when the write is refused. An error it raises propagates; the mask
+        stays published and the caller decides what to do with it.
 
     Returns
     -------
@@ -281,6 +288,8 @@ def write_mask(
         except BaseException:
             Path(temporary).unlink(missing_ok=True)
             raise
+        if on_published is not None:
+            on_published(target)  # still under the lock; an error propagates, the mask stays
     return target
 
 

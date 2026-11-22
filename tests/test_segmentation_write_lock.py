@@ -88,3 +88,47 @@ def test_the_write_lock_is_released_after_a_refusal_and_is_not_a_mask(run):
     # A lock left in the type folder is skipped silently by the run's own masks discovery.
     (run.masks / "Cells" / WRITE_LOCK_FILENAME).write_text("{}", encoding="utf-8")
     assert images_to_segment(run.inputs, "Cells", run.masks) == run.inputs.fovs()[1:]
+
+
+# on_published runs under the write lock ---------------------------------------------------------
+
+
+def test_on_published_runs_under_the_lock_with_the_published_path(run):
+    fov = run.inputs.fovs()[0]
+    lock = run.masks / "Cells" / WRITE_LOCK_FILENAME
+    seen = []
+
+    def callback(path):
+        seen.append((path, lock.exists(), path.is_file()))
+
+    target = write_mask(
+        run.masks, "Cells", fov, labels_like(run, fov), run.inputs, on_published=callback
+    )
+    assert seen == [(target, True, True)]
+    assert target == mask_path(run.masks, "Cells", fov)
+    assert not lock.exists()
+
+
+def test_on_published_is_not_called_when_the_write_is_refused(run):
+    fov = run.inputs.fovs()[0]
+    write_mask(run.masks, "Cells", fov, labels_like(run, fov), run.inputs)
+    calls = []
+    with pytest.raises(SegmentationError, match="already exists"):
+        write_mask(
+            run.masks, "Cells", fov, labels_like(run, fov), run.inputs, on_published=calls.append
+        )
+    assert calls == []
+
+
+def test_a_raising_on_published_propagates_and_the_mask_stays_published(run):
+    fov = run.inputs.fovs()[0]
+
+    def callback(path):
+        raise RuntimeError("hash failed")
+
+    with pytest.raises(RuntimeError, match="hash failed"):
+        write_mask(
+            run.masks, "Cells", fov, labels_like(run, fov), run.inputs, on_published=callback
+        )
+    assert mask_path(run.masks, "Cells", fov).is_file()
+    assert not (run.masks / "Cells" / WRITE_LOCK_FILENAME).exists()  # the lock is released

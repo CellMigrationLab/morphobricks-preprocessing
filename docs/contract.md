@@ -1352,7 +1352,7 @@ links (a Google Drive mount) too.
 the image to the published file, **in both modes**: an overwriting writer and a default writer
 can never replace each other's mask. A held lock is refused at once, naming its holder, and
 never waited on; a killed writer leaves it, and the message says to delete it. Like the
-record's lock it is a dot-file, skipped by the masks step. A lock holder carries a random
+record's lock it is a dot-file, skipped by the masks step. The optional `on_published(path)` callback runs right after the publish, still under the lock (take a hash or file stamp there; it is not called when the write is refused, and an error it raises propagates with the mask left published). A lock holder carries a random
 token, so a lock deleted and retaken is never removed by its earlier holder. Limits: the lock
 protects the writers of one computer (not a Drive folder open in two Colab sessions); a
 reader may briefly see a **zero-byte placeholder** at the mask's name while a mask is being
