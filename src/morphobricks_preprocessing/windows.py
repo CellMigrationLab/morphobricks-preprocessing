@@ -55,11 +55,11 @@ import numpy as np
 
 from . import window_memory
 from .axes import AxisMapping
+from .plane_binning import Binning
 from .planes import (
     DEFAULT_MEMORY_LIMIT,
     PlaneLayout,
     PlaneMemoryError,
-    _Binning,
     _Blocking,
     _open,
     _open_zarr,
@@ -355,7 +355,7 @@ def _zarr_source(
 
     With ``cached``, the window is read chunk by chunk, each chunk from the cache.
     """
-    layout = _zarr_layout(image, mapping, path, _Binning(histogram=False), memory_limit)
+    layout = _zarr_layout(image, mapping, path, Binning(histogram=False), memory_limit)
     y, x = mapping.index_of("Y"), mapping.index_of("X")
     rows, cols = sorted((y, x))
     blocking = _Blocking(

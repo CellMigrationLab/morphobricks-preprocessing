@@ -13,10 +13,10 @@ import tifffile
 from described_tree import run_described
 from morphobricks_preprocessing import plane_channels as channels_module
 from morphobricks_preprocessing import prefill_mapping
+from morphobricks_preprocessing.plane_binning import Binning
 from morphobricks_preprocessing.plane_channels import read_xyc_plane, xyc_plane_memory
 from morphobricks_preprocessing.planes import (
     PlaneMemoryError,
-    _Binning,
     _layout,
     read_plane,
 )
@@ -382,7 +382,7 @@ def test_a_plane_just_over_the_limit_is_refused_before_any_read(rgb_run, monkeyp
     mapping = prefill_mapping("YXS")
     estimate = xyc_plane_memory(path, mapping)
     with tifffile.TiffFile(path) as tif:
-        single = _layout(tif.series[0], mapping, path, _Binning(histogram=False)).memory_estimate
+        single = _layout(tif.series[0], mapping, path, Binning(histogram=False)).memory_estimate
     # One channel's read alone fits the limit: the per-channel check let this read through.
     assert single < estimate - 1
     calls = count_decodes(monkeypatch)

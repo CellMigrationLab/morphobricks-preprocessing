@@ -47,6 +47,28 @@ old pin are refused with `spec_commit_mismatch`, as at every re-pin.
   in the manifest's new optional key `channel_identity`, beside `intensity_checks` (manifest
   version unchanged).
 
+- **Image QC metrics per plane and channel, computed in the histogram pass** (MorphoFeature
+  design `image-qc-metrics-2026-11-21`, metrics 1-8): a new run-folder table `image_qc.csv`, one
+  row per plane and channel, with `foreground_fraction` (Otsu, with `otsu_threshold` and
+  `otsu_separation`), `entropy`, `normalized_variance`, `tenengrad`, `laplacian_variance`,
+  `correlation_1/4/16`, `local_focus_median/p10` and `tile_mean_cv`, scale-free and measured
+  from the blocks the histogram already reads (no extra read; `image_qc`, `image_qc_sums`,
+  `image_qc_moments`, `image_qc_table`, `image_qc_record`). The manifest gains the optional key
+  `image_qc` (file, SHA-256, `qc_version` and settings; manifest version stays 5). The table
+  follows the histogram step's reuse and resume rules: staging version 2 stages it with the
+  rows (a version 1 staged record is discarded and read again), and a run whose earlier
+  manifest has no `image_qc` entry recomputes every row once. `tools/benchmark_image_qc.py`
+  times the histogram step with and without the metrics on identical outputs. The
+  power-spectrum slope (PLLS) is not included (cost). Contract §19, user guide §6. Each blank
+  metric has a reason in the `blank_reasons` column (`constant_plane`, `no_pairs`,
+  `no_variance`, `non_positive_mean`, `plane_too_small`, `non_finite_pixels`,
+  `no_finite_pixels`), and the reader and writer refuse inconsistent status, metric and reason
+  combinations. The contract states what the metrics are not: scale-free only under pure
+  multiplication (an offset changes the ratio metrics), `otsu_separation` of noise is 2/pi (use
+  `correlation_1` for emptiness), `local_focus_p10` is content coverage, central-difference
+  Tenengrad (not Sobel), Pearson lag correlations (not Haralick), and the block tolerances are
+  observations, not guarantees.
+
 - **Tag this repeat folder (all conditions)** on *Tag channels* (owner request of 20 November
   2026): one row of tags per biological-repeat **folder name** and channel count; set once, it
   is saved for every condition's imaging units in that folder (technical repeats included),
@@ -150,6 +172,19 @@ old pin are refused with `spec_commit_mismatch`, as at every re-pin.
 
 ### Changed
 
+- **Another memory limit recomputes the rows when planes are read in blocks**: the image QC
+  neighbour metrics of a plane read in blocks depend on its blocks, so rows measured under
+  another limit were silently reused (and resumed). With the earlier run or this one reading any
+  plane in blocks, a changed `memory_limit` recomputes every row (reason in the report), and
+  staged rows of an image read in blocks are resumed only under their limit (`RowKey.block_limit`);
+  whole planes on both sides still keep their rows. The QC rows reused must also match the
+  histogram rows' full identity, not only plane ID and channel. The working memory of the QC sums
+  (`image_qc.qc_memory`) is part of the plane and block estimates (`plane_binning.Binning`), so
+  blocks are a little smaller; a float plane's sums are centred on its mean, not a rounded one.
+- **NumPy 2.0 or later** (the image QC sums use `numpy.vecdot`), with the dependency floors
+  raised to releases that import with NumPy 2: SciPy 1.13, Matplotlib 3.8.4 (`notebook`) and
+  scikit-image 0.24 (`he-mask`). Checked on Python 3.11 with the lowest versions of every
+  dependency and on 3.13 with the newest.
 - **Draft file version 4** (`morphobricks.draft.json`): the keys `channel_layout` and
   `switch_mode`, and a unit's `channels_from`. A version 3 draft is refused (`unknown_version`;
   it was written under the old Spec pin anyway, `spec_commit_mismatch`).

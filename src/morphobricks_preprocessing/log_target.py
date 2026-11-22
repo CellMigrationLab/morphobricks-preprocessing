@@ -34,6 +34,7 @@ from .calibration import CALIBRATION_FILENAME
 from .conversion_record import RECORD_FILENAME
 from .design import DESIGN_FILENAME
 from .discovery_report import REPORT_FILENAME, REPORT_TEXT_FILENAME
+from .image_qc_record import IMAGE_QC_FILENAME
 from .manifest import MANIFEST_FILENAME
 from .mask_scan import MASK_REPORT_FILENAME
 from .run.generation import PUBLISH_FOLDER
@@ -46,6 +47,7 @@ from .write_target import write_target_refusal
 PROTECTED_OUTPUTS = frozenset(
     {
         OUTPUT_FILENAME,
+        IMAGE_QC_FILENAME,
         MANIFEST_FILENAME,
         REPORT_FILENAME,
         REPORT_TEXT_FILENAME,
