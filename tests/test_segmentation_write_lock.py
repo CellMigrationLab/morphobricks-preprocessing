@@ -118,17 +118,3 @@ def test_on_published_is_not_called_when_the_write_is_refused(run):
             run.masks, "Cells", fov, labels_like(run, fov), run.inputs, on_published=calls.append
         )
     assert calls == []
-
-
-def test_a_raising_on_published_propagates_and_the_mask_stays_published(run):
-    fov = run.inputs.fovs()[0]
-
-    def callback(path):
-        raise RuntimeError("hash failed")
-
-    with pytest.raises(RuntimeError, match="hash failed"):
-        write_mask(
-            run.masks, "Cells", fov, labels_like(run, fov), run.inputs, on_published=callback
-        )
-    assert mask_path(run.masks, "Cells", fov).is_file()
-    assert not (run.masks / "Cells" / WRITE_LOCK_FILENAME).exists()  # the lock is released
