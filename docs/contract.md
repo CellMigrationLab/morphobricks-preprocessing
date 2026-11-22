@@ -1343,6 +1343,21 @@ leaving the folder, a mask type spelled in two ways (`mask_names_differ_in_case`
 with two masks of the type (`duplicate_mask`). A mask is never silently replaced: without `overwrite` the name is claimed exclusively, so
 it works on a file system without hard links (a Google Drive mount) too.
 
+The shipped Cellpose notebook builds on this hand-off and adds no rule of its own to the masks
+(`segmentation_cellpose`, `segmentation_cellpose_model`; Cellpose, `torch` and `dinov3` are
+imported only inside functions, so importing the brick and discovery stay inert). Cellpose
+4.2.1.1 is pinned and is not a dependency. Each of its silent behaviours is a refusal here: a
+model is one of `cpsam_v2`, `cpsam`, `cpdino`, `cpdino-vitb` or an existing file, checked before
+loading, and the weights file the loaded model reports must be the one asked for; a device
+(`cuda`, `mps`, `cpu`) is always stated, an unavailable one is refused, and every weight must
+sit on it after loading; uncached weights are downloaded only on an explicit request; more than
+three channels are refused (Cellpose reads the first three by position); a blank diameter is
+the model's native scale, never an estimate and never 0. The batch's `model` holds the model
+name, the weights file name (or the custom file's path) and its SHA-256, and its `parameters`
+every effective setting (diameter in pixels or null with its meaning, thresholds, normalisation,
+batch and tile size, `channel_axis` 0, device type, versions and, for a DINOv3 model, the DINOv3
+commit). Two-dimensional images only.
+
 ## 16. Shared rules for other bricks (MorphoBricks D86)
 
 Rules every MorphoBricks brick applies in one way, so they live here as public functions

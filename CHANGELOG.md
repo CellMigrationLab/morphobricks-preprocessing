@@ -16,6 +16,24 @@ old pin are refused with `spec_commit_mismatch`, as at every re-pin.
 
 ### Added
 
+- **Cellpose notebook** (`notebooks/MorphoBricks_Cellpose.ipynb`, step 2 of the segmentation
+  hand-off; owner request of 21 November 2026): opens a described run, chooses the mask type and
+  the channels **by channel ID** (dropdowns; a channel only some images have is refused with
+  the resolver's `A_SCOPE_INCOMPLETE` message, shown unchanged), loads **Cellpose 4.2.1.1**
+  (`cpsam_v2` by default, `cpsam`, `cpdino`, `cpdino-vitb`, or a model file), previews one image,
+  segments every image without a mask and ends with a table of every image as written, skipped
+  or failed with its error, then says how to declare the new mask type and rerun preprocessing.
+  Cellpose is not a dependency: `segmentation_cellpose`, `segmentation_cellpose_model` and
+  `notebook_cellpose` import `cellpose`, `torch` and `dinov3` only inside functions. What
+  Cellpose 4.2.1.1 does silently is refused: a model name or file it cannot find becomes
+  `cpsam_v2` (the model is validated before loading and the loaded weights file must be the one
+  asked for), a missing GPU becomes the CPU (the device is stated, an unavailable one is refused,
+  and the model must sit on it), uncached weights are downloaded (only with the download box
+  ticked, after the notebook says they come from Hugging Face), channels beyond the first three
+  are dropped by position (more than three are refused), and no diameter means the model's native
+  scale, not an estimate (a blank diameter is recorded as the native scale, 0 is refused). The
+  SHA-256 and file name of the weights, every effective setting and the DINOv3 commit
+  (`cpdino` models, installed only when ticked) go into the `SegmentationBatch`. 2D images only.
 - **Segmentation hand-off** (owner request of 21 November 2026, step 1 of the Cellpose notebook
   plan): `segmentation_handoff` and `segmentation_record` (numpy and tifffile only; no
   segmentation tool is imported). `images_to_segment` lists the run's images that have no mask
