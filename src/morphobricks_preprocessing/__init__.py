@@ -244,9 +244,11 @@ from .segmentation_handoff import (
     write_mask,
 )
 from .segmentation_record import (
+    SegmentationBatch,
     SegmentationError,
     SegmentationRecord,
     SegmentedImage,
+    mask_sha256,
     read_record,
     write_record,
 )
@@ -360,6 +362,7 @@ __all__ = [
     "MaskContradictsRepresentationError",
     "MaskUncheckedError",
     "RgbNotSupportedError",
+    "SegmentationBatch",
     "SegmentationError",
     "SegmentationPlan",
     "SegmentationRecord",
@@ -417,6 +420,7 @@ __all__ = [
     "convert_experiment",
     "images_to_segment",
     "mask_path",
+    "mask_sha256",
     "preview_conversion",
     "declared_mapping",
     "default_output_folder",

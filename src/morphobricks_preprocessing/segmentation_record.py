@@ -1,28 +1,35 @@
-"""The provenance file of one mask type made by a segmentation tool (contract §15.5).
+"""The provenance file of one mask type made by segmentation tools (contract §15.5).
 
 A segmentation tool (Cellpose in the shipped notebook) writes its masks under
 ``<masks folder>/<mask type>/`` with :func:`.segmentation_handoff.write_mask`, and one
-``segmentation_record.json`` beside them says how they were made: the tool and its version,
-the model (a name, and the weights file with its SHA-256), the parameters, the channel IDs
-that were read, the device that ran it, the run it read (folder and manifest SHA-256) and one
-entry per image (written, skipped or failed, with the message). The file is provenance only:
-nothing in preprocessing reads it back to decide anything, and a mask is a mask whether or not
-a record exists.
+``segmentation_record.json`` beside them says how they were made. The file is an append-only
+history of **batches**: each :class:`SegmentationBatch` holds the tool and its version, the
+model (a name, and the weights file with its SHA-256), the parameters, the channel IDs read,
+the device, the run read (folder and manifest SHA-256) and one entry per image (written,
+skipped or failed, with the message and, for a written mask, the SHA-256 of the file). A
+second batch with another model is added beside the first, never over it, so every mask keeps
+the provenance of the batch that wrote it (the latest written entry of an image is the one
+that holds). The file is provenance only: nothing in preprocessing reads it back to decide
+anything, and a mask is a mask whether or not a record exists.
 
 The record is versioned (:data:`RECORD_VERSION`). :func:`read_record` checks everything it
-reads and refuses a version it does not know, an unknown key, a wrong type or a value outside
-the allowed set; nothing is repaired or defaulted. The module needs only the standard library.
+reads and refuses a version it does not know, an unknown key, a wrong type, a value outside
+its allowed set, a batch ID twice and an image twice in one batch; nothing is repaired or
+defaulted. A mask type is checked with the rules every brick applies to a name
+(:func:`.discovery.check_identity_text`, NFC), before anything is written.
 """
 
 from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
-from ._io import write_text_atomic
+from ._io import file_sha256, write_text_atomic
+from .discovery import IdentityError, check_identity_text
+from .name_issues import is_nfc
 
 RECORD_VERSION = 1
 """The version of the record this module writes and reads."""
@@ -41,7 +48,7 @@ class SegmentationError(ValueError):
 
 @dataclass(frozen=True)
 class SegmentedImage:
-    """What happened to one image of the run.
+    """What happened to one image in one batch.
 
     Attributes
     ----------
@@ -51,21 +58,25 @@ class SegmentedImage:
         ``written``, ``skipped`` (a mask was already there) or ``failed``.
     message
         Why, in plain words; required for ``failed`` (an error is never dropped).
+    mask_sha256
+        The SHA-256 of the mask file written (:func:`mask_sha256`): required for ``written``,
+        None otherwise.
     """
 
     image: str
     status: str
     message: str = ""
+    mask_sha256: str | None = None
 
 
 @dataclass(frozen=True)
-class SegmentationRecord:
-    """How the masks of one mask type were made.
+class SegmentationBatch:
+    """One run of a segmentation tool over some images: how its masks were made.
 
     Attributes
     ----------
-    mask_type
-        The mask type (the name of the folder holding the masks and this record).
+    batch_id
+        The caller's identifier of the batch (for example its start time), unique in the file.
     tool, tool_version
         The segmentation tool and its exact version (e.g. ``cellpose``, ``4.2.1.1``).
     model_name
@@ -86,10 +97,10 @@ class SegmentationRecord:
     run_manifest_sha256
         The SHA-256 of that run's ``run_manifest.json`` when the images were read.
     images
-        One entry per image handled, in the order handled.
+        One entry per image handled, each image once.
     """
 
-    mask_type: str
+    batch_id: str
     tool: str
     tool_version: str
     model_name: str
@@ -101,17 +112,15 @@ class SegmentationRecord:
     run_manifest_sha256: str
     images: tuple[SegmentedImage, ...] = ()
     model_file: str | None = None
-    record_version: int = field(default=RECORD_VERSION, init=False)
 
     def __post_init__(self) -> None:
-        """Refuse a record that could not be read back (the same checks as reading)."""
-        _check(self.to_dict())
+        """Refuse a batch that could not be read back (the same checks as reading)."""
+        _batch(self.to_dict())
 
     def to_dict(self) -> dict[str, Any]:
-        """Return the record as the JSON object written to the file."""
+        """Return the batch as the JSON object kept in the file."""
         return {
-            "record_version": self.record_version,
-            "mask_type": self.mask_type,
+            "batch_id": self.batch_id,
             "tool": self.tool,
             "tool_version": self.tool_version,
             "model": {
@@ -125,24 +134,23 @@ class SegmentationRecord:
             "run_folder": self.run_folder,
             "run_manifest_sha256": self.run_manifest_sha256,
             "images": [
-                {"image": i.image, "status": i.status, "message": i.message} for i in self.images
+                {
+                    "image": i.image,
+                    "status": i.status,
+                    "message": i.message,
+                    "mask_sha256": i.mask_sha256,
+                }
+                for i in self.images
             ],
         }
 
     @classmethod
-    def from_dict(cls, data: object) -> SegmentationRecord:
-        """Build a record from a JSON object, checking all of it.
-
-        Raises
-        ------
-        SegmentationError
-            For an unknown ``record_version``, a missing or unknown key, a value of the wrong
-            type or outside its allowed set.
-        """
-        _check(data)
+    def from_dict(cls, data: object) -> SegmentationBatch:
+        """Build a batch from a JSON object, checking all of it (:class:`SegmentationError`)."""
+        data = _batch(data)
         model = data["model"]
         return cls(
-            mask_type=data["mask_type"],
+            batch_id=data["batch_id"],
             tool=data["tool"],
             tool_version=data["tool_version"],
             model_name=model["name"],
@@ -154,15 +162,75 @@ class SegmentationRecord:
             run_folder=data["run_folder"],
             run_manifest_sha256=data["run_manifest_sha256"],
             images=tuple(
-                SegmentedImage(i["image"], i["status"], i["message"]) for i in data["images"]
+                SegmentedImage(i["image"], i["status"], i["message"], i["mask_sha256"])
+                for i in data["images"]
             ),
         )
 
+    def same_provenance(self, other: SegmentationBatch) -> bool:
+        """Return True if ``other`` was made the same way (everything but its images)."""
+        return replace(self, images=()) == replace(other, images=())
 
-_KEYS = frozenset(
+
+@dataclass(frozen=True)
+class SegmentationRecord:
+    """The history of one mask type: every batch that made or skipped its masks, in order.
+
+    Attributes
+    ----------
+    mask_type
+        The mask type (the name of the folder holding the masks and this record).
+    batches
+        The batches, oldest first; batch IDs are unique.
+    """
+
+    mask_type: str
+    batches: tuple[SegmentationBatch, ...] = ()
+    record_version: int = field(default=RECORD_VERSION, init=False)
+
+    def __post_init__(self) -> None:
+        """Refuse a record that could not be read back (the same checks as reading)."""
+        _check(self.to_dict())
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return the record as the JSON object written to the file."""
+        return {
+            "record_version": self.record_version,
+            "mask_type": self.mask_type,
+            "batches": [b.to_dict() for b in self.batches],
+        }
+
+    @classmethod
+    def from_dict(cls, data: object) -> SegmentationRecord:
+        """Build a record from a JSON object, checking all of it.
+
+        Raises
+        ------
+        SegmentationError
+            For an unknown ``record_version``, a missing or unknown key, a value of the wrong
+            type or outside its allowed set, a batch ID twice, or an image twice in a batch.
+        """
+        data = _check(data)
+        return cls(
+            data["mask_type"], tuple(SegmentationBatch.from_dict(b) for b in data["batches"])
+        )
+
+    def latest(self, image: str) -> tuple[SegmentationBatch, SegmentedImage] | None:
+        """Return the newest batch and entry that wrote the mask of ``image``, or None.
+
+        A mask replaced by a later batch (``overwrite=True``) belongs to that later batch.
+        """
+        for batch in reversed(self.batches):
+            for entry in batch.images:
+                if entry.image == image and entry.status == "written":
+                    return batch, entry
+        return None
+
+
+_KEYS = frozenset({"record_version", "mask_type", "batches"})
+_BATCH_KEYS = frozenset(
     {
-        "record_version",
-        "mask_type",
+        "batch_id",
         "tool",
         "tool_version",
         "model",
@@ -175,11 +243,11 @@ _KEYS = frozenset(
     }
 )
 _MODEL_KEYS = frozenset({"name", "file", "sha256"})
-_IMAGE_KEYS = frozenset({"image", "status", "message"})
+_IMAGE_KEYS = frozenset({"image", "status", "message", "mask_sha256"})
 
 
-def _check(data: object) -> None:
-    """Refuse an object that is not a version 1 record (module docstring)."""
+def _check(data: object) -> dict[str, Any]:
+    """Return ``data`` if it is a version 1 record, else refuse (module docstring)."""
     if not isinstance(data, dict):
         raise SegmentationError("The segmentation record is not a JSON object.")
     version = data.get("record_version")
@@ -190,7 +258,21 @@ def _check(data: object) -> None:
             "that wrote it."
         )
     _keys(data, _KEYS, "the record")
-    for key in ("mask_type", "tool", "tool_version", "run_folder"):
+    check_mask_type(data["mask_type"])
+    if not isinstance(data["batches"], (list, tuple)):
+        raise SegmentationError("batches must be a list.")
+    for batch in data["batches"]:
+        _batch(batch)
+    ids = [b["batch_id"] for b in data["batches"]]
+    if len(set(ids)) != len(ids):
+        raise SegmentationError("The record names a batch ID twice.")
+    return data
+
+
+def _batch(data: object) -> dict[str, Any]:
+    """Return ``data`` if it is a valid batch, else refuse."""
+    data = _keys(data, _BATCH_KEYS, "a batch")
+    for key in ("batch_id", "tool", "tool_version", "run_folder"):
         _text(data[key], key)
     _hash(data["run_manifest_sha256"], "run_manifest_sha256")
     if data["device"] not in DEVICES:
@@ -215,10 +297,18 @@ def _check(data: object) -> None:
         raise SegmentationError("images must be a list.")
     for entry in data["images"]:
         _image(entry)
+    images = [entry["image"] for entry in data["images"]]
+    twice = sorted({name for name in images if images.count(name) > 1})
+    if twice:
+        raise SegmentationError(
+            f"The batch {data['batch_id']!r} has more than one entry for {', '.join(twice)}; "
+            "an image has one status in a batch."
+        )
+    return data
 
 
-def _keys(data: object, expected: frozenset[str], what: str) -> None:
-    """Refuse an object without exactly the ``expected`` keys."""
+def _keys(data: object, expected: frozenset[str], what: str) -> dict[str, Any]:
+    """Return ``data`` if it is an object with exactly the ``expected`` keys, else refuse."""
     if not isinstance(data, dict):
         raise SegmentationError(f"{what} must be a JSON object.")
     missing, extra = sorted(expected - data.keys()), sorted(data.keys() - expected)
@@ -226,6 +316,7 @@ def _keys(data: object, expected: frozenset[str], what: str) -> None:
         found = [f"missing {', '.join(missing)}"] * bool(missing)
         found += [f"unknown {', '.join(map(str, extra))}"] * bool(extra)
         raise SegmentationError(f"{what} has the wrong keys: {'; '.join(found)}.")
+    return data
 
 
 def _text(value: object, what: str) -> None:
@@ -242,7 +333,7 @@ def _hash(value: object, what: str) -> None:
 
 def _model(model: object) -> None:
     """Refuse a model entry without a name and a SHA-256 (a file or None)."""
-    _keys(model, _MODEL_KEYS, "model")
+    model = _keys(model, _MODEL_KEYS, "model")
     _text(model["name"], "the model name")
     _hash(model["sha256"], "the model sha256")
     if model["file"] is not None:
@@ -250,8 +341,8 @@ def _model(model: object) -> None:
 
 
 def _image(entry: object) -> None:
-    """Refuse an image entry with an unknown status, or a failure without a message."""
-    _keys(entry, _IMAGE_KEYS, "an image entry")
+    """Refuse an entry with an unknown status, a failure without a message, or a bad hash."""
+    entry = _keys(entry, _IMAGE_KEYS, "an image entry")
     _text(entry["image"], "the image path")
     if entry["status"] not in STATUSES:
         raise SegmentationError(
@@ -261,12 +352,43 @@ def _image(entry: object) -> None:
         raise SegmentationError("an image entry's message must be a text.")
     if entry["status"] == "failed" and not entry["message"].strip():
         raise SegmentationError(f"{entry['image']} failed without a message; say why.")
+    if entry["status"] == "written":
+        _hash(entry["mask_sha256"], f"the mask_sha256 of {entry['image']}")
+    elif entry["mask_sha256"] is not None:
+        raise SegmentationError(
+            f"{entry['image']} is {entry['status']}, so it has no mask_sha256 of its own."
+        )
 
 
 def check_mask_type(mask_type: str) -> None:
-    """Refuse a mask type that is not the name of one folder."""
-    if not mask_type or mask_type in {".", ".."} or Path(mask_type).name != mask_type:
+    """Refuse a mask type that preprocessing would refuse, or that is not one folder name.
+
+    The rules are the ones the masks step applies to a discovered type: text with no leading
+    or trailing whitespace that does not read as a missing value in tables (``NA``, ``nan``,
+    ...) (:func:`.discovery.check_identity_text`), in Unicode NFC (never converted), and the
+    name of one folder (no separator, not ``.`` or ``..``).
+
+    Raises
+    ------
+    SegmentationError
+        Naming what is wrong.
+    """
+    try:
+        check_identity_text(mask_type, "mask type")
+    except IdentityError as exc:
+        raise SegmentationError(f"{exc}. Choose another mask type.") from None
+    if not is_nfc(mask_type):
+        raise SegmentationError(
+            f"The mask type {mask_type!r} is not in Unicode NFC form (an accent stored as a "
+            "separate character). Retype it, or choose another mask type."
+        )
+    if mask_type in {".", ".."} or Path(mask_type).name != mask_type or "\\" in mask_type:
         raise SegmentationError(f"{mask_type!r} is not a mask type: it names one folder.")
+
+
+def mask_sha256(path: str | Path) -> str:
+    """Return the SHA-256 of a mask file's bytes, for the entry of a written image."""
+    return file_sha256(path)
 
 
 def record_path(masks_root: str | Path, mask_type: str) -> Path:
@@ -275,17 +397,22 @@ def record_path(masks_root: str | Path, mask_type: str) -> Path:
     return Path(masks_root) / mask_type / RECORD_FILENAME
 
 
-def write_record(masks_root: str | Path, mask_type: str, record: SegmentationRecord) -> Path:
-    """Write the record of ``mask_type`` atomically, replacing an earlier one.
+def write_record(masks_root: str | Path, mask_type: str, batch: SegmentationBatch) -> Path:
+    """Add ``batch`` to the record of ``mask_type`` (atomically); earlier batches are kept.
+
+    A batch ID not yet in the file is appended. The same batch ID again (a batch written as it
+    progresses) replaces that batch only if it was made the same way (everything but the
+    images is equal) and keeps every entry it already had unchanged: provenance is only ever
+    added. Anything else is refused and the file is left as it was.
 
     Parameters
     ----------
     masks_root
         The masks folder.
     mask_type
-        The mask type; it must be the record's own.
-    record
-        The record.
+        The mask type, checked as :func:`check_mask_type` does.
+    batch
+        The batch.
 
     Returns
     -------
@@ -295,13 +422,37 @@ def write_record(masks_root: str | Path, mask_type: str, record: SegmentationRec
     Raises
     ------
     SegmentationError
-        If ``mask_type`` is not one folder name or is not the record's.
+        For a mask type preprocessing would refuse, an existing record that is not valid, a
+        batch ID already used by a batch made another way or whose earlier entries the new
+        one drops or changes.
     """
     path = record_path(masks_root, mask_type)
-    if record.mask_type != mask_type:
-        raise SegmentationError(
-            f"The record is of mask type {record.mask_type!r}, not {mask_type!r}."
-        )
+    earlier = read_record(masks_root, mask_type) if path.exists() else SegmentationRecord(mask_type)
+    batches = list(earlier.batches)
+    for index, old in enumerate(batches):
+        if old.batch_id != batch.batch_id:
+            continue
+        kept = {(e.image, e.status, e.message, e.mask_sha256) for e in batch.images}
+        lost = [
+            e.image for e in old.images if (e.image, e.status, e.message, e.mask_sha256) not in kept
+        ]
+        if not old.same_provenance(batch):
+            problem = "was made another way (tool, model, parameters, channels, device or run)"
+        elif lost:
+            problem = f"would lose or change its entries for {', '.join(lost)}"
+        else:
+            problem = ""
+        if problem:
+            raise SegmentationError(
+                f"The batch {batch.batch_id!r} is already in the record of {mask_type} and "
+                f"{problem}. Give a new batch its own batch_id: earlier provenance is never "
+                "replaced."
+            )
+        batches[index] = batch
+        break
+    else:
+        batches.append(batch)
+    record = SegmentationRecord(mask_type, tuple(batches))
     text = json.dumps(record.to_dict(), indent=2, ensure_ascii=False, allow_nan=False)
     return write_text_atomic(path, text + "\n", parents=True)
 

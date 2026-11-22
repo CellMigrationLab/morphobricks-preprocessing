@@ -1296,15 +1296,31 @@ needs from this brick. They make no decision for the tool and guess nothing.
 | `mask_path(masks_root, mask_type, fov)` | `<masks>/<type>/<the image's folders>/<position ID>.tif` (the first layout of §15). |
 | `write_mask(masks_root, mask_type, fov, labels, inputs, *, overwrite=False)` | Checks the labels first, then writes: 2D, the image's Y and X (header only), an integer or boolean type (floating point is refused even when whole), values from 0 to 2,147,483,647. Writes `int32` with zlib compression and the axes named `YX`, to a temporary file moved into place, so a reader never sees half a mask. A mask that the run's pairing finds for this image and type (any case, either layout, any extension) is refused, naming it, unless `overwrite=True`; then only the file at `mask_path` is replaced, and a twin elsewhere is still refused. Without `overwrite` the file is published with a hard link, which fails if the target exists, so two writers never replace each other's mask (a file system without hard links falls back to the check made before writing). The masks folder may not be inside the experiment or the output folder, nor hold either (the folder rules of §15 and `masks_inside_output`). Images with Z or T above 1 are refused. |
 
-`<masks>/<type>/segmentation_record.json` (`SegmentationRecord`, `write_record`, `read_record`,
-`record_version` 1) is provenance only: `mask_type`, `tool` and `tool_version`, `model`
-(`name`, `file` or null, `sha256`), `parameters` (a JSON object), `channel_ids`, `device`
-(`cuda`, `cpu` or `mps`, always stated), `run_folder`, `run_manifest_sha256`, and `images` (the
-image's path relative to the experiment, `status` `written`, `skipped` or `failed`, and a
-`message`, required for `failed`). It is checked on writing and on reading; an unknown
-version, an unknown or missing key, or a value outside its set is refused, never repaired. The
-masks step skips this file silently (it is not a mask), and nothing reads it to decide
-anything.
+`<masks>/<type>/segmentation_record.json` (`SegmentationRecord`, `SegmentationBatch`,
+`write_record`, `read_record`, `mask_sha256`, `record_version` 1) is provenance only and an
+**append-only history of batches**, so a second batch (another model, other parameters) never
+erases how the first batch's masks were made. A batch holds `batch_id` (unique in the file),
+`tool` and `tool_version`, `model` (`name`, `file` or null, `sha256`), `parameters` (a JSON
+object), `channel_ids`, `device` (`cuda`, `cpu` or `mps`, always stated), `run_folder`,
+`run_manifest_sha256`, and `images`: one entry per image (its path relative to the experiment,
+once per batch), `status` `written`, `skipped` or `failed`, a `message` (required for
+`failed`) and `mask_sha256`, the SHA-256 of the file written (required for `written`, null
+otherwise). `write_record` adds a batch; the same `batch_id` again (a batch written as it
+progresses) is accepted only if everything but the images is equal and no earlier entry is
+dropped or changed, otherwise it is refused and the file is left as it was.
+`SegmentationRecord.latest(image)` gives the newest written entry of an image. The record is
+checked on writing and on reading; an unknown version, an unknown or missing key, a value
+outside its set, a batch ID twice or an image twice in a batch is refused, never repaired.
+The mask type is checked with the rules the masks step applies to a discovered type
+(`check_identity_text`: no surrounding whitespace, not `NA`, `nan`, `none`, `null`, `n/a` or
+`<NA>`; Unicode NFC; one folder name) before anything is written. The masks step skips this
+file silently when it is directly in a type folder (it is not a mask; the same name deeper
+warns `mask_without_image`), and nothing reads it to decide anything.
+
+The helper refuses what the run would refuse, before writing: an ambiguous mask or a link
+leaving the folder, a mask type spelled in two ways (`mask_names_differ_in_case`) and an image
+with two masks of the type (`duplicate_mask`). A file system without hard links (for example a
+Google Drive mount) is refused for `overwrite=False` with a message, never silently replaced.
 
 ## 16. Shared rules for other bricks (MorphoBricks D86)
 

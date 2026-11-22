@@ -271,8 +271,9 @@ def _publish(temporary: Path, target: Path, overwrite: bool, what: str) -> None:
 
     Without ``overwrite`` the file is hard-linked (which fails if ``target`` exists, in one
     step), so two writers cannot replace each other's mask between a check and the move. A
-    file system without hard links (some network mounts) falls back to the check just made
-    before writing, then :func:`os.replace`.
+    file system without hard links (some network mounts, such as a Google Drive mount) is
+    refused: there is no way to publish without the risk of replacing, and a silent
+    replacement is never made.
     """
     if overwrite:
         os.replace(temporary, target)
@@ -284,20 +285,29 @@ def _publish(temporary: Path, target: Path, overwrite: bool, what: str) -> None:
             f"{what} appeared at {target} while it was being written; nothing was replaced. "
             "Use overwrite=True to replace it."
         ) from None
-    except OSError:  # no hard links here: the earlier check is all there is
-        if target.exists():
-            raise SegmentationError(f"{what} exists at {target}; nothing was replaced.") from None
-        os.replace(temporary, target)
-        return
+    except OSError as exc:
+        raise SegmentationError(
+            f"{what} was not written: this file system cannot publish a file without the risk "
+            f"of replacing another ({exc}). Write the masks to a folder on a local disk and "
+            "copy them, or use overwrite=True if replacing is what you want."
+        ) from None
     temporary.unlink()
 
 
 def _paired(inputs: RunInputs, masks_root: str | os.PathLike, mask_type: str) -> list[MaskFile]:
-    """Return the TIFF masks of ``mask_type`` that preprocessing's pairing finds (any case).
+    """Return the TIFF masks of ``mask_type`` that preprocessing's pairing finds.
 
     Uses the run's own function (:func:`.masks.files._folder_masks`) on the experiment as it
-    is now and the recorded images, so both layouts of contract §15 and any case count, exactly
-    as at the next run. A masks folder the run would refuse is refused here too.
+    is now and the recorded images, so both layouts of contract §15 and any case in the
+    folders and names count, exactly as at the next run. Refused here as the run refuses them:
+    an ambiguous mask or a link leaving the folder (any error of the pairing), the type
+    spelled in two ways (``mask_names_differ_in_case``), and an image with two masks of the
+    type (``duplicate_mask``).
+
+    Raises
+    ------
+    SegmentationError
+        For any of those, naming the files.
     """
     folder = Path(masks_root)
     if not folder.is_dir():
@@ -310,9 +320,24 @@ def _paired(inputs: RunInputs, masks_root: str | os.PathLike, mask_type: str) ->
     if refusing:
         first = refusing[0]
         raise SegmentationError(f"{first.message} {first.action} ({first.code})")
-    return [
+    same = [
         m for m in found if m.source == FOLDER and m.mask_type.casefold() == mask_type.casefold()
     ]
+    spellings = sorted({m.mask_type for m in same} | {mask_type})
+    if len(spellings) > 1:
+        raise SegmentationError(
+            f"The mask type is spelled {' and '.join(map(repr, spellings))}: names that differ "
+            "only in case are refused by the run (mask_names_differ_in_case). Use one spelling "
+            "and rename the folders or files of the other."
+        )
+    images = [m.image for m in same]
+    twice = sorted({m.path for m in same if images.count(m.image) > 1})
+    if twice:
+        raise SegmentationError(
+            f"Some images already have two masks of the type {mask_type}: {', '.join(twice)}. "
+            "The run refuses this (duplicate_mask); keep one mask per image and type."
+        )
+    return same
 
 
 def _checked_labels(labels: np.ndarray, shape: tuple[int, int], image: str) -> np.ndarray:

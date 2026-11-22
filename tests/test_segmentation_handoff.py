@@ -31,11 +31,9 @@ from morphobricks_preprocessing.segmentation_handoff import (
 from morphobricks_preprocessing.segmentation_record import (
     RECORD_FILENAME,
     SegmentationError,
-    SegmentationRecord,
-    SegmentedImage,
-    read_record,
     write_record,
 )
+from test_segmentation_record import batch
 from test_stage3_channels import LEVELS, described_run, extra_stain
 
 EXTRA_FIRST = (
@@ -44,6 +42,7 @@ EXTRA_FIRST = (
 )
 MASKS_SECTION = b'\n[masks.Cells]\nsource_type = "Cells"\nrepresentation = "instances"\n'
 REPEAT_2 = "Biological_repeat_2"
+EXPECTED_ROUND_TRIP_ISSUES = []
 
 
 @pytest.fixture
@@ -65,24 +64,6 @@ def labels_like(run, fov, value=1):
     labels = np.zeros((height, width), np.uint16)
     labels[1:4, 1:4] = value
     return labels
-
-
-def record(**changes):
-    fields = {
-        "mask_type": "Cells",
-        "tool": "cellpose",
-        "tool_version": "4.2.1.1",
-        "model_name": "cpsam_v2",
-        "model_sha256": "ab" * 32,
-        "model_file": "cpsam_v2.pt",
-        "parameters": {"diameter": None, "flow_threshold": 0.4},
-        "channel_ids": ("ACTIN", "DNA"),
-        "device": "cpu",
-        "run_folder": "/runs/out",
-        "run_manifest_sha256": "cd" * 32,
-        "images": (SegmentedImage("a/b.tif", "written"), SegmentedImage("a/c.tif", "skipped", "x")),
-    }
-    return SegmentationRecord(**{**fields, **changes})
 
 
 # segmentation_input -----------------------------------------------------------------------
@@ -159,7 +140,7 @@ def test_mask_path_follows_the_layout_of_contract_15(run):
         run.masks / "Cells" / "Control" / "Biological_repeat_1" / "img0.tif"
     )
     for bad in ("", "..", "a/b", "."):
-        with pytest.raises(SegmentationError, match="one folder"):
+        with pytest.raises(SegmentationError, match="mask type|one folder"):
             mask_path(run.masks, bad, fov)
 
 
@@ -226,6 +207,18 @@ def test_write_mask_accepts_boolean_and_any_integer_type(run):
     top[0, 0] = 2_147_483_647
     path = write_mask(run.masks, "Cells", fovs[5], top, run.inputs)
     assert tifffile.imread(path).max() == 2_147_483_647
+
+
+@pytest.mark.parametrize("name", ["NA", "nan", " Cells", "Cells ", "Cafe\u0301", "a/b", ".."])
+def test_a_mask_type_preprocessing_would_refuse_is_refused_before_anything_is_written(run, name):
+    fov = run.inputs.fovs()[0]
+    with pytest.raises(SegmentationError):
+        write_mask(run.masks, name, fov, labels_like(run, fov), run.inputs)
+    with pytest.raises(SegmentationError):
+        images_to_segment(run.inputs, name, run.masks)
+    with pytest.raises(SegmentationError):
+        mask_path(run.masks, name, fov)
+    assert not run.masks.exists()
 
 
 def test_write_mask_refuses_labels_that_are_not_a_mask(run):
@@ -295,11 +288,11 @@ def test_masks_written_here_pass_preprocessings_own_mask_checks(run):
     fovs = run.inputs.fovs()
     for fov in fovs:
         write_mask(run.masks, "Cells", fov, labels_like(run, fov, 3), run.inputs)
-    write_record(run.masks, "Cells", record())  # the record beside the masks is not a mask
+    write_record(run.masks, "Cells", batch())  # the record beside the masks is not a mask
     (run.out / "morphobricks.toml").write_bytes(run.data + MASKS_SECTION)
     again = run_described(run.experiment, MAPPING, output_folder=run.out, masks_folder=run.masks)
     assert again.written, [(i.code, i.message) for i in again.issues]
-    assert [i.code for i in again.issues if i.code.startswith(("mask", "unreadable_mask"))] == []
+    assert sorted(i.code for i in again.issues) == EXPECTED_ROUND_TRIP_ISSUES
     manifest = json.loads((run.out / MANIFEST_FILENAME).read_text(encoding="utf-8"))
     entries = manifest["masks"]["files"]
     assert sorted(e["image"] for e in entries) == sorted(f.relative_path for f in fovs)
@@ -311,95 +304,18 @@ def test_masks_written_here_pass_preprocessings_own_mask_checks(run):
     assert images_to_segment(reopened, "Cells", run.masks) == ()
 
 
-# The record --------------------------------------------------------------------------------
-
-
-def test_the_record_round_trips_through_its_file(run):
-    original = record()
-    path = write_record(run.masks, "Cells", original)
-    assert path == run.masks / "Cells" / RECORD_FILENAME
-    assert json.loads(path.read_text(encoding="utf-8"))["record_version"] == 1
-    assert read_record(run.masks, "Cells") == original
-    assert SegmentationRecord.from_dict(original.to_dict()) == original
-    assert path.read_bytes() == path.read_bytes().replace(b"\r\n", b"\n")
-    changed = record(device="cuda", images=())
-    write_record(run.masks, "Cells", changed)  # an earlier record is replaced
-    assert read_record(run.masks, "Cells") == changed
-
-
-def test_an_unknown_record_version_is_refused(run):
-    path = write_record(run.masks, "Cells", record())
-    for version in (2, 0, "1", True, None):
-        data = json.loads(path.read_text(encoding="utf-8"))
-        data["record_version"] = version
-        path.write_text(json.dumps(data), encoding="utf-8")
-        with pytest.raises(SegmentationError, match="version"):
-            read_record(run.masks, "Cells")
-
-
-def test_a_record_that_is_not_valid_is_refused(run):
-    path = write_record(run.masks, "Cells", record())
-    good = json.loads(path.read_text(encoding="utf-8"))
-
-    def broken(edit):
-        data = json.loads(json.dumps(good))
-        edit(data)
-        path.write_text(json.dumps(data), encoding="utf-8")
-        return pytest.raises(SegmentationError)
-
-    with broken(lambda d: d.update(device="gpu")):
-        read_record(run.masks, "Cells")
-    with broken(lambda d: d.update(extra=1)):
-        read_record(run.masks, "Cells")
-    with broken(lambda d: d.pop("tool")):
-        read_record(run.masks, "Cells")
-    with broken(lambda d: d["model"].update(sha256="xyz")):
-        read_record(run.masks, "Cells")
-    with broken(lambda d: d.update(channel_ids=[])):
-        read_record(run.masks, "Cells")
-    with broken(lambda d: d["images"][0].update(status="done")):
-        read_record(run.masks, "Cells")
-    with broken(lambda d: d.update(mask_type="Nuclei")):
-        read_record(run.masks, "Cells")
-    path.write_text("not json", encoding="utf-8")
-    with pytest.raises(SegmentationError, match="cannot be read"):
-        read_record(run.masks, "Cells")
-    with pytest.raises(SegmentationError, match="no segmentation record"):
-        read_record(run.masks, "Nuclei")
-
-
-def test_a_record_cannot_be_built_without_what_it_needs():
-    with pytest.raises(SegmentationError, match="failed without a message"):
-        record(images=(SegmentedImage("a.tif", "failed"),))
-    with pytest.raises(SegmentationError, match="device"):
-        record(device="")
-    with pytest.raises(SegmentationError, match="SHA-256"):
-        record(model_sha256="")
-    with pytest.raises(SegmentationError, match="plain JSON"):
-        record(parameters={"diameter": float("nan")})
-    with pytest.raises(SegmentationError, match="twice"):
-        record(channel_ids=("DNA", "DNA"))
-
-
-def test_write_record_refuses_another_masks_type_than_the_records(run):
-    with pytest.raises(SegmentationError, match="not 'Nuclei'"):
-        write_record(run.masks, "Nuclei", record())
-    with pytest.raises(SegmentationError, match="one folder"):
-        write_record(run.masks, "../x", record(mask_type="../x"))
-
-
 # The pairing is the run's own: any case, either layout (review of #367) ------------------------
 
 
 def twin_cases(run):
     """Return the existing masks of ``img0`` that the run would pair, each in its own tree."""
     return {
-        "other case": run.masks / "cells" / "control" / "biological_repeat_1" / "img0.tif",
+        "other case path": run.masks / "Cells" / "control" / "biological_repeat_1" / "img0.tif",
         "second layout": run.masks / "Control" / "Biological_repeat_1" / "img0_Cells.tif",
     }
 
 
-@pytest.mark.parametrize("case", ["other case", "second layout"])
+@pytest.mark.parametrize("case", ["other case path", "second layout"])
 def test_a_mask_the_run_would_pair_counts_as_made(run, case):
     fovs = run.inputs.fovs()
     first = fovs[0]
@@ -408,7 +324,6 @@ def test_a_mask_the_run_would_pair_counts_as_made(run, case):
     twin.parent.mkdir(parents=True)
     twin.write_bytes(b"")
     assert images_to_segment(run.inputs, "Cells", run.masks) == fovs[1:]
-    assert images_to_segment(run.inputs, "CELLS", run.masks) == fovs[1:]  # a type is one name
     for overwrite in (False, True):
         with pytest.raises(SegmentationError, match="already exists") as caught:
             write_mask(
@@ -416,6 +331,36 @@ def test_a_mask_the_run_would_pair_counts_as_made(run, case):
             )
         assert twin.relative_to(run.masks).as_posix() in str(caught.value)
     assert not mask_path(run.masks, "Cells", first).exists()
+
+
+@pytest.mark.parametrize("spelling", ["cells", "CELLS"])
+def test_a_type_spelled_in_two_ways_is_refused_as_the_run_refuses_it(run, spelling):
+    twin = run.masks / spelling / "Control" / "Biological_repeat_1" / "img0.tif"
+    twin.parent.mkdir(parents=True)
+    twin.write_bytes(b"")
+    first = run.inputs.fovs()[0]
+    with pytest.raises(SegmentationError, match="mask_names_differ_in_case"):
+        images_to_segment(run.inputs, "Cells", run.masks)
+    with pytest.raises(SegmentationError, match="mask_names_differ_in_case"):
+        write_mask(run.masks, "Cells", first, labels_like(run, first), run.inputs)
+    assert not mask_path(run.masks, "Cells", first).exists()
+
+
+def test_two_masks_of_one_image_and_type_are_refused_before_writing(run):
+    fovs = run.inputs.fovs()
+    write_mask(run.masks, "Cells", fovs[0], labels_like(run, fovs[0]), run.inputs)
+    twin = twin_cases(run)["second layout"]  # the other layout: the same image and type again
+    twin.parent.mkdir(parents=True)
+    twin.write_bytes(b"")
+    with pytest.raises(SegmentationError, match="duplicate_mask"):
+        write_mask(
+            run.masks, "Cells", fovs[0], labels_like(run, fovs[0]), run.inputs, overwrite=True
+        )
+    with pytest.raises(SegmentationError, match="duplicate_mask"):
+        write_mask(run.masks, "Cells", fovs[3], labels_like(run, fovs[3]), run.inputs)
+    with pytest.raises(SegmentationError, match="duplicate_mask"):
+        images_to_segment(run.inputs, "Cells", run.masks)
+    assert not mask_path(run.masks, "Cells", fovs[3]).exists()
 
 
 def test_overwrite_replaces_only_the_file_at_mask_path_and_refuses_a_twin_elsewhere(run):
@@ -469,18 +414,19 @@ def test_a_mask_that_appears_before_publishing_is_never_replaced(run, monkeypatc
     assert sorted(os.listdir(target.parent)) == [target.name]  # our temporary file is gone
 
 
-def test_without_hard_links_the_mask_is_still_written(run, monkeypatch):
+def test_without_hard_links_the_mask_is_refused_and_nothing_is_written(run, monkeypatch):
     fov = run.inputs.fovs()[0]
 
     def no_links(*args, **kwargs):
         raise OSError(errno.EPERM, "hard links are not supported here")
 
     monkeypatch.setattr(os, "link", no_links)
-    path = write_mask(run.masks, "Cells", fov, labels_like(run, fov, 4), run.inputs)
-    assert tifffile.imread(path).max() == 4
-    assert sorted(os.listdir(path.parent)) == [path.name]
-    with pytest.raises(SegmentationError, match="already exists"):  # the check still refuses
-        write_mask(run.masks, "Cells", fov, labels_like(run, fov), run.inputs)
+    with pytest.raises(SegmentationError, match="cannot publish a file without the risk"):
+        write_mask(run.masks, "Cells", fov, labels_like(run, fov, 4), run.inputs)
+    folder = mask_path(run.masks, "Cells", fov).parent
+    assert os.listdir(folder) == []  # no mask, no temporary file
+    write_mask(run.masks, "Cells", fov, labels_like(run, fov, 4), run.inputs, overwrite=True)
+    assert tifffile.imread(mask_path(run.masks, "Cells", fov)).max() == 4  # asked for it
 
 
 # The record file is skipped at the type folder's root only ------------------------------------
@@ -489,7 +435,7 @@ def test_without_hard_links_the_mask_is_still_written(run, monkeypatch):
 def test_a_stray_file_named_like_the_record_still_gets_its_warning(run):
     for fov in run.inputs.fovs():
         write_mask(run.masks, "Cells", fov, labels_like(run, fov, 3), run.inputs)
-    write_record(run.masks, "Cells", record())
+    write_record(run.masks, "Cells", batch())
     stray = run.masks / "Cells" / "Control" / RECORD_FILENAME
     stray.write_text("{}", encoding="utf-8")
     (run.out / "morphobricks.toml").write_bytes(run.data + MASKS_SECTION)
