@@ -2,6 +2,8 @@
 
 from morphobricks_preprocessing.image_qc import qc_memory
 
+__all__ = ["block_limit", "qc_memory"]
+
 
 def block_limit(small_estimate: int, small_shape: tuple[int, int], cols: int) -> int:
     """Return the limit that fits the small plane whole and one row of ``cols`` pixels in blocks.

@@ -740,8 +740,7 @@ def test_plan_names_images_read_in_blocks(tmp_path, monkeypatch):
     root = large_planes_experiment(tmp_path)
     nb = checked(root)
     set_memory_limit(nb, block_limit(small_estimate(root), (8, 8), 64))
-    # Before the axis roles are confirmed the planes are not known yet.
-    assert "read in blocks" not in nb.plan.value
+    assert "read in blocks" not in nb.plan.value  # planes not known before the axis roles
 
     def fail(*args, **kwargs):
         raise AssertionError("pixel data was read")
