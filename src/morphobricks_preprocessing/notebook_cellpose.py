@@ -360,6 +360,8 @@ class CellposeWorkflow:
         counts = result.counts()
         rows = [["Image", "Status", "Message"], *map(list, result.rows())]
         failed = counts["failed"]
+        if result.stopped:
+            self._show(_card("error", "The batch stopped early", (result.stopped,)))
         self._show(
             widgets.HTML(
                 "<div class='mb-root'>"

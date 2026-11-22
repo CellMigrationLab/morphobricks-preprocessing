@@ -55,7 +55,6 @@ def test_the_flow_iterations_are_cellpose_derivation_given_and_recorded(stub):
     loaded = cp.load_model("cpsam_v2", "cpu")
     assert cp.eval_arguments(loaded, cp.Settings())["niter"] == 200
     assert cp.eval_arguments(loaded, cp.Settings(diameter=60))["niter"] == 400  # int(200 / 0.5)
-    assert cp.eval_arguments(loaded, cp.Settings(diameter=1e-9))["niter"] == 1  # never 0 = derive
 
 
 def test_a_gpu_batch_records_that_cellpose_may_use_the_cpu_for_post_processing(stub):
@@ -87,8 +86,13 @@ def test_an_error_while_writing_the_record_never_hides_the_error_that_interrupte
         if len(stub.calls) == 2:  # one image is done, so there is a record to write
             raise KeyboardInterrupt
 
+    real, calls = cp.write_record, []
+
     def broken(*args):
-        raise OSError("disk full")
+        calls.append(args)
+        if len(calls) > 1:  # the record after the first image was written; the next one fails
+            raise OSError("disk full")
+        return real(*args)
 
     stub.fail = interrupt
     monkeypatch.setattr(cp, "write_record", broken)

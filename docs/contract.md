@@ -1370,12 +1370,13 @@ loading, and the weights file the loaded model reports must be the one asked for
 buffer of the loaded network (`model.net`) must be on a device of the requested type** (`cuda:1`
 counts as `cuda`; the index is not compared); a network that lists no tensors is refused.
 Cellpose's own `model.device` is not evidence (it only repeats the device it was given), and
-nothing beyond the network's tensors is verified. Cellpose may still move the flow-threshold
-quality step to the CPU when GPU memory is short, and always computes the masks from the flows on
-the CPU on `mps`; that is Cellpose's behaviour, **not refused**, and the batch records it as a
-note. Uncached weights are downloaded only on an explicit request; more than
+nothing beyond the network's tensors is verified. The device is the placement of the network's tensors; Cellpose's own post-processing is not
+covered by it: Cellpose may move the flow-threshold quality step to the CPU when GPU memory is
+short, and always computes the masks from the flows on the CPU on `mps`; that is Cellpose's
+behaviour, **not refused**, and the batch records it as a note. Uncached weights are downloaded only on an explicit request; more than
 three channels are refused (Cellpose reads the first three by position); a blank diameter is
-the model's native scale, never an estimate and never 0. The batch's `model` holds the model
+the model's native scale, never an estimate and never 0, and a diameter that gives fewer than one
+flow iteration (`int(200 / rescale)` is 0) is refused, never raised to 1. The batch's `model` holds the model
 name, the weights file name (or the custom file's path) and its SHA-256, and its `parameters`
 every effective setting (diameter in pixels or null with its meaning, thresholds, the **full**
 normalisation dictionary given to Cellpose (its defaults read from its module at call time, with
@@ -1386,7 +1387,18 @@ and `weights_source` (the Hugging Face URL Cellpose uses; null for a model file)
 `new_batch_id()`. The DINOv3 package is installed with `--no-deps` at a pinned commit, the head
 of its default branch on 22 November 2026, which is **not verified against `cpdino`**; Cellpose
 imports it only when first imported, so the runtime is restarted after installing it.
-Two-dimensional images only.
+Two-dimensional images only. **A mask the batch publishes is never left without its record
+entry**: each mask is hashed and the record (the batch so far, the same batch ID growing) is
+written right after it is published, before the next image starts. If hashing or that write
+fails, the mask is removed again, only while it is still the file the batch wrote (inode,
+modification time and size taken right after publication, under the type's write lock), the image
+is `failed` with the error and the statement that the mask was removed (with `overwrite`, the
+earlier mask it replaced is gone), the images not yet started are `failed` as `not started`, and
+the batch stops (`BatchResult.stopped`). If the mask cannot be removed or is no longer the batch's
+file, the entry says so loudly (`WARNING: a mask exists WITHOUT provenance at <path>`). A mask is
+therefore never `failed` while left on disk. A retry without `overwrite` skips a mask that has a
+`written` entry in the record and reports one that has none as `skipped` with `exists without
+provenance (not made by a recorded batch)`; the model that made it is not guessed.
 
 ## 16. Shared rules for other bricks (MorphoBricks D86)
 

@@ -31,7 +31,6 @@ hand-off's own (:mod:`.segmentation_handoff`, :mod:`.segmentation_record`); noth
 
 from __future__ import annotations
 
-import math
 import os
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -64,14 +63,30 @@ from .segmentation_cellpose_model import (
     load_model,
     weights_file,
 )
-from .segmentation_handoff import SegmentationPlan, images_to_segment, write_mask
+from .segmentation_cellpose_settings import (
+    FLOW_ITERATIONS,
+    Settings,
+    diameter_from_text,
+    flow_iterations,
+    rescale_factor,
+)
+from .segmentation_handoff import (
+    WRITE_LOCK_FILENAME,
+    SegmentationPlan,
+    images_to_segment,
+    mask_path,
+    write_mask,
+)
 from .segmentation_record import (
     SegmentationBatch,
     SegmentationError,
     SegmentedImage,
     check_mask_type,
+    hold_lock,
     mask_sha256,
     new_batch_id,
+    read_record,
+    record_path,
     write_record,
 )
 
@@ -82,6 +97,7 @@ __all__ = [
     "DINOV3_COMMIT",
     "DINOV3_URL",
     "DINO_MODELS",
+    "FLOW_ITERATIONS",
     "LoadedModel",
     "ModelChoice",
     "Settings",
@@ -89,6 +105,7 @@ __all__ = [
     "check_dinov3",
     "choose_model",
     "default_normalization",
+    "diameter_from_text",
     "dinov3_install_command",
     "install_dinov3",
     "installed_dinov3_commit",
@@ -103,117 +120,17 @@ MAX_CHANNELS = 3
 TILE_OVERLAP, MIN_SIZE, MAX_SIZE_FRACTION = 0.1, 15, 0.4
 """Cellpose's own defaults, passed explicitly so that the record holds the effective values."""
 NORMALIZE_PERCENTILE = [1.0, 99.0]
-FLOW_ITERATIONS = 200
-"""Cellpose's flow iterations at the native scale; it divides it by the rescale factor."""
 NATIVE_SCALE = (
     "native scale of the model: Cellpose 4.2.1.1 does not estimate the diameter, so a blank "
     "diameter means the model's own scale"
 )
 IMAGE_SKIPPED = "a mask of this type is already there; not replaced (overwrite is off)"
-
-
-# --- settings and what is asked for -----------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class Settings:
-    """The inference settings the user chooses.
-
-    Attributes
-    ----------
-    diameter
-        Cell diameter in **pixels**, or None for the model's native scale (Cellpose 4.2.1.1
-        does not estimate a diameter). Never 0.
-    flow_threshold
-        Flow error threshold, 0 or more (Cellpose's default 0.4).
-    cellprob_threshold
-        Cell probability threshold (Cellpose's default 0).
-    normalize
-        Cellpose's own normalisation: each channel to its 1st to 99th percentile. False
-        passes the stored values unchanged.
-    batch_size
-        Tiles run together on the device, 1 or more.
-    """
-
-    diameter: float | None = None
-    flow_threshold: float = 0.4
-    cellprob_threshold: float = 0.0
-    normalize: bool = True
-    batch_size: int = 8
-
-    def __post_init__(self) -> None:
-        """Refuse a value Cellpose would accept but this brick will not record as it is."""
-        if self.diameter is not None and not _positive(self.diameter):
-            raise SegmentationError(
-                f"The diameter must be a positive number of pixels, or blank for the model's "
-                f"native scale; got {self.diameter!r}. Zero is refused: it would silently mean "
-                "the native scale."
-            )
-        if not _finite(self.flow_threshold) or self.flow_threshold < 0:
-            raise SegmentationError(
-                f"The flow threshold must be 0 or more, not {self.flow_threshold!r}."
-            )
-        if not _finite(self.cellprob_threshold):
-            raise SegmentationError(
-                f"The cell probability threshold must be a number, not {self.cellprob_threshold!r}."
-            )
-        if not isinstance(self.normalize, bool):
-            raise SegmentationError("normalize is on or off.")
-        if (
-            isinstance(self.batch_size, bool)
-            or not isinstance(self.batch_size, int)
-            or self.batch_size < 1
-        ):
-            raise SegmentationError(
-                f"The batch size must be a whole number, 1 or more, not {self.batch_size!r}."
-            )
-
-
-def _finite(value: object) -> bool:
-    """Return True for a real number that is neither NaN nor infinite (a bool is not one)."""
-    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
-
-
-def _positive(value: object) -> bool:
-    """Return True for a finite number above 0."""
-    return _finite(value) and value > 0  # type: ignore[operator]
-
-
-def diameter_from_text(text: str) -> float | None:
-    """Return the diameter typed in a text field: blank is None (native scale), else pixels.
-
-    Raises
-    ------
-    SegmentationError
-        For text that is not a positive number (0 included).
-    """
-    if not text.strip():
-        return None
-    try:
-        value = float(text)
-    except ValueError:
-        raise SegmentationError(
-            f"The diameter {text!r} is not a number. Type pixels (for example 30) or leave it "
-            "blank."
-        ) from None
-    return Settings(diameter=value).diameter
+IMAGE_UNRECORDED = (
+    "exists without provenance (not made by a recorded batch); not replaced (overwrite is off)"
+)
 
 
 # --- one image --------------------------------------------------------------------------------
-
-
-def rescale_factor(settings: Settings) -> float:
-    """Return the factor Cellpose derives from the diameter: 30 / diameter, or 1 (native scale)."""
-    return 1.0 if settings.diameter is None else 30.0 / settings.diameter
-
-
-def flow_iterations(settings: Settings) -> int:
-    """Return the flow iterations Cellpose 4.2.1.1 uses when none are given: 200 / rescale.
-
-    Cellpose computes ``int(200 / rescale)`` (resampling is on); it is passed explicitly and
-    recorded, so what ran is not left to Cellpose's derivation.
-    """
-    return max(1, int(FLOW_ITERATIONS / rescale_factor(settings)))
 
 
 def normalization(settings: Settings) -> dict[str, Any]:
@@ -364,10 +281,14 @@ class BatchResult:
         The batch as recorded (one entry per image handled).
     record
         The record file, or None when no image was handled.
+    stopped
+        Why the batch stopped early (a mask that could not be hashed or recorded was withdrawn),
+        or an empty string when every image was handled.
     """
 
     batch: SegmentationBatch
     record: Path | None
+    stopped: str = ""
 
     def rows(self) -> tuple[tuple[str, str, str], ...]:
         """Return ``(image, status, message)`` for every image: nothing is left out."""
@@ -384,16 +305,76 @@ def non_2d_images(inputs: RunInputs) -> tuple[str, ...]:
     return tuple(f.relative_path for f in inputs.fovs() if f.z_count > 1 or f.t_count > 1)
 
 
-def _segment_one(job: SegmentationJob, fov: Fov) -> SegmentedImage:
-    """Segment and write one image; any failure is returned as a ``failed`` entry."""
+def _segment_one(
+    job: SegmentationJob, fov: Fov, batch_id: str, entries: list[SegmentedImage]
+) -> tuple[SegmentedImage, bool]:
+    """Segment, write, hash and record one image; return its entry and whether to stop.
+
+    A mask this call published is recorded (the batch so far, with this image) before the next
+    image starts. If hashing it or that record write fails, the mask is withdrawn
+    (:func:`_withdraw`) and the batch stops: no mask of this batch is ever left unrecorded.
+    Any earlier failure (nothing was published) is a ``failed`` entry and the batch goes on.
+    """
     try:
         labels = segment_image(job.loaded, job.settings, job.plan.read(fov))
+        target = mask_path(job.masks_root, job.mask_type, fov)
+        replaced = target.exists()
         path = write_mask(
             job.masks_root, job.mask_type, fov, labels, job.inputs, overwrite=job.overwrite
         )
-        return SegmentedImage(fov.relative_path, "written", mask_sha256=mask_sha256(path))
     except Exception as exc:  # per-image failures are reported in the table, never dropped
-        return SegmentedImage(fov.relative_path, "failed", f"{type(exc).__name__}: {exc}")
+        return SegmentedImage(fov.relative_path, "failed", f"{type(exc).__name__}: {exc}"), False
+    stamp = None
+    try:
+        stamp = _stamp(path)
+        entry = SegmentedImage(fov.relative_path, "written", mask_sha256=mask_sha256(path))
+        if _stamp(path) != stamp:
+            raise SegmentationError(f"The mask {path} changed while it was being hashed.")
+        _write_batch(job, batch_id, [*entries, entry])
+    except Exception as exc:
+        return _withdraw(job, fov, path, stamp, replaced, exc), True
+    return entry, False
+
+
+def _stamp(path: Path) -> tuple[int, int, int]:
+    """Return the identity of the file at ``path``: inode, modification time (ns) and size."""
+    found = path.stat()
+    return found.st_ino, found.st_mtime_ns, found.st_size
+
+
+def _withdraw(
+    job: SegmentationJob,
+    fov: Fov,
+    path: Path,
+    stamp: tuple[int, int, int] | None,
+    replaced: bool,
+    error: Exception,
+) -> SegmentedImage:
+    """Remove the mask this call published, if it is still that file; the entry says what.
+
+    The file is removed only when its identity (:func:`_stamp`) is still the one taken right
+    after publication, under the type's write lock. When it cannot be removed, or is not shown
+    to be ours, the entry states loudly that a mask exists without provenance and where.
+    """
+    what = f"{type(error).__name__}: {error}"
+    try:
+        with hold_lock(
+            path.parent / WRITE_LOCK_FILENAME, f"The {job.mask_type} masks in {job.masks_root}"
+        ):
+            ours = stamp is not None and path.exists() and _stamp(path) == stamp
+            if ours:
+                path.unlink()
+        if ours:
+            earlier = " It replaced an earlier mask, which is gone." if replaced else ""
+            note = f"The mask this batch wrote was removed, so none is left unrecorded.{earlier}"
+        else:
+            note = _UNRECORDED.format(path=path, why="it is not the file this batch wrote")
+    except (OSError, SegmentationError) as problem:
+        note = _UNRECORDED.format(path=path, why=f"it could not be removed ({problem})")
+    return SegmentedImage(fov.relative_path, "failed", f"{what}. {note}")
+
+
+_UNRECORDED = "WARNING: a mask exists WITHOUT provenance at {path}; {why}. It was NOT recorded."
 
 
 def _batch(job: SegmentationJob, batch_id: str, images: list[SegmentedImage]) -> SegmentationBatch:
@@ -423,6 +404,14 @@ def _write_batch(
     return batch, write_record(job.masks_root, job.mask_type, batch) if entries else None
 
 
+def _recorded_images(job: SegmentationJob) -> set[str]:
+    """Return the images whose mask has an entry in the record (``written`` by some batch)."""
+    if not record_path(job.masks_root, job.mask_type).exists():
+        return set()
+    record = read_record(job.masks_root, job.mask_type)
+    return {i.image for b in record.batches for i in b.images if i.status == "written"}
+
+
 def run_batch(
     job: SegmentationJob,
     fovs: Sequence[Fov] | None = None,
@@ -432,9 +421,15 @@ def run_batch(
 ) -> BatchResult:
     """Segment images one at a time, write each mask and record every outcome.
 
-    Images that already have a mask of the type are ``skipped`` (never replaced) unless
-    ``job.overwrite``; an image that fails is ``failed`` with the error and the batch goes on.
-    The record is written even when the batch is interrupted, with the images done so far.
+    Each mask is hashed and recorded (the batch so far) right after it is published, before the
+    next image starts. If that fails the mask is removed again (only if it is still the file
+    written), the image is ``failed`` with the error, the images not yet started are ``failed``
+    as not started, and the batch **stops** (``BatchResult.stopped`` says why): a mask is never
+    left without its record entry, and never reported ``failed`` while left on disk. Images that
+    already have a mask of the type are ``skipped`` (never replaced) unless ``job.overwrite``;
+    a mask with no entry in the record is skipped with a message saying it has no provenance.
+    Any other image that fails is ``failed`` with the error and the batch goes on. The record is
+    written even when the batch is interrupted, with the images done so far.
 
     Parameters
     ----------
@@ -450,23 +445,32 @@ def run_batch(
     Raises
     ------
     SegmentationError
-        For a masks folder or mask type the hand-off refuses, or a record that cannot be
-        written (the masks written stay).
+        For a masks folder or mask type the hand-off refuses, or a record that is not valid.
+        A record that cannot be written at the end is raised too (every mask is recorded by then).
     """
     chosen = tuple(job.inputs.fovs() if fovs is None else fovs)
     missing = {
         f.relative_path for f in images_to_segment(job.inputs, job.mask_type, job.masks_root)
     }
+    recorded = _recorded_images(job)
     started = batch_id or new_batch_id()
     entries: list[SegmentedImage] = []
+    stopped = ""
     try:
         for done, fov in enumerate(chosen):
             if progress is not None:
                 progress(done, len(chosen), fov.relative_path)
-            if job.overwrite or fov.relative_path in missing:
-                entries.append(_segment_one(job, fov))
+            image = fov.relative_path
+            if not (job.overwrite or image in missing):
+                note = IMAGE_SKIPPED if image in recorded else IMAGE_UNRECORDED
+                entries.append(SegmentedImage(image, "skipped", note))
+            elif stopped:
+                entries.append(SegmentedImage(image, "failed", f"not started: {stopped}"))
             else:
-                entries.append(SegmentedImage(fov.relative_path, "skipped", IMAGE_SKIPPED))
+                entry, stop = _segment_one(job, fov, started, entries)
+                entries.append(entry)
+                if stop:
+                    stopped = f"the batch stopped at {image}: {entry.message}"
         if progress is not None:
             progress(len(chosen), len(chosen), "")
     except BaseException as interrupted:
@@ -477,8 +481,14 @@ def run_batch(
         except Exception as second:
             interrupted.add_note(f"The record could not be written either: {second}")
         raise
-    batch, record = _write_batch(job, started, entries)
-    return BatchResult(batch, record)
+    try:
+        batch, record = _write_batch(job, started, entries)
+    except Exception as exc:
+        if not stopped:
+            raise
+        stopped += f" The record could not be written either: {exc}"
+        return BatchResult(_batch(job, started, entries), None, stopped)
+    return BatchResult(batch, record, stopped)
 
 
 # --- the run, the channels and what is shown --------------------------------------------------

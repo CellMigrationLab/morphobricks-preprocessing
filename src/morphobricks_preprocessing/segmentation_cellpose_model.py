@@ -45,10 +45,11 @@ DINOV3_COMMIT = "6876159a11b4df116f30f667f8c9888617df0751"
 22 November 2026, **not verified against cpdino** (it is a pin, not a tested pairing). A model
 that needs DINOv3 runs only with exactly this commit installed."""
 DEVICE_NOTE = (
-    "Cellpose may move the flow-threshold quality step to the CPU when the GPU has too little "
-    "memory (images above 10000 x 10000 pixels on cuda), and always computes the masks from the "
-    "flows on the CPU on mps. This is Cellpose's own behaviour; it is not refused, and the "
-    "network itself ran on the device recorded."
+    "The device recorded is where the network's tensors were verified to sit; Cellpose's "
+    "post-processing is not covered by that check. Cellpose may move the flow-threshold quality "
+    "step to the CPU when the GPU has too little memory (images above 10000 x 10000 pixels on "
+    "cuda), and always computes the masks from the flows on the CPU on mps. This is Cellpose's "
+    "own behaviour; it is not refused."
 )
 """Recorded with a batch that ran on a GPU (not refused: the network still runs on the device)."""
 SAM_TILE, DINO_TILE = 256, 384
@@ -275,7 +276,8 @@ class LoadedModel:
         The SHA-256 of that file.
     device
         ``cuda``, ``cpu`` or ``mps``: the device type every parameter and buffer of the network
-        was verified to sit on after loading.
+        was verified to sit on after loading (the network's placement only; Cellpose's CPU
+        post-processing, :data:`DEVICE_NOTE`, is not covered).
     downloaded
         True when this call downloaded the built-in weights (they were not on disk).
     source

@@ -23,6 +23,15 @@ old pin are refused with `spec_commit_mismatch`, as at every re-pin.
 
 ### Added
 
+- **Cellpose notebook, failure-safe record (external audit C6).** A published mask is never left
+  without its record entry: each mask is hashed and recorded right after publication, before the
+  next image; if that fails the mask is removed (only if still the file written; otherwise a
+  `WITHOUT provenance` warning names it), the image is `failed`, the remaining images are
+  `failed` as not started and the batch stops. A retry reports a mask without a record entry
+  as `exists without provenance` instead of a plain skip. A diameter giving fewer than one flow
+  iteration is refused instead of clamped to 1; the docs and notebook say the verified device is
+  the network's placement, not Cellpose's CPU post-processing. `Settings` moved to
+  `segmentation_cellpose_settings` (re-exported).
 - **Cellpose notebook** (`notebooks/MorphoBricks_Cellpose.ipynb`, step 2 of the segmentation
   hand-off; owner request of 21 November 2026): opens a described run, chooses the mask type and
   the channels **by channel ID** (dropdowns; a channel only some images have is refused with
