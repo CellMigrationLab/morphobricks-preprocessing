@@ -13,6 +13,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import numpy as np
 import pytest
 import tifffile
 
@@ -156,6 +157,7 @@ def installer(monkeypatch):
     state.versions = {"cellpose": "4.2.1.1", "morphobricks-preprocessing": "0.8.0"}
     state.commit = setting("RELEASE_REF")
     state.pip = []
+    state.upgrades = {}  # versions pip changes when it runs
     import importlib.metadata as metadata
 
     def fake_version(name):
@@ -169,6 +171,7 @@ def installer(monkeypatch):
 
     def fake_run(command, check):
         state.pip.append(command)
+        state.versions.update(state.upgrades)
         state.versions["cellpose"] = "4.2.1.1"
         state.commit = setting("RELEASE_REF")
 
@@ -199,6 +202,34 @@ def test_the_install_cell_installs_the_pinned_versions_when_they_differ(installe
         for a in command
     )
     assert not any("dinov3" in a for a in command)
+
+
+def test_an_install_that_upgrades_a_loaded_numpy_or_opencv_says_to_restart(installer):
+    assert "numpy" in sys.modules  # loaded by the kernel, as in Colab
+    installer.versions.update(cellpose="4.0.0", numpy="1.26.4")
+    installer.upgrades = {"numpy": "2.1.0"}
+    with pytest.raises(RuntimeError, match=r"upgraded numpy 1.26.4 -> 2.1.0.*Restart the runtime"):
+        run_cell({}, INSTALL)
+    run_cell({}, INSTALL)  # after the restart: nothing more is installed, and it is ready
+    assert len(installer.pip) == 1
+
+
+def test_an_upgrade_of_a_package_the_kernel_has_not_loaded_needs_no_restart(installer):
+    installer.versions.update(cellpose="4.0.0", **{"opencv-python": "4.9.0"})
+    installer.upgrades = {"opencv-python": "4.10.0"}
+    assert "cv2" not in sys.modules
+    run_cell({}, INSTALL)
+
+
+def test_the_text_warns_about_the_restarts_the_downloads_and_the_unverified_dinov3_pin():
+    text = {n: "".join(c["source"]) for n, c in enumerate(notebook()["cells"])}
+    assert "Restart session" in text[1] and "numpy" in text[1]
+    assert "restart the runtime" in text[9] and "--no-deps" in text[9]
+    assert "not verified against `cpdino`" in text[9] and "22 November 2026" in text[9]
+    for number in (0, 9):  # the introduction and cell 5
+        assert "flow-threshold quality step to the CPU" in text[number]
+        assert "not refused" in text[number] or "is **not refused**" in text[number]
+    assert "every parameter and buffer" in text[9]
 
 
 # the cells run on a synthetic run ----------------------------------------------------------
@@ -305,6 +336,45 @@ def test_the_weights_download_needs_its_box_and_the_cell_says_where_from(cells):
     assert "downloaded from Hugging Face on first use" in " ".join(cells.ns["workflow"].shown)
     run_cell(cells.ns, MODEL, device="cpu", download_weights=True)
     assert cells.stub.downloaded == ["cpsam_v2"]
+
+
+def test_the_load_card_says_whether_the_weights_were_downloaded_and_from_where(cells):
+    open_and_choose(cells)
+    run_cell(cells.ns, MODEL, device="cpu")
+    assert "nothing downloaded" in cells.ns["workflow"].shown[-1]
+    cells.stub.models_dir.joinpath("cpsam").unlink()
+    run_cell(cells.ns, MODEL, model="cpsam", device="cpu", download_weights=True)
+    assert "downloaded now from https://huggingface.co/" in cells.ns["workflow"].shown[-1]
+    run_cell(cells.ns, BATCH)
+    params = read_record(cells.run.masks, "Cells").batches[0].parameters
+    assert params["weights_downloaded"] is True and params["weights_source"].endswith("/cpsam")
+
+
+@pytest.mark.parametrize("cell", [PREVIEW, BATCH])
+def test_a_channel_choice_refused_after_loading_stops_the_cell_once_and_starts_nothing(cells, cell):
+    picker = open_and_choose(cells)
+    run_cell(cells.ns, MODEL, device="cpu")
+    picker.dropdowns[1].value = "EXTRA"  # the dropdowns change after the model is loaded
+    assert picker.plan is None
+    with pytest.raises(notebook_cellpose.CellStop) as stopped:
+        run_cell(cells.ns, cell)
+    assert str(stopped.value) == picker.refusal and "A_SCOPE_INCOMPLETE" in str(stopped.value)
+    assert (
+        stopped.value.__cause__ is not None and stopped.value.__context__ is stopped.value.__cause__
+    )
+    assert cells.stub.calls == [] and not cells.run.masks.exists()  # no image, no record
+    picker.dropdowns[1].value = "DNA"  # a valid choice again: the cell runs
+    run_cell(cells.ns, cell)
+    assert len(cells.stub.calls) >= 1
+
+
+def test_the_preview_figure_uses_the_display_contrast_and_shows_non_finite_pixels():
+    stack = np.arange(32, dtype=np.float32).reshape(2, 4, 4)
+    stack[0, 0, 0] = np.nan
+    labels = np.zeros((4, 4), np.uint16)
+    labels[1:3, 1:3] = 1
+    figure = notebook_cellpose.preview_figure(stack, labels, ("A", "B"))
+    assert len(figure.axes) == 3 and "1 objects" in figure.axes[-1].get_title()
 
 
 def test_failures_are_in_the_final_table_and_the_batch_goes_on(cells):

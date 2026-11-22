@@ -1349,14 +1349,27 @@ imported only inside functions, so importing the brick and discovery stay inert)
 4.2.1.1 is pinned and is not a dependency. Each of its silent behaviours is a refusal here: a
 model is one of `cpsam_v2`, `cpsam`, `cpdino`, `cpdino-vitb` or an existing file, checked before
 loading, and the weights file the loaded model reports must be the one asked for; a device
-(`cuda`, `mps`, `cpu`) is always stated, an unavailable one is refused, and every weight must
-sit on it after loading; uncached weights are downloaded only on an explicit request; more than
+(`cuda`, `mps`, `cpu`) is always stated and an unavailable one is refused. After loading, **every parameter and every
+buffer of the loaded network (`model.net`) must be on a device of the requested type** (`cuda:1`
+counts as `cuda`; the index is not compared); a network that lists no tensors is refused.
+Cellpose's own `model.device` is not evidence (it only repeats the device it was given), and
+nothing beyond the network's tensors is verified. Cellpose may still move the flow-threshold
+quality step to the CPU when GPU memory is short, and always computes the masks from the flows on
+the CPU on `mps`; that is Cellpose's behaviour, **not refused**, and the batch records it as a
+note. Uncached weights are downloaded only on an explicit request; more than
 three channels are refused (Cellpose reads the first three by position); a blank diameter is
 the model's native scale, never an estimate and never 0. The batch's `model` holds the model
 name, the weights file name (or the custom file's path) and its SHA-256, and its `parameters`
-every effective setting (diameter in pixels or null with its meaning, thresholds, normalisation,
-batch and tile size, `channel_axis` 0, device type, versions and, for a DINOv3 model, the DINOv3
-commit). Two-dimensional images only.
+every effective setting (diameter in pixels or null with its meaning, thresholds, the **full**
+normalisation dictionary given to Cellpose (its defaults read from its module at call time, with
+the user's values applied) and the flow iterations `niter` (`int(200 / rescale)`, passed
+explicitly), batch and tile size, `channel_axis` 0, device type, versions, `weights_downloaded`
+and `weights_source` (the Hugging Face URL Cellpose uses; null for a model file), the device
+`notes` and, for a DINOv3 model, the DINOv3 commit). The batch ID is the record's
+`new_batch_id()`. The DINOv3 package is installed with `--no-deps` at a pinned commit, the head
+of its default branch on 22 November 2026, which is **not verified against `cpdino`**; Cellpose
+imports it only when first imported, so the runtime is restarted after installing it.
+Two-dimensional images only.
 
 ## 16. Shared rules for other bricks (MorphoBricks D86)
 

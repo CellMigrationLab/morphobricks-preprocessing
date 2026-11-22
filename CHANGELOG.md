@@ -40,7 +40,12 @@ old pin are refused with `spec_commit_mismatch`, as at every re-pin.
   are dropped by position (more than three are refused), and no diameter means the model's native
   scale, not an estimate (a blank diameter is recorded as the native scale, 0 is refused). The
   SHA-256 and file name of the weights, every effective setting and the DINOv3 commit
-  (`cpdino` models, installed only when ticked) go into the `SegmentationBatch`. 2D images only.
+  (`cpdino` models, installed only when ticked, `--no-deps`, at a pinned commit that is not
+  verified against `cpdino`) go into the `SegmentationBatch`, with the full normalisation, the
+  flow iterations, whether the weights were downloaded and from where, and a note that Cellpose may
+  run its flow-threshold step on the CPU (and the masks on the CPU on `mps`). The model's device is
+  verified on every parameter and buffer of the network. The batch ID is `new_batch_id()`. 2D
+  images only.
 - **Segmentation hand-off** (owner request of 21 November 2026, step 1 of the Cellpose notebook
   plan): `segmentation_handoff` and `segmentation_record` (numpy and tifffile only; no
   segmentation tool is imported). `images_to_segment` lists the run's images that have no mask

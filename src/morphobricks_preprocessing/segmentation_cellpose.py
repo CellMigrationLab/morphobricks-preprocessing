@@ -17,9 +17,13 @@ rest of what an audit of the Cellpose hand-off asked for:
   position, so more than three are refused (:func:`check_channel_count`).
 - **Diameter.** Blank means the model's native scale: Cellpose 4.2.1.1 does **not** estimate a
   diameter. A diameter is in pixels and never 0 (:class:`Settings`).
+- **Device behaviour of Cellpose.** On a GPU, Cellpose may move the flow-threshold quality step
+  to the CPU when GPU memory is short and always computes the masks from the flows on the CPU
+  on ``mps``. That is Cellpose's own behaviour, not refused; it is recorded as a note.
 - **Record.** Every effective setting goes into the batch's parameters
   (:func:`inference_parameters`), every image into the batch with its outcome, written, skipped
-  or failed with the error (:func:`run_batch`); nothing is dropped.
+  or failed with the error (:func:`run_batch`); nothing is dropped. The full normalisation,
+  the flow iterations, and whether built-in weights were downloaded (and from where) are in it.
 
 Mask paths, pairing, the mask-type rules, writing, the folder rules and the record are the
 hand-off's own (:mod:`.segmentation_handoff`, :mod:`.segmentation_record`); nothing is repeated.
@@ -31,7 +35,6 @@ import math
 import os
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -44,6 +47,7 @@ from .segmentation_cellpose_model import (
     BUILTIN_MODELS,
     CELLPOSE_VERSION,
     DEFAULT_MODEL,
+    DEVICE_NOTE,
     DINO_MODELS,
     DINOV3_COMMIT,
     DINOV3_URL,
@@ -52,6 +56,7 @@ from .segmentation_cellpose_model import (
     check_device,
     check_dinov3,
     choose_model,
+    default_normalization,
     dinov3_install_command,
     install_dinov3,
     installed_dinov3_commit,
@@ -66,6 +71,7 @@ from .segmentation_record import (
     SegmentedImage,
     check_mask_type,
     mask_sha256,
+    new_batch_id,
     write_record,
 )
 
@@ -82,6 +88,7 @@ __all__ = [
     "check_device",
     "check_dinov3",
     "choose_model",
+    "default_normalization",
     "dinov3_install_command",
     "install_dinov3",
     "installed_dinov3_commit",
@@ -96,6 +103,8 @@ MAX_CHANNELS = 3
 TILE_OVERLAP, MIN_SIZE, MAX_SIZE_FRACTION = 0.1, 15, 0.4
 """Cellpose's own defaults, passed explicitly so that the record holds the effective values."""
 NORMALIZE_PERCENTILE = [1.0, 99.0]
+FLOW_ITERATIONS = 200
+"""Cellpose's flow iterations at the native scale; it divides it by the rescale factor."""
 NATIVE_SCALE = (
     "native scale of the model: Cellpose 4.2.1.1 does not estimate the diameter, so a blank "
     "diameter means the model's own scale"
@@ -193,24 +202,54 @@ def diameter_from_text(text: str) -> float | None:
 # --- one image --------------------------------------------------------------------------------
 
 
+def rescale_factor(settings: Settings) -> float:
+    """Return the factor Cellpose derives from the diameter: 30 / diameter, or 1 (native scale)."""
+    return 1.0 if settings.diameter is None else 30.0 / settings.diameter
+
+
+def flow_iterations(settings: Settings) -> int:
+    """Return the flow iterations Cellpose 4.2.1.1 uses when none are given: 200 / rescale.
+
+    Cellpose computes ``int(200 / rescale)`` (resampling is on); it is passed explicitly and
+    recorded, so what ran is not left to Cellpose's derivation.
+    """
+    return max(1, int(FLOW_ITERATIONS / rescale_factor(settings)))
+
+
+def normalization(settings: Settings) -> dict[str, Any]:
+    """Return the full normalisation given to Cellpose: its defaults now, with the user's values.
+
+    The defaults (``tile_norm_blocksize``, ``sharpen_radius``, ``invert``, ``lowhigh``, ...) come
+    from Cellpose's module global at call time, copied; ``normalize`` and the percentiles are
+    then set from the settings. Nothing is left to Cellpose's defaults, so the record holds all.
+    """
+    return {
+        **default_normalization(),
+        "normalize": settings.normalize,
+        "percentile": list(NORMALIZE_PERCENTILE),
+    }
+
+
 def eval_arguments(loaded: LoadedModel, settings: Settings) -> dict[str, Any]:
     """Return every argument given to ``model.eval``, the effective inference settings.
 
     ``channel_axis`` is 0: the stack from :meth:`.segmentation_handoff.SegmentationPlan.read`
-    is ``(C, Y, X)`` in the order of the requested channel IDs. The tile size and the other
-    values Cellpose would default are given explicitly, so what is recorded is what ran.
+    is ``(C, Y, X)`` in the order of the requested channel IDs. The tile size, the full
+    normalisation, the flow iterations and the other values Cellpose would default are given
+    explicitly, so what is recorded is what ran.
     """
     return {
         "batch_size": settings.batch_size,
         "resample": True,
         "channel_axis": 0,
-        "normalize": {"normalize": settings.normalize, "percentile": list(NORMALIZE_PERCENTILE)},
+        "normalize": normalization(settings),
         "diameter": settings.diameter,
         "flow_threshold": settings.flow_threshold,
         "cellprob_threshold": settings.cellprob_threshold,
         "do_3D": False,
         "min_size": MIN_SIZE,
         "max_size_fraction": MAX_SIZE_FRACTION,
+        "niter": flow_iterations(settings),
         "augment": False,
         "tile_overlap": TILE_OVERLAP,
         "bsize": loaded.tile_size,
@@ -258,20 +297,27 @@ def inference_parameters(
     """Return the parameters of a batch for the record: every effective setting, plain JSON.
 
     The diameter is in pixels, or null with the statement that it is the model's native
-    scale; ``rescale`` is the factor Cellpose derives from it (30 / diameter, or 1).
+    scale; ``rescale`` is the factor Cellpose derives from it (30 / diameter, or 1). The
+    normalisation is the full dictionary given to Cellpose and ``niter`` the flow iterations
+    it derives from the rescale. ``weights_downloaded`` and ``weights_source`` say whether this
+    session downloaded the built-in weights and from where; ``notes`` holds Cellpose's device
+    behaviour (:data:`.segmentation_cellpose_model.DEVICE_NOTE`) for a GPU run.
     """
     arguments = eval_arguments(loaded, settings)
-    scale = 1.0 if settings.diameter is None else 30.0 / settings.diameter
+    notes = [DEVICE_NOTE] if loaded.device != "cpu" else []
     return {
         **arguments,
         "diameter_unit": "pixels" if settings.diameter is not None else NATIVE_SCALE,
-        "rescale": scale,
+        "rescale": rescale_factor(settings),
         "channel_ids_order": list(channel_ids),
         "device_type": loaded.device,
         "backbone": loaded.backbone,
         "use_bfloat16": True,
         "cellpose_version": CELLPOSE_VERSION,
         "dinov3_commit": loaded.dinov3_commit,
+        "weights_downloaded": loaded.downloaded,
+        "weights_source": loaded.source,
+        "notes": notes,
     }
 
 
@@ -301,6 +347,11 @@ class SegmentationJob:
     mask_type: str
     masks_root: Path
     overwrite: bool = False
+
+    def __post_init__(self) -> None:
+        """Refuse a job without resolved channels, before anything is segmented."""
+        if self.plan is None:
+            raise SegmentationError("No channels are resolved: choose channels the run has.")
 
 
 @dataclass(frozen=True)
@@ -364,6 +415,14 @@ def _batch(job: SegmentationJob, batch_id: str, images: list[SegmentedImage]) ->
     )
 
 
+def _write_batch(
+    job: SegmentationJob, batch_id: str, entries: list[SegmentedImage]
+) -> tuple[SegmentationBatch, Path | None]:
+    """Build the batch and write its record (none when no image was handled)."""
+    batch = _batch(job, batch_id, entries)
+    return batch, write_record(job.masks_root, job.mask_type, batch) if entries else None
+
+
 def run_batch(
     job: SegmentationJob,
     fovs: Sequence[Fov] | None = None,
@@ -386,7 +445,7 @@ def run_batch(
     progress
         Called as ``progress(done, total, image)`` before each image and once at the end.
     batch_id
-        The record's batch ID; by default the start time (UTC, to the microsecond).
+        The record's batch ID; by default :func:`.segmentation_record.new_batch_id`.
 
     Raises
     ------
@@ -398,7 +457,7 @@ def run_batch(
     missing = {
         f.relative_path for f in images_to_segment(job.inputs, job.mask_type, job.masks_root)
     }
-    started = batch_id or datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    started = batch_id or new_batch_id()
     entries: list[SegmentedImage] = []
     try:
         for done, fov in enumerate(chosen):
@@ -410,9 +469,15 @@ def run_batch(
                 entries.append(SegmentedImage(fov.relative_path, "skipped", IMAGE_SKIPPED))
         if progress is not None:
             progress(len(chosen), len(chosen), "")
-    finally:
-        batch = _batch(job, started, entries)
-        record = write_record(job.masks_root, job.mask_type, batch) if entries else None
+    except BaseException as interrupted:
+        # The record of what was done is still written; if that fails too, the first error is
+        # the one raised (the second is attached to it), never one that hides it.
+        try:
+            _write_batch(job, started, entries)
+        except Exception as second:
+            interrupted.add_note(f"The record could not be written either: {second}")
+        raise
+    batch, record = _write_batch(job, started, entries)
     return BatchResult(batch, record)
 
 
@@ -439,29 +504,6 @@ def channel_coverage(inputs: RunInputs) -> dict[str, tuple[int, int]]:
     fovs = inputs.fovs()
     order = dict.fromkeys(c for f in fovs for c in (f.channel_ids or ()))
     return {c: (sum(c in (f.channel_ids or ()) for f in fovs), len(fovs)) for c in order}
-
-
-def display_contrast(stack: np.ndarray, low: float = 1.0, high: float = 99.0) -> np.ndarray:
-    """Return ``stack`` as float32 in 0 to 1, each channel stretched between two percentiles.
-
-    For **display only** (the preview): a new array, the stack is never changed, and nothing
-    of it is ever written. A channel with no spread shows as 0.
-    """
-    shown = np.zeros(np.shape(stack), np.float32)
-    for index, channel in enumerate(np.asarray(stack, dtype=np.float64)):
-        lo, hi = np.percentile(channel, [low, high])
-        if hi > lo:
-            shown[index] = np.clip((channel - lo) / (hi - lo), 0.0, 1.0)
-    return shown
-
-
-def label_outlines(labels: np.ndarray) -> np.ndarray:
-    """Return a boolean image that is True on the boundary pixels of every label (display)."""
-    lab = np.asarray(labels)
-    edge = np.zeros(lab.shape, bool)
-    edge[:, :-1] |= lab[:, :-1] != lab[:, 1:]
-    edge[:-1, :] |= lab[:-1, :] != lab[1:, :]
-    return edge & (lab > 0)
 
 
 def next_steps_lines(mask_type: str, masks_root: str | os.PathLike) -> tuple[str, ...]:

@@ -7,9 +7,13 @@ the pinned release is :data:`CELLPOSE_VERSION` and another one is refused.
 Cellpose 4.2.1.1 replaces a model name or path it cannot find by ``cpsam_v2`` with a log
 warning, turns an unavailable GPU into the CPU, and downloads uncached built-in weights. Each
 is checked here: the model is one of :data:`BUILTIN_MODELS` or an existing file (validated
-before loading); the weights file the loaded model reports must be the one asked for; every
-weight must sit on the stated device (an unavailable one is refused up front); and uncached
-weights are downloaded only with ``allow_download``. The weights file is hashed for the record.
+before loading); the weights file the loaded model reports must be the one asked for; the
+device is unavailable-refused up front, and after loading **every parameter and every buffer**
+of the network (``model.net``) must sit on a device of the requested type (``cuda:1`` counts as
+``cuda``; the index is not checked). ``model.device`` is not evidence: Cellpose 4.2.1.1 only
+stores the device it was given. Uncached weights are downloaded only with ``allow_download``;
+whether they were, and from where, goes into the record. The weights file is hashed for the
+record.
 """
 
 from __future__ import annotations
@@ -37,8 +41,16 @@ DINO_MODELS = ("cpdino", "cpdino-vitb")
 """The built-in models that need the DINOv3 package (:data:`DINOV3_COMMIT`)."""
 DINOV3_URL = "https://github.com/facebookresearch/dinov3"
 DINOV3_COMMIT = "6876159a11b4df116f30f667f8c9888617df0751"
-"""The DINOv3 commit installed for ``cpdino`` models (the head of its default branch on
-22 November 2026); a model that needs DINOv3 runs only with exactly this commit installed."""
+"""The DINOv3 commit installed for ``cpdino`` models: the head of its default branch on
+22 November 2026, **not verified against cpdino** (it is a pin, not a tested pairing). A model
+that needs DINOv3 runs only with exactly this commit installed."""
+DEVICE_NOTE = (
+    "Cellpose may move the flow-threshold quality step to the CPU when the GPU has too little "
+    "memory (images above 10000 x 10000 pixels on cuda), and always computes the masks from the "
+    "flows on the CPU on mps. This is Cellpose's own behaviour; it is not refused, and the "
+    "network itself ran on the device recorded."
+)
+"""Recorded with a batch that ran on a GPU (not refused: the network still runs on the device)."""
 SAM_TILE, DINO_TILE = 256, 384
 """The tile size (``bsize``) of a SAM model and of a DINOv3 model."""
 
@@ -154,6 +166,16 @@ def weights_file(name: str) -> Path:
     return Path(os.fspath(_cellpose_models().MODEL_DIR)) / name
 
 
+def default_normalization() -> dict:
+    """Return a copy of Cellpose's own normalisation defaults, read from its module right now.
+
+    Cellpose 4.2.1.1 keeps them in ``cellpose.models.normalize_default`` (a module global that
+    its own ``eval`` writes to when ``normalize`` is a bool), so they are read at call time and
+    copied; the caller applies the user's values on the copy.
+    """
+    return dict(_cellpose_models().normalize_default)
+
+
 def installed_dinov3_commit() -> str | None:
     """Return the Git commit the installed DINOv3 package came from, or None when unknown.
 
@@ -172,9 +194,23 @@ def installed_dinov3_commit() -> str | None:
 
 
 def dinov3_install_command() -> list[str]:
-    """Return the ``pip`` command that installs DINOv3 at :data:`DINOV3_COMMIT`."""
+    """Return the ``pip`` command that installs DINOv3 at :data:`DINOV3_COMMIT`, without deps.
+
+    ``--no-deps``: DINOv3's requirements (``torch``, ``torchvision``, ``torchmetrics``, ...) are
+    unpinned and could replace the torch Cellpose runs on. Cellpose reaches DINOv3 only through
+    ``dinov3.hub.backbones``, which imports nothing but ``numpy`` and ``torch`` (read at the
+    pinned commit).
+    """
     spec = f"git+{DINOV3_URL}@{DINOV3_COMMIT}"
-    return [sys.executable, "-m", "pip", "install", "--disable-pip-version-check", spec]
+    return [
+        sys.executable,
+        "-m",
+        "pip",
+        "install",
+        "--disable-pip-version-check",
+        "--no-deps",
+        spec,
+    ]
 
 
 def install_dinov3() -> None:
@@ -197,7 +233,7 @@ def check_dinov3(models: ModuleType) -> str:
     """Return the commit of the installed DINOv3 if it is the pinned one, else refuse.
 
     Cellpose imports DINOv3 when it is first imported, so DINOv3 installed after that needs a
-    restart of the runtime (the check says so).
+    restart of the runtime (the check says so): install it, restart, then load the model.
     """
     command = " ".join(dinov3_install_command()[2:])
     commit = installed_dinov3_commit()
@@ -238,7 +274,13 @@ class LoadedModel:
     sha256
         The SHA-256 of that file.
     device
-        ``cuda``, ``cpu`` or ``mps``: where the model sits, as verified after loading.
+        ``cuda``, ``cpu`` or ``mps``: the device type every parameter and buffer of the network
+        was verified to sit on after loading.
+    downloaded
+        True when this call downloaded the built-in weights (they were not on disk).
+    source
+        Where Cellpose downloads the built-in weights from (its URL on Hugging Face), or None
+        for a custom model file.
     backbone
         Cellpose's name of the network (``sam_vitl``, ``dino_vitl``, ...).
     tile_size
@@ -256,24 +298,33 @@ class LoadedModel:
     backbone: str
     tile_size: int
     dinov3_commit: str | None = None
+    downloaded: bool = False
+    source: str | None = None
 
 
-def _expected(models: ModuleType, choice: ModelChoice, allow_download: bool) -> tuple[Path, str]:
-    """Return the weights file this model must be, and what to hand to Cellpose to load it.
+def _source(models: ModuleType, choice: ModelChoice) -> str | None:
+    """Return the URL Cellpose downloads built-in weights ``choice`` from, None for a file."""
+    return None if choice.path is not None else f"{models._MODEL_URL}{choice.name}"
+
+
+def _expected(
+    models: ModuleType, choice: ModelChoice, allow_download: bool
+) -> tuple[Path, str, bool]:
+    """Return the weights file, what to hand to Cellpose to load it, and whether it downloads.
 
     A built-in model already on disk is handed over by its absolute path, so Cellpose looks
     nowhere else (not in the working folder, not in its list of user models) and cannot
     download. One that is not on disk is handed over by name only when ``allow_download``.
     """
     if choice.path is not None:
-        return choice.path, os.fspath(choice.path)
+        return choice.path, os.fspath(choice.path), False
     expected = Path(os.fspath(models.MODEL_DIR)) / choice.name
     if expected.is_file():
-        return expected, os.fspath(expected)
+        return expected, os.fspath(expected), False
     if not allow_download:
         raise SegmentationError(
             f"The weights of {choice.name} are not on this computer ({expected}). The built-in "
-            "weights are downloaded from Hugging Face (mouseland/cellpose-sam) on first use. "
+            f"weights are downloaded from Hugging Face ({_source(models, choice)}) on first use. "
             "Allow the download on purpose (tick it in the notebook) and run the cell again."
         )
     if os.path.lexists(choice.name):
@@ -281,7 +332,7 @@ def _expected(models: ModuleType, choice: ModelChoice, allow_download: bool) -> 
             f"A file or folder named {choice.name} is in the working folder, and Cellpose would "
             "load it instead of downloading the model. Change to another working folder."
         )
-    return expected, choice.name
+    return expected, choice.name, True
 
 
 def _construct(models: ModuleType, request: str, device: str) -> object:
@@ -300,14 +351,27 @@ def _construct(models: ModuleType, request: str, device: str) -> object:
         ) from exc
 
 
-def _device_types(loaded: object) -> set[str]:
-    """Return the device types the loaded model reports (and its first weight, when it has one)."""
-    found = {str(loaded.device.type)}
-    parameters = getattr(getattr(loaded, "net", None), "parameters", None)
-    first = next(iter(parameters()), None) if callable(parameters) else None
-    if first is not None:
-        found.add(str(first.device.type))
-    return found
+def _weight_devices(loaded: object) -> tuple[int, set[str]]:
+    """Return how many tensors the network holds and the device types of all of them.
+
+    Every parameter and every buffer of ``loaded.net`` counts. A model without a network that
+    lists its tensors, or one with none, proves nothing and is refused.
+    """
+    net = getattr(loaded, "net", None)
+    tensors = []
+    for listing in ("parameters", "buffers"):
+        method = getattr(net, listing, None)
+        if not callable(method):
+            raise SegmentationError(
+                "The loaded model's network does not list its weights, so the device they sit "
+                "on cannot be checked; refused."
+            )
+        tensors.extend(method())
+    if not tensors:
+        raise SegmentationError(
+            "The loaded model's network holds no weights, so the device cannot be checked; refused."
+        )
+    return len(tensors), {str(t.device.type) for t in tensors}
 
 
 def _verify(loaded: object, expected: Path, device: str, choice: ModelChoice) -> None:
@@ -318,10 +382,12 @@ def _verify(loaded: object, expected: Path, device: str, choice: ModelChoice) ->
             f"Cellpose loaded {got or 'an unknown file'} instead of {expected} for {choice.name}: "
             "it substituted another model. Nothing was segmented."
         )
-    if _device_types(loaded) != {device}:
+    count, found = _weight_devices(loaded)
+    if found != {device}:
         raise SegmentationError(
-            f"The device {device} was asked for but the model sits on "
-            f"{', '.join(sorted(_device_types(loaded)))}. Nothing falls back to another device."
+            f"The device {device} was asked for but weights of the model sit on "
+            f"{', '.join(sorted(found))} ({count} parameters and buffers checked). Nothing "
+            "falls back to another device."
         )
 
 
@@ -333,7 +399,8 @@ def load_model(
     The order is: the model and device are validated, Cellpose's version is checked, the
     weights must be on disk (or the download allowed), a DINOv3 model needs the pinned
     DINOv3; then the model is loaded and **verified** (the weights file it reports is the one
-    asked for; every weight sits on the stated device), and the weights file is hashed.
+    asked for; every parameter and buffer of the network sits on the stated device type), and
+    the weights file is hashed.
 
     Raises
     ------
@@ -347,7 +414,7 @@ def load_model(
     models = _cellpose_models()
     dino = choice.name in DINO_MODELS
     commit = check_dinov3(models) if dino else None
-    expected, request = _expected(models, choice, allow_download)
+    expected, request, downloads = _expected(models, choice, allow_download)
     loaded = _construct(models, request, device)
     _verify(loaded, expected, device, choice)
     backbone = getattr(loaded, "backbone", None)
@@ -365,4 +432,6 @@ def load_model(
         backbone=backbone,
         tile_size=SAM_TILE if backbone == "sam_vitl" else DINO_TILE,
         dinov3_commit=commit,
+        downloaded=downloads,
+        source=_source(models, choice),
     )

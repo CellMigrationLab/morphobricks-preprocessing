@@ -250,9 +250,12 @@ segment all images. Then:
   own. A name or file that does not exist is refused: Cellpose itself would silently use
   `cpsam_v2`. The weights of a built-in model are downloaded from Hugging Face on first use,
   only if you tick the download box. `cpdino` models also need DINOv3, installed at a pinned
-  commit only if you tick its box (restart the runtime after installing it).
+  commit (the head of its default branch on 22 November 2026, not verified against `cpdino`; installed without its dependencies) only if you tick its box. Restart the runtime after installing it, then run the cells again.
 - **Device.** You choose `cuda`, `mps` or `cpu`. A GPU that is not available is refused, never
-  replaced by the CPU.
+  replaced by the CPU, and after loading every parameter and buffer of the network must be on
+  the device you chose. Cellpose may still move its flow-threshold quality step to the CPU when
+  GPU memory is short, and always computes the masks on the CPU on `mps`; that is Cellpose's
+  behaviour, it is not refused, and the record notes it.
 - **Diameter** is in pixels. Blank means the model's own native scale (Cellpose 4.2.1.1 does
   not estimate a diameter); 0 is refused.
 - **2D only.** An image with more than one Z plane or time point fails with a message that
@@ -260,7 +263,7 @@ segment all images. Then:
 - **Result.** One mask per image at `<masks>/<type>/<the image's folders>/<image>.tif`
   (2D, `int32`, 0 is background, the image's width and height), never over an existing mask
   unless you tick overwrite, and `<masks>/<type>/segmentation_record.json` with the model's
-  file name and SHA-256, every setting, the channels, the device and each image as written,
+  file name and SHA-256, every setting (the full normalisation and the flow iterations included), whether the weights were downloaded now and from where, the channels, the device and each image as written,
   skipped or failed. The final table lists every image, with the error of a failed one.
 
 Afterwards declare the mask type in the experiment description (for example `[masks.Cells]`

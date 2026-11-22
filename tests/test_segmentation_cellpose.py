@@ -146,10 +146,33 @@ def test_a_gpu_that_is_not_available_is_refused_and_never_replaced_by_the_cpu(st
     assert stub.constructed == []
 
 
-def test_a_model_that_sits_on_another_device_than_asked_is_refused(stub):
-    stub.cuda, stub.device_type = True, "cpu"  # Cellpose's silent GPU -> CPU fallback
-    with pytest.raises(SegmentationError, match="cuda was asked for but the model sits on cpu"):
+@pytest.mark.parametrize(
+    "tensors",
+    [
+        {"params": ["cuda", "cuda", "cpu"]},  # a parameter after the first sits elsewhere
+        {"buffers": ["cuda", "cpu"]},  # a buffer sits elsewhere
+        {"params": ["cpu", "cpu", "cpu"], "buffers": ["cpu"]},  # Cellpose's GPU -> CPU fallback
+    ],
+)
+def test_a_network_with_any_weight_on_another_device_than_asked_is_refused(stub, tensors):
+    # model.device is only what was passed in (Cellpose 4.2.1.1): the tensors are the evidence.
+    stub.cuda = True
+    for name, value in tensors.items():
+        setattr(stub, name, value)
+    with pytest.raises(SegmentationError, match="cuda was asked for but weights of the model sit"):
         cp.load_model("cpsam_v2", "cuda")
+
+
+def test_the_device_check_covers_every_parameter_and_buffer_of_a_cuda_index(stub):
+    stub.cuda = True
+    stub.params, stub.buffers = ["cuda", "cuda"], ["cuda"]  # cuda:0 reports type cuda
+    assert cp.load_model("cpsam_v2", "cuda").device == "cuda"
+
+
+def test_a_model_whose_weights_cannot_be_listed_is_refused(stub):
+    stub.no_net = True
+    with pytest.raises(SegmentationError, match="does not list its weights"):
+        cp.load_model("cpsam_v2", "cpu")
 
 
 def test_the_gpu_is_used_when_asked_and_present(stub):
@@ -214,6 +237,7 @@ def test_the_dinov3_install_command_pins_the_commit():
     command = model_module.dinov3_install_command()
     assert command[1:4] == ["-m", "pip", "install"]
     assert command[-1] == f"git+https://github.com/facebookresearch/dinov3@{cp.DINOV3_COMMIT}"
+    assert "--no-deps" in command  # DINOv3's unpinned requirements must not replace torch
     assert len(cp.DINOV3_COMMIT) == 40
 
 
@@ -365,12 +389,24 @@ def test_every_effective_setting_is_in_the_record(run, stub):
     params = read_record(run.masks, "Cells").batches[0].parameters
     assert params == batch.parameters
     assert (params["flow_threshold"], params["cellprob_threshold"]) == (0.2, -1.5)
-    assert params["normalize"] == {"normalize": False, "percentile": [1.0, 99.0]}
+    assert params["normalize"] == {
+        **stub.normalize_default,
+        "normalize": False,
+        "percentile": [1.0, 99.0],
+    }
+    assert params["niter"] == 166 and params["rescale"] == 30 / 25  # 200 / rescale
     assert (params["batch_size"], params["bsize"], params["tile_overlap"]) == (4, 256, 0.1)
     assert (params["device_type"], params["cellpose_version"]) == ("cpu", "4.2.1.1")
     assert params["channel_axis"] == 0 and params["do_3D"] is False
     assert params["channel_ids_order"] == ["TUB", "DNA"] and batch.channel_ids == ("TUB", "DNA")
-    for key in ("flow_threshold", "cellprob_threshold", "batch_size", "bsize", "normalize"):
+    for key in (
+        "flow_threshold",
+        "cellprob_threshold",
+        "batch_size",
+        "bsize",
+        "normalize",
+        "niter",
+    ):
         assert stub.calls[0].kwargs[key] == params[key]  # what ran is what was recorded
 
 
@@ -482,26 +518,6 @@ def test_masks_of_the_batch_pass_preprocessings_own_mask_checks_on_a_rerun(run, 
 
 
 # what the preview shows, and the next steps ---------------------------------------------------
-
-
-def test_the_display_contrast_is_per_channel_and_never_touches_the_stack(run):
-    fov = run.inputs.fovs()[0]
-    stack = resolve_segmentation(run.inputs, ("TUB", "DNA")).read(fov)
-    before = stack.copy()
-    shown = cp.display_contrast(stack)
-    np.testing.assert_array_equal(stack, before)
-    assert shown.dtype == np.float32 and shown.shape == stack.shape
-    assert shown.min() >= 0 and shown.max() <= 1
-    assert shown[0].max() == 1.0 and shown[1].max() == 1.0  # each channel on its own range
-    assert cp.display_contrast(np.full((1, 4, 4), 7)).max() == 0  # no spread shows as 0
-
-
-def test_label_outlines_mark_the_boundary_of_every_label():
-    labels = np.zeros((6, 6), np.uint16)
-    labels[1:5, 1:5] = 3
-    edge = cp.label_outlines(labels)
-    assert edge.sum() > 0 and not edge[0].any()
-    assert not edge[labels == 0].any()  # only inside a label
 
 
 def test_next_steps_tell_how_to_declare_the_mask_type(tmp_path):

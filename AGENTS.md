@@ -262,7 +262,7 @@ src/morphobricks_preprocessing/
   segmentation_cellpose.py the Cellpose glue (step 2; cellpose, torch and dinov3 imported only inside
                     functions, Cellpose 4.2.1.1 pinned, not a dependency): Settings, diameter_from_text,
                     eval_arguments (channel_axis=0), segment_image, run_batch (every image written, skipped
-                    or failed in a SegmentationBatch), channel_coverage, display_contrast (display only);
+                    or failed in a SegmentationBatch), channel_coverage (the preview reuses preview_render's display_panel and outline);
                     segmentation_cellpose_model.py choose_model (a built-in name or an existing file,
                     before loading), load_model (the weights file and device verified after loading, no
                     download without allow_download, SHA-256 recorded, DINOv3 at a pinned commit);

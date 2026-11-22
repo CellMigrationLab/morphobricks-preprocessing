@@ -4,8 +4,10 @@ Cellpose is not a dependency of the brick and is not installed in CI. The stand-
 the real ``CellposeModel`` does that matters here, read from the 4.2.1.1 source: a name or path
 it cannot find is replaced by ``cpsam_v2`` (downloaded if absent), a built-in name is looked for
 in ``MODEL_DIR`` and fetched when missing, and ``pretrained_model`` / ``device`` / ``backbone``
-are set on the loaded model. Its ``eval`` records every call (the stack and the keywords) and
-returns a fixed label image, so a test sees exactly what Cellpose was given.
+are set on the loaded model. As in 4.2.1.1 ``device`` is only the device it was given; where
+the weights sit is told by ``net`` (parameters and buffers with a ``device``). Its ``eval``
+records every call (the stack and the keywords) and returns a fixed label image, so a test sees
+exactly what Cellpose was given.
 """
 
 import sys
@@ -39,6 +41,20 @@ class Device:
         self.type = type
 
 
+class Net:
+    """The network: parameters and buffers with a ``device`` (``state.params`` / ``buffers``)."""
+
+    def __init__(self, state, device_type):
+        self._params = [Device(t) for t in state.params or [device_type] * 3]
+        self._buffers = [Device(t) for t in state.buffers or [device_type] * 2]
+
+    def parameters(self):
+        return iter(SimpleNamespace(device=d) for d in self._params)
+
+    def buffers(self):
+        return iter(SimpleNamespace(device=d) for d in self._buffers)
+
+
 def model_class(state):
     """Return the stand-in ``CellposeModel`` class bound to ``state``."""
 
@@ -48,7 +64,8 @@ def model_class(state):
                 SimpleNamespace(gpu=gpu, pretrained_model=pretrained_model, device=device, **kwargs)
             )
             self.pretrained_model = state.substitute or self._resolve(pretrained_model)
-            self.device = Device(state.device_type or device.type)
+            self.device = device  # as in Cellpose: only what was passed in
+            self.net = None if state.no_net else Net(state, device.type)
             dino = "dino" in Path(self.pretrained_model).name
             self.backbone = "dino_vitl" if dino else "sam_vitl"
 
@@ -77,6 +94,8 @@ def modules(state):
     """Return the fake ``cellpose``, ``cellpose.models`` and ``torch`` modules."""
     models = types.ModuleType("cellpose.models")
     models.MODEL_DIR = state.models_dir
+    models._MODEL_URL = "https://huggingface.co/mouseland/cellpose-sam/resolve/main/"
+    models.normalize_default = dict(state.normalize_default)
     models.CellposeModel = model_class(state)
     if state.has_cpdino:
         models.CPDINO = object
@@ -93,9 +112,10 @@ def install(monkeypatch, tmp_path, **options):
     """Install the stand-in; return its state (calls, constructed, and switches to flip).
 
     Switches (set on the returned state before loading): ``cuda`` / ``mps`` availability,
-    ``substitute`` (the path every loaded model reports, whatever was asked), ``device_type``
-    (the device every loaded model reports), ``fail`` (a function of the stack that raises),
-    ``version`` and ``dinov3_commit``.
+    ``substitute`` (the path every loaded model reports, whatever was asked), ``params`` /
+    ``buffers`` (the device types of the network's tensors, when not the requested one),
+    ``no_net``, ``fail`` (a function of the stack that raises), ``version`` and
+    ``dinov3_commit``.
     """
     models_dir = tmp_path / "cellpose_models"
     models_dir.mkdir(exist_ok=True)
@@ -107,11 +127,24 @@ def install(monkeypatch, tmp_path, **options):
         cuda=False,
         mps=False,
         substitute=None,
-        device_type=None,
+        params=None,
+        buffers=None,
+        no_net=False,
         fail=None,
         version="4.2.1.1",
         dinov3_commit=model_module.DINOV3_COMMIT,
         has_cpdino=True,
+        normalize_default={
+            "lowhigh": None,
+            "percentile": None,
+            "normalize": True,
+            "norm3D": True,
+            "sharpen_radius": 0,
+            "smooth_radius": 0,
+            "tile_norm_blocksize": 0,
+            "tile_norm_smooth3D": 1,
+            "invert": False,
+        },
     )
     for name, value in options.items():
         setattr(state, name, value)

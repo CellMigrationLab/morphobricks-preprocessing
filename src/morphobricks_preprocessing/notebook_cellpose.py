@@ -25,6 +25,7 @@ from matplotlib.figure import Figure
 from . import segmentation_cellpose as cp
 from .notebook_progress import progress_html
 from .notebook_style import STYLE_CSS, status, table, tiles
+from .preview_render import as_colour, display_panel, outline
 from .run_inputs import RunInputs, RunInputsError
 from .segmentation_handoff import SegmentationPlan, images_to_segment, resolve_segmentation
 from .segmentation_record import SegmentationError, check_mask_type
@@ -119,6 +120,23 @@ class ChannelPicker:
             )
         self.message.value = note.value
 
+    def current_plan(self) -> SegmentationPlan:
+        """Resolve the dropdowns as they are now and return the plan, or refuse (once).
+
+        The dropdowns may have changed since the model was loaded; every step that segments
+        calls this first, so a refused choice stops the cell with the resolver's message
+        before anything starts.
+
+        Raises
+        ------
+        SegmentationError
+            With the resolver's message, when the choice is refused.
+        """
+        self._changed()
+        if self.plan is None:
+            raise SegmentationError(self.refusal)
+        return self.plan
+
     def box(self) -> widgets.VBox:
         """Return the dropdowns and the message under them."""
         return widgets.VBox([*self.dropdowns, self.message])
@@ -127,18 +145,19 @@ class ChannelPicker:
 def preview_figure(stack: np.ndarray, labels: np.ndarray, channel_ids: tuple[str, ...]) -> Figure:
     """Return the preview: each channel (display contrast only) and the outlines of the labels.
 
-    The contrast stretch is for the eye: the stack that was segmented, and the masks, are the
-    stored values and are never changed by it.
+    The contrast stretch (preprocessing's own display contrast, which also shows non-finite
+    pixels as such) is for the eye: the stack that was segmented, and the masks, are the stored
+    values and are never changed by it.
     """
-    shown = cp.display_contrast(stack)
-    outlines = cp.label_outlines(labels)
-    figure = Figure(figsize=(4 * (len(shown) + 1), 4))
-    axes = figure.subplots(1, len(shown) + 1, squeeze=False)[0]
-    for axis, channel, name in zip(axes, shown, channel_ids, strict=False):
-        axis.imshow(channel, cmap="gray", vmin=0, vmax=1)
+    panels = [display_panel(np.asarray(channel)).pixels for channel in stack]
+    edge = outline(np.asarray(labels))
+    figure = Figure(figsize=(4 * (len(panels) + 1), 4))
+    axes = figure.subplots(1, len(panels) + 1, squeeze=False)[0]
+    for axis, panel, name in zip(axes, panels, channel_ids, strict=False):
+        axis.imshow(panel, cmap="gray", vmin=0, vmax=255)
         axis.set_title(f"{name} (display contrast)")
-    overlay = np.repeat(shown[0][..., None], 3, axis=-1)
-    overlay[outlines] = (1.0, 0.85, 0.0)
+    overlay = as_colour(panels[0]).copy()
+    overlay[edge] = (255, 217, 0)
     axes[-1].imshow(overlay)
     axes[-1].set_title(f"Cellpose: {int(labels.max())} objects")
     for axis in axes:
@@ -253,8 +272,7 @@ class CellposeWorkflow:
     ) -> None:
         """Say what loading does, then load the verified model (cell 5)."""
         self._need("channels", 4)
-        if self.picker.plan is None:
-            raise SegmentationError(self.picker.refusal)
+        self.picker.current_plan()
         if self.settings is None:
             raise SegmentationError("Set the settings first: run set_settings in cell 5.")
         chosen = custom_model_file.strip() or model
@@ -268,6 +286,9 @@ class CellposeWorkflow:
                 (
                     "Built-in weights are downloaded from Hugging Face on first use; they are "
                     "downloaded only if the download box is ticked.",
+                    "On a GPU Cellpose may move its flow-threshold quality step to the CPU "
+                    "when GPU memory is short, and always computes the masks on the CPU on "
+                    "mps. That is Cellpose's own behaviour; it is recorded as a note.",
                 ),
             )
         )
@@ -281,6 +302,11 @@ class CellposeWorkflow:
                     f"Weights file: {loaded.file}",
                     f"SHA-256: {loaded.sha256}",
                     f"Network {loaded.backbone}, tile size {loaded.tile_size}",
+                    (
+                        f"Weights downloaded now from {loaded.source}"
+                        if loaded.downloaded
+                        else "Weights were already on this computer (nothing downloaded)"
+                    ),
                     "Diameter: "
                     + (
                         f"{diameter:g} pixels"
@@ -295,6 +321,7 @@ class CellposeWorkflow:
     def preview(self, image: str = "") -> None:
         """Segment one image and show it with the outlines; nothing is written (cell 6)."""
         self._need("model", 5)
+        plan = self.picker.current_plan()
         fovs = self.inputs.fovs()
         todo = images_to_segment(self.inputs, self.mask_type, self.masks_root)
         by_path = {f.relative_path: f for f in fovs}
@@ -304,10 +331,10 @@ class CellposeWorkflow:
                 f"such as {fovs[0].relative_path}."
             )
         fov = by_path[image.strip()] if image.strip() else (todo or fovs)[0]
-        stack = self.picker.plan.read(fov)
+        stack = plan.read(fov)
         labels = cp.segment_image(self.loaded, self.settings, stack)
         self._show(_card("info", f"Preview of {fov.relative_path} (nothing is written)"))
-        display(preview_figure(stack, labels, self.picker.plan.channel_ids))
+        display(preview_figure(stack, labels, plan.channel_ids))
 
     @stops
     def run(self, overwrite: bool = False) -> cp.BatchResult:
@@ -315,7 +342,7 @@ class CellposeWorkflow:
         self._need("model", 5)
         job = cp.SegmentationJob(
             self.inputs,
-            self.picker.plan,
+            self.picker.current_plan(),
             self.loaded,
             self.settings,
             self.mask_type,
