@@ -97,6 +97,10 @@ class RepeatRows:
         """
         self.override = OverrideEditor(self)
         """The per-unit override of a listed unit (:mod:`.notebook_channels_override`)."""
+        self.draft: object = None
+        """Which draft the record above belongs to (:meth:`other_draft`); None before the first."""
+        self.unsaved = False
+        """True while the last save of the review was refused (retried at the next change)."""
         self.notice = ""
         """A one-shot message of the last click (shown once, then cleared)."""
         self.message = ""
@@ -108,8 +112,11 @@ class RepeatRows:
         Derived from the current answers on every call: a unit is listed while its tags are
         incomplete or contradict its header, and leaves the list when they fit it, however it got
         there (an image type alone changes nothing). A unit whose images disagree stays listed
-        while they do: no tags make it one header.
+        while they do: no tags make it one header. Nothing is listed from the memory of another
+        draft (the notebook was pointed elsewhere and the grid is not open on it yet).
         """
+        if self.other_draft():
+            return {}
         answers = self.grid.store.answers()
         out = {}
         current = {u.key: u for u in self.grid.layouts}
@@ -176,17 +183,41 @@ class RepeatRows:
         group = next((g for g in rows.values() if any(u.key == key for u in g)), ())
         return group, next((u for u in group if u.key == key), None)
 
-    def persist(self) -> None:
+    def persist(self) -> bool:
         """Keep the refusals and confirmations in the draft file, when they changed.
 
         A new notebook on the draft restores them (:meth:`restore`): a refused unit counts only
-        once that unit is confirmed, whatever the session. A refused save is not retried: the
-        record stays in memory, which is what this session reads.
+        once that unit is confirmed, whatever the session. A refused save is not silent (the
+        names card says "Not saved." and the grid shows a line, :attr:`unsaved`) and is retried
+        at the next persist, because the file still differs from memory; the record stays in
+        memory meanwhile, which is what this session reads. The record is only ever written into
+        the draft it came from: with another draft open nothing is written. Returns False when
+        the review could not be saved.
         """
         store, mine = self.grid.store, self._review()
         answers = store.answers()
-        if (answers.tag_review or TagReview()) != mine:
-            store.update(replace(answers, tag_review=mine))
+        ok = True
+        if self.other_draft():
+            ok = False  # memory is another draft's: never written into this one
+        elif (answers.tag_review or TagReview()) != mine:
+            ok = store.update(replace(answers, tag_review=mine))
+        self.unsaved = not ok
+        return ok
+
+    def other_draft(self) -> bool:
+        """Return True when the draft open now is not the one the record in memory belongs to."""
+        return self._draft_id() != self.draft
+
+    def _draft_id(self) -> object:
+        """Return which draft the store holds (None for a store that cannot tell)."""
+        which = getattr(self.grid.store, "draft_id", None)
+        return which() if which is not None else None
+
+    def _forget(self) -> None:
+        """Drop every refusal, confirmation and editor state: they belong to another draft."""
+        self.refused, self.pending, self.notice, self.unsaved = {}, {}, "", False
+        self.override.confirmed = {}
+        self.override.editing, self.override.drafts = None, {}
 
     def _review(self) -> TagReview:
         """Return what is refused and confirmed now, as the draft file keeps it."""
@@ -204,10 +235,15 @@ class RepeatRows:
         """Take the refusals and confirmations of the draft file (a notebook opened on it).
 
         Run before the headers are trusted and the refusals reconciled (:meth:`reconcile`
-        brings each up to date with the layouts, as after any re-check). Memory is not
-        replaced: this session's record is the draft's. A unit that is gone is not restored; a
-        reference that is gone is replaced by the current one at the next :meth:`reconcile`.
+        brings each up to date with the layouts, as after any re-check). The memory of the same
+        draft is not replaced: this session's record is the draft's. Another draft (the notebook
+        pointed at another folder or output) forgets the memory first and is restored from its
+        own file, empty when it has no review. A unit that is gone is not restored; a reference
+        that is gone is replaced by the current one at the next :meth:`reconcile`.
         """
+        if self.other_draft():
+            self._forget()
+            self.draft = self._draft_id()
         review = self.grid.store.answers().tag_review
         if review is None or self.refused:
             return
@@ -237,6 +273,8 @@ class RepeatRows:
         once the user confirms it. A confirmed unit holds tags, so trusts nothing either way.
         """
         rows, out = self._rows(), set()
+        if self.other_draft():
+            return out
         for key, old in self.refused.items():
             group, layout = self._placed(rows, key)
             if layout is None or old.lead is None:
@@ -278,7 +316,16 @@ class RepeatRows:
             lines,
             raw=True,
         )
-        self.message = self.notice + (listed if lines else "")
+        failed = (
+            ui.status(
+                "error",
+                "Not saved: the refusals and confirmations could not be written to the draft.",
+                ["They stay in this session and are saved again at the next change."],
+            )
+            if self.unsaved
+            else ""
+        )
+        self.message = self.notice + (listed if lines else "") + failed
         self.notice = ""
         override = self.override.build(width)
         if not groups:
@@ -391,7 +438,8 @@ class RepeatRows:
             for unit in save:
                 self.refused.pop(unit, None)
                 self.override.confirmed.pop(unit, None)
-        self.persist()
+        if not self.persist() and ok:
+            self.grid.refresh()  # shows the line that the review is not saved
         return ok
 
     @staticmethod

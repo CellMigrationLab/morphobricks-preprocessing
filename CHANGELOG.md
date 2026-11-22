@@ -47,6 +47,12 @@ old pin are refused with `spec_commit_mismatch`, as at every re-pin.
     untagged and unsaved until that unit is confirmed, and the one-click offer is still made.
   - Fast mode decides which refusals stand against the row's current reference unit, as the
     list does, and **Confirm all N like it** buttons keep a stable order.
+  - The review belongs to the draft it was made in (experiment folder and draft file): a notebook
+    pointed at another folder or output forgets the refusals, confirmations and editor state of
+    the first and restores the new draft's own (empty without one), before headers are trusted;
+    one draft's record is never written into another, and switching back restores the first
+    from its file. A failed save of the review shows a line on the tagging grid and is retried
+    at the next change.
 - **Channel-identity check after the run** (contract §14.1, design
   `channel-identity-check-2026-11-21` in MorphoFeature's `claude/restart-doc`): from the image
   summaries the intensity checks already make (no pixel read), every imaging unit's channel is

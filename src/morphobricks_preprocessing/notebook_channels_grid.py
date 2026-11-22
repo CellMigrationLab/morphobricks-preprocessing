@@ -171,7 +171,7 @@ class TagGrid:
 
     def open(self, layouts: Sequence[UnitLayout], labels: list[str], thumbs: Thumbnails) -> None:
         """Show the grid for these units and labels (the confirmed label list of step A)."""
-        if layouts is not self.layouts:
+        if layouts is not self.layouts or self.by_repeat.other_draft():
             self.alone = set()
             self.matrix.reset()
             self.matrix.opening()
