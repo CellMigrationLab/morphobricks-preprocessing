@@ -24,8 +24,6 @@ from __future__ import annotations
 
 import os
 import tempfile
-from collections.abc import Iterator
-from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -259,21 +257,10 @@ def write_mask(
     _check_2d(fov)
     data = _checked_labels(labels, inputs.plane_shape(fov), fov.relative_path)
     type_folder = Path(masks_root) / mask_type
-    with (
-        _no_empty_folders_if_refused(type_folder, target.parent),
-        hold_lock(type_folder / WRITE_LOCK_FILENAME, f"The {mask_type} masks in {masks_root}"),
-    ):  # one writer per type for the twin check, the claim and the publish, in both modes
-        wanted = target.relative_to(masks_root).as_posix()
-        twins = sorted(
-            m.path for m in _paired(inputs, masks_root, mask_type) if m.image == fov.relative_path
-        )
-        if twins and (not overwrite or twins != [wanted]):
-            raise SegmentationError(
-                f"The {mask_type} mask of {fov.relative_path} already exists "
-                f"({', '.join(twins)} in {masks_root}). Use overwrite=True to replace {wanted}; "
-                "a mask of this image and type in another place or case, or in the other layout, "
-                "must be moved away first (the next run would refuse both as duplicate_mask)."
-            )
+    _refuse_twins(inputs, masks_root, mask_type, fov, target, overwrite)  # nothing made if refused
+    with hold_lock(type_folder / WRITE_LOCK_FILENAME, f"The {mask_type} masks in {masks_root}"):
+        # one writer per type for the twin check, the claim and the publish, in both modes
+        _refuse_twins(inputs, masks_root, mask_type, fov, target, overwrite)
         target.parent.mkdir(parents=True, exist_ok=True)
         handle, temporary = tempfile.mkstemp(
             prefix=f".{target.name}.", suffix=".tmp", dir=target.parent
@@ -297,29 +284,30 @@ def write_mask(
     return target
 
 
-@contextmanager
-def _no_empty_folders_if_refused(type_folder: Path, leaf: Path) -> Iterator[None]:
-    """Remove the folders this call created (``type_folder`` down to ``leaf``) if it is refused.
+def _refuse_twins(
+    inputs: RunInputs,
+    masks_root: str | os.PathLike,
+    mask_type: str,
+    fov: Fov,
+    target: Path,
+    overwrite: bool,
+) -> None:
+    """Refuse a mask of ``fov`` and ``mask_type`` that the run pairs, unless it is ``target``.
 
-    A refused write leaves nothing behind, not even the empty folders the lock needed.
+    Checked once before the write lock (a refusal then creates nothing, not even the lock's
+    folder) and again under the lock (another writer may have published meanwhile).
     """
-    created = None  # the topmost folder this call has to make
-    for folder in (type_folder, *type_folder.parents):
-        if folder.exists():
-            break
-        created = folder
-    try:
-        yield
-    except SegmentationError:
-        folder = leaf
-        while created is not None and (folder == created or created in folder.parents):
-            try:
-                if folder.exists():  # a folder not made yet (refused before it) is skipped
-                    folder.rmdir()
-            except OSError:
-                break  # not empty: something else is in it
-            folder = folder.parent
-        raise
+    wanted = target.relative_to(masks_root).as_posix()
+    twins = sorted(
+        m.path for m in _paired(inputs, masks_root, mask_type) if m.image == fov.relative_path
+    )
+    if twins and (not overwrite or twins != [wanted]):
+        raise SegmentationError(
+            f"The {mask_type} mask of {fov.relative_path} already exists "
+            f"({', '.join(twins)} in {masks_root}). Use overwrite=True to replace {wanted}; "
+            "a mask of this image and type in another place or case, or in the other layout, "
+            "must be moved away first (the next run would refuse both as duplicate_mask)."
+        )
 
 
 def _publish(temporary: Path, target: Path, overwrite: bool, what: str) -> None:
