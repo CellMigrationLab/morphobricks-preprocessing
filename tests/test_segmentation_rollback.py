@@ -132,3 +132,48 @@ def test_a_failed_removal_of_a_new_mask_is_loud(run, monkeypatch):
             on_published=_fail(RuntimeError("record failed")),
         )
     assert str(target) in str(caught.value)
+
+
+def _interrupt_after_replace(monkeypatch):
+    real = os.replace
+
+    def replace(source, destination):
+        real(source, destination)
+        if ".tmp" in os.path.basename(os.fspath(source)):
+            raise KeyboardInterrupt  # after the move, before _write_and_publish returns
+
+    monkeypatch.setattr(segmentation_handoff.os, "replace", replace)
+
+
+def test_an_interrupt_right_after_the_publish_restores_the_earlier_mask(run, monkeypatch):
+    fov = run.inputs.fovs()[0]
+    target = write_mask(run.masks, "Cells", fov, labels_like(run, fov), run.inputs)
+    before = target.read_bytes()
+    new = labels_like(run, fov)
+    new[0, 0] = 7
+    _interrupt_after_replace(monkeypatch)
+    with pytest.raises(KeyboardInterrupt):
+        write_mask(run.masks, "Cells", fov, new, run.inputs, overwrite=True)
+    assert target.read_bytes() == before  # decided from the file system: it was replaced
+    assert _files(run) == [target.relative_to(run.masks).as_posix()]
+
+
+def test_an_interrupt_right_after_the_publish_removes_a_new_mask(run, monkeypatch):
+    fov = run.inputs.fovs()[0]
+    _interrupt_after_replace(monkeypatch)
+    with pytest.raises(KeyboardInterrupt):
+        write_mask(run.masks, "Cells", fov, labels_like(run, fov), run.inputs)
+    assert _files(run) == []
+
+
+def test_stray_backups_are_reported_never_deleted(run):
+    from morphobricks_preprocessing.segmentation_handoff import stray_backups
+
+    fov = run.inputs.fovs()[0]
+    target = write_mask(run.masks, "Cells", fov, labels_like(run, fov), run.inputs)
+    assert stray_backups(run.masks, "Cells") == ()
+    stray = target.parent / f".{target.name}.previous.abc123"
+    stray.write_bytes(b"earlier")  # a killed overwrite
+    assert stray_backups(run.masks, "Cells") == (stray,)
+    assert stray_backups(run.masks, "Nuclei") == ()  # no such type folder
+    assert stray.read_bytes() == b"earlier"

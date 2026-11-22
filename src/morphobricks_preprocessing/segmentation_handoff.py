@@ -5,6 +5,8 @@ is everything the tool's notebook needs from preprocessing, with numpy and tifff
 imports no segmentation tool (contract §15.5):
 
 - :func:`images_to_segment`: the run's images that have no mask of a mask type yet;
+- :func:`stray_backups`: hidden copies of earlier masks left by a killed overwrite (reported,
+  never deleted);
 - :func:`segmentation_input`: the channels asked for **by canonical channel ID**, as a
   ``(C, Y, X)`` array of the stored values in the order asked, never by position;
 - :func:`mask_path` and :func:`write_mask`: one label image per image at
@@ -275,11 +277,7 @@ def write_mask(
         target.parent.mkdir(parents=True, exist_ok=True)
         what = f"The {mask_type} mask of {fov.relative_path}"
         backup = _keep_backup(target) if overwrite and target.is_file() else None
-        try:
-            _write_and_publish(data, target, overwrite, what)
-        except BaseException:
-            _drop_backup(backup, target)  # nothing was replaced: the earlier mask is at the target
-            raise
+        _write_and_publish(data, target, overwrite, what, backup)  # rolls itself back on failure
         if on_published is not None:
             try:
                 on_published(target)  # still under the lock
@@ -290,21 +288,54 @@ def write_mask(
     return target
 
 
-def _write_and_publish(data: np.ndarray, target: Path, overwrite: bool, what: str) -> None:
-    """Write ``data`` to a temporary file beside ``target``, then publish it there."""
+def _write_and_publish(
+    data: np.ndarray, target: Path, overwrite: bool, what: str, backup: Path | None
+) -> None:
+    """Write ``data`` to a temporary file beside ``target``, then publish it there.
+
+    On any failure (``KeyboardInterrupt`` too) whether the publish happened is read from the
+    file system, not from whether the call returned: if ``target`` is now the temporary file
+    (same inode) the earlier mask is restored (or the new one removed); otherwise the backup
+    is dropped, the earlier mask never left. The backup is kept until that is decided.
+    """
     handle, temporary = tempfile.mkstemp(
         prefix=f".{target.name}.", suffix=".tmp", dir=target.parent
     )
     os.close(handle)
+    inode = None
     try:
         tifffile.imwrite(
             temporary, data, photometric="minisblack", compression="zlib", metadata={"axes": "YX"}
         )
         give_output_mode(temporary, target)
+        inode = os.stat(temporary).st_ino
         _publish(Path(temporary), target, overwrite, what)
     except BaseException:
         Path(temporary).unlink(missing_ok=True)
+        if inode is not None and _is_inode(target, inode):
+            _roll_back(target, backup)  # published, then interrupted before returning
+        else:
+            _drop_backup(backup, target)  # nothing was replaced: the earlier mask is at the target
         raise
+
+
+def _is_inode(path: Path, inode: int) -> bool:
+    """Whether ``path`` exists and is the file with this inode."""
+    try:
+        return path.stat().st_ino == inode
+    except OSError:
+        return False
+
+
+def stray_backups(masks_root: str | os.PathLike, mask_type: str) -> tuple[Path, ...]:
+    """Return the hidden ``.<name>.previous.<random>`` copies left in the type's folder.
+
+    A process killed while overwriting a mask leaves its copy of the earlier mask. They are
+    only reported, never deleted: the person decides (the earlier mask may be only there).
+    """
+    check_mask_type(mask_type)
+    folder = Path(masks_root, mask_type)
+    return tuple(sorted(folder.rglob(".*.previous.*"))) if folder.is_dir() else ()
 
 
 def _keep_backup(target: Path) -> Path:

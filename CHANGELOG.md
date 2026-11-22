@@ -58,6 +58,11 @@ old pin are refused with `spec_commit_mismatch`, as at every re-pin.
   restore or remove raises `SegmentationError` naming both files and keeps the copy. Before, a
   failed overwrite left the new mask published and the earlier valid mask was lost. The record's
   duplicate-image check is linear (a seen-set instead of `list.count` per entry).
+- **`write_mask` decides its rollback from the file system** (review of #397): an interrupt right
+  after the move but before `write_mask` returned used to delete the copy of the earlier mask, so the
+  new mask stayed and the earlier one was lost; now the target's inode says whether the move happened
+  and the earlier mask is restored (a new mask removed). New `stray_backups(masks_root, mask_type)`
+  lists `.<name>.previous.<random>` copies left by killed processes; they are reported, never deleted.
 - **Channel-identity check after the run** (contract §14.1, design
   `channel-identity-check-2026-11-21` in MorphoFeature's `claude/restart-doc`): from the image
   summaries the intensity checks already make (no pixel read), every imaging unit's channel is
