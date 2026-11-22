@@ -43,6 +43,7 @@ from dataclasses import replace
 from typing import NamedTuple
 
 import numpy as np
+from morphobricks_normalization.normalization import NORMAL_CONSISTENCY
 from morphobricks_normalization.summaries import ImageSummary
 
 from .channel_identity_model import (
@@ -69,8 +70,9 @@ from .channel_identity_text import (
 )
 from .validation import plural
 
-MAD_SCALE = 1.4826
-"""Makes the MAD a standard deviation for normally distributed values."""
+MAD_SCALE = NORMAL_CONSISTENCY
+"""Makes the MAD a standard deviation for normally distributed values (the normalization
+brick's constant, reused so both bricks scale the MAD alike)."""
 OFFSET_FRACTION = 0.003
 """The offset added before the log, as a fraction of the channel's median high percentile."""
 _Pools = Mapping[tuple[str, str], list[ChannelSignature]]
@@ -225,9 +227,10 @@ def _signature(
 ) -> ChannelSignature | NotChecked:
     """Return the unit's signature in ``channel``, or why it has none."""
     rows, saturated = [], []
+    if any(channel not in image.channels for image in images):
+        # Images of one unit that list different channels: never a partial signature.
+        return NotChecked(unit, channel, "not every image of the unit has this channel")
     for image in images:
-        if channel not in image.channels:
-            continue
         k = image.channels.index(channel)
         median, low, high = image.median[k], image.p_low[k], image.p_high[k]
         if median is None or low is None or high is None:
@@ -354,14 +357,14 @@ def _finding(
     near = min(place.others, key=lambda c: place.others[c][0])
     distance, across = place.others[near]
     clear = distance <= settings.swap_limit and distance * settings.swap_ratio < place.distance
-    shown = clear or distance < place.distance  # the text names the nearest channel
     return replace(
         found,
         nearest=near,
         nearest_distance=distance,
         nearest_absent=near not in place.channels,
         clear=clear,
-        across_conditions=own[2] or (shown and across),
+        # The text always gives the nearest channel's distance: its reference's origin counts.
+        across_conditions=own[2] or across,
     )
 
 

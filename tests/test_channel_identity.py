@@ -446,6 +446,54 @@ def test_the_compared_across_conditions_note_is_kept_for_a_nearest_channel_only_
     assert "compared across conditions" in issue.message
 
 
+def test_the_across_conditions_note_is_kept_when_the_nearest_channel_is_farther():
+    # The control units have only DAPI, so every other channel's reference is taken across
+    # conditions. A brighter DAPI is unlike the others, and the nearest other channel (whose
+    # distance the text gives) is farther than its own reference: the note must still be there.
+    def brighter(unit, stains):
+        if unit.condition == "ctrl":
+            del stains["Actin"], stains["GFP"]
+        if unit == SWAPPED:
+            stains["DAPI"] = tuple(v * 3 for v in stains["DAPI"])
+        return stains
+
+    report = check_channel_identity(experiment(edit=brighter, noise=False))
+    (found,) = report.findings
+    assert found.channel == "DAPI" and not found.clear
+    assert found.nearest_distance > 2 * 5.0  # farther than the own reference (about 5.5)
+    assert found.across_conditions
+    (issue,) = report.validation_issues()
+    assert "compared across conditions" in issue.message
+
+
+def test_a_channel_some_images_of_a_unit_lack_is_not_checked():
+    # One image of the unit lists a channel (Zeta, sorted last) the other two do not:
+    # never a partial signature.
+    def one_image_only(unit, stains):
+        return stains
+
+    summaries = list(experiment(edit=one_image_only, noise=False))
+    target = next(
+        s
+        for s in summaries
+        if (s.condition, s.biological_repeat, s.technical_repeat) == tuple(SWAPPED)
+    )
+    extra = replace(
+        target,
+        channels=(*target.channels, "Zeta"),
+        median=(*target.median, 500.0),
+        p_low=(*target.p_low, 100.0),
+        p_high=(*target.p_high, 3000.0),
+        saturated_fraction=(*target.saturated_fraction, 0.0),
+        exact=(*target.exact, True),
+    )
+    summaries[summaries.index(target)] = extra
+    report = check_channel_identity(summaries)
+    assert not any(s.channel == "Zeta" for s in report.signatures)
+    reasons = [n.reason for n in report.not_checked if n.channel == "Zeta"]
+    assert reasons == ["not every image of the unit has this channel"]
+
+
 def test_a_unit_with_two_pixel_types_does_not_change_the_offsets():
     def louder(unit, stains):
         if unit == UNITS[0]:
