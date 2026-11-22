@@ -11,42 +11,29 @@ from __future__ import annotations
 
 import logging
 import os
-from collections import Counter
 from collections.abc import Callable, Iterable, Mapping
-from dataclasses import dataclass, field, replace
-from datetime import UTC, datetime
+from dataclasses import replace
 from functools import partial
 from pathlib import Path
 from typing import Literal
 
 from morphobricks_normalization.checks import IntensityCheckSettings
-from morphobricks_normalization.csv_io import OUTPUT_FILENAME, write_plane_histograms
 from morphobricks_normalization.ranges import HistogramSettings
 
 from ..axes import AxisMapping
 from ..axis_check import ConfirmedAxes
 from ..channel_identity import ChannelIdentityReport, check_channel_identity
-from ..design import DESIGN_FILENAME, write_experiment_design
 from ..discovery import check_output_folder, default_output_folder
 from ..discovery_report import (
-    REPORT_FILENAME,
-    REPORT_TEXT_FILENAME,
     WRITTEN,
     DiscoveryReport,
     RunOutcome,
     build_report,
 )
 from ..intensity import IntensityReport, check_intensities
-from ..lab_links import LabLinks
 from ..manifest import (
-    MANIFEST_FILENAME,
-    RunManifest,
     RunSettings,
-    file_sha256,
-    package_versions,
-    write_manifest,
 )
-from ..manifest_versions import MANIFEST_VERSION
 from ..mask_binding import (
     changed_masks,
     content_changed_masks,
@@ -62,21 +49,19 @@ from ..validation import ValidationIssue, has_errors, warning
 from .arguments import check_arguments as _check_arguments
 from .arguments import masks_argument as _masks_argument
 from .description_run import (
-    RunDescription,
     load_description,
-    manifest_entry,
     run_checks,
     unit_entries,
 )
 from .generation import staged_generation
 from .lock import OutputLockedError, lock_issue, output_lock
-from .modes import FULL, RESTART, RunMode, run_mode
+from .modes import RESTART, RunMode, run_mode
 from .output_guard import output_masks_issues
-from .preflight import Preflight, fit_calibration, preflight
+from .outputs import replaced_files, write_generation
+from .preflight import fit_calibration, preflight
 from .publish import write_report
 from .recorded import (
     GivenInputs,
-    ResolvedInputs,
     calibration_change,
     resolve_inputs,
     usable,
@@ -86,7 +71,8 @@ from .resume import changed_issue, changed_since
 from .reuse import read_previous, recorded_experiment_root
 from .rows import _pixel_issues, _range_issues, _row_order
 from .staging import clear_staging
-from .steps import Checked, Rows, compute_rows, counts, header_checks, outcome_of, unreadable_issue
+from .state import RunOptions, RunState
+from .steps import Rows, compute_rows, counts, header_checks, outcome_of, unreadable_issue
 from .workers import Workers
 
 logger = logging.getLogger(__name__)
@@ -222,43 +208,13 @@ def run_experiment(  # noqa: PLR0913
     try:
         with output_lock(output):
             reading = Workers(chosen.workers, chosen.max_ram)
-            options = _Options(mode, memory_limit, progress, chosen.lab_links, reading)
+            options = RunOptions(mode, memory_limit, progress, chosen.lab_links, reading)
             return _locked_run(given, output, options)
     except OutputLockedError as exc:
         return RunResult(output, False, (lock_issue(exc),), mode=mode)
 
 
-@dataclass(frozen=True)
-class _Options:
-    """The run's options that are not recorded inputs."""
-
-    mode: str
-    memory_limit: int
-    progress: Callable[[int, int, str], None] | None
-    lab_links: LabLinks | None = None
-    workers: Workers = field(default_factory=Workers)
-
-
-@dataclass(frozen=True)
-class _Run:
-    """What one run works with once its header checks are done."""
-
-    output: Path
-    pre: Preflight
-    inputs: ResolvedInputs
-    mode: str
-    checked: Checked
-    previous: tuple[RunManifest | None, str | None]
-    found: frozenset[str]
-    """The names in the output folder before the run wrote anything."""
-    mask_content: Mapping[str, str | None] = field(default_factory=dict)
-    """In a ``verify_content`` run, each mask's content SHA-256 taken after the header checks."""
-    description: RunDescription | None = None
-    """The published experiment description the run works with; None when it was refused."""
-    lab_links: LabLinks | None = None
-
-
-def _locked_run(given: GivenInputs, output: Path, options: _Options) -> RunResult:
+def _locked_run(given: GivenInputs, output: Path, options: RunOptions) -> RunResult:
     """Run every step while holding the output folder's lock."""
     found = frozenset(path.name for path in output.iterdir())
     previous = read_previous(output)
@@ -282,7 +238,9 @@ def _locked_run(given: GivenInputs, output: Path, options: _Options) -> RunResul
         checked.issues.extend(absent)
     calibrated = calibration_change(usable(previous[0]), pre.calibration)
     inputs = replace(inputs, changes=(*inputs.changes, *calibrated))
-    run = _Run(output, pre, inputs, options.mode, checked, previous, found, {}, described, links)
+    run = RunState(
+        output, pre, inputs, options.mode, checked, previous, found, {}, described, links
+    )
     recorded = usable(previous[0])
     base = RunOutcome(
         step="run",
@@ -330,7 +288,7 @@ def _read_issues(rows: Rows, settings: RunSettings) -> list[ValidationIssue]:
     return issues
 
 
-def _with_mask_content(run: _Run) -> _Run:
+def _with_mask_content(run: RunState) -> RunState:
     """Return the run with each mask's content SHA-256 (``verify_content``, issue #160).
 
     Taken once the header checks pass, of the masks as fingerprinted with their headers: a
@@ -346,7 +304,7 @@ def _with_mask_content(run: _Run) -> _Run:
     return run
 
 
-def _report(run: _Run, outcome: RunOutcome, checks: _Checks | None = None) -> DiscoveryReport:
+def _report(run: RunState, outcome: RunOutcome, checks: _Checks | None = None) -> DiscoveryReport:
     """Build the run's report, with the intensity and channel checks once the table is checked."""
     found = []
     if checks is not None:
@@ -368,7 +326,7 @@ def _as_warning(issue: object) -> ValidationIssue:
     return warning(issue.code, issue.message, issue.items, issue.action)
 
 
-def _stop(run: _Run, base: RunOutcome, rows: Rows | None) -> RunResult:
+def _stop(run: RunState, base: RunOutcome, rows: Rows | None) -> RunResult:
     """Write the stopped run's report and return its result; no scientific output is published."""
     write_report(_report(run, outcome_of(rows, base)), run.output)
     return RunResult(
@@ -383,7 +341,7 @@ def _stop(run: _Run, base: RunOutcome, rows: Rows | None) -> RunResult:
     )
 
 
-def _publish(run: _Run, base: RunOutcome, rows: Rows, settings: RunSettings) -> RunResult:
+def _publish(run: RunState, base: RunOutcome, rows: Rows, settings: RunSettings) -> RunResult:
     """Publish the table, design, manifest and report as one generation; return the result.
 
     Every image is fingerprinted again just before the commit (issue #90), and in a strict
@@ -397,12 +355,12 @@ def _publish(run: _Run, base: RunOutcome, rows: Rows, settings: RunSettings) -> 
     intensity = check_intensities(records, run.inputs.intensity_settings)
     identity = check_channel_identity(intensity.summaries)  # its default limits, recorded
     masks = None if pre.masks is None else mask_manifest(pre.masks, pre.discovery.root)
-    outcome = replace(outcome_of(rows, base), replaced=_replaced(run, masks))
+    outcome = replace(outcome_of(rows, base), replaced=replaced_files(run, masks))
     removes = [name for name in (MASK_REPORT_FILENAME,) if name in outcome.replaced]
     final_check = _final_content_check(run, rows, settings)
     try:
         with staged_generation(output, removes, final_check) as staged:
-            sha256 = _write_generation(
+            sha256 = write_generation(
                 run, rows, settings, records, (masks, intensity, identity), staged
             )
             changed = changed_since(rows.entries, pre.discovery.root)
@@ -443,7 +401,9 @@ def _publish(run: _Run, base: RunOutcome, rows: Rows, settings: RunSettings) -> 
     )
 
 
-def _final_content_check(run: _Run, rows: Rows, settings: RunSettings) -> Callable[[], None] | None:
+def _final_content_check(
+    run: RunState, rows: Rows, settings: RunSettings
+) -> Callable[[], None] | None:
     """Return a run's last check before its commit, or None when there is nothing to check.
 
     Every run fingerprints each mask once more after its generation is staged, right before
@@ -489,94 +449,6 @@ class _SourcesChangedError(Exception):
         self.paths = paths
         self.compared = compared  # a key of resume.CHANGE_TEXTS (mask_binding's for masks)
         self.masks = masks
-
-
-def _write_generation(
-    run: _Run,
-    rows: Rows,
-    settings: RunSettings,
-    records: list,
-    checks: tuple[dict | None, IntensityReport, ChannelIdentityReport],
-    staged: Path,
-) -> str:
-    """Write the table, design and manifest into the publication folder.
-
-    ``checks`` are the masks entry, the intensity and the channel checks. Returns the manifest's
-    SHA-256 (the report, which names it, is written once the images are checked again).
-    """
-    pre, design, ids = run.pre, run.checked.design, run.checked.channel_ids
-    masks, intensity, identity = checks
-    described = run.description
-    per_file = Counter(record.source_relative_path for record in records)
-    csv_path = write_plane_histograms(records, staged / OUTPUT_FILENAME, channel_ids=ids)
-    design_sha256 = None
-    if design is not None:
-        design_sha256 = file_sha256(write_experiment_design(design, staged / DESIGN_FILENAME))
-    manifest = RunManifest(
-        experiment_root=pre.discovery.root.as_posix(),
-        dtype=pre.metadata.dtype.name,
-        settings=settings,
-        mapping=run.checked.review.mapping,
-        files=tuple(
-            replace(entry, plane_count=per_file[rel]) for rel, entry in sorted(rows.entries.items())
-        ),
-        csv_sha256=file_sha256(csv_path),
-        versions=package_versions(),
-        written_at=datetime.now(UTC).isoformat(timespec="seconds"),
-        experiment_design_sha256=design_sha256,
-        masks=masks,
-        image_type=run.inputs.image_type,
-        channels_from_rgb_samples=run.checked.type_review.channels_from_rgb_samples,
-        intensity_checks=intensity.settings,
-        channel_identity=identity.settings,
-        narrow_ranges=tuple(rows.narrow),
-        calibration_sha256=pre.calibration.sha256,
-        conversion_record_sha256=None if pre.conversion is None else pre.conversion.sha256,
-        projection=_projection(pre),
-        experiment_description=manifest_entry(described, masks, run.output, len(rows.entries)),
-        lab_links=None if run.lab_links is None else run.lab_links.to_dict(),
-        manifest_version=MANIFEST_VERSION,
-    )
-    manifest = _kept_time(manifest, run.previous[0])
-    return file_sha256(write_manifest(manifest, staged / MANIFEST_FILENAME))
-
-
-def _projection(pre: Preflight) -> dict | None:
-    """Return the manifest's ``projection`` entry for projected copies, else None."""
-    found = None if pre.conversion is None else pre.conversion.projection
-    return None if found is None else found.to_dict()
-
-
-def _kept_time(manifest: RunManifest, earlier: RunManifest | None) -> RunManifest:
-    """Return the manifest with the earlier run's ``written_at`` when nothing else changed.
-
-    Later bricks pin the manifest's SHA-256 (CellPatcher, MorphoFeature): a rerun that
-    changes nothing must leave its bytes as they were (cross-brick test F10). The report
-    still records the rerun.
-    """
-    if earlier is None:
-        return manifest
-    same = replace(manifest, written_at=earlier.written_at)
-    return same if same.to_dict() == earlier.to_dict() else manifest
-
-
-def _replaced(run: _Run, masks: dict | None) -> dict[str, str]:
-    """Return the earlier output files the run replaces or removes, and why.
-
-    ``mask_relationships.json`` is removed when the masks changed since the earlier run
-    (or nothing usable records them), and in ``full`` mode, which recomputes every check.
-    """
-    names = [OUTPUT_FILENAME, MANIFEST_FILENAME, REPORT_FILENAME, REPORT_TEXT_FILENAME]
-    if run.checked.design is not None:
-        names.append(DESIGN_FILENAME)
-    replaced = {name: "replaced" for name in names if name in run.found}
-    if MASK_REPORT_FILENAME in run.found:
-        before = usable(run.previous[0])
-        if run.mode == FULL:
-            replaced[MASK_REPORT_FILENAME] = "removed: a full run recomputes every check"
-        elif before is None or before.masks != masks:
-            replaced[MASK_REPORT_FILENAME] = "removed: the masks changed since it was written"
-    return replaced
 
 
 def _folders(

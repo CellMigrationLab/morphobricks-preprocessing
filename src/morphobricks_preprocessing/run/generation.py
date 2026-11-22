@@ -1,8 +1,8 @@
 """Publish a run's outputs as one generation, made current in one atomic step (contract §9).
 
-A run's published outputs (``plane_histograms.csv``, ``experiment_design.csv``,
-``run_manifest.json`` and the report files) are one **generation**. Publication is
-crash-consistent (owner decision of 2 November 2026, PP-12):
+A run's published outputs (``plane_histograms.csv``, ``image_qc.csv``,
+``experiment_design.csv``, ``run_manifest.json`` and the report files) are one
+**generation**. Publication is crash-consistent (owner decision of 2 November 2026, PP-12):
 
 1. The whole new generation is written into the publication folder ``.publish`` in the
    output folder, each file flushed to disk, and then the **publication record**
@@ -50,6 +50,7 @@ from morphobricks_normalization.csv_io import OUTPUT_FILENAME
 from .._io import give_output_mode, write_text_atomic
 from ..design import DESIGN_FILENAME
 from ..discovery_report import REPORT_FILENAME, REPORT_TEXT_FILENAME
+from ..image_qc_record import IMAGE_QC_FILENAME
 from ..manifest import MANIFEST_FILENAME, file_sha256
 
 logger = logging.getLogger(__name__)
@@ -61,7 +62,13 @@ PUBLISH_FOLDER = ".publish"
 PUBLICATION_RECORD = "publication.json"
 """The record of a generation being published, written last into :data:`PUBLISH_FOLDER`."""
 PUBLICATION_VERSION = "1"
-MOVED_IN_ORDER = (OUTPUT_FILENAME, DESIGN_FILENAME, REPORT_TEXT_FILENAME, REPORT_FILENAME)
+MOVED_IN_ORDER = (
+    OUTPUT_FILENAME,
+    IMAGE_QC_FILENAME,
+    DESIGN_FILENAME,
+    REPORT_TEXT_FILENAME,
+    REPORT_FILENAME,
+)
 """The files moved into place after the commit, in this order (the manifest is the commit)."""
 
 

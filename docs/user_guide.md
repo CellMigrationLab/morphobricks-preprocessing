@@ -1047,6 +1047,23 @@ The default output folder is next to the experiment folder:
   the image does not have is blank; each channel also has its underflow and overflow, zero
   unless the robust range is used). A table written by an earlier version is recomputed on the next
   run; later bricks ask you to run this brick again on it.
+- **`image_qc.csv`:** one row per plane and channel with image QC metrics measured while the
+  histograms are computed (no extra read): the share of the plane above its Otsu threshold
+  (`foreground_fraction`; `otsu_separation` is about 0.64 for noise and for any dense field
+  with one broad histogram peak, so it does not tell an empty field from content), the
+  histogram's `entropy`, focus (`normalized_variance`, `tenengrad`, `laplacian_variance`,
+  `local_focus_median`; `local_focus_p10` shows how much of the field holds content, not focus),
+  the correlation of each pixel with its neighbours 1, 4 and 16 pixels away (structure size;
+  `correlation_1` is about 0 for an empty field of camera noise and high when there is
+  structure) and how uneven the field is (`tile_mean_cv`). They do not change when all
+  intensities are multiplied by a constant (an 8-bit and a 16-bit copy give the same values),
+  but a background offset does change the focus and unevenness values, so compare images that
+  share their camera settings. They are for review only: nothing is excluded because of them. A
+  blank value means the metric is not defined for that plane, never zero; the `blank_reasons`
+  column says why for each (for example a plane of one value, or no pixel pair that far apart).
+  Planes read in blocks are marked `read_in_blocks`; their neighbour metrics leave out the pixel
+  pairs across block edges, which can matter for an image with a seam on a block edge, and
+  another memory limit recomputes them. Definitions in [contract.md](contract.md) §19.
 - **`experiment_design.csv`:** one row per biological-repeat folder of each condition: its
   repeat group, whether its condition is a control, its image and technical-repeat counts,
   and whether and when the repeat group was confirmed. Derived from the saved description and

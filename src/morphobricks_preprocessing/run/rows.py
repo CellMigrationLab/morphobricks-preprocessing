@@ -5,22 +5,28 @@ Moved from ``run.py`` (PP-3).
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
+import numpy as np
 from morphobricks_normalization.dtypes import default_bin_count, validate_bin_count
-from morphobricks_normalization.ranges import range_check_issues
+from morphobricks_normalization.histogram import PlaneHistogram, histogram_with_range_check
+from morphobricks_normalization.ranges import RangeCheck, range_check_issues
 from morphobricks_normalization.records import PlaneRecord
 
 from ..axes import (
     AxisMapping,
 )
+from ..image_qc import ImageQc, PlaneQc
+from ..image_qc_table import QcRow
 from ..manifest import (
     NarrowRange,
     RunSettings,
 )
 from ..plane_errors import PlaneReadError
 from ..planes import (
+    Plane,
     iter_xyc_planes,
 )
 from ..validation import ValidationIssue, error, plural, warning
@@ -71,18 +77,19 @@ def _read_file(
     settings: RunSettings,
     position: str,
     channels: tuple[str, ...],
-) -> tuple[list[PlaneRecord], list[NarrowRange]]:
+) -> tuple[list[PlaneRecord], list[NarrowRange], list[QcRow]]:
     """Histogram every XYC plane of ``path``, recording the rows under the source ``rel``.
 
     One row per plane holds the histograms of all its channels (schema version 5), named by
     ``channels``, the canonical IDs of its unit's confirmed list (entry ``i`` is source
     channel ``C<i>``), binned with the run's histogram range. Also returns the channel planes
-    whose range check found the central range too narrow, by channel ID.
+    whose range check found the central range too narrow, by channel ID, and the image QC
+    row of every channel plane, measured in the same pass (contract §19).
 
     A channel that cannot be measured fails the image (Spec ADR 0003 HV3); the other planes
     are measured still, so that :class:`ChannelReadError` names every failed one.
     """
-    records, narrow, failed = [], [], []
+    records, narrow, failed, qc = [], [], [], []
     for plane in iter_xyc_planes(
         path,
         mapping,
@@ -90,12 +97,12 @@ def _read_file(
         bin_count=settings.bin_count,
         histogram_settings=settings.histogram,
     ):
-        measured = []
+        measured, in_blocks = [], []
         for c in range(plane.channel_count):
             try:
-                measured.append(
-                    plane.channel(c).histogram_with_check(settings.bin_count, settings.histogram)
-                )
+                channel_plane = plane.channel(c)
+                in_blocks.append(channel_plane.in_blocks)
+                measured.append(_measure(channel_plane, settings))
             except PlaneReadError as exc:
                 # Measure on, so that the error names every failed plane (HV3); none of
                 # this image's rows is used.
@@ -106,7 +113,7 @@ def _read_file(
         record = PlaneRecord(
             rel,
             *labels,
-            histograms=tuple(histogram for histogram, _ in measured),
+            histograms=tuple(histogram for histogram, _, _ in measured),
             z=plane.z,
             t=plane.t,
             position_id=position,
@@ -115,12 +122,42 @@ def _read_file(
         records.append(record)
         narrow.extend(
             NarrowRange(rel, record.plane_id, channel, check)
-            for channel, (_, check) in zip(channels, measured, strict=True)
+            for channel, (_, check, _) in zip(channels, measured, strict=True)
             if check is not None and check.narrow
+        )
+        qc.extend(
+            QcRow.of(record, channel, blocks, found)
+            for channel, blocks, (_, _, found) in zip(channels, in_blocks, measured, strict=True)
         )
     if failed:
         raise ChannelReadError(tuple(failed))
-    return records, narrow
+    return records, narrow, qc
+
+
+def _measure(
+    plane: Plane, settings: RunSettings
+) -> tuple[PlaneHistogram, RangeCheck | None, ImageQc]:
+    """Return a channel plane's histogram, range check and QC metrics, from the same reads.
+
+    The QC sums are taken from the blocks of the histogram's first pass over the plane, so
+    no pixel is read again for them (contract §19).
+    """
+    qc = PlaneQc(plane.shape, plane.dtype)
+    passes = []
+
+    def blocks() -> Iterator[np.ndarray]:
+        """Yield the plane's blocks; the first pass also adds them to the QC sums."""
+        tap = not passes
+        passes.append(tap)
+        for block in plane.blocks():
+            if tap:
+                qc.add(block.y, block.x, block.pixels)
+            yield block.pixels
+
+    histogram, check = histogram_with_range_check(
+        blocks, plane.dtype, settings.bin_count, settings=settings.histogram
+    )
+    return histogram, check, qc.finish(histogram)
 
 
 def _bin_count(dtype, bin_count: int | None) -> tuple[int | None, list[ValidationIssue]]:  # noqa: ANN001
