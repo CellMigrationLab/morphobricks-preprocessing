@@ -315,6 +315,19 @@ def twin_cases(run):
     }
 
 
+def assert_only_the_twin_is_on_disk(run, twin):
+    """Nothing was written beside the twin, and the twin is untouched.
+
+    On a file system that ignores case (Windows, macOS) the twin and the mask path are one file, so
+    "the mask path does not exist" cannot be asserted there; the names listed from disk can.
+    """
+    files = [path for path in run.masks.rglob("*") if path.is_file()]
+    assert [path.relative_to(run.masks).as_posix() for path in files] == [
+        twin.relative_to(run.masks).as_posix()
+    ]
+    assert twin.read_bytes() == b""
+
+
 @pytest.mark.parametrize("case", ["other case path", "second layout"])
 def test_a_mask_the_run_would_pair_counts_as_made(run, case):
     fovs = run.inputs.fovs()
@@ -330,7 +343,7 @@ def test_a_mask_the_run_would_pair_counts_as_made(run, case):
                 run.masks, "Cells", first, labels_like(run, first), run.inputs, overwrite=overwrite
             )
         assert twin.relative_to(run.masks).as_posix() in str(caught.value)
-    assert not mask_path(run.masks, "Cells", first).exists()
+    assert_only_the_twin_is_on_disk(run, twin)
 
 
 @pytest.mark.parametrize("spelling", ["cells", "CELLS"])
@@ -343,7 +356,7 @@ def test_a_type_spelled_in_two_ways_is_refused_as_the_run_refuses_it(run, spelli
         images_to_segment(run.inputs, "Cells", run.masks)
     with pytest.raises(SegmentationError, match="mask_names_differ_in_case"):
         write_mask(run.masks, "Cells", first, labels_like(run, first), run.inputs)
-    assert not mask_path(run.masks, "Cells", first).exists()
+    assert_only_the_twin_is_on_disk(run, twin)
 
 
 def test_two_masks_of_one_image_and_type_are_refused_before_writing(run):
