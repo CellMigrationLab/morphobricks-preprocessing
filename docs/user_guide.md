@@ -359,9 +359,12 @@ editing, or the confirmed ones. An image that cannot be drawn gets a sentence sa
    that folder, technical repeats included, take these tags, each keeping its own list. An
    acquisition with another number of channels is in its own row; one whose header names
    contradict the row is listed and not filled, and the description is not saved while it is
-   listed (tag it on its own). The rows go by folder name, since the channels are tagged
+   listed (tag it on its own). An acquisition whose own images disagree (other header names or
+   another number of channels) is never filled either: it is listed, and its images must be
+   corrected or separated. The rows go by folder name, since the channels are tagged
    before the pairing: if you pair the `rep2` folders of different conditions with different
-   biological repeats, the row says so and fills nothing; tag those conditions on their own.
+   biological repeats, every row of that folder (whatever its channel count) says so and
+   fills nothing; tag those conditions on their own.
    In fast mode a row offers only the acquisitions that do not fit the layout, and those it
    fills are tagged on their own (checked as in the strict mode); unticked, a row is offered
    for every repeat folder. On a reopen, a row shows the tags every acquisition of its folder
