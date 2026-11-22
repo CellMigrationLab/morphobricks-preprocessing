@@ -233,14 +233,14 @@ def test_the_allowed_codecs_read_bitwise_through_every_bounded_reader(tmp_path, 
     with WindowReader(path, mapping, cache_bytes=2**20) as reader:
         np.testing.assert_array_equal(reader.read_window(bounds=bounds, channels=[1, 0]), window)
     np.testing.assert_array_equal(read_xyc_plane(path, mapping), data)
-    for c, plane in enumerate(iter_planes(path, mapping, memory_limit=2**16)):
+    for c, plane in enumerate(iter_planes(path, mapping, memory_limit=2**18)):
         assert plane.in_blocks  # each plane read while the file is open
         whole = np.empty((H, W), dtype=np.uint8)
         for block in plane.blocks():
             rows, cols = block.pixels.shape
             whole[block.y : block.y + rows, block.x : block.x + cols] = block.pixels
         np.testing.assert_array_equal(whole, data[c])
-    assert [i.code for i in check_planes(tmp_path, {"a.tif": mapping}, memory_limit=2**16)] == [
+    assert [i.code for i in check_planes(tmp_path, {"a.tif": mapping}, memory_limit=2**18)] == [
         "planes_read_in_blocks"
     ]
 

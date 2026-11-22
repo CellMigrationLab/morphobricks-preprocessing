@@ -68,14 +68,18 @@ not positive (the ratio metrics) and a plane too small for the metric (a side un
 for the gradient and the Laplacian, under 16 for the tile metrics)."""
 
 
+OVERHEAD = 16 * 2**10
+"""Python objects of one block's sums (dictionaries, windows, moments), whatever its size."""
+
+
 def qc_memory(rows: int, cols: int, floating: bool) -> int:
     """Return an upper bound of the working memory the QC sums of one block hold, in bytes.
 
-    Besides the block itself (counted with the pixels): the sweep's float64 band buffer of
+    Besides the block itself (counted with the pixels): a fixed ``OVERHEAD`` of Python objects, the sweep's float64 band buffer of
     ``min(BAND_ROWS, rows) + REACH`` rows, the column sums of each band and their temporaries,
     the float64 copies of the thin strips and wrapped columns of the window and pair sums
     (two operands, at most ``REACH`` rows or columns wide), NumPy's casting buffers (two
-    operands of 8192 float64: ``numpy.getbufsize``) and, for a float block, the boolean mask
+    operands of up to 8192 float64: ``numpy.getbufsize``, never more than the block) and, for a float block, the boolean mask
     of the finite scan (one byte per pixel). The terms are added, though some are freed
     before others are made (measured with ``tracemalloc``, ``tests/test_image_qc_memory.py``).
 
@@ -89,8 +93,8 @@ def qc_memory(rows: int, cols: int, floating: bool) -> int:
     band = (min(BAND_ROWS, rows) + REACH) * cols * 8
     columns = 4 * cols * 8
     strips = 2 * 8 * REACH * (rows + cols)
-    casting = 2 * 8 * np.getbufsize()
-    return band + columns + strips + casting + (rows * cols if floating else 0)
+    casting = 2 * 8 * min(np.getbufsize(), rows * cols)
+    return OVERHEAD + band + columns + strips + casting + (rows * cols if floating else 0)
 
 
 def qc_settings() -> dict:
