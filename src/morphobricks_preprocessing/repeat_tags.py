@@ -28,23 +28,15 @@ Nothing here reads a file or a widget.
 from __future__ import annotations
 
 from collections.abc import Collection, Mapping, Sequence
-from typing import NamedTuple
 
 from .channel_labels import UnitLayout, tags_of
 from .channel_matrix import Difference, apart_reason, differences, eligible
 from .dataset import canonical_repeat_groups
 from .draft_answers import DraftAnswers, UnitKey
+from .repeat_review import Override
 
 GroupKey = tuple[str, int]
 """A row: the biological-repeat folder label and the channel count of its units."""
-
-
-class Override(NamedTuple):
-    """A listed unit's confirmed tags, and the unit's own header names they were confirmed for."""
-
-    tags: tuple[str, ...]
-    names: tuple[str | None, ...]
-    """The unit's own header name at each C index at the confirmation (read before the save)."""
 
 
 def header_names(layout: UnitLayout) -> tuple[str | None, ...]:

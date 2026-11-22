@@ -91,7 +91,7 @@ class OverrideEditor:
             if key in likes:
                 box += self._same(key, *likes[key])
             out.append(widgets.VBox(box))
-        for source in {src for src, _ in likes.values()}:
+        for source in dict.fromkeys(src for src, _ in likes.values()):  # first listed first
             keys = [k for k, (src, _) in likes.items() if src == source]
             if len(keys) > 1:
                 out.append(self._all(source, keys, likes[keys[0]][1]))
@@ -169,8 +169,12 @@ class OverrideEditor:
     def start(self, key: UnitKey) -> None:
         """Open the editor on a unit with the row's tags; nothing is saved."""
         self.editing = key
-        self.drafts[key] = list(self.rows.refused[key].tags)
+        self.drafts[key] = self._known(self.rows.refused[key].tags)
         self.rows.grid.refresh()
+
+    def _known(self, tags: Sequence[str | None]) -> list[str | None]:
+        """Return tags with a label that is no longer one left blank (renamed or removed)."""
+        return [t if t in self.rows.grid.labels else None for t in tags]
 
     def cancel(self) -> None:
         """Close the editor and drop its draft; nothing was saved."""
@@ -188,7 +192,8 @@ class OverrideEditor:
         """Build the editor: a dropdown per C index, the header and its disagreement under it."""
         rows = self.rows
         grid, refusal = rows.grid, rows.refused[key]
-        lead, draft = refusal.lead, self.drafts[key]
+        lead = refusal.lead
+        draft = self.drafts[key] = self._known(self.drafts[key])  # a label may change meanwhile
         found = {  # read against the aliases of the refusal, as before any confirmation
             d.index: d for d in differences(layout, draft, lead, grid.labels, refusal.channels)
         }
@@ -270,6 +275,7 @@ class OverrideEditor:
         self.confirmed.update(records)
         for key in save:
             self.drafts.pop(key, None)
+        rows.persist()
         grid.refresh()
         return True
 

@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import html
 from collections.abc import Mapping, Sequence
+from dataclasses import replace
 from typing import TYPE_CHECKING, NamedTuple
 
 import ipywidgets as widgets
@@ -38,6 +39,7 @@ from .channel_matrix import REFUSED, difference_text, differences
 from .draft_answers import ChannelAnswer
 from .notebook_channels_override import OverrideEditor
 from .notebook_channels_view import CHOOSE, columns, unit_name
+from .repeat_review import RefusedUnit, TagReview
 from .repeat_tags import (
     GroupKey,
     override_holds,
@@ -145,8 +147,7 @@ class RepeatRows:
         rows = self._rows()  # the whole row: its reference never depends on the mode
         answers = grid.store.answers()
         for key, old in self.refused.items():
-            group = next((g for g in rows.values() if any(u.key == key for u in g)), ())
-            layout = next((u for u in group if u.key == key), None)
+            group, layout = self._placed(rows, key)
             if layout is None or key not in offered:
                 continue
             why = repeat_apart(group).get(key)
@@ -167,6 +168,58 @@ class RepeatRows:
                 )
         self.refused = kept
         self.override.confirmed = {k: v for k, v in self.override.confirmed.items() if k in kept}
+        self.persist()
+
+    @staticmethod
+    def _placed(rows: Mapping, key: UnitKey) -> tuple[tuple, UnitLayout | None]:
+        """Return the row of units a unit is in, and the unit as read now (None when gone)."""
+        group = next((g for g in rows.values() if any(u.key == key for u in g)), ())
+        return group, next((u for u in group if u.key == key), None)
+
+    def persist(self) -> None:
+        """Keep the refusals and confirmations in the draft file, when they changed.
+
+        A new notebook on the draft restores them (:meth:`restore`): a refused unit counts only
+        once that unit is confirmed, whatever the session. A refused save is not retried: the
+        record stays in memory, which is what this session reads.
+        """
+        store, mine = self.grid.store, self._review()
+        answers = store.answers()
+        if (answers.tag_review or TagReview()) != mine:
+            store.update(replace(answers, tag_review=mine))
+
+    def _review(self) -> TagReview:
+        """Return what is refused and confirmed now, as the draft file keeps it."""
+        refused = {
+            key: RefusedUnit(
+                old.tags,
+                None if old.lead is None else old.lead.key,
+                {k: tuple(a.header_names) for k, a in old.channels.items() if a.header_names},
+            )
+            for key, old in self.refused.items()
+        }
+        return TagReview(refused, dict(self.override.confirmed))
+
+    def restore(self, layouts: Sequence[UnitLayout]) -> None:
+        """Take the refusals and confirmations of the draft file (a notebook opened on it).
+
+        Run before the headers are trusted and the refusals reconciled (:meth:`reconcile`
+        brings each up to date with the layouts, as after any re-check). Memory is not
+        replaced: this session's record is the draft's. A unit that is gone is not restored; a
+        reference that is gone is replaced by the current one at the next :meth:`reconcile`.
+        """
+        review = self.grid.store.answers().tag_review
+        if review is None or self.refused:
+            return
+        current = {u.key: u for u in layouts}
+        for key, saved in review.refused.items():
+            if (layout := current.get(key)) is not None:
+                lead = layout if saved.reference is None else current.get(saved.reference, layout)
+                aliases = {k: ChannelAnswer(None, v) for k, v in saved.aliases.items()}
+                self.refused[key] = Refusal(
+                    "", layout, None if saved.reference is None else lead, saved.tags, aliases
+                )
+        self.override.confirmed = {k: v for k, v in review.confirmed.items() if k in self.refused}
 
     def contradictions(self, layout: UnitLayout, refusal: Refusal, lead: UnitLayout) -> tuple:
         """Return where the unit's header contradicts the row's tags at the click.
@@ -183,14 +236,15 @@ class RepeatRows:
         (:meth:`.notebook_channels_matrix.MatrixView.trust_headers`): a refused unit counts only
         once the user confirms it. A confirmed unit holds tags, so trusts nothing either way.
         """
-        current = {u.key: u for u in self.grid.layouts}
-        return {
-            key
-            for key, old in self.refused.items()
-            if old.lead is not None
-            and key in current
-            and self.contradictions(current[key], old, old.lead)
-        }
+        rows, out = self._rows(), set()
+        for key, old in self.refused.items():
+            group, layout = self._placed(rows, key)
+            if layout is None or old.lead is None:
+                continue
+            lead = None if key in repeat_apart(group) else repeat_lead(group)  # the row as now
+            if lead is None or self.contradictions(layout, old, lead):
+                out.add(key)
+        return out
 
     def _rows(self) -> dict:
         """Return every repeat folder and channel count with all its units, in any mode."""
@@ -329,6 +383,7 @@ class RepeatRows:
             snapshot = frozen.get(unit, answers.channels)
             self.refused[unit] = Refusal(html.escape(why), layout, None, tuple(named), snapshot)
         if not save:
+            self.persist()
             self.grid.refresh()
             return False
         ok = self._commit_user(save, cells)
@@ -336,6 +391,7 @@ class RepeatRows:
             for unit in save:
                 self.refused.pop(unit, None)
                 self.override.confirmed.pop(unit, None)
+        self.persist()
         return ok
 
     @staticmethod

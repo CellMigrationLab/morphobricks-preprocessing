@@ -380,6 +380,12 @@ editing, or the confirmed ones. An image that cannot be drawn gets a sentence sa
    *tags*" and offers **Confirm the same tags**; when several listed acquisitions have them it
    also offers **Confirm all N like it**. Nothing is counted until you click; the buttons save
    exactly as **Confirm these tags** does (all N or none).
+   An acquisition you tagged by hand on the grid counts, but it is not offered as the source of
+   **Confirm the same tags** for others; only one confirmed with **Confirm these tags** (or by
+   a one-click button) is. If you rename or remove a label after an acquisition was listed, its
+   override opens with that channel left blank: choose a label that still exists. What is
+   listed and what you confirmed is saved with your answers: after you close and reopen the
+   notebook, a listed acquisition is still listed, and still not counted, until you confirm it.
    In fast mode a row offers only the acquisitions that do not fit the layout, and those it
    fills are tagged on their own (checked as in the strict mode); unticked, a row is offered
    for every repeat folder. On a reopen, a row shows the tags every acquisition of its folder

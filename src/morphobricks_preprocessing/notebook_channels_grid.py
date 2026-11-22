@@ -176,6 +176,7 @@ class TagGrid:
             self.matrix.reset()
             self.matrix.opening()
             self.matrix.tick_for_mode()
+            self.by_repeat.restore(layouts)  # refused units stay refused
         self.layouts, self.labels, self.rows.thumbs = layouts, labels, thumbs
         if self.place_types:
             self.types.open(layouts)
@@ -563,8 +564,7 @@ class TagGrid:
 
     def shown_as(self, label: str) -> str | None:
         """Return the shown-as name of a saved label (the chip's tooltip), if it has one."""
-        saved = self.store.answers().channels.get(label)
-        return None if saved is None else saved.display_name
+        return getattr(self.store.answers().channels.get(label), "display_name", None)
 
     def _usage_line(self, label: str, used: int, total: int) -> str:
         """Return the usage line of a label; one used in only some units is orange."""

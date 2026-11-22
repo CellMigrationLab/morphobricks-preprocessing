@@ -463,6 +463,9 @@ src/morphobricks_preprocessing/
                             unchanged; one-click Confirm the same tags / Confirm all N like it for
                             listed units with a confirmed unit's headers; a refusal keeps the
                             aliases of its time)
+  repeat_review.py          the refusals and confirmations kept in the draft file (pure: Override,
+                            RefusedUnit, TagReview; draft_format's optional tag_review, restored
+                            on opening by RepeatRows.restore before headers are trusted)
   strict_draft.py           fast mode unticked (pure): StrictShadow, the strict page's draft kept
                             beside the draft; every user save applies the same change to both
                             (channel_answers.tagged, patched), no-click tags the draft only;

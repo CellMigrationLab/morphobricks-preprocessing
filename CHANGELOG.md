@@ -36,6 +36,17 @@ old pin are refused with `spec_commit_mismatch`, as at every re-pin.
   headers as <unit>, which you confirmed as <tags>" with **Confirm the same tags**, and
   **Confirm all N like it** when several are listed: one click each through the same
   validation and save as the editor (all or none), never automatic.
+  A unit tagged by hand on the grid is counted too, but is not a source of **Confirm the same
+  tags** (only a confirmation from the editor or a one-click is).
+  - A label renamed or removed after a refusal no longer breaks the editor: that cell opens blank
+    (the unit stays unconfirmed until it is tagged), and a label gone is never offered by a
+    one-click button. Before, the dropdown raised and every later redraw raised too.
+  - Refusals and confirmations are kept in the draft file (optional `tag_review`, draft version
+    still 4, `repeat_review.py`; written only while not empty; read strictly) and restored on
+    opening, before headers are trusted: after a kernel restart a refused unit is still listed,
+    untagged and unsaved until that unit is confirmed, and the one-click offer is still made.
+  - Fast mode decides which refusals stand against the row's current reference unit, as the
+    list does, and **Confirm all N like it** buttons keep a stable order.
 - **Channel-identity check after the run** (contract §14.1, design
   `channel-identity-check-2026-11-21` in MorphoFeature's `claude/restart-doc`): from the image
   summaries the intensity checks already make (no pixel read), every imaging unit's channel is
