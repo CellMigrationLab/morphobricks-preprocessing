@@ -20,7 +20,7 @@ import ipywidgets as widgets
 from morphobricks_normalization.records import SINGLE
 
 from . import notebook_style as ui
-from .dataset import check_dataset
+from .dataset import canonical_repeat, check_dataset
 from .discovery import (
     IdentityError,
     check_identity_text,
@@ -168,7 +168,7 @@ class _DesignCard:
         for member in members if shown else ():
             dropdown = widgets.Dropdown(
                 options=options,
-                value=pairing.get(member.key, member.source_repeat),
+                value=canonical_repeat(pairing, *member.key),
                 layout=widgets.Layout(width="99%"),
             )
             dropdown.observe(
