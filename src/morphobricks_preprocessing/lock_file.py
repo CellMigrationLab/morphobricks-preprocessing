@@ -21,7 +21,7 @@ from pathlib import Path
 
 @dataclass(frozen=True)
 class LockHolder:
-    """The run holding an output folder's lock.
+    """The process holding a lock file (a run's output folder lock or a record lock).
 
     Attributes
     ----------
@@ -40,7 +40,7 @@ class LockHolder:
     def describe(self) -> str:
         """Name the holder in words, e.g. ``"process 412 on lab-pc, since 2026-11-02T10:00"``."""
         if not self.pid:
-            return "a run whose lock file cannot be read"
+            return "a writer whose lock file cannot be read"
         since = f", since {self.started_at}" if self.started_at else ""
         return f"process {self.pid} on {self.host}{since}"
 
