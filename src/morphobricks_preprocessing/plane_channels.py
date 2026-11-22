@@ -46,11 +46,11 @@ import tifffile
 from . import window_memory
 from .axes import AxisMapping
 from .codec_bounds import check_tiff_codec
+from .plane_binning import Binning
 from .planes import (
     DEFAULT_MEMORY_LIMIT,
     PlaneLayout,
     PlaneMemoryError,
-    _Binning,
     _layout,
     _open,
     _open_zarr,
@@ -93,12 +93,12 @@ def xyc_plane_memory(
     """
     if is_zarr_store(path):
         layout = _zarr_layout(
-            _open_zarr(path), mapping, path, _Binning(histogram=False), memory_limit
+            _open_zarr(path), mapping, path, Binning(histogram=False), memory_limit
         )
         return _zarr_memory(layout, _count(layout, channel_count))
     with _open(path) as tif:
         series = tif.series[0]
-        layout = _layout(series, mapping, path, _Binning(histogram=False), memory_limit)
+        layout = _layout(series, mapping, path, Binning(histogram=False), memory_limit)
         count = _checked(layout, channel_count, path)
         pages = _page_indices(layout, mapping, {"Z": z, "T": t}, count)
         return _tiff_memory(series, layout, pages, count, path)
@@ -132,13 +132,13 @@ def read_xyc_plane(
     wanted = {"Z": z, "T": t}
     if is_zarr_store(path):
         image = _open_zarr(path)
-        layout = _zarr_layout(image, mapping, path, _Binning(histogram=False), memory_limit)
+        layout = _zarr_layout(image, mapping, path, Binning(histogram=False), memory_limit)
         count = _checked(layout, channel_count, path)
         _refuse_over(_zarr_memory(layout, count), layout, count, path)
         return _read_zarr(image, layout, mapping, path, wanted, count)
     with _open(path) as tif:
         series = tif.series[0]
-        layout = _layout(series, mapping, path, _Binning(histogram=False), memory_limit)
+        layout = _layout(series, mapping, path, Binning(histogram=False), memory_limit)
         count = _checked(layout, channel_count, path)
         pages = _page_indices(layout, mapping, wanted, count)
         _refuse_over(_tiff_memory(series, layout, pages, count, path), layout, count, path)

@@ -53,17 +53,16 @@ from pathlib import Path
 
 import numpy as np
 import tifffile
-from morphobricks_normalization.dtypes import default_bin_count
 from morphobricks_normalization.histogram import (
     PlaneHistogram,
     compute_block_histogram,
-    estimate_histogram_memory,
     histogram_with_range_check,
 )
 from morphobricks_normalization.ranges import HistogramSettings, RangeCheck
 
 from .axes import PLANE_ROLES, AxisMapping, AxisReview
 from .codec_bounds import FIX, READ, refusal_text, unbounded
+from .plane_binning import Binning
 from .plane_errors import CompressionNotBoundedError, PlaneMemoryError, PlaneReadError
 from .tiff_pieces import _Blocking, _largest_piece, _read_tiff_box, _tiff_blocking, page_array
 from .validation import ValidationIssue, error, plural, warning
@@ -384,11 +383,11 @@ def plane_layout(
     """
     if is_zarr_store(path):
         return _zarr_layout(
-            _open_zarr(path), mapping, path, _Binning(bin_count, histogram_settings), memory_limit
+            _open_zarr(path), mapping, path, Binning(bin_count, histogram_settings), memory_limit
         )
     with _open(path) as tif:
         return _layout(
-            tif.series[0], mapping, path, _Binning(bin_count, histogram_settings), memory_limit
+            tif.series[0], mapping, path, Binning(bin_count, histogram_settings), memory_limit
         )
 
 
@@ -436,7 +435,7 @@ def iter_planes(
     if is_zarr_store(path):
         image = _open_zarr(path)
         layout = _zarr_layout(
-            image, mapping, path, _Binning(bin_count, histogram_settings), memory_limit
+            image, mapping, path, Binning(bin_count, histogram_settings), memory_limit
         )
         _check_limit(layout, path)
         for position in _positions(layout, mapping):
@@ -445,7 +444,7 @@ def iter_planes(
     with _open(path) as tif:
         series = tif.series[0]
         layout = _layout(
-            series, mapping, path, _Binning(bin_count, histogram_settings), memory_limit
+            series, mapping, path, Binning(bin_count, histogram_settings), memory_limit
         )
         _check_limit(layout, path)
         read = _tiff_reader(series, layout, mapping, path)
@@ -496,7 +495,7 @@ def iter_xyc_planes(
     if is_zarr_store(path):
         image = _open_zarr(path)
         layout = _zarr_layout(
-            image, mapping, path, _Binning(bin_count, histogram_settings), memory_limit
+            image, mapping, path, Binning(bin_count, histogram_settings), memory_limit
         )
         _check_limit(layout, path)
         yield from _xyc_planes(
@@ -508,7 +507,7 @@ def iter_xyc_planes(
     with _open(path) as tif:
         series = tif.series[0]
         layout = _layout(
-            series, mapping, path, _Binning(bin_count, histogram_settings), memory_limit
+            series, mapping, path, Binning(bin_count, histogram_settings), memory_limit
         )
         _check_limit(layout, path)
         yield from _xyc_planes(layout, mapping, _tiff_reader(series, layout, mapping, path))
@@ -548,13 +547,13 @@ def read_plane(
     wanted = {"Z": z, "C": c, "T": t}
     if is_zarr_store(path):
         image = _open_zarr(path)
-        layout = _zarr_layout(image, mapping, path, _Binning(histogram=False), memory_limit)
+        layout = _zarr_layout(image, mapping, path, Binning(histogram=False), memory_limit)
         layout = _whole_or_preview(layout, path, preview, _zarr_reblock(image, mapping, path))
         position = _position(layout, mapping, wanted)
         return _whole_or_reduced(_zarr_plane(image, layout, mapping, position, path), layout)
     with _open(path) as tif:
         series = tif.series[0]
-        layout = _layout(series, mapping, path, _Binning(histogram=False), memory_limit)
+        layout = _layout(series, mapping, path, Binning(histogram=False), memory_limit)
         layout = _whole_or_preview(layout, path, preview, _tiff_reblock(series, mapping, path))
         return _whole_or_reduced(_read_one(series, layout, mapping, path, wanted), layout)
 
@@ -576,7 +575,7 @@ def read_sample_plane(
         return read_plane(path, mapping, z=z, memory_limit=memory_limit, preview=True)
     with _open(path) as tif:
         series = tif.series[0]
-        layout = _layout(series, mapping, path, _Binning(histogram=False), memory_limit)
+        layout = _layout(series, mapping, path, Binning(histogram=False), memory_limit)
         layout = _whole_or_preview(layout, path, True, _tiff_reblock(series, mapping, path))
         dim = mapping.index_of("Z")
         z = None if dim is None else layout.shape[dim] // 2
@@ -754,7 +753,7 @@ def _layout(
     series: tifffile.TiffPageSeries,
     mapping: AxisMapping,
     path,  # noqa: ANN001
-    binning: _Binning,
+    binning: Binning,
     memory_limit: int = DEFAULT_MEMORY_LIMIT,
 ) -> PlaneLayout:
     """Work out from a TIFF series' header how its planes are read: whole, or in blocks."""
@@ -789,7 +788,7 @@ def _layout(
         page_nbytes
         + encoded_nbytes
         + plane_pixels * dtype.itemsize
-        + binning.memory(plane_pixels, dtype)
+        + binning.memory(shape[y], shape[x], dtype)
         + binning.finished(dtype, channels)
     )
     layout = PlaneLayout(
@@ -817,30 +816,6 @@ def _layout(
 def _channel_count(shape: tuple[int, ...], mapping: AxisMapping) -> int:
     c = mapping.index_of("C")
     return 1 if c is None else shape[c]
-
-
-@dataclass(frozen=True)
-class _Binning:
-    """What a plane's histogram costs in memory (nothing when only read, audit I2)."""
-
-    bin_count: int | None = None
-    settings: HistogramSettings | None = None
-    histogram: bool = True
-
-    def memory(self, pixels: int, dtype: np.dtype) -> int:
-        """Temporary memory of binning ``pixels`` pixels (none when only read: bool masks)."""
-        return self.histogram and estimate_histogram_memory(
-            pixels, dtype, self.bin_count, settings=self.settings, range_check=True
-        )
-
-    def finished(self, dtype: np.dtype, channels: int) -> int:
-        """Memory of the finished histograms of an XYC plane's channels."""
-        return self.histogram and _finished_histograms_nbytes(dtype, self.bin_count, channels)
-
-
-def _finished_histograms_nbytes(dtype: np.dtype, bin_count: int | None, channels: int) -> int:
-    """Memory of the bin counts of every channel of an XYC plane, kept until its row is made."""
-    return channels * 8 * (default_bin_count(dtype) if bin_count is None else bin_count)
 
 
 def _check_limit(layout: PlaneLayout, path) -> None:  # noqa: ANN001
@@ -1011,7 +986,7 @@ def _coordinates(mapping: AxisMapping, position: Mapping[int, int]) -> dict[str,
 # Blocks --------------------------------------------------------------------------------
 
 
-def _with_blocks(layout: PlaneLayout, blocking: _Blocking | None, binning: _Binning) -> PlaneLayout:
+def _with_blocks(layout: PlaneLayout, blocking: _Blocking | None, binning: Binning) -> PlaneLayout:
     """Add the block size that fits the memory limit to a layout over the limit."""
     if blocking is None:
         return layout
@@ -1076,13 +1051,13 @@ def _choose_block(
 
 
 def _block_memory(
-    layout: PlaneLayout, blocking: _Blocking, rows: int, cols: int, binning: _Binning
+    layout: PlaneLayout, blocking: _Blocking, rows: int, cols: int, binning: Binning
 ) -> int:
     """Estimated working memory to read one block and add it to the histogram."""
     pixels = rows * cols
     memory = (
         pixels * layout.dtype.itemsize
-        + binning.memory(pixels, layout.dtype)
+        + binning.memory(rows, cols, layout.dtype, not blocking.rows_are_y)
         + binning.finished(layout.dtype, layout.channel_count)
     )
     unit_rows, unit_cols = blocking.unit
@@ -1205,7 +1180,7 @@ def _whole_or_reduced(plane: Plane, layout: PlaneLayout) -> Plane:
 
 
 def _tiff_reblock(series, mapping: AxisMapping, path) -> Callable[[int], PlaneLayout]:  # noqa: ANN001
-    return lambda limit: _layout(series, mapping, path, _Binning(histogram=False), limit)
+    return lambda limit: _layout(series, mapping, path, Binning(histogram=False), limit)
 
 
 def _tiff_block_plane(
@@ -1248,7 +1223,7 @@ def _zarr_layout(
     image: NgffImage,
     mapping: AxisMapping,
     path,  # noqa: ANN001
-    binning: _Binning,
+    binning: Binning,
     memory_limit: int = DEFAULT_MEMORY_LIMIT,
 ) -> PlaneLayout:
     shape = image.shape
@@ -1264,7 +1239,7 @@ def _zarr_layout(
     memory = (
         page_nbytes
         + plane_pixels * dtype.itemsize
-        + binning.memory(plane_pixels, dtype)
+        + binning.memory(shape[y], shape[x], dtype)
         + binning.finished(dtype, channels)
     )
     layout = PlaneLayout(
@@ -1295,7 +1270,7 @@ def _zarr_layout(
 
 
 def _zarr_reblock(image: NgffImage, mapping: AxisMapping, path) -> Callable[[int], PlaneLayout]:  # noqa: ANN001
-    return lambda limit: _zarr_layout(image, mapping, path, _Binning(histogram=False), limit)
+    return lambda limit: _zarr_layout(image, mapping, path, Binning(histogram=False), limit)
 
 
 def _zarr_plane(

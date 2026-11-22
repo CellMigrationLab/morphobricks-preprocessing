@@ -585,7 +585,7 @@ def test_plane_over_memory_limit_blocks(experiment, reads):
     assert not result.written and reads == []
 
 
-def test_planes_over_the_memory_limit_are_read_in_blocks(experiment, tmp_path, reads):
+def test_planes_over_the_memory_limit_are_read_in_blocks(experiment, tmp_path):
     whole = run_described(experiment, TYX, output_folder=tmp_path / "whole")
     limit = plane_layout(experiment / IMAGES[0], TYX, memory_limit=1).block_memory_estimate
     blocks = run_described(experiment, TYX, output_folder=tmp_path / "blocks", memory_limit=limit)
@@ -595,10 +595,10 @@ def test_planes_over_the_memory_limit_are_read_in_blocks(experiment, tmp_path, r
     assert csv_bytes(blocks) == csv_bytes(whole)
     assert all(f.read_in_blocks for f in read_manifest(blocks.manifest_path).files)
     assert not any(f.read_in_blocks for f in read_manifest(whole.manifest_path).files)
-    # Changing only the limit reads nothing again; the manifest records the new way.
-    reads.clear()
+    # Only the limit changed: the same table, but the images are read again (image QC, §19).
     again = run_described(experiment, TYX, output_folder=tmp_path / "blocks")
-    assert again.read == () and reads == [] and csv_bytes(again) == csv_bytes(whole)
+    assert "memory limit changed" in again.rebuild_reason and sorted(again.read) == sorted(IMAGES)
+    assert csv_bytes(again) == csv_bytes(whole)
     assert not any(f.read_in_blocks for f in read_manifest(again.manifest_path).files)
 
 

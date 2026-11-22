@@ -142,6 +142,14 @@ src/morphobricks_preprocessing/
   image_type.py     image type (P4): FLUORESCENCE/RGB, review_image_type (suggestion from
                     TiffMetadata.rgb_samples and the confirmed roles, whether RGB is possible via the
                     brick's check_rgb), image_type_issues (rgb_not_possible)
+  image_qc.py       per-plane image QC metrics (contract §19), measured from the histogram pass's
+                    blocks (run/rows.py _measure taps the first pass, no extra read): PlaneQc,
+                    ImageQc (with the reason each blank metric is blank), qc_memory (the QC term of
+                    the memory estimate), histogram_metrics (Otsu, separation, entropy); image_qc_sums.py
+                    (BlockSums: one cache-blocked sweep of shifted dot products), image_qc_moments.py
+                    (Moments/CoMoments, combined across blocks), image_qc_table.py (image_qc.csv,
+                    strict reader: refuses inconsistent status/metric/reason combinations),
+                    image_qc_record.py (the manifest's image_qc entry)
   intensity.py      intensity checks (P5): check_intensities/check_table (the brick's image_summaries
                     and intensity_checks, IntensityReport), repeat_boxes and repeat_distributions for
                     the notebook's plots, intensity_text for the CLI
@@ -214,7 +222,7 @@ src/morphobricks_preprocessing/
                     colour_composite (an RGB image as one colour picture, display only)
   planes.py         plane-by-plane reader (iter_planes, read_plane, read_sample_plane), table rows as
                     XYC planes whose channels are read one at a time (iter_xyc_planes, XycPlane),
-                    memory estimate,
+                    memory estimate (plane_binning.py Binning: the histogram and image QC terms),
                     check_planes (preflight memory / layout errors); planes over the limit read in
                     blocks of TIFF strips/tiles or zarr chunks (Plane.blocks, BlockReader), reduced
                     previews; plane_errors.py PlaneReadError, PlaneMemoryError
@@ -293,11 +301,13 @@ src/morphobricks_preprocessing/
                     mask_requests.py the resolver's mask uses (contract v3): MaskConversion,
                     mask_uses, objects_conflict (re-exported by run_inputs_request)
   _io.py            write_text_atomic (every file the brick writes) and free_space
-  manifest.py       RunManifest / RunSettings / FileEntry, JSON read/write, SHA-256 of the CSV,
+  manifest.py       RunManifest / RunSettings, JSON read/write, SHA-256 of the CSV (FileEntry and its
+                    manifest data moved to manifest_files.py, re-exported here),
                     check_sources (images against a run, for other bricks, contract §16)
   run/              the run (a package since PP-3; `morphobricks_preprocessing.run` re-exports
                     its public names): preflight.py (Preflight, preflight, sample_planes),
-                    pipeline.py (run_experiment, incremental), steps.py (header checks,
+                    pipeline.py (run_experiment, incremental), state.py (RunOptions, RunState),
+                    outputs.py (write_generation: the tables and the manifest; replaced_files), steps.py (header checks,
                     rows, outcome), modes.py (restart/full, RunMode with verify_content), recorded.py (inputs reused from
                     the earlier run, InputChange), lock.py (the output folder's O_EXCL lock,
                     remove_stale_lock), output_guard.py (the output folder against the
@@ -888,7 +898,7 @@ Technical details go to `logging` (shown in the notebook's "Technical details" p
 | Topic | Decision |
 |---|---|
 | Binning | Per-plane min–max, same bin count per experiment, pooled counts for groups (binning study) |
-| Core dependencies | `numpy`, `tifffile`, `scipy` (the mask step's piece counts, Q32) and `morphobricks-normalization` (git dependency pinned to its release tag v0.7.1 (signed zero written as 0.0, NumPy per-bin work; v0.7.1), whose `regions` and `contracts` (Spec ADR 0005; v0.7.0) are not used here but pinned so that every consumer resolves one normalization, whose `stain` module (v0.6.0; `check_options` since v0.6.1), optical-density helpers and optional `histology` extra are used only by the opt-in H&E tissue mask helper (`he-mask` extra), whose reader takes the schema version 5 table (channels by canonical ID, ADR 0003; since v0.5.0), and whose CSV reader checks each row's stored `plane_id`, `image_file` and `bit_depth` (since v0.3.2), refuses a blank `position_id` and tables of schema versions 1 to 3 (v0.4.0), and whose `PlaneRecord` requires a keyword-only `position_id` and which refuses corrupt or ambiguous statistics and parameters (v0.3.3); `[tool.hatch.metadata] allow-direct-references`). `ipywidgets` and `matplotlib` in the `notebook` extra; `zarr` in the `zarr` extra; `pytest` and `ruff` in `dev` |
+| Core dependencies | `numpy` (2.0 or later: the image QC sums use `numpy.vecdot`), `tifffile`, `scipy` (the mask step's piece counts, Q32) and `morphobricks-normalization` (git dependency pinned to its release tag v0.7.1 (signed zero written as 0.0, NumPy per-bin work; v0.7.1), whose `regions` and `contracts` (Spec ADR 0005; v0.7.0) are not used here but pinned so that every consumer resolves one normalization, whose `stain` module (v0.6.0; `check_options` since v0.6.1), optical-density helpers and optional `histology` extra are used only by the opt-in H&E tissue mask helper (`he-mask` extra), whose reader takes the schema version 5 table (channels by canonical ID, ADR 0003; since v0.5.0), and whose CSV reader checks each row's stored `plane_id`, `image_file` and `bit_depth` (since v0.3.2), refuses a blank `position_id` and tables of schema versions 1 to 3 (v0.4.0), and whose `PlaneRecord` requires a keyword-only `position_id` and which refuses corrupt or ambiguous statistics and parameters (v0.3.3); `[tool.hatch.metadata] allow-direct-references`). `ipywidgets` and `matplotlib` in the `notebook` extra; `zarr` in the `zarr` extra; `pytest` and `ruff` in `dev` |
 | OME-Zarr (Q12) | Input may be TIFF and/or OME-Zarr (folders ending in `.zarr`), mixed. OME-Zarr axes come from their metadata and are matched by role; level 0 of a single image only, several images per store is `multiple_series`. *Removed in v0.4.0 (plan Q46): TIFF images are always read directly; the following describes v0.3.* TIFF choice once per experiment (`convert_tiffs`): read directly (default) or convert to `<output>/ome_zarr` (OME-NGFF 0.4) and compute rows from the copies; switching recomputes TIFF rows and removes unused copies. Reads OME-NGFF 0.4 and 0.5 (0.5 needs zarr 3). In the notebook: its own step-3 card "(Optional) Image conversion" after Settings (Q13): radio buttons (read directly = recommended), a disk-space warning (amber, red when the estimate exceeds free space, never blocking), and conversion settings (chunk size, compression + level, pyramid levels) shown only when converting. CLI `--convert-tiff` with `--chunk-size`, `--compression`, `--compression-level`, `--pyramid-levels`. No overlap setting: chunks never overlap |
 | System files (Q5) | Ignored silently; `single` check and sibling uniqueness are case-insensitive |
 | Too-deep folders (Q7) | Error |

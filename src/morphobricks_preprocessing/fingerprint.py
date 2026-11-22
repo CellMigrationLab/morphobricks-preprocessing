@@ -123,6 +123,11 @@ class RowKey:
     channel_ids
         The image's canonical channel IDs in source order (its unit's confirmed list, Stage 3):
         rows recorded under other IDs are recomputed, never relabelled.
+    block_limit
+        The memory limit, for an image whose planes are read in blocks; None for one read
+        whole. The limit sets the blocks, and the image QC metrics of a plane read in blocks
+        leave out the neighbour pairs across a block edge (contract §19), so staged rows are
+        resumed only under the limit they were measured with.
     """
 
     relative_path: str
@@ -137,6 +142,7 @@ class RowKey:
     histogram: tuple
     content_sha256: str | None = None
     channel_ids: tuple[str, ...] = ()
+    block_limit: int | None = None
 
     @classmethod
     def of(cls, entry: FileEntry, settings: RunSettings, experiment_root: str) -> RowKey:
@@ -164,6 +170,7 @@ class RowKey:
             histogram=tuple(sorted(_frozen(settings.histogram.to_dict()).items())),
             content_sha256=entry.content_sha256,
             channel_ids=tuple(entry.channel_ids),
+            block_limit=settings.memory_limit if entry.read_in_blocks else None,
         )
 
 

@@ -290,6 +290,26 @@ def test_a_lock_another_writer_took_meanwhile_is_never_removed(tmp_path):
     assert read_holder(lock) == LockHolder("another-pc", 7)  # still the other writer's
 
 
+def test_a_holder_carries_a_random_token_and_an_older_lock_without_one_still_reads(tmp_path):
+    lock = tmp_path / RECORD_LOCK_FILENAME
+    with exclusive_lock(lock) as holder:
+        assert len(holder.token) == 32 and read_holder(lock) == holder
+    with exclusive_lock(lock) as again:
+        assert again.token != holder.token
+    lock.write_text('{"host": "old-pc", "pid": 7, "started_at": "x"}\n', encoding="utf-8")
+    assert read_holder(lock) == LockHolder("old-pc", 7, "x", "")
+
+
+def test_a_lock_retaken_by_the_same_process_in_the_same_second_is_never_removed(tmp_path):
+    lock = tmp_path / RECORD_LOCK_FILENAME
+    with exclusive_lock(lock) as first:
+        lock.unlink()
+        with exclusive_lock(lock) as second:  # same host, PID and second; another holding
+            assert second.token != first.token
+        lock.write_text(json.dumps({**first.__dict__, "token": "other"}), encoding="utf-8")
+    assert lock.exists()  # the first holder's exit did not remove the other's lock
+
+
 def test_two_batches_made_in_the_same_second_get_different_ids(tmp_path, monkeypatch):
     class Frozen:
         @staticmethod

@@ -364,7 +364,7 @@ def test_a_rerun_that_changes_nothing_keeps_the_manifest_bytes(tmp_path, monkeyp
         def now(tz=None):
             return __import__("datetime").datetime.fromisoformat(next(times))
 
-    monkeypatch.setattr(run_module.pipeline, "datetime", Clock)
+    monkeypatch.setattr(run_module.outputs, "datetime", Clock)
     first = run_described(root, TYX)
     before = first.manifest_path.read_bytes()
     again = run_described(root, TYX)

@@ -61,6 +61,16 @@ old pin are refused with `spec_commit_mismatch`, as at every re-pin.
   and a type spelled two ways are refused before writing; a mask is claimed with an exclusive create and
   then moved into place, so it is never silently replaced and needs no hard links (Google Drive). The masks step skips that file silently instead of
   warning `mask_without_image` (only directly in a type folder). "Has a mask" is decided by the run's own pairing (either layout, any case), `write_mask` refuses a twin elsewhere and never replaces a mask another writer made in between, and `resolve_segmentation` / `SegmentationPlan` resolve the channels once for a batch. The pairing also counts the label images inside OME-Zarr images and applies the run's own `_name_issues` and `_duplicate_issues` (no second copy of the rules), so an OME-Zarr image that has a `labels/Cells` mask is not listed and is refused by `write_mask`. `write_record` holds an exclusive lock file (`.segmentation_record.lock`, refused at once when held, removed only while it still names this writer) while it rewrites the record; it is the run's own lock, now in `lock_file.py` (`exclusive_lock`, `LockHolder`, `read_holder`) and shared with `run/lock.py`, and `new_batch_id()` makes a batch ID unique even within one second. The exclusive create and the lock protect writers on one computer only, not two Colab sessions on one Drive folder. Contract §15.5.
+- **Segmentation hand-off, audit fixes (PR #367)**: the helper now applies the run's own
+  `_description_name_issues` to every discovered mask type (an unrelated type `NA` or a decomposed
+  name is refused by `images_to_segment` and `write_mask` as the next described run refuses it,
+  `R_MASK_TYPE_NAME_INVALID`); `write_mask` holds one exclusive per-type write lock
+  (`<masks>/<type>/.segmentation_write.lock`, refused at once, never waited on) from the twin check
+  to the published mask in both modes, so a default writer can no longer replace the finished mask
+  of a concurrent `overwrite=True` writer (contract §15.5 also documents the transient zero-byte
+  placeholder and that preprocessing must not run on the masks folder during a batch). `LockHolder`
+  gains a random `token`, written in the lock file and compared on removal (a lock without one,
+  from an older run, still reads, token `""`).
 - **Channel-identity check after the run** (contract §14.1, design
   `channel-identity-check-2026-11-21` in MorphoFeature's `claude/restart-doc`): from the image
   summaries the intensity checks already make (no pixel read), every imaging unit's channel is
@@ -84,6 +94,28 @@ old pin are refused with `spec_commit_mismatch`, as at every re-pin.
   `swap_ratio` 3.0, `partner_ratio` 2.0, chosen with a false-positive simulation) are recorded
   in the manifest's new optional key `channel_identity`, beside `intensity_checks` (manifest
   version unchanged).
+
+- **Image QC metrics per plane and channel, computed in the histogram pass** (MorphoFeature
+  design `image-qc-metrics-2026-11-21`, metrics 1-8): a new run-folder table `image_qc.csv`, one
+  row per plane and channel, with `foreground_fraction` (Otsu, with `otsu_threshold` and
+  `otsu_separation`), `entropy`, `normalized_variance`, `tenengrad`, `laplacian_variance`,
+  `correlation_1/4/16`, `local_focus_median/p10` and `tile_mean_cv`, scale-free and measured
+  from the blocks the histogram already reads (no extra read; `image_qc`, `image_qc_sums`,
+  `image_qc_moments`, `image_qc_table`, `image_qc_record`). The manifest gains the optional key
+  `image_qc` (file, SHA-256, `qc_version` and settings; manifest version stays 5). The table
+  follows the histogram step's reuse and resume rules: staging version 2 stages it with the
+  rows (a version 1 staged record is discarded and read again), and a run whose earlier
+  manifest has no `image_qc` entry recomputes every row once. `tools/benchmark_image_qc.py`
+  times the histogram step with and without the metrics on identical outputs. The
+  power-spectrum slope (PLLS) is not included (cost). Contract §19, user guide §6. Each blank
+  metric has a reason in the `blank_reasons` column (`constant_plane`, `no_pairs`,
+  `no_variance`, `non_positive_mean`, `plane_too_small`, `non_finite_pixels`,
+  `no_finite_pixels`), and the reader and writer refuse inconsistent status, metric and reason
+  combinations. The contract states what the metrics are not: scale-free only under pure
+  multiplication (an offset changes the ratio metrics), `otsu_separation` of noise is 2/pi (use
+  `correlation_1` for emptiness), `local_focus_p10` is content coverage, central-difference
+  Tenengrad (not Sobel), Pearson lag correlations (not Haralick), and the block tolerances are
+  observations, not guarantees.
 
 - **Tag this repeat folder (all conditions)** on *Tag channels* (owner request of 20 November
   2026): one row of tags per biological-repeat **folder name** and channel count; set once, it
@@ -157,6 +189,19 @@ old pin are refused with `spec_commit_mismatch`, as at every re-pin.
 
 ### Fixed
 
+- **Tag this repeat folder: refusals after a folder re-check** (#372): when the tag grid opens
+  on new layouts, `RepeatRows.reconcile()` drops the refused units that are no longer in an
+  offered row (removed, now colour or unusable) and recomputes the others against their row's
+  current reference (`repeat_lead`, `repeat_apart`, `differences`); a surviving contradiction
+  is kept, with its text worded against the reference as read now, and a unit that no longer
+  contradicts is dropped. A removed unit no longer blocks publishing. The row now says "N units
+  eligible for this row" (it fills only those whose tags pass the header check). The
+  reference is the whole row's in fast mode too, and a unit with incomplete own tags stays
+  listed. Tests: a parameterised `balance_table` pairing regression (missing pairing,
+  case-distinct labels, unused pairing keys); the `test_372_*` notebook tests in
+  `tests/test_notebook_tag_by_repeat_recheck.py` (removed unit, changed reference, unchanged
+  recheck, fast-mode reopen, incomplete own tags).
+
 - **Tag this repeat folder (all conditions)** (#366, after #363):
   - A row never fills an acquisition whose images disagree (other header names or colour, or
     another channel count within the unit: `uniform` or `counts_agree` false); it lists the
@@ -175,6 +220,19 @@ old pin are refused with `spec_commit_mismatch`, as at every re-pin.
 
 ### Changed
 
+- **Another memory limit recomputes the rows when planes are read in blocks**: the image QC
+  neighbour metrics of a plane read in blocks depend on its blocks, so rows measured under
+  another limit were silently reused (and resumed). With the earlier run or this one reading any
+  plane in blocks, a changed `memory_limit` recomputes every row (reason in the report), and
+  staged rows of an image read in blocks are resumed only under their limit (`RowKey.block_limit`);
+  whole planes on both sides still keep their rows. The QC rows reused must also match the
+  histogram rows' full identity, not only plane ID and channel. The working memory of the QC sums
+  (`image_qc.qc_memory`) is part of the plane and block estimates (`plane_binning.Binning`), so
+  blocks are a little smaller; a float plane's sums are centred on its mean, not a rounded one.
+- **NumPy 2.0 or later** (the image QC sums use `numpy.vecdot`), with the dependency floors
+  raised to releases that import with NumPy 2: SciPy 1.13, Matplotlib 3.8.4 (`notebook`) and
+  scikit-image 0.24 (`he-mask`). Checked on Python 3.11 with the lowest versions of every
+  dependency and on 3.13 with the newest.
 - **Draft file version 4** (`morphobricks.draft.json`): the keys `channel_layout` and
   `switch_mode`, and a unit's `channels_from`. A version 3 draft is refused (`unknown_version`;
   it was written under the old Spec pin anyway, `spec_commit_mismatch`).
