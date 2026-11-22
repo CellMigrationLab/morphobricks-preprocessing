@@ -54,6 +54,18 @@ def test_a_reused_batch_id_with_another_model_is_refused_and_the_mask_restored(r
     assert read_record(run.masks, "Cells") == before_record
 
 
+def test_a_reused_batch_id_that_leaves_out_earlier_images_is_refused(run, stub):
+    fovs = run.inputs.fovs()
+    cp.run_batch(make_job(run), fovs=fovs[:2], batch_id="same")
+    path = mask_path(run.masks, "Cells", fovs[1])
+    before_mask, before_record = path.read_bytes(), read_record(run.masks, "Cells")
+    shorter = make_job(run, overwrite=True)  # same provenance, identical mask bytes
+    result = cp.run_batch(shorter, fovs=fovs[1:2], batch_id="same")
+    assert result.rows()[0][1] == "failed" and result.stopped
+    assert path.read_bytes() == before_mask
+    assert read_record(run.masks, "Cells") == before_record
+
+
 def test_a_post_commit_error_with_the_complete_batch_keeps_the_mask(run, stub, monkeypatch):
     fovs = run.inputs.fovs()
     cp.run_batch(make_job(run), fovs=fovs[:1], batch_id="b1")

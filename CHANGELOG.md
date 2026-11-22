@@ -8,6 +8,8 @@ v0.5.1: no run before v0.5.1 is read.)
 
 ## Unreleased
 
+- Cellpose batch recovery after a failed record write also requires the batch's whole image list to be the one written (a reused batch ID that leaves out earlier images is refused and the mask restored; ChatGPT al FILE 1).
+
 **One header-name rule (#368).** Whether a raw header name is a confirmed name of a channel is now
 decided by one function, `description_identity.header_name_matches` (equal after NFC, never trimmed,
 never case-folded), used by the notebook's channel matrix, the fast layout, the physical check and

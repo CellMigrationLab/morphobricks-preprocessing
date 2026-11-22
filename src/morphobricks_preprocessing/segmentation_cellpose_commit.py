@@ -51,8 +51,9 @@ def is_recorded(masks_root: str | Path, mask_type: str, expected: SegmentationBa
     rolled back. That needs the whole of it: the record's batch of this ID has the provenance
     of ``expected`` (the record's own ``same_provenance``: a refused reuse of the ID with
     another model or settings is not shown to agree) and the image's latest written entry is
-    exactly this one (image, status, SHA-256). A record that cannot be read is not shown to
-    agree.
+    exactly this one (image, status, SHA-256), and the batch's whole image list is the one
+    written (a reuse of the ID that leaves out earlier images is refused by ``write_record``
+    and must not read as success). A record that cannot be read is not shown to agree.
     """
     entry = expected.images[-1]
     try:
@@ -65,6 +66,7 @@ def is_recorded(masks_root: str | Path, mask_type: str, expected: SegmentationBa
     return (
         batch.batch_id == expected.batch_id
         and batch.same_provenance(expected)
+        and batch.images == expected.images
         and (found.image, found.status, found.mask_sha256)
         == (entry.image, entry.status, entry.mask_sha256)
     )
