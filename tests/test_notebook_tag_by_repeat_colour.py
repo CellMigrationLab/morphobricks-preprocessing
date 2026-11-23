@@ -26,7 +26,7 @@ from test_notebook_tag_by_repeat_oneclick import (  # noqa: E402
     _like,
     _strict,
 )
-from test_notebook_tag_by_repeat_recheck import _recheck  # noqa: E402
+from test_notebook_tag_by_repeat_recheck import _recheck, _rewrite_header  # noqa: E402
 
 
 def _fast3(tmp_path):
@@ -82,3 +82,13 @@ def test_a_kept_refusal_does_not_hold_the_save_while_its_unit_is_colour(tmp_path
     nb.channel_grid.types.radios[OTHER].value = "channels"
     _recheck(nb)
     assert OTHER in rows.listed() and not nb.save_experiment()
+
+
+def test_fast_mode_a_refused_unit_whose_header_is_fixed_stays_listed_and_says_why(tmp_path):
+    nb, _, rows = _fast3(tmp_path)
+    _rewrite_header(tmp_path / "exp", OTHER, ["X", "Y", "Ch3"])
+    _recheck(nb)  # its header now names what the row's reference names
+    assert _untagged(nb, OTHER) and OTHER in rows.standing()
+    assert "never tagged from its header" in rows.listed()[OTHER]  # at e010834: no reason given
+    rows.override.buttons[OTHER].click()
+    assert rows.override.confirm() and OTHER not in rows.listed()

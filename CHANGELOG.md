@@ -350,6 +350,14 @@ old pin are refused with `spec_commit_mismatch`, as at every re-pin.
 
 ### Changed
 
+- **Tag by repeat, fast mode: a refused unit whose header is fixed stays refused until
+  confirmed** (behaviour change, owner decision of 22 November). A unit a repeat folder's row
+  refused, and that the user has not confirmed, is left out of fast mode's header trust
+  (`RepeatRows.standing`). So when its image header is corrected to fit its row, a re-check no
+  longer tags it from its header and releases it, as before this release: it stays refused,
+  untagged and listed, with "its own tags are incomplete: a refused unit is never tagged from
+  its header, even one that fits now; confirm its tags", until the user confirms it (**Override
+  this unit**, **Confirm the same tags**), tags it by hand, or fills it with its row.
 - **Another memory limit recomputes the rows when planes are read in blocks**: the image QC
   neighbour metrics of a plane read in blocks depend on its blocks, so rows measured under
   another limit were silently reused (and resumed). With the earlier run or this one reading any

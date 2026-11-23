@@ -191,9 +191,8 @@ class RepeatRows:
                 # the source of the one-click offer
                 kept[key] = Refusal(_found_text(found), layout, lead, old.tags, old.channels)
             elif None in own:  # listed while its own tags are incomplete (:meth:`listed`)
-                kept[key] = Refusal(
-                    "its own tags are incomplete", layout, lead, old.tags, old.channels
-                )
+                why = UNTRUSTED if grid.same_channels.value else "its own tags are incomplete"
+                kept[key] = Refusal(why, layout, lead, old.tags, old.channels)
         self.refused = kept
         self.override.confirmed = {k: v for k, v in self.override.confirmed.items() if k in kept}
         self.persist()
@@ -507,6 +506,11 @@ class RepeatRows:
 
 
 RELAPSED = "its header changed since you confirmed it: confirm it again"
+UNTRUSTED = (
+    "its own tags are incomplete: a refused unit is never tagged from its header, even one that "
+    "fits now; confirm its tags"
+)
+"""Fast mode: a refused unit is left out of the header trust until confirmed (:meth:`standing`)."""
 
 
 def _found_text(found: Sequence) -> str:

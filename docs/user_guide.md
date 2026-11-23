@@ -424,6 +424,11 @@ editing, or the confirmed ones. An image that cannot be drawn gets a sentence sa
    override opens with that channel left blank: choose a label that still exists. What is
    listed and what you confirmed is saved with your answers: after you close and reopen the
    notebook, a listed acquisition is still listed, and still not counted, until you confirm it.
+   In fast mode this holds also when you correct the acquisition's image header so that it fits
+   its row: it is not tagged from its header but stays listed ("a refused unit is never tagged
+   from its header, even one that fits now; confirm its tags") until you confirm it. An
+   acquisition you set to colour (RGB) keeps its listing for later: it is not listed while it is
+   colour, and is listed again if you set it back to channels.
    In fast mode a row offers only the acquisitions that do not fit the layout, and those it
    fills are tagged on their own (checked as in the strict mode); unticked, a row is offered
    for every repeat folder. On a reopen, a row shows the tags every acquisition of its folder
