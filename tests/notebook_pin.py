@@ -37,7 +37,10 @@ the installed files."""
 BACKEND_TABLES = {"hatchling.build": "hatch"}
 """The ``[tool]`` table each known build backend reads. Every other ``[tool]`` table (Ruff,
 pytest, the code rules) is read by no build and by no code of the package, so a change there
-installs the same thing. With an unknown backend the whole ``pyproject.toml`` is compared."""
+installs the same thing. An unknown backend is refused: what it puts in the wheel is unknown."""
+WHEEL_PACKAGES = [f"{SOURCE_ROOT}/{PACKAGE}"]
+"""The wheel's ``packages``: imports are resolved in this one package, so a second top-level
+package in the wheel is refused."""
 NAME_LOADERS = frozenset({"import_module", "__import__"})
 """Calls that import a module by a name given as a value, not in an import statement."""
 FILE_LOADERS = frozenset({"spec_from_file_location", "SourceFileLoader", "run_path", "run_module"})
@@ -301,21 +304,27 @@ def install_table(text: str) -> dict:
     """Return ``pyproject.toml`` without the ``[tool]`` tables no build reads.
 
     ``[project]`` (dependencies, extras, version, scripts) and ``[build-system]`` are kept
-    whole; of ``[tool]`` only the build backend's own table is kept, or all of it when the
-    backend is not in :data:`BACKEND_TABLES`.
+    whole; of ``[tool]`` only the build backend's own table is kept. Raises
+    ``PinScopeError`` for a backend not in :data:`BACKEND_TABLES` or a wheel whose packages
+    are not :data:`WHEEL_PACKAGES`.
     """
     data = tomllib.loads(text)
     backend = data.get("build-system", {}).get("build-backend")
-    if backend in BACKEND_TABLES and "tool" in data:
-        own = BACKEND_TABLES[backend]
-        data["tool"] = {own: data["tool"][own]} if own in data["tool"] else {}
+    if backend not in BACKEND_TABLES:
+        raise PinScopeError(f"pyproject.toml has an unknown build backend: {backend!r}")
+    own = data.get("tool", {}).get(BACKEND_TABLES[backend], {})
+    wheel = own.get("build", {}).get("targets", {}).get("wheel", {})
+    if wheel.get("packages") != WHEEL_PACKAGES:
+        raise PinScopeError(f"the wheel's packages are not {WHEEL_PACKAGES}: {wheel}")
+    data["tool"] = {BACKEND_TABLES[backend]: own}
     return data
 
 
-def _install_table_at(repo: Path, blobs: dict[str, str]) -> dict | None:
-    """Return :func:`install_table` of a commit's ``pyproject.toml`` (None without one)."""
-    blob = blobs.get("pyproject.toml")
-    return None if blob is None else install_table(_blob_texts(repo, [blob])[0])
+def _install_table_at(repo: Path, blobs: dict[str, str]) -> dict:
+    """Return :func:`install_table` of a commit's ``pyproject.toml``."""
+    if "pyproject.toml" not in blobs:
+        raise PinScopeError("a commit has no pyproject.toml: what it installs is unknown")
+    return install_table(_blob_texts(repo, [blobs["pyproject.toml"]])[0])
 
 
 def used_files(repo: Path, blobs: dict[str, str], roots: set[str]) -> set[str]:

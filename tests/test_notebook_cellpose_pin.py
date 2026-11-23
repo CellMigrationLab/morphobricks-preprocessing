@@ -193,13 +193,6 @@ def test_a_change_in_what_the_notebook_runs_or_installs_needs_a_new_pin(repo, ch
     assert pin_differences(repo.path, repo.pin, head, NOTEBOOK) == changed
 
 
-def test_an_unknown_build_backend_compares_all_of_pyproject(repo):
-    unknown = PYPROJECT.replace("hatchling.build", "other.build")
-    pin = _commit(repo.path, {"pyproject.toml": unknown})
-    head = _commit(repo.path, {"pyproject.toml": unknown.replace("= 100", "= 99")})
-    assert pin_differences(repo.path, pin, head, NOTEBOOK) == ["pyproject.toml"]
-
-
 # (3) what the notebook uses is read from its cells ------------------------------------------
 
 
@@ -345,6 +338,28 @@ REFUSED = {
     "text run by builtins.exec": (
         {f"{PKG}/model.py": RUNS_UNUSED.format("builtins.exec('import os')")},
         CLI_CHANGED,
+        NOTEBOOK,
+    ),
+    # A second top-level package in the wheel, which the closure does not look in.
+    "a second package in the wheel": (
+        {
+            "pyproject.toml": PYPROJECT.replace(
+                'packages = ["src/morphobricks_preprocessing"]',
+                'packages = ["src/morphobricks_preprocessing", "src/helpers"]',
+            ),
+            "src/helpers/__init__.py": "VALUE = 1\n",
+            f"{PKG}/model.py": "from helpers import VALUE\n\n\ndef load():\n    return VALUE\n",
+        },
+        {"src/helpers/__init__.py": "VALUE = 2\n"},
+        NOTEBOOK,
+    ),
+    # A build backend whose wheel contents the check cannot read.
+    "an unknown build backend": (
+        {
+            "pyproject.toml": PYPROJECT.replace("hatchling.build", "other.build"),
+            "src/helpers/__init__.py": "VALUE = 1\n",
+        },
+        {"src/helpers/__init__.py": "VALUE = 2\n"},
         NOTEBOOK,
     ),
 }
