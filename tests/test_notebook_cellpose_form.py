@@ -85,7 +85,6 @@ def test_the_forms_start_with_the_former_defaults():
         "diameter": "",
         "flow_threshold": 0.4,
         "cellprob_threshold": 0.0,
-        "normalize": True,
         "batch_size": 8,
         "preview_image": "",
         "overwrite": False,
@@ -114,7 +113,6 @@ def test_every_field_reaches_the_workflow_as_given(monkeypatch):
         "diameter": "17.5",
         "flow_threshold": 0.7,
         "cellprob_threshold": -1.5,
-        "normalize": False,
         "batch_size": 3,
         "preview_image": "a/b.tif",
         "overwrite": True,
@@ -127,7 +125,7 @@ def test_every_field_reaches_the_workflow_as_given(monkeypatch):
     assert calls == [
         ("open", (" /data/run ", "/data/masks")),
         ("choose_channels", ("Nuclei",)),
-        ("set_settings", ("17.5", 0.7, -1.5, False, 3)),
+        ("set_settings", ("17.5", 0.7, -1.5, 3)),
         ("load", ("cpdino", "/models/mine", "mps", True, True)),
         ("preview", ("a/b.tif",)),
         ("run", (True,)),
@@ -145,14 +143,13 @@ def test_the_settings_reach_cellpose_and_the_record(cells):
         diameter="12",
         flow_threshold=0.6,
         cellprob_threshold=-2.0,
-        normalize=False,
         batch_size=2,
     )
     run_cell(cells.ns, BATCH)
     (call, *_) = cells.stub.calls
     assert call.kwargs["flow_threshold"] == 0.6 and call.kwargs["cellprob_threshold"] == -2.0
     assert call.kwargs["batch_size"] == 2 and call.kwargs["diameter"] == 12.0
-    assert call.kwargs["normalize"]["normalize"] is False
+    assert call.kwargs["normalize"]["normalize"] is True  # always Cellpose's own
     batch = read_record(cells.run.masks, "Cells").batches[0]
     assert batch.parameters["batch_size"] == 2 and batch.parameters["diameter"] == 12.0
     assert batch.model_name == "cpsam" and batch.device == "cpu"
@@ -238,6 +235,25 @@ def test_browse_fills_the_path_or_says_how_to_paste_it(monkeypatch, chosen):
     said = any("could not be opened" in getattr(w, "value", "") for w in walk(form.widget))
     assert said == (chosen is None)
     assert len(browse) == 2  # the masks folder has its own
+
+
+def test_normalisation_is_not_a_choice_and_off_is_refused(cells):
+    """Owner, 23 November 2026: images are never sent to Cellpose unnormalised."""
+    assert "normalize" not in shown_forms().forms["model"].fields
+    for value in (False, None, 0, "yes"):
+        with pytest.raises(cp.SegmentationError, match="never sent to Cellpose unnormalised"):
+            cp.Settings(normalize=value)
+    settings = cp.Settings()
+    object.__setattr__(settings, "normalize", False)  # past the check: still never reaches eval
+    with pytest.raises(cp.SegmentationError, match="unnormalised"):
+        cp.normalization(settings)
+    open_and_choose(cells)
+    run_cell(cells.ns, MODEL, device="cpu")
+    run_cell(cells.ns, BATCH)
+    params = read_record(cells.run.masks, "Cells").batches[0].parameters
+    assert params["normalize"]["normalize"] is True
+    assert params["normalize"]["percentile"] == [1.0, 99.0]
+    assert all(call.kwargs["normalize"]["normalize"] is True for call in cells.stub.calls)
 
 
 # a plain Jupyter kernel -----------------------------------------------------------------------

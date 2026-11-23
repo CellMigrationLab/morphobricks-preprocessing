@@ -8,6 +8,7 @@ v0.5.1: no run before v0.5.1 is read.)
 
 ## Unreleased
 
+- **Cellpose: normalisation is always on (owner, 23 November 2026).** The `normalize` on/off choice is removed from the notebook; `Settings(normalize=...)` other than True is refused (`NORMALIZE_REFUSAL`), and `normalization()` refuses again before anything reaches Cellpose. Images are never sent to Cellpose unnormalised; the full normalisation is still recorded.
 - **Cellpose notebook: ipywidgets instead of Colab form fields.** Every setting of `MorphoBricks_Cellpose.ipynb` (folders, mask type, model, model file, device, download and DINOv3 ticks, diameter and the other settings, preview image, overwrite) is now a widget in a form per step (`notebook_cellpose_form.CellposeNotebook`, built from `notebook_style`'s helpers), so the notebook works without editing code in JupyterLab and LabConstrictor as in Colab. Defaults, refusals and their messages are unchanged; a refusal is shown in a red card under the step's button. No notebook may hold a `# @param` or `# @markdown` line (regression test).
 - Cellpose batch recovery after a failed record write also requires the batch's whole image list to be the one written (a reused batch ID that leaves out earlier images is refused and the mask restored; ChatGPT al FILE 1).
 

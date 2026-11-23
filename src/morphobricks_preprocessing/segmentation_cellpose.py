@@ -68,6 +68,7 @@ from .segmentation_cellpose_model import (
 )
 from .segmentation_cellpose_settings import (
     FLOW_ITERATIONS,
+    NORMALIZE_REFUSAL,
     Settings,
     diameter_from_text,
     flow_iterations,
@@ -101,6 +102,7 @@ __all__ = [
     "DINOV3_URL",
     "DINO_MODELS",
     "FLOW_ITERATIONS",
+    "NORMALIZE_REFUSAL",
     "LoadedModel",
     "ModelChoice",
     "Settings",
@@ -145,12 +147,15 @@ def normalization(settings: Settings) -> dict[str, Any]:
     """Return the full normalisation given to Cellpose: its defaults now, with the user's values.
 
     The defaults (``tile_norm_blocksize``, ``sharpen_radius``, ``invert``, ``lowhigh``, ...) come
-    from Cellpose's module global at call time, copied; ``normalize`` and the percentiles are
-    then set from the settings. Nothing is left to Cellpose's defaults, so the record holds all.
+    from Cellpose's module global at call time, copied; ``normalize`` (always on: a setting
+    that is not True is refused) and the percentiles are then set. Nothing is left to Cellpose's
+    defaults, so the record holds all.
     """
+    if settings.normalize is not True:  # Settings refuses it; never reach Cellpose without it
+        raise SegmentationError(NORMALIZE_REFUSAL)
     return {
         **default_normalization(),
-        "normalize": settings.normalize,
+        "normalize": True,
         "percentile": list(NORMALIZE_PERCENTILE),
     }
 

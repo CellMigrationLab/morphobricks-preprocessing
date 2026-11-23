@@ -244,7 +244,6 @@ class CellposeNotebook(CellposeWorkflow):
             value["diameter"],
             value["flow_threshold"],
             value["cellprob_threshold"],
-            value["normalize"],
             value["batch_size"],
         )
         self.load(
@@ -347,7 +346,6 @@ def _model_fields() -> dict[str, widgets.Widget]:
         "cellprob_threshold": widgets.FloatText(
             value=0.0, description="Cell probability threshold", style=_STYLE
         ),
-        "normalize": widgets.Checkbox(value=True, description="Cellpose's own normalisation"),
         "batch_size": widgets.IntText(value=8, description="Batch size", style=_STYLE),
     }
 
@@ -401,9 +399,9 @@ def _model_cards(fields: dict[str, widgets.Widget], status: widgets.HTML) -> lis
                 ),
                 fields["flow_threshold"],
                 fields["cellprob_threshold"],
-                fields["normalize"],
                 ui.help_text(
-                    "Cellpose's own normalisation (each channel to its 1st-99th percentile)."
+                    "Normalisation is always Cellpose's own, per image: each channel to its "
+                    "1st-99th percentile. Images are never sent to Cellpose unnormalised."
                 ),
                 fields["batch_size"],
             ],

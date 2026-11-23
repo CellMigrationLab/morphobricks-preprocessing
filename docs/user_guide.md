@@ -263,6 +263,9 @@ with the same message as before; change the form and press the button again. The
   behaviour, it is not refused, and the record notes it.
 - **Diameter** is in pixels. Blank means the model's own native scale (Cellpose 4.2.1.1 does
   not estimate a diameter); 0 is refused.
+- **Normalisation** is always Cellpose's own, per image (each channel to its 1st to 99th
+  percentile); it is not a choice, and images are never sent to Cellpose unnormalised. The full
+  normalisation is written to the record.
 - **2D only.** An image with more than one Z plane or time point fails with a message that
   says so.
 - **Result.** One mask per image at `<masks>/<type>/<the image's folders>/<image>.tif`

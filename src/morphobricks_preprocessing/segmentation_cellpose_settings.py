@@ -13,6 +13,12 @@ from .segmentation_record import SegmentationError
 
 FLOW_ITERATIONS = 200
 """Cellpose's flow iterations at the native scale; it divides it by the rescale factor."""
+NORMALIZE_REFUSAL = (
+    "Images are always normalised by Cellpose's own per-image normalisation (each channel to "
+    "its 1st to 99th percentile); they are never sent to Cellpose unnormalised, so turning "
+    "it off is refused."
+)
+"""Why :class:`Settings` refuses ``normalize`` other than True."""
 
 
 @dataclass(frozen=True)
@@ -29,8 +35,9 @@ class Settings:
     cellprob_threshold
         Cell probability threshold (Cellpose's default 0).
     normalize
-        Cellpose's own normalisation: each channel to its 1st to 99th percentile. False
-        passes the stored values unchanged.
+        Always True: Cellpose's own per-image normalisation, each channel to its 1st to 99th
+        percentile (owner, 23 November 2026). Images are never sent to Cellpose unnormalised,
+        so anything else is refused (:data:`NORMALIZE_REFUSAL`).
     batch_size
         Tiles run together on the device, 1 or more.
     """
@@ -64,8 +71,8 @@ class Settings:
             raise SegmentationError(
                 f"The cell probability threshold must be a number, not {self.cellprob_threshold!r}."
             )
-        if not isinstance(self.normalize, bool):
-            raise SegmentationError("normalize is on or off.")
+        if self.normalize is not True:
+            raise SegmentationError(f"{NORMALIZE_REFUSAL} Got normalize={self.normalize!r}.")
         if (
             isinstance(self.batch_size, bool)
             or not isinstance(self.batch_size, int)

@@ -254,16 +254,18 @@ class CellposeWorkflow:
         diameter: str,
         flow_threshold: float,
         cellprob_threshold: float,
-        normalize: bool,
         batch_size: int,
     ) -> None:
-        """Check the inference settings (cell 5); a blank diameter is the model's native scale."""
+        """Check the inference settings (cell 5); a blank diameter is the model's native scale.
+
+        Normalisation is not a choice: it is always Cellpose's own, per image (1st to 99th
+        percentile of each channel).
+        """
         self.settings = cp.Settings(
             cp.diameter_from_text(diameter),
             flow_threshold,
             cellprob_threshold,
-            normalize,
-            batch_size,
+            batch_size=batch_size,
         )
 
     @stops
