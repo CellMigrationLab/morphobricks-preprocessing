@@ -22,6 +22,7 @@ import ipywidgets as widgets
 from IPython.display import display
 
 from . import notebook_style as ui
+from . import segmentation_cellpose as cp
 from .notebook_cellpose import CellposeWorkflow, CellStop, _card, _verbatim
 from .segmentation_cellpose_model import BUILTIN_MODELS
 
@@ -225,11 +226,13 @@ class CellposeNotebook(CellposeWorkflow):
     def model_step(self) -> None:
         """Show the form of cell 5: the model, the device, the settings; the button loads."""
         fields, status = _model_fields(), widgets.HTML()
+        found, line = cp.device_status()  # seen before loading; it chooses nothing
+        device = widgets.HTML(ui.status("ok" if found else "warn", "Device", [line]))
         form = StepForm(
             self,
             "5 · Choose the model and the settings, then load the model",
             "Load the model you choose, on the device you choose, and check it.",
-            _model_cards(fields, status),
+            [device, *_model_cards(fields, status)],
             "Load the model",
             "download",
             lambda: self._load_from(fields),

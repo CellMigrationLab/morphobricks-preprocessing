@@ -259,7 +259,8 @@ with the same message as before; change the form and press the button again. The
   `cpsam_v2`. The weights of a built-in model are downloaded from Hugging Face on first use,
   only if you tick the download box. `cpdino` models also need DINOv3, installed at a pinned
   commit (the head of its default branch on 22 November 2026, not verified against `cpdino`; installed without its dependencies) only if you tick its box. Restart the runtime after installing it, then run the cells again.
-- **Device.** You choose `cuda`, `mps` or `cpu`. A GPU that is not available is refused, never
+- **Device.** The model form says, before anything loads, whether a GPU was found and which.
+  You choose `cuda`, `mps` or `cpu`. A GPU that is not available is refused, never
   replaced by the CPU, and after loading every parameter and buffer of the network must be on
   the device you chose. Cellpose may still move its flow-threshold quality step to the CPU when
   GPU memory is short, and always computes the masks on the CPU on `mps`; that is Cellpose's
