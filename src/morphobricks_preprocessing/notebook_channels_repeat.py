@@ -224,6 +224,17 @@ class RepeatRows:
         self.unsaved = not ok
         return ok
 
+    def adopt(self) -> None:
+        """Take the confirmations a successful tag write just saved, as the draft now holds them.
+
+        Called by :meth:`.TagGrid.commit` after a write that set the whole tag review, before it
+        redraws and refreshes *Check and save*: the check reads the confirmations of the very
+        write, never the ones before it. That write held the whole review (:attr:`unsaved`).
+        """
+        review = self.grid.store.answers().tag_review or TagReview()
+        self.override.confirmed = {k: v for k, v in review.confirmed.items() if k in self.refused}
+        self.unsaved = False
+
     def other_draft(self) -> bool:
         """Return True when the draft open now is not the one the record in memory belongs to."""
         return self.draft_id() != self.draft
@@ -495,9 +506,7 @@ class RepeatRows:
         confirmations yet, so a retry would write the review without them over this one.
         """
         then = None if review is None else (lambda a: replace(a, tag_review=review))
-        ok = self.grid.commit(save, cells, then)
-        if ok and review is not None:
-            self.unsaved = False  # this very write held the whole review
+        ok = self.grid.commit(save, cells, then)  # the review is adopted there (:meth:`adopt`)
         if ok and self.grid.same_channels.value:  # the user's action: tagged on their own
             self.grid.matrix.own.update(save)
             self.grid.matrix.sync_statement()

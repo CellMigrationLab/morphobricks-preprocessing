@@ -296,9 +296,8 @@ class OverrideEditor:
             cells += [(key, i) for i in range(layout.channels)]
             records[key] = Override(save[key], header_names(layout))
         review = rows._review({**self.confirmed, **records})
-        if not rows._commit_user(save, cells, review):
+        if not rows._commit_user(save, cells, review):  # adopted before the check refreshes
             return False  # one write: neither the tags nor the confirmation were saved
-        self.confirmed.update(records)
         for key in save:
             self.drafts.pop(key, None)
         grid.refresh()
