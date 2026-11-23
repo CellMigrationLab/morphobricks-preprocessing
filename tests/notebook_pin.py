@@ -80,7 +80,8 @@ TEXT_LOADERS = frozenset({"exec", "eval", "compile"})
 of the same name, such as a model's ``eval()``, runs no text."""
 SHELLS = frozenset({"subprocess", "os"})
 """The modules whose :data:`COMMANDS` start a program. A cell uses them only by their own name
-(no ``as``, no ``from ... import``, no other binding), so every command call is seen."""
+(no ``as``, no other binding) and imports none of their commands by ``from ... import``, so
+every command call is seen."""
 COMMANDS = frozenset(
     {"run", "Popen", "call", "check_call", "check_output", "getoutput", "getstatusoutput"}
     | {"system", "popen", "startfile", "posix_spawn", "posix_spawnp"}
@@ -186,17 +187,19 @@ def _starts_pip(node: ast.Call) -> bool:
 def _refuse_hidden_commands(tree: ast.AST, where: str) -> None:
     """Raise ``PinScopeError`` for a cell command the :data:`COMMANDS` check could miss.
 
-    A command module bound to another name (``import subprocess as sp``, ``from os import
-    system``, ``runner = subprocess``, ``getattr(os, ...)``), a command kept to call later
-    (``start = subprocess.run``) and IPython's runners are refused.
+    A command module bound to another name (``import subprocess as sp``, ``runner =
+    subprocess``, ``getattr(os, ...)``), a command imported by name (``from os import
+    system``) or kept to call later (``start = subprocess.run``) and IPython's runners are
+    refused. Other names from these modules (``from os import environ``, ``from subprocess
+    import CalledProcessError``) start nothing and are allowed.
     """
     owners = {id(n.value) for n in ast.walk(tree) if isinstance(n, ast.Attribute)}
     called = {id(n.func) for n in ast.walk(tree) if isinstance(n, ast.Call)}
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             bad = [a.name for a in node.names if a.name in SHELLS and a.asname]
-        elif isinstance(node, ast.ImportFrom):
-            bad = [node.module] if node.module in SHELLS else []
+        elif isinstance(node, ast.ImportFrom) and node.module in SHELLS:
+            bad = [a.name for a in node.names if a.name in COMMANDS | {"*"}]
         elif isinstance(node, ast.Name):
             shell = node.id in SHELLS and id(node) not in owners
             bad = [node.id] if shell or node.id in HIDDEN_RUNNERS else []

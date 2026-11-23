@@ -140,3 +140,11 @@ def test_a_build_setting_that_adds_no_file_is_not_refused(repo, case):
     pin_text, head_text, changed = BUILD_SETTINGS[case]
     pin, head = _pin_and_head(repo, {"pyproject.toml": pin_text}, {"pyproject.toml": head_text})
     assert pin_differences(repo.path, pin, head, NOTEBOOK) == changed
+
+
+def test_a_cell_importing_names_from_os_and_subprocess_that_start_nothing_is_accepted(repo):
+    cell = (
+        "from os import environ\nfrom subprocess import CalledProcessError\n\n"
+        "print(environ.get('HOME'), CalledProcessError)\n"
+    )
+    assert pin_differences(repo.path, repo.pin, repo.pin, [*NOTEBOOK, cell]) == []
