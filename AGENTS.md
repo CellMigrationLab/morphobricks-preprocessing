@@ -276,6 +276,10 @@ src/morphobricks_preprocessing/
                     download without allow_download, SHA-256 recorded, DINOv3 at a pinned commit);
                     notebook_cellpose.py CellposeWorkflow, ChannelPicker, CellStop: the widgets behind
                     notebooks/MorphoBricks_Cellpose.ipynb
+                    notebook_cellpose_form.py CellposeNotebook, StepForm: one form of widgets per
+                    step (no Colab `# @param` fields: the same in Colab, JupyterLab and
+                    LabConstrictor), built from notebook_style's helpers; its button calls the
+                    CellposeWorkflow method a cell called, a refusal shown verbatim in a red card
   mask_conversion.py RunInputs.binary_to_instances / classes_to_binary (Spec ADR 0005 BM12, step
                     2b): new mask files from a checked mask, refused before any read or write
                     (check_class_image, collisions, idempotent retry); mask_lineage.py their

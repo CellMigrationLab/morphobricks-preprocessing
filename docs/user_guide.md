@@ -239,7 +239,12 @@ for a run you already have (run preprocessing first and describe the experiment)
 install (Cellpose 4.2.1.1 and the preprocessing commit it is made for), Google Drive, open the
 run's output folder and a masks folder, choose the mask type and **one to three channels by
 channel ID**, choose the model, device and settings and load the model, preview one image, and
-segment all images. Then:
+segment all images. From cell 3 on, each cell shows a form of widgets, the same in Google
+Colab, JupyterLab and LabConstrictor: fill it in and press its button (**Open the run**,
+**Choose the channels**, **Load the model**, **Preview**, **Segment all images**). You never edit
+code. Folders are typed or pasted, or chosen with **Browse…** where a dialog can open (not on
+Colab: copy the path from the **Files** panel). A refusal is shown under the button in a red card,
+with the same message as before; change the form and press the button again. Then:
 
 - **Channels.** You choose channels by ID (`DNA`, `ACTIN`), never by position. When some images
   have a channel that others lack (a fourth stain in one biological repeat), only the channels

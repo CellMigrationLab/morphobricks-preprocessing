@@ -1,9 +1,10 @@
 """The Cellpose notebook file, and its cells run headless on a synthetic run with a stand-in model.
 
 Cellpose is not installed in CI, so the cells run in one namespace (as in a kernel) against the
-stand-in of ``tests/cellpose_stub.py``; the install cell is run with the package installer
-replaced. Like ``test_notebook_file.py`` this checks the file's shape (a Colab form with its
-code hidden, Markdown above every code cell, the pins) and what the cells do.
+stand-in of ``tests/cellpose_stub.py``, each step's form filled in and its button pressed; the
+install cell is run with the package installer replaced. Like ``test_notebook_file.py`` this
+checks the file's shape (code hidden, Markdown above every code cell, the pins) and what the
+cells do. The forms themselves: ``test_notebook_cellpose_form.py``.
 """
 
 import html
@@ -29,6 +30,15 @@ ROOT = Path(__file__).parents[1]
 NOTEBOOK = ROOT / "notebooks/MorphoBricks_Cellpose.ipynb"
 VERSIONS = ROOT / "notebooks/notebook_latest_versions.yaml"
 INSTALL, DRIVE, OPEN, CHANNELS, MODEL, PREVIEW, BATCH, NEXT = range(8)
+FORMS = {
+    OPEN: "open",
+    CHANNELS: "channels",
+    MODEL: "model",
+    PREVIEW: "preview",
+    BATCH: "segment",
+    NEXT: "next",
+}
+"""The form each step's cell shows (:class:`notebook_cellpose_form.CellposeNotebook`)."""
 TITLES = (
     "# @title 1. Install Cellpose and MorphoBricks preprocessing",
     "# @title 2. Mount Google Drive",
@@ -63,20 +73,23 @@ def setting(name):
     return install_setting(source(INSTALL), name)
 
 
-def with_params(number, params):
-    """Return cell ``number`` with its Colab form fields set to ``params`` (each must exist)."""
-    text = source(number)
-    for name, value in params.items():
-        line = f"{name} = {value!r}"  # a function, so backslashes (Windows paths) stay as given
-        text, count = re.subn(
-            rf"^{name} = .*?(  # @param.*)$", lambda m, line=line: line + m[1], text, flags=re.M
-        )
-        assert count == 1, f"cell {number + 1} has no form field {name}"
-    return text
+def run_cell(namespace, number, **fields):
+    """Run cell ``number``; for a step with a form, set its ``fields`` and press its button.
 
-
-def run_cell(namespace, number, **params):
-    exec(compile(with_params(number, params), f"<cell {number + 1}>", "exec"), namespace)
+    Each field must exist, named as the setting it holds. A refusal the form shows under its
+    button is raised again here, the very :class:`CellStop` the step stopped with.
+    """
+    exec(compile(source(number), f"<cell {number + 1}>", "exec"), namespace)
+    if number not in FORMS:
+        assert not fields, f"cell {number + 1} has no form"
+        return
+    form = namespace["workflow"].forms[FORMS[number]]
+    for name, value in fields.items():
+        assert name in form.fields, f"cell {number + 1} has no field {name}"
+        form.fields[name].value = value
+    form.button.click()
+    if form.stopped is not None:
+        raise form.stopped
 
 
 # the file ---------------------------------------------------------------------------------------
@@ -113,8 +126,9 @@ def test_the_cells_stay_thin_the_logic_is_in_the_package():
         assert len(text.splitlines()) < 45
         for other in ("import cellpose", "from cellpose", "import torch", "tifffile", "np."):
             assert other not in text  # nothing here reads, computes or writes pixels
-    assert "workflow.run(" in source(BATCH) and "workflow.preview(" in source(PREVIEW)
-    assert "workflow.load(" in source(MODEL) and "workflow.choose_channels(" in source(CHANNELS)
+    steps = ("open", "channels", "model", "preview", "segment", "next")
+    for number, step in zip(range(OPEN, NEXT + 1), steps, strict=True):
+        assert source(number).rstrip().endswith(f"workflow.{step}_step()")
 
 
 def test_the_pins_are_cellpose_4_2_1_1_and_a_preprocessing_commit_with_this_code():
@@ -263,7 +277,7 @@ def test_the_cells_segment_a_mixed_run_end_to_end(cells):
     run_cell(cells.ns, PREVIEW)
     assert len(cells.stub.calls) == 1 and not run.masks.exists()  # a preview writes nothing
     run_cell(cells.ns, BATCH)
-    result = cells.ns["result"]
+    result = cells.ns["workflow"].result
     fovs = run.inputs.fovs()
     assert result.counts() == {
         "written": len(fovs),
@@ -392,7 +406,7 @@ def test_failures_are_in_the_final_table_and_the_batch_goes_on(cells):
 
     cells.stub.fail = fail_third
     run_cell(cells.ns, BATCH)
-    result, fovs = cells.ns["result"], cells.run.inputs.fovs()
+    result, fovs = cells.ns["workflow"].result, cells.run.inputs.fovs()
     assert result.counts() == {
         "written": len(fovs) - 1,
         "skipped": 0,
@@ -402,7 +416,7 @@ def test_failures_are_in_the_final_table_and_the_batch_goes_on(cells):
     table = cells.ns["workflow"].shown[-1]
     assert "RuntimeError: out of memory" in table and "failed" in table
     run_cell(cells.ns, BATCH)  # again: the written images are skipped, the failed one is redone
-    assert cells.ns["result"].counts() == {
+    assert cells.ns["workflow"].result.counts() == {
         "written": 1,
         "skipped": len(fovs) - 1,
         "needs_attention": 0,
