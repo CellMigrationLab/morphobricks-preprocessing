@@ -18,6 +18,7 @@ import pytest
 import tifffile
 
 from cellpose_stub import custom_model, install
+from installed_record import editable_record, git_record, install_record_double
 from morphobricks_preprocessing import notebook_cellpose
 from morphobricks_preprocessing import segmentation_cellpose as cp
 from morphobricks_preprocessing.manifest import MANIFEST_FILENAME
@@ -155,7 +156,7 @@ def installer(monkeypatch):
     """Run the install cell with the installer and the metadata replaced by a ledger."""
     state = type("S", (), {})()
     state.versions = {"cellpose": "4.2.1.1", "morphobricks-preprocessing": "0.8.0"}
-    state.commit = setting("RELEASE_REF")
+    state.direct_url = git_record(setting("RELEASE_REF"), setting("REPOSITORY"))
     state.pip = []
     state.upgrades = {}  # versions pip changes when it runs
     import importlib.metadata as metadata
@@ -165,18 +166,14 @@ def installer(monkeypatch):
             raise metadata.PackageNotFoundError(name)
         return state.versions[name]
 
-    class Dist:
-        def read_text(self, name):
-            return json.dumps({"vcs_info": {"commit_id": state.commit}}) if state.commit else None
-
     def fake_run(command, check):
         state.pip.append(command)
         state.versions.update(state.upgrades)
         state.versions["cellpose"] = "4.2.1.1"
-        state.commit = setting("RELEASE_REF")
+        state.direct_url = git_record(setting("RELEASE_REF"), setting("REPOSITORY"))
 
     monkeypatch.setattr(metadata, "version", fake_version)
-    monkeypatch.setattr(metadata, "distribution", lambda name: Dist())
+    install_record_double(monkeypatch, state)
     monkeypatch.setattr(subprocess, "run", fake_run)
     return state
 
@@ -192,7 +189,8 @@ def test_the_install_cell_installs_nothing_that_is_already_there(installer, caps
 
 
 def test_the_install_cell_installs_the_pinned_versions_when_they_differ(installer):
-    installer.versions["cellpose"], installer.commit = "4.0.0", "0" * 40
+    installer.versions["cellpose"] = "4.0.0"
+    installer.direct_url = git_record("0" * 40, setting("REPOSITORY"))
     run_cell({}, INSTALL)
     (command,) = installer.pip
     assert command[1:4] == ["-m", "pip", "install"]
@@ -202,6 +200,42 @@ def test_the_install_cell_installs_the_pinned_versions_when_they_differ(installe
         for a in command
     )
     assert not any("dinov3" in a for a in command)
+
+
+def test_the_banner_shows_the_installed_commit(installer, capsys):
+    namespace = {}
+    run_cell(namespace, INSTALL)
+    assert f"preprocessing 0.8.0 (commit {setting('RELEASE_REF')})." in capsys.readouterr().out
+    assert namespace["SETUP_RECORD"]["preprocessing_commit"] == setting("RELEASE_REF")
+
+
+# Issue #371: only pip's record of REPOSITORY at RELEASE_REF is the pinned preprocessing.
+NOT_THE_PIN = {
+    "same version, another commit": git_record("2" * 40, setting("REPOSITORY")),
+    "another repository at the commit": git_record(setting("RELEASE_REF"), "https://x.org/a.git"),
+    "no direct_url.json": None,
+    "unreadable direct_url.json": "{not json",
+    "direct_url.json not an object": "[]",
+    "an editable install": editable_record(ROOT),
+}
+
+
+@pytest.mark.parametrize("record", NOT_THE_PIN.values(), ids=NOT_THE_PIN)
+def test_the_install_cell_installs_the_pin_over_another_commit(installer, record, capsys):
+    installer.direct_url = record  # the installed version stays 0.8.0
+    run_cell({}, INSTALL)
+    (command,) = installer.pip
+    assert command[-1].endswith(f"@ git+{setting('REPOSITORY')}@{setting('RELEASE_REF')}")
+    assert f"(commit {setting('RELEASE_REF')})" in capsys.readouterr().out
+
+
+def test_the_install_cell_stops_when_the_install_leaves_another_commit(installer, monkeypatch):
+    installer.direct_url = git_record("2" * 40, setting("REPOSITORY"))
+    monkeypatch.setattr(subprocess, "run", lambda command, check: installer.pip.append(command))
+    namespace = {}
+    with pytest.raises(RuntimeError, match=f"not {setting('RELEASE_REF')}: pip recorded 2222"):
+        run_cell(namespace, INSTALL)
+    assert namespace["SETUP_RECORD"] == {}
 
 
 def test_an_install_that_upgrades_a_loaded_numpy_or_opencv_says_to_restart(installer):

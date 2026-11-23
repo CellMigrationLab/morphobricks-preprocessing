@@ -251,6 +251,15 @@ old pin are refused with `spec_commit_mismatch`, as at every re-pin.
 
 ### Fixed
 
+- **Notebook installer: the installed commit, not only the version (#371).** Cell 1 of the
+  Preprocessing notebook reused any installed package reporting version 0.8.0, so a 0.8.0 built
+  from another commit (a development install from `main`) was taken for the release. It now
+  reuses an installed package only when pip's PEP 610 `direct_url.json` names the repository at
+  `RELEASE_REF`, installs `RELEASE_REF` otherwise (missing or unreadable record, another URL or
+  commit) and stops if the install still records another commit. An editable install is treated
+  as a local checkout: used when it is the clean `RELEASE_REF` commit, refused otherwise. The
+  banner shows the commit. The Cellpose notebook shares the same two functions, now also
+  checking the URL and tolerating an unreadable record, and shows the installed commit.
 - **Tag this repeat folder: refusals after a folder re-check** (#372): when the tag grid opens
   on new layouts, `RepeatRows.reconcile()` drops the refused units that are no longer in an
   offered row (removed, now colour or unusable) and recomputes the others against their row's

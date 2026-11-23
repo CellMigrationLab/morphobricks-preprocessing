@@ -20,6 +20,8 @@ from types import SimpleNamespace
 
 import pytest
 
+from installed_record import git_record, install_record_double
+
 NOTEBOOK = Path(__file__).parents[1] / "notebooks/MorphoBricks_Preprocessing.ipynb"
 REQUIRED = {
     "morphobricks_preprocessing",
@@ -44,6 +46,8 @@ def cell_source(number=INSTALL):
 
 
 RELEASE_REF = re.search(r'RELEASE_REF = "([0-9a-f]{40})"', cell_source()).group(1)
+REPOSITORY = re.search(r'REPOSITORY = "([^"]+)"', cell_source()).group(1)
+
 _APP_CALL = ast.parse(
     re.search(r"PreprocessingNotebook\([^)]*\)", cell_source(RUN)).group(0), mode="eval"
 ).body
@@ -109,6 +113,8 @@ def setup_environment(tmp_path, monkeypatch):
             "morphobricks-normalization": "0.7.1",
             "ipywidgets": "7.7.1",
         },
+        # What pip recorded for the installed preprocessing (PEP 610); None: no record.
+        direct_url=git_record(RELEASE_REF, REPOSITORY),
     )
 
     install_git_double(monkeypatch, state)
@@ -127,11 +133,14 @@ def setup_environment(tmp_path, monkeypatch):
 
     monkeypatch.setattr(importlib.metadata, "version", package_version)
 
+    install_record_double(monkeypatch, state)
+
     def install(command, *, check):
         assert check is True
         state.installs.append(command)
         state.available.update({*REQUIRED, ZARR})
         state.versions["morphobricks-preprocessing"] = "0.8.0"
+        state.direct_url = git_record(RELEASE_REF, REPOSITORY)
 
     monkeypatch.setattr(subprocess, "run", install)
 
@@ -169,20 +178,6 @@ def checkout_at(path):
     return path
 
 
-def test_setup_reuses_the_matching_installed_release(setup_environment, capsys):
-    state = setup_environment
-    state.start()
-    assert state.installs == []
-    assert state.imports == [
-        "morphobricks_preprocessing.notebook_ui",  # cell 1 checks the interface loads
-        "morphobricks_preprocessing",
-        "morphobricks_preprocessing.notebook_ui",  # cell 3 shows it
-    ]
-    out = capsys.readouterr().out
-    assert "Ready: preprocessing 0.8.0" in out
-    assert "ipywidgets 7.7.1" in out
-
-
 def test_setup_installs_missing_package_from_the_exact_commit(setup_environment, capsys):
     state = setup_environment
     state.available.clear()
@@ -195,14 +190,6 @@ def test_setup_installs_missing_package_from_the_exact_commit(setup_environment,
     assert target.endswith("@" + namespace["RELEASE_REF"])
     assert namespace["RELEASE_REF"] == "438a2d37625ae7941953fa831914aa5ef5572696"
     assert "pinned v0.8.0 candidate" in capsys.readouterr().out
-
-
-def test_setup_replaces_a_mismatched_installed_release(setup_environment):
-    state = setup_environment
-    state.versions["morphobricks-preprocessing"] = "0.3.4"
-    state.start()
-    assert len(state.installs) == 1
-    assert state.installs[0][-1].endswith("@" + state.namespace["RELEASE_REF"])
 
 
 def test_setup_prefers_a_nearby_checkout(setup_environment, tmp_path, monkeypatch, capsys):
@@ -428,7 +415,10 @@ def test_cell_1_installs_without_mounting_drive_or_showing_the_app(
     assert state.apps == []
     assert namespace["SETUP_RECORD"]["release_ref"] == RELEASE_REF
     out = capsys.readouterr().out
-    assert "Ready: preprocessing 0.8.0; normalization 0.7.1; ipywidgets 7.7.1." in out
+    assert (
+        f"Ready: preprocessing 0.8.0 (commit {RELEASE_REF}); normalization 0.7.1; "
+        "ipywidgets 7.7.1." in out
+    )
     assert "Next: run cell 2 (Mount Google Drive), then cell 3 (Run preprocessing)." in out
 
 

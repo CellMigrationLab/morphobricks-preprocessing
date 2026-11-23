@@ -1166,6 +1166,16 @@ Raised during review; to be decided before the milestones that need them:
     cannot go on stops with one line and no traceback (a stop caused by another error names
     that error on the same line; any other error keeps its traceback); cell 3 on Colab without
     Drive opens the app after one line saying that only files on the runtime are visible.*
+    *Amended (November 2026, issue #371): an installed package is reused only when its PEP 610
+    `direct_url.json` names `REPOSITORY` and `vcs_info.commit_id == RELEASE_REF`, never on its
+    version alone; a missing or unreadable record, another URL or another commit means
+    installing `RELEASE_REF`, and after an install the commit is read again (a stop if pip did
+    not install it). An editable install is a local checkout: used when it is the clean
+    `RELEASE_REF` commit, otherwise refused like a nearby checkout, never replaced, because a
+    developer set it up and `DEVELOPMENT_OVERRIDE` is the explicit way to use it. The version
+    banner shows the commit. The Cellpose notebook reads the commit with the same two
+    functions (`_direct_url`, `_installed_commit`; one text, tested); it runs no Git, so it
+    replaces an editable install, as before.*
 59. How are images with axis errors saved as named-axis copies (design v0.4 §5, PP-11)?
     *Decided (owner, 2 November 2026; implemented in PP-11) as design v0.4 §5 says: images
     only, as named-axis OME-TIFF (BigTIFF when large); copies keep the file name and folder
