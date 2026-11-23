@@ -253,13 +253,25 @@ notebook's step 3 (§4), also tells how they relate.
 [`notebooks/MorphoBricks_Cellpose.ipynb`](../notebooks/MorphoBricks_Cellpose.ipynb) makes masks
 for a run you already have (run preprocessing first and describe the experiment). Its cells:
 install (Cellpose 4.2.1.1 and the preprocessing commit it is made for), Google Drive, open the
-run's output folder and a masks folder, choose the mask type and **one to three channels by
-channel ID**, choose the model, device and settings and load the model, preview one image, and
-segment all images. Its `DEVELOPMENT_OVERRIDE = True` (top of cell 1, for developers) differs
-from the Preprocessing notebook's: it keeps whatever preprocessing is installed, of any commit
-or none recorded (the banner then says "commit unknown" and that the override is on). Then:
+run's output folder and a masks folder, choose the output and the **channels by channel ID**,
+choose the model, device and settings and load the model, preview one example result (a
+dropdown of the run's images and Cellpose's own result panels, as in the ZeroCostDL4Mic
+Cellpose notebook; nothing is written), and segment the whole experiment. From cell 3 on, each cell shows a form of widgets, the same in Google
+Colab, JupyterLab and LabConstrictor: fill it in and press its button (**Open the run**,
+**Choose the channels**, **Load the model**, **Preview**, **Segment the whole experiment**). You never edit
+code. Folders are typed or pasted, or chosen with **Browse…** where a dialog can open (not on
+Colab: copy the path from the **Files** panel). A refusal is shown under the button in a red card,
+with the same message as before; change the form and press the button again. Its
+`DEVELOPMENT_OVERRIDE = True` (top of cell 1, for developers) differs from the Preprocessing
+notebook's: it keeps whatever preprocessing is installed, of any commit or none recorded (the
+banner then says "commit unknown" and that the override is on). Then:
 
-- **Channels.** You choose channels by ID (`DNA`, `ACTIN`), never by position. When some images
+- **Output and channels.** You choose the output, a **cell mask** or a **nuclei mask** (the
+  mask type follows it, `Cells` or `Nuclei`, and stays editable), and channels by ID (`DNA`,
+  `ACTIN`), never by position: a **cell channel** (cytoplasm or cell border) and a **nuclear
+  channel**, both optional but at least one. A cell mask reads the cell channel, then the
+  nuclear one if chosen (a cell channel is required); a nuclei mask reads the nuclear channel
+  only (required). The record names each channel's role and the output. When some images
   have a channel that others lack (a fourth stain in one biological repeat), only the channels
   every image has can be used: the dropdown says which channel is partial, and choosing it
   shows preprocessing's refusal (`A_SCOPE_INCOMPLETE`) unchanged. Cellpose reads at most three
@@ -269,13 +281,19 @@ or none recorded (the banner then says "commit unknown" and that the override is
   `cpsam_v2`. The weights of a built-in model are downloaded from Hugging Face on first use,
   only if you tick the download box. `cpdino` models also need DINOv3, installed at a pinned
   commit (the head of its default branch on 22 November 2026, not verified against `cpdino`; installed without its dependencies) only if you tick its box. Restart the runtime after installing it, then run the cells again.
-- **Device.** You choose `cuda`, `mps` or `cpu`. A GPU that is not available is refused, never
+- **Device.** The model form says, before anything loads, whether a GPU was found and which.
+  You choose `cuda`, `mps` or `cpu`. A GPU that is not available is refused, never
   replaced by the CPU, and after loading every parameter and buffer of the network must be on
   the device you chose. Cellpose may still move its flow-threshold quality step to the CPU when
   GPU memory is short, and always computes the masks on the CPU on `mps`; that is Cellpose's
   behaviour, it is not refused, and the record notes it.
+- **Advanced Cellpose settings** (a closed section of the model form): the diameter, the flow
+  and cell probability thresholds (0.4 and 0) and the batch size (8).
 - **Diameter** is in pixels. Blank means the model's own native scale (Cellpose 4.2.1.1 does
   not estimate a diameter); 0 is refused.
+- **Normalisation** is always Cellpose's own, per image (each channel to its 1st to 99th
+  percentile); it is not a choice, and images are never sent to Cellpose unnormalised. The full
+  normalisation is written to the record.
 - **2D only.** An image with more than one Z plane or time point fails with a message that
   says so.
 - **Result.** One mask per image at `<masks>/<type>/<the image's folders>/<image>.tif`

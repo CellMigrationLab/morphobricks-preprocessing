@@ -271,12 +271,29 @@ src/morphobricks_preprocessing/
   segmentation_cellpose.py the Cellpose glue (step 2; cellpose, torch and dinov3 imported only inside
                     functions, Cellpose 4.2.1.1 pinned, not a dependency): Settings, diameter_from_text,
                     eval_arguments (channel_axis=0), segment_image, run_batch (every image written, skipped
-                    or failed in a SegmentationBatch), channel_coverage (the preview reuses preview_render's display_panel and outline);
+                    or failed in a SegmentationBatch, with each channel's role, cell or nuclear:
+                    channel_roles_entry), Settings refuses normalize off (always Cellpose's own);
+                    segmentation_cellpose_run.py open_run, channel_coverage, next_steps_lines (the
+                    preview reuses preview_render's display_panel and outline);
                     segmentation_cellpose_model.py choose_model (a built-in name or an existing file,
                     before loading), load_model (the weights file and device verified after loading, no
                     download without allow_download, SHA-256 recorded, DINOv3 at a pinned commit);
                     notebook_cellpose.py CellposeWorkflow, ChannelPicker, CellStop: the widgets behind
                     notebooks/MorphoBricks_Cellpose.ipynb
+                    notebook_stop.py CellStop (one line, no traceback), defined once: cells 2-8
+                    import it; only cell 1 (the install) keeps its own copy
+                    notebook_cellpose_form.py CellposeNotebook, StepForm: one form of widgets per
+                    step (no Colab `# @param` fields: the same in Colab, JupyterLab and
+                    LabConstrictor), built from notebook_style's helpers; its button calls the
+                    CellposeWorkflow method a cell called, a refusal shown verbatim in a red card
+                    notebook_cellpose_guard.py check_folders (cell 3's folders must be those
+                    opened: RUN_CHANGED), take_over/retire (a new workflow disables the old
+                    one's forms: REPLACED)
+                    notebook_cellpose_app.py segmentation_app(run_folder, masks_folder, app=,
+                    on_masks_written=): every step as one widget for any cell (the combined
+                    notebook, #441), the same CellposeNotebook forms the Cellpose cells mount
+                    notebook_cellpose_preview.py MaskResult, preview_figures: the example result as
+                    ZeroCostDL4Mic draws it (cellpose.plot.show_segmentation), one result per mask
   mask_conversion.py RunInputs.binary_to_instances / classes_to_binary (Spec ADR 0005 BM12, step
                     2b): new mask files from a checked mask, refused before any read or write
                     (check_class_image, collisions, idempotent retry); mask_lineage.py their

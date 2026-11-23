@@ -377,6 +377,7 @@ def test_a_diameter_of_zero_or_not_a_positive_number_is_refused(text):
         {"flow_threshold": float("nan")},
         {"cellprob_threshold": float("inf")},
         {"normalize": 1},
+        {"normalize": False},
         {"batch_size": 0},
         {"batch_size": 2.5},
     ],
@@ -387,16 +388,14 @@ def test_other_settings_are_checked(changes):
 
 
 def test_every_effective_setting_is_in_the_record(run, stub):
-    settings = cp.Settings(
-        diameter=25, flow_threshold=0.2, cellprob_threshold=-1.5, normalize=False, batch_size=4
-    )
+    settings = cp.Settings(diameter=25, flow_threshold=0.2, cellprob_threshold=-1.5, batch_size=4)
     batch = cp.run_batch(make_job(run, settings=settings), batch_id="b1").batch
     params = read_record(run.masks, "Cells").batches[0].parameters
     assert params == batch.parameters
     assert (params["flow_threshold"], params["cellprob_threshold"]) == (0.2, -1.5)
     assert params["normalize"] == {
         **stub.normalize_default,
-        "normalize": False,
+        "normalize": True,
         "percentile": [1.0, 99.0],
     }
     assert params["niter"] == 166 and params["rescale"] == 30 / 25  # 200 / rescale
