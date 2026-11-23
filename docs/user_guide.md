@@ -39,7 +39,8 @@ Cell 1 chooses one source:
    when pip recorded (its `direct_url.json`, PEP 610) that it installed `RELEASE_REF` from the
    notebook's GitHub repository. The version number alone is never enough: the same version
    built from another commit, another repository or no record is replaced by `RELEASE_REF`
-   (#371).
+   (#371). pip would keep such a package (same version), so cell 1 reinstalls the package
+   alone at `RELEASE_REF` (`--force-reinstall --no-deps`) before installing what is missing.
 3. **Pinned GitHub source:** otherwise install the notebook's immutable `RELEASE_REF`, never
    moving `main`.
 

@@ -1175,7 +1175,13 @@ Raised during review; to be decided before the milestones that need them:
     developer set it up and `DEVELOPMENT_OVERRIDE` is the explicit way to use it. The version
     banner shows the commit. The Cellpose notebook reads the commit with the same two
     functions (`_direct_url`, `_installed_commit`; one text, tested); it runs no Git, so it
-    replaces an editable install, as before.*
+    replaces an editable install, as before. pip takes an installed package of the same
+    version as already satisfied whatever its commit, so both cells replace another commit
+    with `pip install --force-reinstall --no-deps` of the pinned requirement first
+    (`_replace_other_commit`, one text in both): `--no-deps` so that numpy and the other
+    packages a running kernel has loaded are never reinstalled; then the usual install adds
+    what is missing. Forced rather than `pip uninstall -y` then install: pip puts the old copy
+    back when the new one cannot be installed, where an uninstall would leave none.*
 59. How are images with axis errors saved as named-axis copies (design v0.4 §5, PP-11)?
     *Decided (owner, 2 November 2026; implemented in PP-11) as design v0.4 §5 says: images
     only, as named-axis OME-TIFF (BigTIFF when large); copies keep the file name and folder

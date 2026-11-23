@@ -2,11 +2,16 @@
 
 The notebooks' install cells reuse an installed preprocessing only when this record names
 ``REPOSITORY`` at ``RELEASE_REF`` (issue #371). :func:`install_record_double` answers
-``importlib.metadata.distribution`` from a test's ``state.direct_url``.
+``importlib.metadata.distribution`` from a test's ``state.direct_url``, and :func:`pip_install`
+changes them as real pip does.
 """
 
 import importlib.metadata
 import json
+
+DISTRIBUTION = "morphobricks-preprocessing"
+PINNED_VERSION = "0.8.0"
+"""The version both notebooks' RELEASE_REF commits hold."""
 
 
 def git_record(commit, url):
@@ -39,3 +44,35 @@ def install_record_double(monkeypatch, state):
         return Distribution()
 
     monkeypatch.setattr(importlib.metadata, "distribution", distribution)
+
+
+def pip_install(state, command):
+    """Do to ``state`` what real pip does with ``command`` for the pinned preprocessing.
+
+    pip takes an installed package of the same version as already satisfied, whatever commit it
+    came from, and keeps it with its record unless the command forces a reinstall (the #371
+    review, with pip 24.1.2 and 26.3). A forced reinstall must not reinstall the dependencies
+    (numpy, loaded by a running kernel), so it always comes with ``--no-deps``.
+    """
+    target = next((word for word in command if " @ git+" in word), None)
+    if target is None:
+        return
+    forced = "--force-reinstall" in command
+    assert not forced or "--no-deps" in command, command
+    url, commit = target.split(" @ git+", 1)[1].rsplit("@", 1)
+    if forced or state.versions.get(DISTRIBUTION) != PINNED_VERSION:
+        state.versions[DISTRIBUTION] = PINNED_VERSION
+        state.direct_url = git_record(commit, url)
+
+
+FORCED = ["install", "--disable-pip-version-check", "--force-reinstall", "--no-deps"]
+"""The words of the install cells' forced reinstall after ``-m pip``."""
+
+
+def forced_then_installed(commands, target):
+    """Assert ``commands`` are the forced reinstall of ``target`` (no dependencies), then the
+    install of ``target`` that adds what is missing; return the latter."""
+    force, install = commands
+    assert force[1:3] == ["-m", "pip"] and force[3:] == [*FORCED, target]
+    assert install[-1] == target and "--force-reinstall" not in install
+    return install

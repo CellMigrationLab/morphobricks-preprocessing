@@ -9,8 +9,19 @@ import sys
 
 import pytest
 
-from installed_record import editable_record, git_record, install_record_double
-from test_notebook_cellpose import INSTALL, ROOT, run_cell, setting
+from installed_record import (
+    editable_record,
+    forced_then_installed,
+    git_record,
+    install_record_double,
+    pip_install,
+)
+from test_notebook_cellpose import INSTALL, ROOT, run_cell, setting, source
+
+PINNED = (
+    f"morphobricks-preprocessing[notebook] @ git+{setting('REPOSITORY')}@{setting('RELEASE_REF')}"
+)
+"""The preprocessing the cell installs outside Colab."""
 
 
 @pytest.fixture
@@ -32,7 +43,7 @@ def installer(monkeypatch):
         state.pip.append(command)
         state.versions.update(state.upgrades)
         state.versions["cellpose"] = "4.2.1.1"
-        state.direct_url = git_record(setting("RELEASE_REF"), setting("REPOSITORY"))
+        pip_install(state, command)  # keeps the same version from another commit, as pip does
 
     monkeypatch.setattr(metadata, "version", fake_version)
     install_record_double(monkeypatch, state)
@@ -54,14 +65,10 @@ def test_the_install_cell_installs_the_pinned_versions_when_they_differ(installe
     installer.versions["cellpose"] = "4.0.0"
     installer.direct_url = git_record("0" * 40, setting("REPOSITORY"))
     run_cell({}, INSTALL)
-    (command,) = installer.pip
+    command = forced_then_installed(installer.pip, PINNED)
     assert command[1:4] == ["-m", "pip", "install"]
     assert "cellpose==4.2.1.1" in command
-    assert any(
-        a.startswith("morphobricks-preprocessing[") and a.endswith(f"@{setting('RELEASE_REF')}")
-        for a in command
-    )
-    assert not any("dinov3" in a for a in command)
+    assert not any("dinov3" in a for c in installer.pip for a in c)
 
 
 def test_the_banner_shows_the_installed_commit(installer, capsys):
@@ -86,9 +93,44 @@ NOT_THE_PIN = {
 def test_the_install_cell_installs_the_pin_over_another_commit(installer, record, capsys):
     installer.direct_url = record  # the installed version stays 0.8.0
     run_cell({}, INSTALL)
-    (command,) = installer.pip
-    assert command[-1].endswith(f"@ git+{setting('REPOSITORY')}@{setting('RELEASE_REF')}")
+    forced_then_installed(installer.pip, PINNED)  # each is installed: pip would keep it
     assert f"(commit {setting('RELEASE_REF')})" in capsys.readouterr().out
+
+
+def test_the_install_cell_replaces_the_same_version_from_another_commit(installer, capsys):
+    # The #371 review: pip keeps a preprocessing 0.8.0 from another commit (the Preprocessing
+    # notebook's pin, run in the same environment) and installs nothing, so the cell stopped on
+    # every run. The pin is now forced, without its dependencies.
+    installer.direct_url = git_record(
+        "438a2d37625ae7941953fa831914aa5ef5572696", setting("REPOSITORY")
+    )
+    namespace = {}
+    run_cell(namespace, INSTALL)
+    forced_then_installed(installer.pip, PINNED)
+    assert namespace["SETUP_RECORD"]["preprocessing_commit"] == setting("RELEASE_REF")
+    assert f"(commit {setting('RELEASE_REF')})" in capsys.readouterr().out
+    run_cell({}, INSTALL)
+    assert len(installer.pip) == 2  # running the cell again installs nothing more
+
+
+def run_overridden(namespace):
+    """Run the install cell with DEVELOPMENT_OVERRIDE = True, the one edit a developer makes."""
+    text = source(INSTALL)
+    assert text.count("DEVELOPMENT_OVERRIDE = False") == 1
+    exec(text.replace("DEVELOPMENT_OVERRIDE = False", "DEVELOPMENT_OVERRIDE = True"), namespace)
+
+
+@pytest.mark.parametrize("override", [False, True])
+def test_only_a_preprocessing_the_cell_installs_is_forced(installer, capsys, override):
+    # Cellpose is installed as pip resolves it; with the override, the loaded preprocessing of
+    # another commit is used as it is and nothing replaces it.
+    installer.versions["cellpose"] = "4.0.0"
+    if override:
+        installer.direct_url = git_record("2" * 40, setting("REPOSITORY"))
+    namespace = {}
+    run_overridden(namespace) if override else run_cell(namespace, INSTALL)
+    (command,) = installer.pip
+    assert command[-1] == "cellpose==4.2.1.1" and "--force-reinstall" not in command
 
 
 def test_the_install_cell_stops_when_the_install_leaves_another_commit(installer, monkeypatch):
@@ -97,6 +139,7 @@ def test_the_install_cell_stops_when_the_install_leaves_another_commit(installer
     namespace = {}
     with pytest.raises(RuntimeError, match=f"not {setting('RELEASE_REF')}: pip recorded 2222"):
         run_cell(namespace, INSTALL)
+    forced_then_installed(installer.pip, PINNED)
     assert namespace["SETUP_RECORD"] == {}
 
 

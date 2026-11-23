@@ -260,6 +260,10 @@ old pin are refused with `spec_commit_mismatch`, as at every re-pin.
   as a local checkout: used when it is the clean `RELEASE_REF` commit, refused otherwise. The
   banner shows the commit. The Cellpose notebook shares the same two functions, now also
   checking the URL and tolerating an unreadable record, and shows the installed commit.
+  pip keeps an installed package of the same version as "already satisfied" whatever commit it
+  came from (pip 24.1.2 and 26.3), so both cells first replace another commit with
+  `pip install --force-reinstall --no-deps` of the pinned requirement (the package alone, never
+  numpy or another package a running kernel has loaded), then install what is missing.
 - **Tag this repeat folder: refusals after a folder re-check** (#372): when the tag grid opens
   on new layouts, `RepeatRows.reconcile()` drops the refused units that are no longer in an
   offered row (removed, now colour or unusable) and recomputes the others against their row's

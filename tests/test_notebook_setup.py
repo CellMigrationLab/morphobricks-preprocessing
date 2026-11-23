@@ -20,7 +20,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from installed_record import git_record, install_record_double
+from installed_record import git_record, install_record_double, pip_install
 
 NOTEBOOK = Path(__file__).parents[1] / "notebooks/MorphoBricks_Preprocessing.ipynb"
 REQUIRED = {
@@ -139,8 +139,7 @@ def setup_environment(tmp_path, monkeypatch):
         assert check is True
         state.installs.append(command)
         state.available.update({*REQUIRED, ZARR})
-        state.versions["morphobricks-preprocessing"] = "0.8.0"
-        state.direct_url = git_record(RELEASE_REF, REPOSITORY)
+        pip_install(state, command)  # keeps the same version from another commit, as pip does
 
     monkeypatch.setattr(subprocess, "run", install)
 

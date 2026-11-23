@@ -13,14 +13,18 @@ from pathlib import Path
 
 import pytest
 
-from installed_record import editable_record, git_record
+from installed_record import editable_record, forced_then_installed, git_record
 from notebook_pin import code_sources
 from test_notebook_setup import INSTALL, RELEASE_REF, REPOSITORY, checkout_at
 from test_notebook_setup import setup_environment as cell_1  # noqa: F401
 
 NOTEBOOKS = Path(__file__).parents[1] / "notebooks"
-INSTALLED_COMMIT = ("_direct_url", "_installed_commit")
-"""The install cells' functions that read the installed commit: one text in both notebooks."""
+INSTALLED_COMMIT = ("_direct_url", "_installed_commit", "_replace_other_commit")
+"""The install cells' functions that read the installed commit and replace another one: one
+text in both notebooks."""
+PINNED = f"morphobricks-preprocessing[notebook] @ git+{REPOSITORY}@{RELEASE_REF}"
+MAIN = "de3f7a476da8a3dc49c81b20935a9a1a4831a435"
+"""A commit of main whose version is the release's, 0.8.0 (the #371 review's example)."""
 
 
 def _functions(text, names):
@@ -60,8 +64,7 @@ def test_setup_replaces_a_mismatched_installed_release(cell_1):  # noqa: F811
     state.versions["morphobricks-preprocessing"] = "0.3.4"
     state.direct_url = git_record("2" * 40, REPOSITORY)
     state.start()
-    assert len(state.installs) == 1
-    assert state.installs[0][-1].endswith("@" + state.namespace["RELEASE_REF"])
+    forced_then_installed(state.installs, PINNED)
 
 
 def test_the_banner_shows_the_installed_commit(cell_1, capsys):  # noqa: F811
@@ -97,8 +100,7 @@ def test_setup_installs_the_release_over_another_commit(cell_1, record, capsys):
     state = cell_1
     state.direct_url = record  # the installed version is 0.8.0, as the notebook's
     state.start(INSTALL)
-    (command,) = state.installs
-    assert command[-1].endswith(f"@ git+{REPOSITORY}@{RELEASE_REF}")
+    forced_then_installed(state.installs, PINNED)  # each is installed: pip would keep it
     out = capsys.readouterr().out
     assert f"morphobricks-preprocessing v0.8.0 ({RELEASE_REF[:12]})" in out
     assert f"(commit {RELEASE_REF})" in out  # what pip installed, read again after it
@@ -111,8 +113,35 @@ def test_setup_stops_when_the_install_leaves_another_commit(cell_1, monkeypatch)
     monkeypatch.setattr(subprocess, "run", lambda command, check: state.installs.append(command))
     with pytest.raises(RuntimeError, match=f"not v0.8.0 \\({RELEASE_REF}\\): pip recorded 2222"):
         state.start(INSTALL)
-    assert len(state.installs) == 1
+    forced_then_installed(state.installs, PINNED)
     assert state.namespace["SETUP_RECORD"] == {}
+
+
+def test_setup_replaces_the_same_version_from_another_commit_that_pip_keeps(cell_1, capsys):  # noqa: F811
+    # The #371 review (pip 24.1.2 and 26.3): pip takes 0.8.0 from another commit as already
+    # satisfied, installs nothing and keeps its record, so cell 1 stopped on every run. The
+    # pinned commit is now forced, without its dependencies, then the extras are installed.
+    state = cell_1
+    state.direct_url = git_record(MAIN, REPOSITORY)
+    state.start(INSTALL)
+    forced_then_installed(state.installs, PINNED)
+    out = capsys.readouterr().out
+    assert (
+        f"Replacing the installed morphobricks-preprocessing with commit {RELEASE_REF[:12]}" in out
+    )
+    assert f"Ready: preprocessing 0.8.0 (commit {RELEASE_REF});" in out
+    assert state.namespace["SETUP_RECORD"]["preprocessing_commit"] == RELEASE_REF
+    state.start(INSTALL, fresh=False)
+    assert len(state.installs) == 2  # running the cell again installs nothing more
+
+
+def test_setup_installs_without_forcing_when_nothing_is_installed(cell_1):  # noqa: F811
+    state = cell_1
+    state.versions.pop("morphobricks-preprocessing")
+    state.direct_url = None
+    state.start(INSTALL)
+    (command,) = state.installs
+    assert command[-1] == PINNED and "--force-reinstall" not in command
 
 
 def test_setup_uses_a_clean_editable_release_checkout(cell_1, tmp_path, capsys):  # noqa: F811
