@@ -485,13 +485,16 @@ class RepeatRows:
     def _commit_user(self, save: dict, cells: list, review: TagReview | None = None) -> bool:
         """Save units' tags as the user's action; in fast mode they are then tagged on their own.
 
-        With ``review``, the draft's tag review is set in the same change: the tags and the
-        review are one draft write, saved together or not at all.
+        With ``review`` (the whole tag review: memory and what this save confirms), the draft's
+        tag review is set in the same change: the tags and the review are one draft write, saved
+        together or not at all, and :attr:`unsaved` is that write's outcome. No earlier refused
+        review is retried inside it (:meth:`.TagGrid.commit`): memory does not hold the new
+        confirmations yet, so a retry would write the review without them over this one.
         """
         then = None if review is None else (lambda a: replace(a, tag_review=review))
         ok = self.grid.commit(save, cells, then)
         if ok and review is not None:
-            self.unsaved = False  # the draft now holds the review in memory
+            self.unsaved = False  # this very write held the whole review
         if ok and self.grid.same_channels.value:  # the user's action: tagged on their own
             self.grid.matrix.own.update(save)
             self.grid.matrix.sync_statement()

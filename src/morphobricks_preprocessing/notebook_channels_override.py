@@ -269,7 +269,7 @@ class OverrideEditor:
         The one path of the editor and of the one-click buttons: the same validation
         (``RepeatRows._row_error``) and save (``_commit_user``). What a confirmation needs (the
         unit's header names) is read before the save. The tags and the draft's tag review with
-        the new confirmations are ONE draft write (``TagGrid.commit(..., also)``): a refused
+        the new confirmations are ONE draft write (``TagGrid.commit(..., then)``): a refused
         write saves neither, and nothing is counted as confirmed.
         """
         rows = self.rows

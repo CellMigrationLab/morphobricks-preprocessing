@@ -66,9 +66,12 @@ old pin are refused with `spec_commit_mismatch`, as at every re-pin.
     row no longer lets it be tagged from aliases and cleared.
   - **Confirm these tags**, **Confirm the same tags** and **Confirm all N like it** save the
     tags and the draft's tag review with the new confirmations in ONE draft write
-    (`TagGrid.commit(..., also)`): a refused write saves neither and confirms nothing. The save
+    (`TagGrid.commit(..., then)`): a refused write saves neither and confirms nothing. The save
     button stays disabled while the tag review is not saved in the draft, and any later saved
-    tag change retries it.
+    tag change retries it. A confirmation made while an earlier review write is unsaved is that
+    retry: its own write holds the whole review and is the only write (before, the retry ran
+    inside the confirmation's save, before the confirmation was in memory, and wrote the review
+    without it over the one just saved; the session counted the unit while the draft did not).
   - A refused unit whose channel count changed (a re-check) no longer breaks the override
     editor: it stays listed ("its channel count changed (N at the refusal, M now): choose every
     channel again", `repeat_tags.recount`) and the editor opens with one blank dropdown per
