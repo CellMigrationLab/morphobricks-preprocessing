@@ -34,12 +34,12 @@ DEVICE_OPTIONS = ("cuda", "mps", "cpu")
 ADVANCED = "Advanced Cellpose settings"
 """The collapsed section of cell 5 with the diameter, the thresholds and the batch size."""
 STOPPED = "This step stopped"
+"""The title of the card that shows a refusal; its message is the refusal, unchanged."""
 MODEL_CHANGED = (
     "The model, the model file or the device in cell 5 changed since the model was loaded: "
     "press Load the model again. A model is never reloaded without that."
 )
 """The refusal of a preview or a run whose model choice no longer matches the loaded model."""
-"""The title of the card that shows a refusal; its message is the refusal, unchanged."""
 _FIELD = widgets.Layout(width="99%")
 _STYLE = {"description_width": "11em"}
 
