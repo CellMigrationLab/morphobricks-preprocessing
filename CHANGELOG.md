@@ -58,6 +58,10 @@ old pin are refused with `spec_commit_mismatch`, as at every re-pin.
     one draft's record is never written into another, and switching back restores the first
     from its file. A failed save of the review shows a line on the tagging grid and is retried
     at the next change.
+  - A refused unit the user has not confirmed is never tagged by fast mode's header trust,
+    whatever its row's reference is now (`RepeatRows.standing` is the refused units without a
+    holding confirmation, kept in the draft's `tag_review`): removing the units before it in its
+    row no longer lets it be tagged from aliases and cleared.
 - **Segmentation hand-off** (owner request of 21 November 2026, step 1 of the Cellpose notebook
   plan): `segmentation_handoff` and `segmentation_record` (numpy and tifffile only; no
   segmentation tool is imported). `images_to_segment` lists the run's images that have no mask

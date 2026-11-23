@@ -266,21 +266,29 @@ class RepeatRows:
         return differences(layout, refusal.tags, lead, self.grid.labels, refusal.channels)
 
     def standing(self) -> set[UnitKey]:
-        """Return the units whose refusal still stands, whatever aliases were saved since.
+        """Return the refused units the user has not confirmed: no unattended path may tag them.
 
-        Fast mode does not tag these from their header names
-        (:meth:`.notebook_channels_matrix.MatrixView.trust_headers`): a refused unit counts only
-        once the user confirms it. A confirmed unit holds tags, so trusts nothing either way.
+        The refused units are kept in the draft file (``tag_review``) and so are the
+        confirmations, so this set is the same in every session. It does not depend on the row's
+        current reference or on the aliases saved since: a reference change (the earlier units
+        of the row removed, the refused unit or one with its very header names now first) never
+        lets fast mode tag a refused unit from its header names
+        (:meth:`.notebook_channels_matrix.MatrixView.trust_headers`), and an untagged refused
+        unit is never cleared (:meth:`reconcile` keeps it while its own tags are incomplete). It
+        leaves this set only by an explicit action on it: its confirmation
+        (:func:`.repeat_tags.override_holds`), a row click that fills it, or the user tagging it.
         """
-        rows, out = self._rows(), set()
         if self.other_draft():
-            return out
-        for key, old in self.refused.items():
-            group, layout = self._placed(rows, key)
-            if layout is None or old.lead is None:
+            return set()
+        answers = self.grid.store.answers()
+        current = {u.key: u for u in self.grid.layouts}
+        out = set()
+        for key in self.refused:
+            layout = current.get(key)
+            if layout is None:
                 continue
-            lead = None if key in repeat_apart(group) else repeat_lead(group)  # the row as now
-            if lead is None or self.contradictions(layout, old, lead):
+            tags = tags_of(layout, answers.units.get(key))
+            if not override_holds(self.override.confirmed.get(key), layout, tags):
                 out.add(key)
         return out
 
