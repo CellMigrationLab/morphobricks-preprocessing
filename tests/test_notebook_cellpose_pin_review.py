@@ -7,6 +7,7 @@ security boundary: these are uses a legitimate edit can make, not deliberate obf
 
 import pytest
 
+import notebook_pin
 import test_notebook_cellpose_pin as pin_tests
 from notebook_pin import PinScopeError, pin_differences
 from test_notebook_cellpose_pin import CLI_CHANGED, NOTEBOOK, PIP, PKG, PYPROJECT, _pin_and_head
@@ -148,3 +149,13 @@ def test_a_cell_importing_names_from_os_and_subprocess_that_start_nothing_is_acc
         "print(environ.get('HOME'), CalledProcessError)\n"
     )
     assert pin_differences(repo.path, repo.pin, repo.pin, [*NOTEBOOK, cell]) == []
+
+
+# (5) what the check does not try to see is said, not left to be found.
+
+
+def test_the_module_says_deliberate_obfuscation_is_out_of_scope():
+    text = " ".join(notebook_pin.__doc__.split())
+    assert "Deliberate obfuscation is out of scope" in text
+    for form in ("getattr(__builtins__, ...)", "ctypes", "assembled from strings"):
+        assert form in text

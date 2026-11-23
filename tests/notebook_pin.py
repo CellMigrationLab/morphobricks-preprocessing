@@ -17,10 +17,15 @@ a loader reached by an ``as`` alias or ``getattr``; in a cell, code loaded by a 
 text or a file, a command other than ``python -m pip`` (or one reached by an alias, a ``from``
 import or IPython), an install other than at ``@{RELEASE_REF}`` (a forced reinstall included,
 and the bare distribution name a cell function passes on to ``pip``), an IPython ``!``/``%``
-line; in package code, a module loaded by a computed name or a file or
-text run; in the build, a second wheel package, an unknown backend or ``[tool.hatch]``
-setting, or a ``hatch.toml``. Package code that names a package module in a string runs it
-as an import.
+line; in package code, a module loaded by a computed name or a file or text run; in the
+build, a second wheel package, an unknown backend or ``[tool.hatch]`` setting, or a
+``hatch.toml``. Package code that names a package module in a string (``"pkg.mod"`` or
+``"pkg.mod:attr"``) runs it as an import.
+
+The check is a drift detector, not a security boundary: it catches a legitimate edit that
+changes what the notebook runs without a new pin. Deliberate obfuscation is out of scope
+and not seen: ``getattr(__builtins__, ...)``, ``ctypes``, or a module or package name
+assembled from strings at runtime.
 
 Known gaps: package code that assembles a module name at runtime and passes it to
 something other than a loader (``[sys.executable, "-m", f"{PACKAGE}.{name}"]``) is not seen.
