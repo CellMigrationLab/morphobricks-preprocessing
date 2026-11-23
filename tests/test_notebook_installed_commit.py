@@ -18,7 +18,13 @@ import pytest
 
 from installed_record import editable_record, forced_then_installed, git_record
 from notebook_pin import code_sources
-from test_notebook_setup import INSTALL, RELEASE_REF, REPOSITORY, checkout_at
+from test_notebook_setup import (
+    INSTALL,
+    RELEASE_REF,
+    REPOSITORY,
+    checkout_at,
+    run_cell_with_override,
+)
 from test_notebook_setup import setup_environment as cell_1  # noqa: F401
 
 NOTEBOOKS = Path(__file__).parents[1] / "notebooks"
@@ -205,6 +211,17 @@ def test_setup_refuses_a_copy_imported_from_outside_the_install(
         state.start(INSTALL)
     assert "Ready" not in capsys.readouterr().out
     assert state.namespace["SETUP_RECORD"] == {}
+
+
+def test_the_development_override_never_keeps_an_installed_package_of_another_commit(
+    cell_1,  # noqa: F811
+):
+    # DEVELOPMENT_OVERRIDE covers local checkouts only (its comment in cell 1).
+    state = cell_1
+    state.direct_url = git_record(MAIN, REPOSITORY)
+    namespace = run_cell_with_override(state)
+    forced_then_installed(state.installs, PINNED)
+    assert namespace["SETUP_RECORD"]["preprocessing_commit"] == RELEASE_REF
 
 
 def test_setup_installs_without_forcing_when_nothing_is_installed(cell_1):  # noqa: F811

@@ -196,6 +196,18 @@ def test_a_preprocessing_imported_from_outside_the_install_is_refused(
     assert namespace["SETUP_RECORD"] == {}
 
 
+@pytest.mark.parametrize("record", [editable_record(ROOT), None], ids=["editable", "none"])
+def test_the_development_override_accepts_any_installed_preprocessing(installer, capsys, record):
+    # As its comment in the cell says: kept as it is, "commit unknown", the override named.
+    installer.direct_url = record
+    namespace = {}
+    run_overridden(namespace)
+    assert installer.pip == []
+    out = capsys.readouterr().out
+    assert "(commit unknown). DEVELOPMENT OVERRIDE is on" in out
+    assert namespace["SETUP_RECORD"]["preprocessing_commit"] is None
+
+
 def test_an_upgrade_of_a_package_the_kernel_has_not_loaded_needs_no_restart(installer):
     installer.versions.update(cellpose="4.0.0", **{"opencv-python": "4.9.0"})
     installer.upgrades = {"opencv-python": "4.10.0"}

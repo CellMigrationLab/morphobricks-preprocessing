@@ -35,6 +35,8 @@ Cell 1 chooses one source:
    top of cell 1 to use it, and the printed header then says so. An editable install
    (`pip install -e`) of a checkout elsewhere follows the same rule: used when it is the clean
    `RELEASE_REF` commit, otherwise refused (never replaced, since a developer set it up).
+   `DEVELOPMENT_OVERRIDE` covers local checkouts only: an installed package of another commit
+   is still replaced.
 2. **Matching installed package:** otherwise, reuse an installed preprocessing package only
    when pip recorded (its `direct_url.json`, PEP 610) that it installed `RELEASE_REF` from the
    notebook's GitHub repository. The version number alone is never enough: the same version
@@ -253,7 +255,9 @@ for a run you already have (run preprocessing first and describe the experiment)
 install (Cellpose 4.2.1.1 and the preprocessing commit it is made for), Google Drive, open the
 run's output folder and a masks folder, choose the mask type and **one to three channels by
 channel ID**, choose the model, device and settings and load the model, preview one image, and
-segment all images. Then:
+segment all images. Its `DEVELOPMENT_OVERRIDE = True` (top of cell 1, for developers) differs
+from the Preprocessing notebook's: it keeps whatever preprocessing is installed, of any commit
+or none recorded (the banner then says "commit unknown" and that the override is on). Then:
 
 - **Channels.** You choose channels by ID (`DNA`, `ACTIN`), never by position. When some images
   have a channel that others lack (a fourth stain in one biological repeat), only the channels
