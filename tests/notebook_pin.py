@@ -29,6 +29,7 @@ from pathlib import Path
 import pytest
 
 PACKAGE = "morphobricks_preprocessing"
+DISTRIBUTION = "morphobricks-preprocessing"
 SOURCE_ROOT = "src"
 BUILD_FILES = (".gitignore",)
 """The files the build reads besides the package and ``pyproject.toml``: hatchling leaves out
@@ -65,6 +66,13 @@ COMMANDS = frozenset(
     | {f"spawn{s}" for s in ("l", "le", "lp", "lpe", "v", "ve", "vp", "vpe")}
 )
 """``subprocess`` and ``os`` calls that start a program."""
+PIP_WORDS = frozenset({"install", "--disable-pip-version-check"})
+"""The literal words a cell's ``pip`` command may hold after ``-m pip``. The requirements
+come from variables, whose text :func:`_refuse_unpinned_install` checks where it is written."""
+INSTALL_SPEC = re.compile(r"morphobricks[-_.]preprocessing|git\+", re.I)
+"""Text that can name this package (or any Git source) for ``pip``."""
+METADATA_CALLS = frozenset({"version", "distribution"})
+"""``importlib.metadata`` calls that take the bare distribution name and install nothing."""
 HIDDEN_RUNNERS = frozenset({"get_ipython"})
 """Names that run commands or code the cell's syntax does not show (IPython's ``system``)."""
 
@@ -187,17 +195,75 @@ def _package_imports(tree: ast.AST, where: str) -> set[str]:
     return names
 
 
+def _pinned(node: ast.JoinedStr) -> bool:
+    """Return whether an f-string ends with ``@{RELEASE_REF}``, the notebook's pinned install."""
+    *_, before, last = [None, None, *node.values]
+    return (
+        isinstance(last, ast.FormattedValue)
+        and isinstance(last.value, ast.Name)
+        and last.value.id == "RELEASE_REF"
+        and isinstance(before, ast.Constant)
+        and before.value.endswith("@")
+    )
+
+
+def _f_string_text(node: ast.JoinedStr) -> str:
+    """Return an f-string's literal text, with ``{}`` for each replacement field."""
+    return "".join(v.value if isinstance(v, ast.Constant) else "{}" for v in node.values)
+
+
+def _refuse_unpinned_install(trees: list[ast.AST]) -> None:
+    """Raise ``PinScopeError`` unless every install of the package in the cells is pinned.
+
+    ``RELEASE_REF`` and ``REPOSITORY`` are each set once (and named in no string); a ``pip``
+    command holds only :data:`PIP_WORDS` and variables; and every string that can name the
+    package for ``pip`` is the f-string ending ``@{RELEASE_REF}``, the ``REPOSITORY`` value,
+    or the bare distribution name passed to a metadata call or a function the cells define.
+    """
+    nodes = [node for tree in trees for node in ast.walk(tree)]
+    for setting in ("RELEASE_REF", "REPOSITORY"):
+        stores = [
+            n
+            for n in nodes
+            if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Store) and n.id == setting
+        ]
+        named = [n for n in nodes if isinstance(n, ast.Constant) and n.value == setting]
+        if len(stores) > 1 or named:
+            raise PinScopeError(f"{setting} is set more than once: the installed commit is unclear")
+    defined = {n.name for n in nodes if isinstance(n, ast.FunctionDef)}
+    allowed = set()
+    for node in nodes:
+        if isinstance(node, ast.JoinedStr):
+            allowed |= {id(v) for v in node.values} | ({id(node)} if _pinned(node) else set())
+        elif isinstance(node, ast.Call) and _call_name(node) in METADATA_CALLS | defined:
+            allowed |= {id(a) for a in node.args if getattr(a, "value", None) == DISTRIBUTION}
+        elif isinstance(node, ast.Assign) and getattr(node.targets[0], "id", "") == "REPOSITORY":
+            allowed.add(id(node.value))
+        if isinstance(node, ast.Call) and _starts_pip(node):
+            words = node.args[0].elts[3:]
+            if any(isinstance(w, ast.Constant) and w.value not in PIP_WORDS for w in words):
+                raise PinScopeError(f"a pip command the check does not know: {ast.unparse(node)}")
+    for node in nodes:
+        text = _f_string_text(node) if isinstance(node, ast.JoinedStr) else None
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            text = node.value
+        if text is not None and INSTALL_SPEC.search(text) and id(node) not in allowed:
+            raise PinScopeError(f"an install source other than @{{RELEASE_REF}}: {text!r}")
+
+
 def notebook_modules(sources: list[str]) -> set[str]:
     """Return the package modules and names the notebook cells ``sources`` import.
 
     Raises ``PinScopeError`` when a cell reaches code another way (see the module docstring)
     or when no cell imports the package at all.
     """
-    names = set()
+    names, trees = set(), []
     for number, source in enumerate(sources, start=1):
         tree = ast.parse(source)
         _refuse_unseen_use(tree, f"cell {number}")
         names |= _package_imports(tree, f"cell {number}")
+        trees.append(tree)
+    _refuse_unpinned_install(trees)
     if not names:
         raise PinScopeError(f"no cell imports {PACKAGE}: nothing to compare with the pin")
     return names

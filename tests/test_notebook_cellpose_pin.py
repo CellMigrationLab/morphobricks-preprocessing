@@ -277,6 +277,10 @@ WITH_PLUGIN = (
     PYPROJECT.replace('["hatchling>=1.27"]', '["hatchling>=1.27", "hatch-plugin==1.0"]')
     + "\n[tool.plugin]\nlevel = 1\n"
 )
+PIP = (
+    "import subprocess\nimport sys\n\n"
+    + "subprocess.run([sys.executable, '-m', 'pip', 'install', {}])\n"
+)
 REFUSED = {
     # A command the cell starts by a name the COMMANDS check did not look at.
     "a command by an aliased subprocess": (
@@ -380,6 +384,33 @@ REFUSED = {
         {"extra/helper.py": "A = 2\n"},
         NOTEBOOK,
     ),
+    # A cell that installs the package other than at RELEASE_REF, after the pinned install.
+    "a second install at a version": (
+        {},
+        {},
+        [*NOTEBOOK, PIP.format("'morphobricks-preprocessing==0.7.0'")],
+    ),
+    "a second install at a branch": (
+        {},
+        {},
+        [*NOTEBOOK, PIP.format("'morphobricks-preprocessing @ git+https://host/r.git@main'")],
+    ),
+    "a second install from a variable": (
+        {},
+        {},
+        [*NOTEBOOK, "SOURCE = f'git+{REPOSITORY}@main'\n" + PIP.format("SOURCE")],
+    ),
+    "an upgrade of what is installed": (
+        {},
+        {},
+        [*NOTEBOOK, "NAME = 'morphobricks-preprocessing'\n" + PIP.format("'--upgrade', NAME")],
+    ),
+    "an install of the bare name": (
+        {},
+        {},
+        [*NOTEBOOK, "WANTED = ['morphobricks-preprocessing']\n" + PIP.format("*WANTED")],
+    ),
+    "RELEASE_REF set again": ({}, {}, [*NOTEBOOK, "RELEASE_REF = 'main'\n"]),
 }
 FOLLOWED = {
     # A build plugin may read any [tool] table, so all of pyproject.toml counts.
@@ -424,6 +455,15 @@ def test_a_use_the_review_found_is_refused(repo, case):
 ACCEPTED = {
     # A method named like a builtin runs no text: Cellpose's model.eval(), torch's eval().
     "a method named eval": [*NOTEBOOK, "model = workflow\nmodel.eval()\n"],
+    # The real install cell's forms: the pinned f-string from variables, the repository, and
+    # the distribution name read back from the installed metadata.
+    "the real install cell's forms": [
+        INSTALL_CELL.replace("git+REPOSITORY@", "git+{REPOSITORY}@")
+        + 'REPOSITORY = "https://github.com/o/morphobricks-preprocessing.git"\n'
+        + "from importlib.metadata import version\n\n"
+        + "print(f\"{version('morphobricks-preprocessing')}\")\n",
+        *NOTEBOOK[1:],
+    ],
 }
 
 
