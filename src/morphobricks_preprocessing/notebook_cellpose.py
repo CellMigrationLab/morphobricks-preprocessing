@@ -34,6 +34,7 @@ from .notebook_progress import progress_html
 from .notebook_stop import CellStop
 from .notebook_style import STYLE_CSS, table, tiles
 from .run_inputs import Fov, RunInputs
+from .segmentation_cellpose_run import channel_layouts, numbered_layout
 from .segmentation_handoff import images_to_segment, stray_backups
 from .segmentation_record import SegmentationError, check_mask_type
 
@@ -135,6 +136,12 @@ class CellposeWorkflow:
             f"{c}: in {have} of {total} images" + ("" if have == total else " (partial)")
             for c, (have, total) in coverage.items()
         ]
+        layouts = channel_layouts(inputs)
+        lines.append(
+            f"Channel numbers: {numbered_layout(next(iter(layouts)))}, the same in every image."
+            if len(layouts) == 1 and None not in layouts
+            else "Channel numbers differ between images: choose the channels by tag."
+        )
         deep = cp.non_2d_images(inputs)
         if deep:
             lines.append(
@@ -400,6 +407,7 @@ class CellposeWorkflow:
             overwrite,
             target.roles,
             target.output,
+            target.numbers,
         )
 
     def _run_job(self, job: cp.SegmentationJob, *, titled: bool) -> cp.BatchResult:

@@ -10,7 +10,13 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from .run_inputs import RunInputs
+from .segmentation_cellpose_model import CELLPOSE_VERSION
 from .segmentation_record import SegmentationError, check_mask_type
+
+MAX_CHANNELS = 3
+"""Cellpose 4.2.1.1 reads at most three channels and drops the rest silently."""
+NAMED_IMAGES = 5
+"""How many images of a channel layout a refusal names before it counts the rest."""
 
 
 def open_run(run_folder: str) -> RunInputs:
@@ -33,6 +39,106 @@ def channel_coverage(inputs: RunInputs) -> dict[str, tuple[int, int]]:
     fovs = inputs.fovs()
     order = dict.fromkeys(c for f in fovs for c in (f.channel_ids or ()))
     return {c: (sum(c in (f.channel_ids or ()) for f in fovs), len(fovs)) for c in order}
+
+
+def non_2d_images(inputs: RunInputs) -> tuple[str, ...]:
+    """Return the images with more than one Z plane or time point (refused: 2D only for now)."""
+    return tuple(f.relative_path for f in inputs.fovs() if f.z_count > 1 or f.t_count > 1)
+
+
+def check_channel_count(channel_ids: Sequence[str]) -> None:
+    """Refuse more channels than Cellpose reads (it would silently use the first three)."""
+    if len(channel_ids) > MAX_CHANNELS:
+        raise SegmentationError(
+            f"Cellpose {CELLPOSE_VERSION} reads at most {MAX_CHANNELS} channels and would "
+            f"silently drop the others by position; {len(channel_ids)} were chosen "
+            f"({', '.join(channel_ids)}). Choose {MAX_CHANNELS} or fewer."
+        )
+
+
+def channel_layouts(inputs: RunInputs) -> dict[tuple[str, ...] | None, tuple[str, ...]]:
+    """Return the run's images by channel layout: the channel IDs at C = 1, 2, ..., in order.
+
+    The layouts are ordered by the number of images, most first (then as first met); None is
+    the layout of an image whose channel IDs are not recorded.
+    """
+    groups: dict[tuple[str, ...] | None, list[str]] = {}
+    for fov in inputs.fovs():
+        groups.setdefault(fov.channel_ids, []).append(fov.relative_path)
+    ordered = sorted(groups.items(), key=lambda item: -len(item[1]))  # stable: first met
+    return {layout: tuple(images) for layout, images in ordered}
+
+
+def channel_number_from_text(text: str) -> int | None:
+    """Return the channel number typed (1-based), or None for a blank field.
+
+    Raises
+    ------
+    SegmentationError
+        For text that is not a whole number of 1 or more.
+    """
+    if not text.strip():
+        return None
+    try:
+        number = int(text.strip())
+    except ValueError:
+        number = 0
+    if number < 1:
+        raise SegmentationError(
+            f"{text.strip()!r} is not a channel number: type a whole number from 1 (the first "
+            "channel), or leave it blank, or choose the channel by its tag."
+        )
+    return number
+
+
+def channel_by_number(inputs: RunInputs, number: int) -> str:
+    """Return the channel ID at channel number ``number`` (C position, 1-based) of every image.
+
+    A number is allowed only when **every image of the run has the same channel IDs at the
+    same C positions** (one :func:`channel_layouts` entry); it is then translated once, to
+    that ID, which is resolved by ID as any tag is. It is never resolved image by image.
+
+    Raises
+    ------
+    SegmentationError
+        When the images' channel layouts differ (the refusal names each layout and its
+        images, and asks for a tag), or for a number beyond the channels.
+    """
+    layouts = channel_layouts(inputs)
+    if len(layouts) != 1 or None in layouts:
+        raise SegmentationError(_layouts_differ(number, layouts))
+    (ids,) = layouts
+    if number > len(ids):
+        raise SegmentationError(
+            f"Channel number {number} is not a channel of this run: its images have "
+            f"{len(ids)} channels ({numbered_layout(ids)}). Choose a number from 1 to {len(ids)}, "
+            "or choose the channel by its tag."
+        )
+    return ids[number - 1]
+
+
+def numbered_layout(ids: tuple[str, ...] | None) -> str:
+    """Return a layout as ``1 = DNA, 2 = TUB``."""
+    if ids is None:
+        return "channel IDs not recorded"
+    return ", ".join(f"{n} = {c}" for n, c in enumerate(ids, start=1))
+
+
+def _layouts_differ(number: int, layouts: dict[tuple[str, ...] | None, tuple[str, ...]]) -> str:
+    """Return the refusal of a channel number in a run whose images' channels differ."""
+    lines = [
+        f"Channel number {number} cannot be used: the images of this run do not all have the "
+        "same channels at the same positions, so a number could name a different stain in "
+        "different images. Choose the channel by its tag (channel ID) instead. The layouts:"
+    ]
+    for ids, images in layouts.items():
+        named = ", ".join(images[:NAMED_IMAGES])
+        more = len(images) - NAMED_IMAGES
+        lines.append(
+            f"- {numbered_layout(ids)}: {len(images)} image(s): {named}"
+            + (f" and {more} more" if more > 0 else "")
+        )
+    return "\n".join(lines)
 
 
 def next_steps_lines(

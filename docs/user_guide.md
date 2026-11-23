@@ -262,6 +262,13 @@ with the same message as before; change the form and press the button again. The
   different model or settings for the nuclei. The preview shows both results. The notebook
   never pairs a cell with a nucleus by label number: relate them downstream from the geometry
   (MorphoRelate, containment or overlap).
+- **Channels by number.** Tags (channel IDs) are the default. You may instead choose **By
+  number** and type a channel's number (its C position, 1 for the first), only when every
+  image of the run has the same channel IDs at the same positions: the number is translated
+  once to that ID, resolved like a tag, and the record keeps the ID with the number typed
+  (`channel_number` in `channel_roles`). When the layouts differ (3 channels in some repeats
+  and 4 in others) the number is refused with the images of each layout named: choose the
+  channel by its tag. A number is never resolved image by image.
 - **Partial channels.** When some images
   have a channel that others lack (a fourth stain in one biological repeat), only the channels
   every image has can be used: the dropdown says which channel is partial, and choosing it

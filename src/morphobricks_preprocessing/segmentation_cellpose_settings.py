@@ -7,7 +7,9 @@ it.
 from __future__ import annotations
 
 import math
+from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import Any
 
 from .segmentation_record import SegmentationError
 
@@ -210,20 +212,31 @@ def output_inputs(
 
 
 def channel_roles_entry(
-    channel_ids: tuple[str, ...], roles: tuple[str, ...], output: str | None = None
-) -> list[dict[str, str]] | None:
+    channel_ids: tuple[str, ...],
+    roles: tuple[str, ...],
+    output: str | None = None,
+    numbers: Mapping[str, int] | None = None,
+) -> list[dict[str, Any]] | None:
     """Return the record's ``channel_roles``: each channel ID with its role, in Cellpose's order.
 
     The roles only label the channels chosen by ID: for a cell mask the cell channel, then the
     nuclear channel if any; for a nuclei mask the nuclear channel alone. No roles (``()``, and
-    no output) are recorded as null, never guessed.
+    no output) are recorded as null, never guessed. A channel chosen by number (#440) also has
+    ``channel_number``, the number typed (C position, 1-based), beside the ID it stands for.
 
     Raises
     ------
     SegmentationError
-        For roles without an output or the reverse, or roles that are not those of the output.
+        For roles without an output or the reverse, roles that are not those of the output, or
+        a number for a channel that is not read.
     """
-    if not roles and output is None:
+    numbers = dict(numbers or {})
+    if set(numbers) - set(channel_ids):
+        raise SegmentationError(
+            f"Channel numbers were given for {sorted(set(numbers) - set(channel_ids))}, which "
+            f"are not among the channels read ({list(channel_ids)})."
+        )
+    if not roles and output is None and not numbers:
         return None
     allowed = {
         CELL_OUTPUT: ((CELL_ROLE,), (CELL_ROLE, NUCLEAR_ROLE)),
@@ -235,4 +248,7 @@ def channel_roles_entry(
             f"{output!r}: a cell mask reads the cell channel, then the nuclear one if any; a "
             "nuclei mask reads the nuclear channel only."
         )
-    return [{"channel_id": c, "role": r} for c, r in zip(channel_ids, roles, strict=True)]
+    return [
+        {"channel_id": c, "role": r, **({"channel_number": numbers[c]} if c in numbers else {})}
+        for c, r in zip(channel_ids, roles, strict=True)
+    ]

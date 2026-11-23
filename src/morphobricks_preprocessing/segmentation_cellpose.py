@@ -67,7 +67,14 @@ from .segmentation_cellpose_model import (
     load_model,
     weights_file,
 )
-from .segmentation_cellpose_run import channel_coverage, next_steps_lines, open_run
+from .segmentation_cellpose_run import (
+    MAX_CHANNELS,
+    channel_coverage,
+    check_channel_count,
+    next_steps_lines,
+    non_2d_images,
+    open_run,
+)
 from .segmentation_cellpose_settings import (
     BOTH_NEEDS,
     BOTH_OUTPUT,
@@ -107,7 +114,10 @@ from .segmentation_record import (
 )
 
 __all__ = [
+    "MAX_CHANNELS",
     "channel_coverage",
+    "check_channel_count",
+    "non_2d_images",
     "next_steps_lines",
     "open_run",
     "BUILTIN_MODELS",
@@ -147,8 +157,6 @@ __all__ = [
 ]
 
 TOOL = "cellpose"
-MAX_CHANNELS = 3
-"""Cellpose 4.2.1.1 reads at most three channels and drops the rest silently."""
 TILE_OVERLAP, MIN_SIZE, MAX_SIZE_FRACTION = 0.1, 15, 0.4
 """Cellpose's own defaults, passed explicitly so that the record holds the effective values."""
 NORMALIZE_PERCENTILE = [1.0, 99.0]
@@ -211,16 +219,6 @@ def eval_arguments(loaded: LoadedModel, settings: Settings) -> dict[str, Any]:
         "tile_overlap": TILE_OVERLAP,
         "bsize": loaded.tile_size,
     }
-
-
-def check_channel_count(channel_ids: Sequence[str]) -> None:
-    """Refuse more channels than Cellpose reads (it would silently use the first three)."""
-    if len(channel_ids) > MAX_CHANNELS:
-        raise SegmentationError(
-            f"Cellpose {CELLPOSE_VERSION} reads at most {MAX_CHANNELS} channels and would "
-            f"silently drop the others by position; {len(channel_ids)} were chosen "
-            f"({', '.join(channel_ids)}). Choose {MAX_CHANNELS} or fewer."
-        )
 
 
 def segment_image(loaded: LoadedModel, settings: Settings, stack: np.ndarray) -> np.ndarray:
@@ -307,6 +305,9 @@ class SegmentationJob:
     channel_roles, output
         The role of each of ``plan.channel_ids`` and the output (``cells`` or ``nuclei``),
         recorded with them; ``()`` and None record none (null).
+    channel_numbers
+        The channel number typed for a channel chosen by number (#440), as
+        ``((channel ID, number), ...)``; recorded with the ID it was translated to.
     """
 
     inputs: RunInputs
@@ -318,12 +319,18 @@ class SegmentationJob:
     overwrite: bool = False
     channel_roles: tuple[str, ...] = ()
     output: str | None = None
+    channel_numbers: tuple[tuple[str, int], ...] = ()
 
     def __post_init__(self) -> None:
         """Refuse a job without resolved channels or with roles that do not fit them."""
         if self.plan is None:
             raise SegmentationError("No channels are resolved: choose channels the run has.")
-        channel_roles_entry(self.plan.channel_ids, self.channel_roles, self.output)
+        self.roles_entry()
+
+    def roles_entry(self) -> list[dict[str, Any]] | None:
+        """Return the record's ``channel_roles`` (:func:`channel_roles_entry`)."""
+        ids, numbers = self.plan.channel_ids, dict(self.channel_numbers)
+        return channel_roles_entry(ids, self.channel_roles, self.output, numbers)
 
 
 @dataclass(frozen=True)
@@ -360,11 +367,6 @@ class BatchResult:
         """Return how many images were written, skipped (verified), need attention and failed."""
         statuses = [status for _, status, _ in self.rows()]
         return {s: statuses.count(s) for s in ("written", "skipped", NEEDS_ATTENTION, "failed")}
-
-
-def non_2d_images(inputs: RunInputs) -> tuple[str, ...]:
-    """Return the images with more than one Z plane or time point (refused: 2D only for now)."""
-    return tuple(f.relative_path for f in inputs.fovs() if f.z_count > 1 or f.t_count > 1)
 
 
 def _segment_one(
@@ -462,9 +464,7 @@ def _batch(job: SegmentationJob, batch_id: str, images: list[SegmentedImage]) ->
         model_file=loaded.file,
         parameters={
             **inference_parameters(loaded, job.settings, job.plan.channel_ids),
-            "channel_roles": channel_roles_entry(
-                job.plan.channel_ids, job.channel_roles, job.output
-            ),
+            "channel_roles": job.roles_entry(),
             "output": job.output,
         },
         channel_ids=job.plan.channel_ids,
