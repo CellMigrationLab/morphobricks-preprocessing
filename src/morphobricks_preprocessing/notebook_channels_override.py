@@ -276,6 +276,12 @@ class OverrideEditor:
         grid, layouts = rows.grid, {u.key: u for u in rows.grid.layouts}
         save, cells, records = {}, [], {}
         if rows.other_draft():  # the record is another draft's: never written into this one
+            rows.notice = ui.status(
+                "error",
+                "Not saved: these refusals and confirmations belong to another draft.",
+                ["Open Channels again to read this draft's own."],
+            )
+            grid.refresh()
             return False
         for key, draft in drafts.items():
             why = rows._row_error(draft)

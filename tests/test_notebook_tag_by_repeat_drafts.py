@@ -220,3 +220,16 @@ def test_pointing_the_output_back_at_the_first_draft_restores_its_record(tmp_pat
     assert _review(out) == saved_a
     assert set(rows.refused) == {GONE, OTHER} and set(rows.override.confirmed) == {GONE}
     assert set(rows.listed()) == {OTHER} and _untagged(nb, OTHER)
+
+
+def test_a_confirmation_refused_for_another_draft_says_why(tmp_path, statement_off, monkeypatch):
+    from test_notebook_tag_by_repeat_oneclick import _confirm, _strict, _text
+
+    nb, _, rows = _strict(tmp_path, statement_off)
+    _confirm(nb, rows, GONE, "override", None)
+    rows.override.buttons[OTHER].click()  # the editor open on OTHER
+    monkeypatch.setattr(type(rows), "other_draft", lambda self: True)
+    assert not rows.override.confirm()
+    assert "belong to another draft" in _text(rows)  # at e010834: refused with no word
+    monkeypatch.undo()
+    assert OTHER not in rows.override.confirmed
