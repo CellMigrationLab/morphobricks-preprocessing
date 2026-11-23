@@ -2,16 +2,16 @@
 
 Cellpose is not installed in CI, so the cells run in one namespace (as in a kernel) against the
 stand-in of ``tests/cellpose_stub.py``, each step's form filled in and its button pressed; the
-install cell is run with the package installer replaced. Like ``test_notebook_file.py`` this
-checks the file's shape (code hidden, Markdown above every code cell, the pins) and what the
-cells do. The forms themselves: ``test_notebook_cellpose_form.py``.
+install cell is run with the package installer replaced in ``test_notebook_cellpose_install.py``.
+Like ``test_notebook_file.py`` this checks the file's shape (code hidden, Markdown above every
+code cell, the pins) and what the cells do. The forms themselves:
+``test_notebook_cellpose_form.py``.
 """
 
 import html
 import json
 import re
 import subprocess
-import sys
 from pathlib import Path
 
 import numpy as np
@@ -160,80 +160,6 @@ def test_the_version_file_names_the_notebooks_current_version():
         index[NOTEBOOK.stem] == setting("current_version")
         and setting("notebook_name") == NOTEBOOK.stem
     )
-
-
-# the install cell ---------------------------------------------------------------------------------
-
-
-@pytest.fixture
-def installer(monkeypatch):
-    """Run the install cell with the installer and the metadata replaced by a ledger."""
-    state = type("S", (), {})()
-    state.versions = {"cellpose": "4.2.1.1", "morphobricks-preprocessing": "0.8.0"}
-    state.commit = setting("RELEASE_REF")
-    state.pip = []
-    state.upgrades = {}  # versions pip changes when it runs
-    import importlib.metadata as metadata
-
-    def fake_version(name):
-        if name not in state.versions:
-            raise metadata.PackageNotFoundError(name)
-        return state.versions[name]
-
-    class Dist:
-        def read_text(self, name):
-            return json.dumps({"vcs_info": {"commit_id": state.commit}}) if state.commit else None
-
-    def fake_run(command, check):
-        state.pip.append(command)
-        state.versions.update(state.upgrades)
-        state.versions["cellpose"] = "4.2.1.1"
-        state.commit = setting("RELEASE_REF")
-
-    monkeypatch.setattr(metadata, "version", fake_version)
-    monkeypatch.setattr(metadata, "distribution", lambda name: Dist())
-    monkeypatch.setattr(subprocess, "run", fake_run)
-    return state
-
-
-def test_the_install_cell_installs_nothing_that_is_already_there(installer, capsys):
-    namespace = {}
-    run_cell(namespace, INSTALL)
-    assert installer.pip == []
-    out = capsys.readouterr().out
-    assert "Ready: Cellpose 4.2.1.1" in out and setting("RELEASE_REF")[:12] in out
-    assert namespace["SETUP_RECORD"]["cellpose_version"] == "4.2.1.1"
-    assert "dinov3" not in "".join(sys.modules)  # DINOv3 is never installed by this cell
-
-
-def test_the_install_cell_installs_the_pinned_versions_when_they_differ(installer):
-    installer.versions["cellpose"], installer.commit = "4.0.0", "0" * 40
-    run_cell({}, INSTALL)
-    (command,) = installer.pip
-    assert command[1:4] == ["-m", "pip", "install"]
-    assert "cellpose==4.2.1.1" in command
-    assert any(
-        a.startswith("morphobricks-preprocessing[") and a.endswith(f"@{setting('RELEASE_REF')}")
-        for a in command
-    )
-    assert not any("dinov3" in a for a in command)
-
-
-def test_an_install_that_upgrades_a_loaded_numpy_or_opencv_says_to_restart(installer):
-    assert "numpy" in sys.modules  # loaded by the kernel, as in Colab
-    installer.versions.update(cellpose="4.0.0", numpy="1.26.4")
-    installer.upgrades = {"numpy": "2.1.0"}
-    with pytest.raises(RuntimeError, match=r"upgraded numpy 1.26.4 -> 2.1.0.*Restart the runtime"):
-        run_cell({}, INSTALL)
-    run_cell({}, INSTALL)  # after the restart: nothing more is installed, and it is ready
-    assert len(installer.pip) == 1
-
-
-def test_an_upgrade_of_a_package_the_kernel_has_not_loaded_needs_no_restart(installer):
-    installer.versions.update(cellpose="4.0.0", **{"opencv-python": "4.9.0"})
-    installer.upgrades = {"opencv-python": "4.10.0"}
-    assert "cv2" not in sys.modules
-    run_cell({}, INSTALL)
 
 
 def test_the_text_warns_about_the_restarts_the_downloads_and_the_unverified_dinov3_pin():

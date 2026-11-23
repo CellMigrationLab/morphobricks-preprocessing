@@ -1066,7 +1066,12 @@ plainer version "not interactive enough". Descriptive, guided and forgiving is t
     `_render_traceback_` returns the message), so Colab and JupyterLab show one line and no
     traceback (owner, v0.5.1). A stop caused by another error (the interface import, the Drive
     mount) names that error on the same line; an error that is not a stop keeps its traceback. Cell 1 checks the Python version before `import tomllib`.
-  - Cell 1 is a standalone standard-library bootstrap: nearby checkout, installed package,
+  - Cell 1 is a standalone standard-library bootstrap: nearby checkout (or editable install)
+    that is the clean `RELEASE_REF` commit, installed package whose PEP 610 `direct_url.json`
+    names `REPOSITORY` at `RELEASE_REF` (never the version alone, #371; `_direct_url`,
+    `_installed_commit` and `_replace_other_commit` are one text in both notebooks, tested;
+    pip keeps a same-version install from another commit, so it is replaced with
+    `--force-reinstall --no-deps`, never `--force-reinstall` alone under a running kernel),
     or GitHub installation of the release `RELEASE_TAG`, with missing requirements
     installed using the kernel's Python (`subprocess`, never `!pip`); on Colab with the
     `zarr` extra too. Colab-only code
