@@ -123,3 +123,17 @@ def test_the_mask_type_is_taken_once_typed_and_a_change_still_drops_the_model(lo
     mask_type.value = "Cytoplasm"
     assert workflow.picker is None and workflow.loaded is None
     assert press_segment(workflow.forms["segment"]) == "Run cell 5 first."
+
+
+def test_a_quoted_pasted_path_opens_the_run(mixed_run, monkeypatch, tmp_path):
+    install(monkeypatch, tmp_path)
+    namespace = {}
+    run_cell(
+        namespace,
+        OPEN,
+        run_folder=f' "{mixed_run.out}" ',
+        masks_folder=f"'{mixed_run.masks}'",
+    )
+    workflow = namespace["workflow"]
+    assert workflow.inputs.output_folder == mixed_run.out.resolve()
+    assert workflow.masks_root == mixed_run.masks

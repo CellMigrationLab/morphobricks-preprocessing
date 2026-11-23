@@ -6,8 +6,9 @@ shows a form (:class:`StepForm`) built from the Preprocessing app's helpers in
 :mod:`.notebook_style` (``page``, ``card``, ``help_text``, ``button``, ``clean_path``,
 ``ask_directory``, ``ask_open_file``, ``no_dialog_status``): the fields, one main button, and
 under it what the step shows. The button calls the same :class:`.CellposeWorkflow` method a
-cell called before, with the fields' values exactly as given; a refusal that stopped the cell
-(:class:`.CellStop`) is shown with the same message, verbatim, in a red card.
+cell called before, with the fields' values exactly as given (cell 3's paths tidied as pasted,
+``clean_path``); a refusal that stopped the cell (:class:`.CellStop`) is shown with the same
+message, verbatim, in a red card.
 
 The defaults are those of the former form: overwrite, the weights download and the DINOv3
 installation are off, the device is ``cuda`` (an unavailable GPU is refused, never replaced by
@@ -234,7 +235,7 @@ class CellposeNotebook(CellposeWorkflow):
             cards,
             "Open the run",
             "folder-open",
-            lambda: self.open(run.value, masks.value),
+            lambda: self.open(ui.clean_path(run.value), ui.clean_path(masks.value)),
             {"run_folder": run, "masks_folder": masks},
         )
         return self._keep("open", form)
