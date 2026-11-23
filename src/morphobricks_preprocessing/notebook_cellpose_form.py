@@ -263,13 +263,7 @@ class CellposeNotebook(CellposeWorkflow):
                 mask_type.value = cp.OUTPUT_MASK_TYPES[change["new"]]
 
         def drop(_: object) -> None:
-            chosen = None if self.picker is None else (self.mask_type, self.picker.output)
-            if chosen is not None and chosen != (mask_type.value, output.value):
-                self.picker = self.loaded = None
-                self._after_step()
-                changed.value = ui.status(
-                    "warn", "Changed: press Choose the channels again, then load the model."
-                )
+            self._drop_choice(mask_type.value, output.value, changed)
 
         output.observe(follow, names="value")
         output.observe(drop, names="value")
@@ -315,6 +309,15 @@ class CellposeNotebook(CellposeWorkflow):
             {"output": output, "mask_type": mask_type},
         )
         return self._keep("channels", form)
+
+    def _drop_choice(self, mask_type: str, output: str, changed: widgets.HTML) -> None:
+        """Drop the channels and the model when cell 4 now shows another mask type or output."""
+        if self.picker is not None and (self.mask_type, self.picker.output) != (mask_type, output):
+            self.picker = self.loaded = None
+            self._after_step()
+            changed.value = ui.status(
+                "warn", "Changed: press Choose the channels again, then load the model."
+            )
 
     def model_form(self) -> StepForm:
         """Show the form of cell 5: the model, the device, the settings; the button loads."""
