@@ -330,7 +330,12 @@ class CellposeNotebook(CellposeWorkflow):
         return self._keep("model", form)
 
     def _load_from(self, fields: dict[str, widgets.Widget]) -> None:
-        """Check the settings, then load the model, with the fields' values (cell 5)."""
+        """Check the settings, then load the model, with the fields' values (cell 5).
+
+        The model loaded before is dropped first: a refused load leaves Preview and Segment
+        disabled, never active on a model the form no longer shows.
+        """
+        self.loaded = self._loaded_with = None
         value = {name: field.value for name, field in fields.items()}
         self.set_settings(
             value["diameter"],
@@ -338,7 +343,6 @@ class CellposeNotebook(CellposeWorkflow):
             value["cellprob_threshold"],
             value["batch_size"],
         )
-        self._loaded_with = None
         self.load(
             value["model"],
             value["custom_model_file"],

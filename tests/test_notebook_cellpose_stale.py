@@ -13,6 +13,7 @@ import pytest
 from cellpose_stub import install
 from morphobricks_preprocessing.notebook_cellpose_form import STOPPED
 from morphobricks_preprocessing.notebook_cellpose_guard import REPLACED, RUN_CHANGED
+from morphobricks_preprocessing.notebook_stop import CellStop
 from test_notebook_cellpose import BATCH, MODEL, OPEN, PREVIEW, open_and_choose, run_cell, source
 
 
@@ -90,3 +91,14 @@ def test_running_cell_3_again_retires_the_forms_already_on_screen(loaded):
     assert segment.button.disabled  # still disabled after the refused press
     assert snapshot(masks) == before and loaded.stub.calls == []
     assert new.forms["open"].notice.value == "" and not new.forms["open"].button.disabled
+
+
+@pytest.mark.parametrize(
+    "change", [{"model": "cpdino"}, {"device": "cuda"}, {"diameter": "0"}], ids=str
+)
+def test_a_failed_reload_drops_the_model_and_disables_preview_and_segment(loaded, change):
+    workflow = loaded.ns["workflow"]
+    with pytest.raises(CellStop):  # each change is refused with its own message
+        run_cell(loaded.ns, MODEL, **change)
+    assert workflow.loaded is None
+    assert workflow.forms["preview"].button.disabled and workflow.forms["segment"].button.disabled
