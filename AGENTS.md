@@ -76,6 +76,7 @@ src/morphobricks_preprocessing/
                     OME channel names + significant bits, physical sizes (TiffMetadata.physical_sizes);
                     header consistency warnings (width/height, plane counts, pixel sizes);
                     header_axes and named_axes (the axes the metadata names, contract §16)
+  tiff_axes.py      series_axes_from_metadata (re-exported by metadata): whether a TIFF series' axes come from its metadata
   tiff_colour.py    colour_header: a TIFF series' rgb_samples, photometric interpretation and
                     interleaved samples per pixel (the RGB header override, Spec RH1)
   rgb_override.py   the RGB header override declared and effective (pure): declares_override,

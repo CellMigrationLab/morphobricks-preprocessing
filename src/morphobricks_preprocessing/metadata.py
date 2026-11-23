@@ -15,7 +15,6 @@ reports from the file's metadata, used to prefill the axis review.
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 from collections.abc import Callable, Hashable, Iterable, Mapping, Sequence
@@ -42,6 +41,7 @@ from .size_checks import (
     role_size,
     z_stack_issues,
 )
+from .tiff_axes import series_axes_from_metadata
 from .tiff_colour import colour_header
 from .validation import ValidationIssue, error, has_errors, plural
 from .zarr_input import (
@@ -359,7 +359,7 @@ def inspect_image(path: str | os.PathLike, relative_path: str | None = None) -> 
 
 
 def inspect_images(
-    experiment_root: str | os.PathLike, relative_paths: Iterable[str]
+    experiment_root: str | os.PathLike, relative_paths: Iterable[str], *, allow_z: bool = False
 ) -> MetadataReport:
     """Inspect the headers of the given images and check them together.
 
@@ -369,6 +369,8 @@ def inspect_images(
         The experiment folder.
     relative_paths
         Image paths relative to the root, with ``/`` separators.
+    allow_z
+        Passed to :func:`check_metadata`: True for a tool that reads Z-stacks.
 
     Returns
     -------
@@ -378,7 +380,7 @@ def inspect_images(
     """
     root = Path(experiment_root)
     files = tuple(inspect_image(root / rel, rel) for rel in sorted(relative_paths))
-    return MetadataReport(files=files, issues=tuple(check_metadata(files)))
+    return MetadataReport(files=files, issues=tuple(check_metadata(files, allow_z=allow_z)))
 
 
 def inspect_experiment(discovery: DiscoveryResult) -> MetadataReport:
@@ -386,7 +388,9 @@ def inspect_experiment(discovery: DiscoveryResult) -> MetadataReport:
     return inspect_images(discovery.root, discovery.images)
 
 
-def check_metadata(files: Iterable[TiffMetadata]) -> list[ValidationIssue]:
+def check_metadata(
+    files: Iterable[TiffMetadata], *, allow_z: bool = False
+) -> list[ValidationIssue]:
     """Check image headers against the experiment-wide rules.
 
     Reports, as errors: images that do not open (``unreadable_tiff``,
@@ -415,6 +419,10 @@ def check_metadata(files: Iterable[TiffMetadata]) -> list[ValidationIssue]:
     ----------
     files
         Headers from :func:`inspect_image`.
+    allow_z
+        True for a tool that reads Z-stacks: ``z_stack_not_supported`` is not reported and
+        every other check runs unchanged (default False). ``case_conflict`` is not checked
+        here: it comes from folder discovery (:func:`discover_experiment`).
 
     Returns
     -------
@@ -505,43 +513,10 @@ def check_metadata(files: Iterable[TiffMetadata]) -> list[ValidationIssue]:
     issues.extend(dtype_issues(readable))
     issues.extend(arrangement_issues([f for f in readable if not f.is_ome_zarr]))
     issues.extend(_check_channel_names(readable))
-    issues.extend(_check_counts(readable))
+    issues.extend(_check_counts(readable, allow_z=allow_z))
     issues.extend(dimension_issues(readable))
     issues.extend(pixel_size_issues(readable))
     return issues
-
-
-def series_axes_from_metadata(series: tifffile.TiffPageSeries) -> bool:
-    """Return True when axis metadata names the axes of a ``tifffile`` series.
-
-    False for a plain TIFF: a series ``tifffile`` reads as ``generic`` or ``uniform`` pages,
-    or as "shaped" without axes (``{"shape": ...}`` only). True for OME, ImageJ, shaped
-    metadata with ``"axes"`` (decision D-d) and the other microscope formats ``tifffile``
-    reads axes from. :func:`inspect_tiff` records it for the first series as
-    :attr:`TiffMetadata.axes_from_metadata`; a brick that builds a :class:`TiffMetadata`
-    for another series passes it the same way.
-
-    Parameters
-    ----------
-    series
-        A series of an open ``tifffile.TiffFile``.
-
-    Returns
-    -------
-    bool
-        Whether the series' axes come from metadata rather than from where its pages are
-        stored.
-    """
-    kind = str(series.kind).lower()
-    if kind in ("generic", "uniform"):
-        return False
-    if kind == "shaped":
-        try:
-            shaped = json.loads(series.keyframe.shaped_description or "")
-        except (AttributeError, TypeError, ValueError):
-            return False
-        return isinstance(shaped, dict) and "axes" in shaped
-    return True
 
 
 def _check_channel_names(files: list[TiffMetadata]) -> list[ValidationIssue]:
@@ -594,11 +569,12 @@ def header_depth_slices(f: TiffMetadata) -> int:
     return f.shape[named.index("Z")] if "Z" in named else 1
 
 
-def _check_counts(files: list[TiffMetadata]) -> list[ValidationIssue]:
-    """Report different channel counts and Z-stacks, by the axes the headers name."""
+def _check_counts(files: list[TiffMetadata], *, allow_z: bool = False) -> list[ValidationIssue]:
+    """Report different channel counts and, unless ``allow_z``, Z-stacks, by the header axes."""
+    depths = {} if allow_z else {f.relative_path: header_depth_slices(f) for f in files}
     return [
         *channel_count_issues({f.relative_path: header_channel_count(f) for f in files}),
-        *z_stack_issues({f.relative_path: header_depth_slices(f) for f in files}),
+        *z_stack_issues(depths),
     ]
 
 
