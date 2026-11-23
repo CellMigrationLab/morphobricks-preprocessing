@@ -1,0 +1,66 @@
+"""The Cellpose pin check after the #422 re-review (issue #423).
+
+Each case is a use the check missed or refused wrongly before #423, run on the small Git
+repositories of ``test_notebook_cellpose_pin.py``. The check is a drift detector, not a
+security boundary: these are uses a legitimate edit can make, not deliberate obfuscation.
+"""
+
+import pytest
+
+import test_notebook_cellpose_pin as pin_tests
+from notebook_pin import PinScopeError, pin_differences
+from test_notebook_cellpose_pin import NOTEBOOK, PKG, _pin_and_head
+
+repo = pin_tests.repo
+"""The fixture: a Git repository whose first commit holds the small package."""
+
+LOADS_IN_MODEL = "{}\n\n\ndef load():\n    return {}\n"
+"""``model.py`` (which the notebook runs) with an import line and the body of ``load()``."""
+REFUSED = {
+    # (1) a loader reached by an alias or getattr, in a cell and in package code.
+    "a cell's aliased import_module": (
+        {},
+        [*NOTEBOOK, "from importlib import import_module as load\n\nload('json')\n"],
+    ),
+    "a cell's aliased runpy loader": (
+        {},
+        [*NOTEBOOK, "from runpy import run_path as run_file\n\nrun_file('m.py')\n"],
+    ),
+    "a cell's getattr on importlib": (
+        {},
+        [*NOTEBOOK, "import importlib\n\ngetattr(importlib, 'import_module')('json')\n"],
+    ),
+    "package code's aliased import_module": (
+        {
+            f"{PKG}/model.py": LOADS_IN_MODEL.format(
+                "from importlib import import_module as find", "find('json')"
+            )
+        },
+        NOTEBOOK,
+    ),
+    "package code's aliased file loader": (
+        {
+            f"{PKG}/model.py": LOADS_IN_MODEL.format(
+                "from importlib.util import spec_from_file_location as locate",
+                "locate('u', 'unused.py')",
+            )
+        },
+        NOTEBOOK,
+    ),
+    "package code's getattr on importlib": (
+        {
+            f"{PKG}/model.py": LOADS_IN_MODEL.format(
+                "import importlib", "getattr(importlib, 'import_module')('json')"
+            )
+        },
+        NOTEBOOK,
+    ),
+}
+
+
+@pytest.mark.parametrize("case", REFUSED)
+def test_a_use_the_re_review_found_is_refused(repo, case):
+    head_files, cells = REFUSED[case]
+    pin, head = _pin_and_head(repo, head_files, {})
+    with pytest.raises(PinScopeError):
+        pin_differences(repo.path, pin, head, cells)

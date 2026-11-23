@@ -12,11 +12,12 @@ those import, at any depth and inside functions too, at ``RELEASE_REF`` and at `
 (:func:`module_closure`). :func:`pin_differences` names every file of that code, every
 non-Python file of the package, the build's own inputs and the install-relevant part of
 ``pyproject.toml`` that differ between the two commits. A use the derivation cannot follow
-is refused with :class:`PinScopeError`, never assumed unchanged: in a cell, code loaded by a
-name or from text or a file, a command other than ``python -m pip`` (or one reached by an
-alias, a ``from`` import or IPython), an install other than at ``@{RELEASE_REF}`` (a forced
-reinstall included, and the bare distribution name a cell function passes on to ``pip``),
-an IPython ``!``/``%`` line; in package code, a module loaded by a computed name or a file or
+is refused with :class:`PinScopeError`, never assumed unchanged: in cells and package code,
+a loader reached by an ``as`` alias or ``getattr``; in a cell, code loaded by a name or from
+text or a file, a command other than ``python -m pip`` (or one reached by an alias, a ``from``
+import or IPython), an install other than at ``@{RELEASE_REF}`` (a forced reinstall included,
+and the bare distribution name a cell function passes on to ``pip``), an IPython ``!``/``%``
+line; in package code, a module loaded by a computed name or a file or
 text run; in the build, a second wheel package, an unknown backend or ``[tool.hatch]``
 setting, or a ``hatch.toml``. Package code that names a package module in a string runs it
 as an import.
@@ -64,6 +65,10 @@ NAME_LOADERS = frozenset({"import_module", "__import__"})
 """Calls that import a module by a name given as a value, not in an import statement."""
 FILE_LOADERS = frozenset({"spec_from_file_location", "SourceFileLoader", "run_path", "run_module"})
 """Calls that run a file or a module without an import statement (``importlib``, ``runpy``)."""
+LOADER_MODULES = frozenset({"importlib", "runpy"})
+"""The modules the :data:`NAME_LOADERS` and :data:`FILE_LOADERS` come from. Loaders are matched
+by their own name, so one bound to another name (``import ... as``) or looked up on these
+modules by ``getattr`` is refused (:func:`_hidden_loader`)."""
 TEXT_LOADERS = frozenset({"exec", "eval", "compile"})
 """Builtins that run code from text. Matched only as bare names (or on ``builtins``): a method
 of the same name, such as a model's ``eval()``, runs no text."""
@@ -140,6 +145,26 @@ def _loader(node: ast.Call) -> str | None:
     return name if name in TEXT_LOADERS and builtin else None
 
 
+def _hidden_loader(node: ast.AST) -> str | None:
+    """Return the code of a loader reached by a name :func:`_loader` cannot match, or None.
+
+    That is an ``as`` alias of a :data:`NAME_LOADERS` or :data:`FILE_LOADERS` name (``from
+    importlib import import_module as load``) or ``getattr`` on a :data:`LOADER_MODULES`
+    module (``getattr(importlib, "import_module")``).
+    """
+    if isinstance(node, ast.Import | ast.ImportFrom):
+        loaders = NAME_LOADERS | FILE_LOADERS
+        aliased = any(a.asname and a.name.split(".")[-1] in loaders for a in node.names)
+        return ast.unparse(node) if aliased else None
+    if isinstance(node, ast.Call) and _call_name(node) == "getattr" and node.args:
+        owner = node.args[0]
+        while isinstance(owner, ast.Attribute):
+            owner = owner.value
+        if isinstance(owner, ast.Name) and owner.id in LOADER_MODULES:
+            return ast.unparse(node)
+    return None
+
+
 def _starts_pip(node: ast.Call) -> bool:
     """Return whether a command call runs ``sys.executable -m pip``."""
     if not node.args or not isinstance(node.args[0], ast.List):
@@ -180,6 +205,8 @@ def _refuse_unseen_use(tree: ast.AST, where: str) -> None:
     """Raise ``PinScopeError`` for a notebook use of code no import statement shows."""
     _refuse_hidden_commands(tree, where)
     for node in ast.walk(tree):
+        if hidden := _hidden_loader(node):
+            raise PinScopeError(f"{where} reaches a loader the check cannot follow: {hidden}")
         if isinstance(node, ast.Constant) and isinstance(node.value, str):
             if PACKAGE in node.value:
                 raise PinScopeError(f"{where} names {PACKAGE} outside an import: {node.value!r}")
@@ -351,6 +378,8 @@ def _imported(text: str, module: str, path: str) -> list[str]:
     """
     names = []
     for node in ast.walk(ast.parse(text)):
+        if hidden := _hidden_loader(node):
+            raise PinScopeError(f"{path} reaches a loader the check cannot follow: {hidden}")
         if isinstance(node, ast.Import):
             names.extend(alias.name for alias in node.names)
         elif isinstance(node, ast.ImportFrom):
