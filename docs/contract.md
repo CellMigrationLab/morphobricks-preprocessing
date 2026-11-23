@@ -1305,6 +1305,61 @@ returns can be declared, checked or reused as a run's mask, and its record has n
 stated, not refused (nothing is reused in memory). **For MorphoBricks runs the run route
 (§15.3, with lineage) remains the route.**
 
+### 15.5 Segmentation hand-off (masks made by an outside tool, by channel ID)
+
+`morphobricks_preprocessing.segmentation_handoff` and `.segmentation_record` (numpy and
+tifffile only; no segmentation tool is imported or required) are what a segmentation notebook
+needs from this brick. They make no decision for the tool and guess nothing.
+
+| Function | Rule |
+|---|---|
+| `images_to_segment(inputs, mask_type, masks_root)` | The run's images with no mask of that type, decided by **preprocessing's own pairing**: the masks folder and the label images inside OME-Zarr images (the discovery the run and the mask step use), checked by the run's own rules (`mask_names_differ_in_case`, `duplicate_mask`), so the list and the next run cannot disagree: either layout of §15, any case in folders, name and type (`cells` is `Cells`), any TIFF extension; an OME-Zarr image with a label image of the type has its mask and is not listed. Excluded images are not in the run, so never listed. Refuses a masks folder that breaks the folder rules (§15 Folder) or that the run itself would refuse (an ambiguous mask, a link leaving the folder), and a mask type that is not one folder name. |
+| `segmentation_input(inputs, channel_ids, fov, z=0, t=0)` | The channels **by canonical ID** as a `(C, Y, X)` array of the stored values, in the order of `channel_ids`. Resolved with `RunInputs.resolve_request(Request(channel_ids))` and `require()`: every refusal of the resolver passes through with its code and message (`A_SCOPE_INCOMPLETE` for a channel some images lack: choose channels every image has; `A_RGB_NOT_SUPPORTED`). Each channel is read at the C index the image stores it at (`FovSelection.index_of`), never at a position. An image with Z or T above 1 is refused: 2D only. `resolve_segmentation(inputs, channel_ids)` resolves once for the whole run and returns a `SegmentationPlan` whose `read(fov, z=0, t=0)` gives the same array; `segmentation_input` resolves on every call, so a batch uses the plan. |
+| `mask_path(masks_root, mask_type, fov)` | `<masks>/<type>/<the image's folders>/<position ID>.tif` (the first layout of §15). |
+| `write_mask(masks_root, mask_type, fov, labels, inputs, *, overwrite=False)` | Checks the labels first, then writes: 2D, the image's Y and X (header only), an integer or boolean type (floating point is refused even when whole), values from 0 to 2,147,483,647. Writes `int32` with zlib compression and the axes named `YX`, to a temporary file moved into place, so a reader never sees half a mask. A mask that the run's pairing finds for this image and type (any case, either layout, any extension, or a label image inside an OME-Zarr image) is refused, naming it, unless `overwrite=True`; then only the file at `mask_path` is replaced, and a twin elsewhere is still refused. Without `overwrite` the name is first claimed with an exclusive create (`O_CREAT | O_EXCL`, which fails if anything is there) and the finished file is then moved over that empty placeholder, so two writers never replace each other's mask and no hard links are needed (a Google Drive mount has none); a failed move removes the placeholder (only while empty), and a process killed in between leaves an empty file that the next write refuses as an existing mask. The masks folder may not be inside the experiment or the output folder, nor hold either (the folder rules of §15 and `masks_inside_output`). Images with Z or T above 1 are refused. |
+
+`<masks>/<type>/segmentation_record.json` (`SegmentationRecord`, `SegmentationBatch`,
+`write_record`, `read_record`, `mask_sha256`, `record_version` 1) is provenance only and an
+**append-only history of batches**, so a second batch (another model, other parameters) never
+erases how the first batch's masks were made. A batch holds `batch_id` (unique in the file),
+`tool` and `tool_version`, `model` (`name`, `file` or null, `sha256`), `parameters` (a JSON
+object), `channel_ids`, `device` (`cuda`, `cpu` or `mps`, always stated), `run_folder`,
+`run_manifest_sha256`, and `images`: one entry per image (its path relative to the experiment,
+once per batch), `status` `written`, `skipped` or `failed`, a `message` (required for
+`failed`) and `mask_sha256`, the SHA-256 of the file written (required for `written`, null
+otherwise). `new_batch_id()` makes a batch ID that is unique (the UTC start time and 8 random hex characters, so two batches started in the same second differ); an ID chosen by the caller must be unique too, since a repeated one is refused only when the record is written, after the masks. `write_record` holds an exclusive lock file (`.segmentation_record.lock`, beside the record, created with `O_CREAT | O_EXCL` and removed at the end only while it still names this writer; the run's own lock, `lock_file.exclusive_lock`) while it reads, changes and rewrites the record, and refuses at once, naming the holder, when another writer holds it (it never waits; delete the file only when no writer is running). `write_record` adds a batch; the same `batch_id` again (a batch written as it
+progresses) is accepted only if everything but the images is equal and no earlier entry is
+dropped or changed, otherwise it is refused and the file is left as it was.
+`SegmentationRecord.latest(image)` gives the newest written entry of an image. The record is
+checked on writing and on reading; an unknown version, an unknown or missing key, a value
+outside its set, a batch ID twice or an image twice in a batch is refused, never repaired.
+The mask type is checked with the rules the masks step applies to a discovered type
+(`check_identity_text`: no surrounding whitespace, not `NA`, `nan`, `none`, `null`, `n/a` or
+`<NA>`; Unicode NFC; one folder name) before anything is written. The masks step skips this
+file silently when it is directly in a type folder (it is not a mask; the same name deeper
+warns `mask_without_image`), and nothing reads it to decide anything.
+
+The helper refuses what the run would refuse, before writing: an ambiguous mask or a link
+leaving the folder, **any discovered mask type** that cannot be a `source_type` (the run's
+`_description_name_issues`: `R_MASK_TYPE_NAME_INVALID`, a decomposed name; also for a type
+other than the one asked for), a mask type spelled in two ways (`mask_names_differ_in_case`)
+and an image with two masks of the type (`duplicate_mask`). A mask is never silently replaced:
+without `overwrite` the name is claimed exclusively, so it works on a file system without hard
+links (a Google Drive mount) too.
+
+`write_mask` holds one exclusive write lock per mask type, `<masks>/<type>/.segmentation_write.lock`
+(the run's lock file mechanism, `lock_file.exclusive_lock`), from the check for another mask of
+the image to the published file, **in both modes**: an overwriting writer and a default writer
+can never replace each other's mask. A held lock is refused at once, naming its holder, and
+never waited on; a killed writer leaves it, and the message says to delete it. Like the
+record's lock it is a dot-file, skipped by the masks step. The optional `on_published(path)` callback runs right after the publish, still under the lock (take a hash or file stamp there; it is not called when the write is refused, and an error it raises propagates with the mask left published). A lock holder carries a random
+token, so a lock deleted and retaken is never removed by its earlier holder. Limits: the lock
+protects the writers of one computer (not a Drive folder open in two Colab sessions); a
+reader may briefly see a **zero-byte placeholder** at the mask's name while a mask is being
+written (the claim before the move); and preprocessing must **not be run on the masks folder
+during a batch** (a run could read that placeholder or a half-written batch). A placeholder
+left by a killed writer is deleted by hand.
+
 ## 16. Shared rules for other bricks (MorphoBricks D86)
 
 Rules every MorphoBricks brick applies in one way, so they live here as public functions
