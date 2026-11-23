@@ -346,3 +346,15 @@ def test_a_failed_nuclei_load_says_so_not_that_the_model_changed(cells, monkeypa
         assert "nuclei model did not load" in str(stopped.value)
         assert str(stopped.value) != MODEL_CHANGED
     assert cells.stub.calls == [] and nothing_written(cells, "Cells", "Nuclei")
+
+
+def test_changing_the_output_or_opening_a_run_forgets_the_mask_types(cells):
+    choose_both(cells)
+    workflow = cells.ns["workflow"]
+    assert set(workflow.mask_types) == {"cells", "nuclei"}
+    workflow.drop_choice()
+    assert workflow.mask_types == {}
+    choose_both(cells)
+    run = cells.run
+    run_cell(cells.ns, OPEN, run_folder=str(run.out), masks_folder=str(run.masks))
+    assert workflow.mask_types == {} and workflow.picker is None

@@ -113,8 +113,9 @@ class CellposeWorkflow:
             raise SegmentationError(f"Run cell {cell} first.")
 
     def drop_choice(self) -> None:
-        """Forget the channels and every loaded model (the output or a mask type changed)."""
+        """Forget the channels, the mask types and every loaded model (the choice changed)."""
         self.picker = self.loaded = self.nuclei_loaded = self.nuclei_settings = None
+        self.mask_types = {}
 
     def model_for(self, output: str) -> tuple[cp.LoadedModel, cp.Settings]:
         """Return the model and the settings that segment the masks of ``output``.
