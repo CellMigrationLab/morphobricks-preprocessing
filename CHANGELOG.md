@@ -282,6 +282,18 @@ old pin are refused with `spec_commit_mismatch`, as at every re-pin.
 
 ### Changed
 
+- **The Cellpose notebook's pin check covers the code it runs, not all of `src/` (#421).** A change
+  under `src/` no longer needs a new `RELEASE_REF` in `notebooks/MorphoBricks_Cellpose.ipynb` unless
+  the notebook runs it. What it runs is derived from its cells (`tests/notebook_pin.py`): the package
+  modules they import, then every module those import (at any depth, inside functions too, parent
+  `__init__.py` included), taken at `RELEASE_REF` and at `HEAD`. The check still fails for any
+  difference in those files, in a non-Python file of the package, in `hatch.toml` or `.gitignore`,
+  and in `pyproject.toml` except the `[tool]` tables no build reads (Ruff, pytest, the code rules;
+  `[project]`, `[build-system]` and `[tool.hatch]` stay strict). A cell that reaches code another
+  way (a module loaded by name, `exec`, a command other than `python -m pip`) is refused, never
+  assumed unchanged. The Preprocessing notebook's tests read their cells and pins through the same
+  helpers (`code_sources`, `install_setting`).
+
 - **Another memory limit recomputes the rows when planes are read in blocks**: the image QC
   neighbour metrics of a plane read in blocks depend on its blocks, so rows measured under
   another limit were silently reused (and resumed). With the earlier run or this one reading any
