@@ -279,6 +279,8 @@ src/morphobricks_preprocessing/
                     download without allow_download, SHA-256 recorded, DINOv3 at a pinned commit);
                     notebook_cellpose.py CellposeWorkflow, ChannelPicker, CellStop: the widgets behind
                     notebooks/MorphoBricks_Cellpose.ipynb
+                    notebook_stop.py CellStop (one line, no traceback), defined once: cells 2-8
+                    import it; only cell 1 (the install) keeps its own copy
                     notebook_cellpose_form.py CellposeNotebook, StepForm: one form of widgets per
                     step (no Colab `# @param` fields: the same in Colab, JupyterLab and
                     LabConstrictor), built from notebook_style's helpers; its button calls the

@@ -24,6 +24,7 @@ from matplotlib.figure import Figure
 
 from . import segmentation_cellpose as cp
 from .notebook_progress import progress_html
+from .notebook_stop import CellStop
 from .notebook_style import STYLE_CSS, status, table, tiles
 from .preview_render import as_colour, display_panel, outline
 from .run_inputs import RunInputs, RunInputsError
@@ -40,13 +41,6 @@ P = ParamSpec("P")
 T = TypeVar("T")
 REFUSALS = (SegmentationError, RunInputsError)
 """What the hand-off and the run refuse with; their messages are shown unchanged."""
-
-
-class CellStop(RuntimeError):
-    """Stop a notebook cell with its message on one line, without a traceback."""
-
-    def _render_traceback_(self) -> list:
-        return [str(self)]
 
 
 def stops(method: Callable[P, T]) -> Callable[P, T]:
