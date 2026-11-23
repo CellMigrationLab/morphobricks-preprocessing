@@ -102,3 +102,24 @@ def test_a_failed_reload_drops_the_model_and_disables_preview_and_segment(loaded
         run_cell(loaded.ns, MODEL, **change)
     assert workflow.loaded is None
     assert workflow.forms["preview"].button.disabled and workflow.forms["segment"].button.disabled
+
+
+def test_the_mask_type_is_taken_once_typed_and_a_change_still_drops_the_model(loaded):
+    workflow = loaded.ns["workflow"]
+    channels = workflow.forms["channels"]
+    mask_type, output = channels.fields["mask_type"], channels.fields["output"]
+    assert mask_type.continuous_update is False  # not dropped at every keystroke
+    picker = workflow.picker
+    output.value = "nuclei"  # the mask type follows: Nuclei
+    output.value = "cells"  # and back: Cells, as chosen, but the choice was already dropped
+    assert workflow.picker is None and workflow.loaded is None
+    assert workflow.forms["segment"].button.disabled
+    channels.button.click()
+    assert workflow.picker is not picker and channels.refusal == ""
+    workflow.picker.cell.value, workflow.picker.nuclear.value = "TUB", "DNA"
+    run_cell(loaded.ns, MODEL, device="cpu")
+    mask_type.value = "Cells"  # committed again unchanged: nothing is dropped
+    assert workflow.loaded is not None
+    mask_type.value = "Cytoplasm"
+    assert workflow.picker is None and workflow.loaded is None
+    assert press_segment(workflow.forms["segment"]) == "Run cell 5 first."

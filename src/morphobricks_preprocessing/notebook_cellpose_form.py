@@ -242,9 +242,10 @@ class CellposeNotebook(CellposeWorkflow):
     def channels_form(self) -> StepForm:
         """Show the form of cell 4: the output and the mask type; the channels come after it.
 
-        The mask type follows the output (``Cells`` or ``Nuclei``) until the user types another.
-        Changing either after the channels were chosen drops that choice (and a loaded model),
-        so nothing runs with an output or mask type the form no longer shows.
+        The mask type follows the output (``Cells`` or ``Nuclei``) until the user types another;
+        it is taken once typed (Enter, or leaving the box), not at each keystroke. Changing
+        either to other than what the channels were chosen with drops that choice (and a loaded
+        model), so nothing runs with an output or mask type the form no longer shows.
         """
         output = widgets.RadioButtons(
             options=[(name, key) for key, name in OUTPUT_NAMES.items()],
@@ -253,6 +254,7 @@ class CellposeNotebook(CellposeWorkflow):
             style=_STYLE,
         )
         mask_type = _text(cp.OUTPUT_MASK_TYPES[cp.CELL_OUTPUT], "e.g. Cells or Nuclei")
+        mask_type.continuous_update = False  # its value changes on Enter or leaving the box
         changed = widgets.HTML()
 
         def follow(change: dict) -> None:
@@ -260,7 +262,8 @@ class CellposeNotebook(CellposeWorkflow):
                 mask_type.value = cp.OUTPUT_MASK_TYPES[change["new"]]
 
         def drop(_: object) -> None:
-            if self.picker is not None:
+            chosen = None if self.picker is None else (self.mask_type, self.picker.output)
+            if chosen is not None and chosen != (mask_type.value, output.value):
                 self.picker = self.loaded = None
                 self._after_step()
                 changed.value = ui.status(
