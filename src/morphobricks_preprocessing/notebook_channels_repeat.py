@@ -183,18 +183,18 @@ class RepeatRows:
     def reconcile(self) -> None:
         """Bring the refusals up to date with the grid's current layouts (on every opening).
 
-        The same rules as the click, on the layouts as read now: only a unit removed from the
-        folder is dropped; a unit in no row now (colour, unusable, or no labels yet) keeps its
-        refusal as it is, to be read again once it is back in a row (never released by a
-        detour), and a unit fast mode does not offer stays (only the user confirming it releases
-        it); a unit whose channel count changed is kept, to have every channel chosen again
+        Only a unit removed from the folder is dropped: every other refusal is kept, whatever
+        the layouts say now, and only an action on the unit releases it (:meth:`_released`).
+        What is brought up to date is the reference and the reason shown: a unit in no row now
+        (colour, unusable, or no labels yet) keeps its refusal as it is, to be read again once
+        it is back in a row; a unit whose channel count changed has every channel chosen again
         (:func:`.repeat_tags.recount`); a unit whose images disagree now is refused for that
-        (:func:`.repeat_tags.repeat_apart`), and one whose images agree again is dropped; any
-        other keeps its row's *current* reference (:func:`.repeat_tags.repeat_lead`) and is kept
-        only while its header still contradicts the row's tags at the click, or its own tags
-        (:func:`.channel_matrix.differences`), or its own tags are incomplete, or while its
-        confirmation holds. The reference is taken from the whole row, not only from the units a
-        mode offers. A surviving contradiction is never cleared because the screen reopened.
+        (:func:`.repeat_tags.repeat_apart`), and one whose images agree again takes its row's
+        reference and asks for its tags to be confirmed (never read from its new header); any
+        other takes its row's *current* reference (:func:`.repeat_tags.repeat_lead`) and says
+        where its header contradicts the row's tags at the click or its own tags
+        (:func:`.channel_matrix.differences`), or that its tags are incomplete or unconfirmed.
+        The reference is taken from the whole row, not only from the units a mode offers.
         """
         grid, kept = self.grid, {}
         rows = self._rows()  # the whole row: its reference never depends on the mode
@@ -210,9 +210,7 @@ class RepeatRows:
             if why is not None:
                 kept[key] = Refusal(html.escape(why), layout, None, old.tags, old.channels)
                 continue
-            lead = repeat_lead(group)
-            if old.lead is None or lead is None:
-                continue  # its images agree again: nothing to compare was ever clicked
+            lead = repeat_lead(group) or layout  # the unit itself is not apart
             if (moved := recount(old.tags, layout)) is not None:
                 kept[key] = Refusal(moved, layout, lead, old.tags, old.channels)
                 continue  # never compared, cut or padded: every channel is chosen again
@@ -221,14 +219,15 @@ class RepeatRows:
             if relapsed(confirmed, layout):  # checked before anything may drop the refusal
                 kept[key] = Refusal(RELAPSED, layout, lead, old.tags, old.channels)
                 continue
+            if old.lead is None:  # its images agree again: no confirmation came with that
+                kept[key] = Refusal(AGREED, layout, lead, old.tags, old.channels)
+                continue
             found = self.contradictions(layout, old, lead)
             found = found or differences(layout, own, lead, grid.labels, answers.channels)
-            if found or override_holds(confirmed, layout, own):  # a confirmed one is kept too:
-                # the source of the one-click offer
-                kept[key] = Refusal(_found_text(found), layout, lead, old.tags, old.channels)
-            elif None in own:  # listed while its own tags are incomplete (:meth:`listed`)
-                why = UNTRUSTED if grid.same_channels.value else "its own tags are incomplete"
-                kept[key] = Refusal(why, layout, lead, old.tags, old.channels)
+            why = UNTRUSTED if grid.same_channels.value else "its own tags are incomplete"
+            why = _found_text(found) if found else (why if None in own else UNCONFIRMED)
+            # a confirmed one is kept too: the source of the one-click offer
+            kept[key] = Refusal(why, layout, lead, old.tags, old.channels)
         self.refused = kept
         self.override.confirmed = {k: v for k, v in self.override.confirmed.items() if k in kept}
         self.persist()
@@ -547,6 +546,10 @@ class RepeatRows:
 
 
 RELAPSED = "its header changed since you confirmed it: confirm it again"
+AGREED = (
+    "its images agree again since the refusal: its tags are never read from the new header; "
+    "confirm them"
+)
 UNCONFIRMED = (
     "refused by its repeat folder's row and not confirmed since: a header or aliases that fit "
     "now never release it; confirm its tags"

@@ -9,6 +9,8 @@ record.
 
 from __future__ import annotations
 
+import shutil
+
 import pytest
 
 pytest.importorskip("ipywidgets")
@@ -23,9 +25,11 @@ from test_notebook_tag_by_repeat import (  # noqa: E402
     TAGS,
     UNITS,
     _experiment,
+    _mixed_experiment,
     _set_row,
 )
 from test_notebook_tag_by_repeat_drafts import _review  # noqa: E402
+from test_notebook_tag_by_repeat_lapses import _untagged  # noqa: E402
 from test_notebook_tag_by_repeat_oneclick import GONE, OTHER, _confirm, _strict  # noqa: E402
 from test_notebook_tag_by_repeat_recheck import _recheck  # noqa: E402
 
@@ -126,3 +130,55 @@ def test_b1_a_tagged_refused_unit_stays_listed_after_another_unit_adds_matching_
     assert not again.listed() and not fresh.save_button.disabled
     assert GONE in _review(out).confirmed  # recorded with its tags, in the same write
     assert GONE not in opened(root, masks, out).channel_grid.by_repeat.listed()  # a restart
+
+
+# BLOCKER 2: a unit whose images disagreed, once they agree -------------------------------------
+
+MIXED = ("drug", "rep2", "t1")
+"""Its two images name the third channel differently (``_mixed_experiment``)."""
+
+
+def _mixed_refused(tmp_path):
+    root, masks, out = _mixed_experiment(tmp_path)
+    nb = opened(root, masks, out)
+    set_labels(nb, list(TAGS))
+    _set_row(nb, ("rep2", 3), TAGS)
+    rows = nb.channel_grid.by_repeat
+    assert MIXED in rows.listed() and rows.refused[MIXED].lead is None
+    assert _review(out).refused[MIXED].reference is None
+    return nb, root, masks, out
+
+
+def test_b2_a_unit_whose_images_agree_again_keeps_its_refusal(tmp_path, statement_off):
+    nb, root, masks, out = _mixed_refused(tmp_path)
+    write_channels(root / "drug/rep2/t1/b.tif", ["Hoechst", "Actin", "Ch3"], KINDS4[:3], seed=43)
+    _recheck(nb)  # its images agree now; nothing was confirmed
+    rows = nb.channel_grid.by_repeat
+    # at 7e9daf4 the refusal was dropped here and the smaller review saved
+    assert MIXED in rows.refused and MIXED in rows.listed() and MIXED in rows.standing()
+    assert "agree again" in rows.listed()[MIXED]
+    assert MIXED in _review(out).refused and _review(out).refused[MIXED].reference is not None
+    fresh = opened(root, masks, out)  # a restart, then fast mode trusts headers
+    grid = fresh.channel_grid
+    grid.same_channels.value = True
+    rows = grid.by_repeat
+    assert _untagged(fresh, MIXED) and MIXED not in grid.matrix.own  # never from its header
+    assert MIXED in rows.listed() and MIXED in _review(out).refused
+    assert not grid.complete and not fresh.save_experiment()
+    rows.override.buttons[MIXED].click()  # its editor, from the row's tags
+    assert rows.override.drafts[MIXED] == list(TAGS)
+    assert rows.override.confirm() and MIXED not in rows.listed()
+    assert fresh.draft_answers.units[MIXED].channels == TAGS
+    assert MIXED in _review(out).confirmed
+
+
+def test_b2_removing_the_folder_of_a_unit_whose_images_disagreed_drops_its_record(
+    tmp_path, statement_off
+):
+    nb, root, masks, out = _mixed_refused(tmp_path)
+    shutil.rmtree(root.joinpath(*MIXED))
+    shutil.rmtree(masks / "Nuclei" / "drug/rep2/t1", ignore_errors=True)
+    _recheck(nb)
+    rows = nb.channel_grid.by_repeat
+    assert MIXED not in rows.refused and MIXED not in rows.listed()
+    assert MIXED not in _review(out).refused
