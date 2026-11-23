@@ -189,9 +189,8 @@ class RepeatRows:
                 continue
             found = self.contradictions(layout, old, lead)
             found = found or differences(layout, own, lead, grid.labels, answers.channels)
-            if override_holds(confirmed, layout, own):  # kept: the source of the one-click offer
-                kept[key] = Refusal(_found_text(found), layout, lead, old.tags, old.channels)
-            elif found:
+            if found or override_holds(confirmed, layout, own):  # a confirmed one is kept too:
+                # the source of the one-click offer
                 kept[key] = Refusal(_found_text(found), layout, lead, old.tags, old.channels)
             elif None in own:  # listed while its own tags are incomplete (:meth:`listed`)
                 kept[key] = Refusal(
