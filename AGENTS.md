@@ -286,6 +286,9 @@ src/morphobricks_preprocessing/
                     step (no Colab `# @param` fields: the same in Colab, JupyterLab and
                     LabConstrictor), built from notebook_style's helpers; its button calls the
                     CellposeWorkflow method a cell called, a refusal shown verbatim in a red card
+                    notebook_cellpose_guard.py check_folders (cell 3's folders must be those
+                    opened: RUN_CHANGED), take_over/retire (a new workflow disables the old
+                    one's forms: REPLACED)
                     notebook_cellpose_app.py segmentation_app(run_folder, masks_folder, app=,
                     on_masks_written=): every step as one widget for any cell (the combined
                     notebook, #441), the same CellposeNotebook forms the Cellpose cells mount

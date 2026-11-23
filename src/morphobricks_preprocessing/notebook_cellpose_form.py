@@ -24,6 +24,7 @@ from IPython.display import display
 from . import notebook_style as ui
 from . import segmentation_cellpose as cp
 from .notebook_cellpose import OUTPUT_NAMES, CellposeWorkflow, CellStop, _card, _verbatim
+from .notebook_cellpose_guard import check_current, check_folders, take_over
 from .segmentation_cellpose_model import BUILTIN_MODELS
 from .segmentation_handoff import images_to_segment
 
@@ -119,7 +120,8 @@ class StepForm:
         self.button = ui.button(f" {label}", style="primary", icon=icon, main=True)
         self.output = widgets.Output(layout=_FIELD)
         self.stopped: CellStop | None = None
-        self.widget = ui.page(title, purpose, [*cards, self.button, self.output])
+        self.notice = widgets.HTML()  # says when the workflow was replaced (cell 3 run again)
+        self.widget = ui.page(title, purpose, [*cards, self.button, self.notice, self.output])
         self.button.on_click(lambda _: self.submit())
 
     @property
@@ -138,6 +140,7 @@ class StepForm:
         try:
             with self.output:
                 try:
+                    check_current(self.workflow)
                     self.action()
                 except CellStop as exc:
                     self.stopped = exc
@@ -161,6 +164,8 @@ class CellposeNotebook(CellposeWorkflow):
         self.forms: dict[str, StepForm] = {}
         self._loaded_with: tuple[str, str, str] | None = None
         self.on_masks_written: Callable[[cp.BatchResult], object] | None = None
+        self.replaced = False
+        take_over(self)  # the forms of an earlier workflow in this kernel stop working
 
     def _keep(self, name: str, form: StepForm) -> StepForm:
         """Keep ``form`` as step ``name``, bring the forms in step and return it."""
@@ -415,8 +420,10 @@ class CellposeNotebook(CellposeWorkflow):
         """Run ``step`` with the settings cell 5's form shows now, on the model as loaded.
 
         The settings are checked again (as **Load the model** does); a model, model file or
-        device changed since loading is refused: the model is never reloaded silently.
+        device changed since loading is refused: the model is never reloaded silently. So are
+        run and masks folders in cell 3 other than those opened (``RUN_CHANGED``).
         """
+        check_folders(self)
         model = self.forms.get("model")
         if model is not None and self.loaded is not None:
             if _model_choice(model.fields) != self._loaded_with:
@@ -432,6 +439,10 @@ class CellposeNotebook(CellposeWorkflow):
 
     def _after_step(self) -> None:
         """Keep the later forms in step: the image list, and the buttons that need a model."""
+        if self.replaced:
+            for form in self.forms.values():
+                form.button.disabled = True
+            return
         for name in ("preview", "segment"):
             if name in self.forms:
                 self.forms[name].button.disabled = self.loaded is None

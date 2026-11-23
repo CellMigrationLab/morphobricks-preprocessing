@@ -192,12 +192,16 @@ class CellposeWorkflow:
 
     @stops
     def open(self, run_folder: str, masks_folder: str) -> None:
-        """Open the run and say what it holds (cell 3)."""
+        """Open the run and say what it holds (cell 3).
+
+        What an earlier open chose is dropped first: a refused open leaves no run, channels or
+        model to segment with, so nothing is written to the folders of the run before.
+        """
+        self.inputs = self.masks_root = self.picker = self.loaded = self.result = None
         if not masks_folder.strip():
             raise SegmentationError("Give the masks folder (outside the experiment and the run).")
         inputs = cp.open_run(run_folder)
         self.inputs, self.masks_root = inputs, Path(masks_folder.strip())
-        self.picker = self.loaded = self.result = None
         coverage = cp.channel_coverage(inputs)
         lines = [
             f"{c}: in {have} of {total} images" + ("" if have == total else " (partial)")
