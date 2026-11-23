@@ -151,16 +151,14 @@ class RepeatRows:
         folder is dropped; a unit in no row now (colour, unusable, or no labels yet) keeps its
         refusal as it is, to be read again once it is back in a row (never released by a
         detour), and a unit fast mode does not offer stays (only the user confirming it releases
-        it); a unit whose channel count
-        changed is kept, to have every channel chosen again (:func:`.repeat_tags.recount`); a
-        unit whose images
-        disagree now is refused for that (:func:`.repeat_tags.repeat_apart`), and one whose
-        images agree again is dropped; any other keeps its row's *current* reference
-        (:func:`.repeat_tags.repeat_lead`) and is kept only while its header still contradicts
-        the row's tags at the click, or its own tags (:func:`.channel_matrix.differences`), or
-        its own tags are incomplete. The reference is taken from the whole row, not only from
-        the units a mode offers. A
-        surviving contradiction is never cleared because the screen reopened.
+        it); a unit whose channel count changed is kept, to have every channel chosen again
+        (:func:`.repeat_tags.recount`); a unit whose images disagree now is refused for that
+        (:func:`.repeat_tags.repeat_apart`), and one whose images agree again is dropped; any
+        other keeps its row's *current* reference (:func:`.repeat_tags.repeat_lead`) and is kept
+        only while its header still contradicts the row's tags at the click, or its own tags
+        (:func:`.channel_matrix.differences`), or its own tags are incomplete, or while its
+        confirmation holds. The reference is taken from the whole row, not only from the units a
+        mode offers. A surviving contradiction is never cleared because the screen reopened.
         """
         grid, kept = self.grid, {}
         rows = self._rows()  # the whole row: its reference never depends on the mode
