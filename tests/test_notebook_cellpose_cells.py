@@ -4,6 +4,7 @@
 import it and only cell 1 (the install, run before the package is there) keeps its own copy.
 """
 
+import json
 import sys
 
 import pytest
@@ -11,7 +12,7 @@ import pytest
 from cellpose_stub import install
 from morphobricks_preprocessing import notebook_cellpose, notebook_stop
 from morphobricks_preprocessing import segmentation_cellpose as cp
-from test_notebook_cellpose import CHANNELS, DRIVE, INSTALL, MODEL, NEXT, OPEN, source
+from test_notebook_cellpose import CHANNELS, DRIVE, INSTALL, MODEL, NEXT, NOTEBOOK, OPEN, source
 
 IMPORT = "from morphobricks_preprocessing.notebook_stop import CellStop"
 
@@ -85,3 +86,26 @@ def test_without_pytorch_the_status_says_so_and_nothing_stops(monkeypatch):
     monkeypatch.setitem(sys.modules, "torch", None)  # an import of it fails
     found, line = cp.device_status()
     assert not found and line.startswith("PyTorch is not installed")
+
+
+# versions and citation -------------------------------------------------------------------------
+
+
+def test_the_notebook_ends_with_the_versions_and_the_citation():
+    cells = json.loads(NOTEBOOK.read_text(encoding="utf-8"))["cells"]
+    last = cells[-1]
+    text = "".join(last["source"])
+    assert last["cell_type"] == "markdown" and "## **Versions and citation**" in text
+    assert f"Cellpose {cp.CELLPOSE_VERSION}" in text
+    for needle in (
+        "segmentation_record.json",
+        "`tool_version`",
+        "`cellpose_version`",
+        "SHA-256",
+        "`dinov3_commit`",
+        # As Cellpose 4.2.1.1's README asks (read from its sdist, 23 November 2026).
+        "Pachitariu, M., Rariden, M., & Stringer, C. (2025). Cellpose-SAM",
+        "Stringer, C., Wang, T., Michaelos, M., & Pachitariu, M. (2021). Cellpose:",
+        "Pachitariu, M. & Stringer, C. (2022). Cellpose 2.0",
+    ):
+        assert needle in text, needle

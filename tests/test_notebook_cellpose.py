@@ -99,7 +99,7 @@ def test_the_notebook_is_an_introduction_and_eight_explained_code_cells():
     nb = notebook()
     assert nb["nbformat"] == 4
     cells = nb["cells"]
-    assert [c["cell_type"] for c in cells] == ["markdown", *("markdown", "code") * 8]
+    assert [c["cell_type"] for c in cells] == ["markdown", *("markdown", "code") * 8, "markdown"]
     intro = "".join(cells[0]["source"])
     for text in (
         "Cellpose 4.2.1.1",
