@@ -132,36 +132,75 @@ def flow_iterations(settings: Settings) -> int:
 
 
 CELL_ROLE = "cell"
-"""The role of a cell or cell-border channel (ZeroCostDL4Mic's "channel to segment")."""
+"""The role of the cell (cytoplasm or cell-border) channel."""
 NUCLEAR_ROLE = "nuclear"
-"""The role of the optional nuclear channel, given to Cellpose after the cell channels."""
+"""The role of the nuclear channel."""
+CELL_OUTPUT = "cells"
+"""Output: a cell mask, from the cell channel and, if given, the nuclear channel after it."""
+NUCLEI_OUTPUT = "nuclei"
+"""Output: a nuclei mask, from the nuclear channel only."""
+OUTPUT_MASK_TYPES = {CELL_OUTPUT: "Cells", NUCLEI_OUTPUT: "Nuclei"}
+"""The mask type each output proposes (the user may change it)."""
+NO_CHANNEL = "Choose a cell channel, a nuclear channel or both, by channel ID; neither is chosen."
+"""The refusal when neither channel is chosen."""
 
 
-def channel_roles_entry(
-    channel_ids: tuple[str, ...], roles: tuple[str, ...]
-) -> list[dict[str, str]] | None:
-    """Return the record's ``channel_roles``: each channel ID with its role, in Cellpose's order.
+def input_channels(output: str, cell: str, nuclear: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Return Cellpose's input channel IDs and their roles for ``output`` (owner, 23 Nov 2026).
 
-    The roles only label the channels chosen by ID: the cell channels first, then at most one
-    nuclear channel. No roles (``()``) are recorded as null, never guessed.
+    A cell mask reads the cell channel, then the nuclear channel if one is given; a nuclei
+    mask reads the nuclear channel only. ``""`` is a channel not chosen. Channels are only
+    named here; they are resolved by ID by :func:`.segmentation_handoff.resolve_segmentation`.
 
     Raises
     ------
     SegmentationError
-        For roles that do not match the channels one for one, an unknown role, a nuclear
-        channel before a cell channel, more than one nuclear channel or no cell channel.
+        When neither channel is chosen, for a cell mask without a cell channel, a nuclei mask
+        without a nuclear channel, or an unknown output.
     """
-    if not roles:
+    if not cell and not nuclear:
+        raise SegmentationError(NO_CHANNEL)
+    if output == CELL_OUTPUT:
+        if not cell:
+            raise SegmentationError(
+                "A cell mask needs a cell channel; only a nuclear channel is chosen. Choose the "
+                "cell channel, or choose the output Nuclei mask."
+            )
+        return ((cell, nuclear), (CELL_ROLE, NUCLEAR_ROLE)) if nuclear else ((cell,), (CELL_ROLE,))
+    if output == NUCLEI_OUTPUT:
+        if not nuclear:
+            raise SegmentationError(
+                "A nuclei mask needs a nuclear channel; only a cell channel is chosen. Choose "
+                "the nuclear channel, or choose the output Cell mask."
+            )
+        return (nuclear,), (NUCLEAR_ROLE,)
+    raise SegmentationError(f"The output must be {CELL_OUTPUT} or {NUCLEI_OUTPUT}, not {output!r}.")
+
+
+def channel_roles_entry(
+    channel_ids: tuple[str, ...], roles: tuple[str, ...], output: str | None = None
+) -> list[dict[str, str]] | None:
+    """Return the record's ``channel_roles``: each channel ID with its role, in Cellpose's order.
+
+    The roles only label the channels chosen by ID: for a cell mask the cell channel, then the
+    nuclear channel if any; for a nuclei mask the nuclear channel alone. No roles (``()``, and
+    no output) are recorded as null, never guessed.
+
+    Raises
+    ------
+    SegmentationError
+        For roles without an output or the reverse, or roles that are not those of the output.
+    """
+    if not roles and output is None:
         return None
-    if len(roles) != len(channel_ids) or set(roles) - {CELL_ROLE, NUCLEAR_ROLE}:
+    allowed = {
+        CELL_OUTPUT: ((CELL_ROLE,), (CELL_ROLE, NUCLEAR_ROLE)),
+        NUCLEI_OUTPUT: ((NUCLEAR_ROLE,),),
+    }.get(output, ())
+    if len(roles) != len(channel_ids) or roles not in allowed:
         raise SegmentationError(
-            f"Each channel needs one role ({CELL_ROLE} or {NUCLEAR_ROLE}); got {list(roles)} "
-            f"for {list(channel_ids)}."
-        )
-    cells = roles.count(CELL_ROLE)
-    if cells == 0 or roles[cells:] not in ((), (NUCLEAR_ROLE,)):
-        raise SegmentationError(
-            "Choose one or more cell channels, then at most one nuclear channel, in that "
-            f"order; got {list(roles)}."
+            f"The channel roles {list(roles)} for {list(channel_ids)} do not fit the output "
+            f"{output!r}: a cell mask reads the cell channel, then the nuclear one if any; a "
+            "nuclei mask reads the nuclear channel only."
         )
     return [{"channel_id": c, "role": r} for c, r in zip(channel_ids, roles, strict=True)]

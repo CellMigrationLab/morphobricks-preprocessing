@@ -69,14 +69,19 @@ from .segmentation_cellpose_model import (
 )
 from .segmentation_cellpose_run import channel_coverage, next_steps_lines, open_run
 from .segmentation_cellpose_settings import (
+    CELL_OUTPUT,
     CELL_ROLE,
     FLOW_ITERATIONS,
+    NO_CHANNEL,
     NORMALIZE_REFUSAL,
     NUCLEAR_ROLE,
+    NUCLEI_OUTPUT,
+    OUTPUT_MASK_TYPES,
     Settings,
     channel_roles_entry,
     diameter_from_text,
     flow_iterations,
+    input_channels,
     rescale_factor,
 )
 from .segmentation_handoff import (
@@ -108,13 +113,18 @@ __all__ = [
     "DINOV3_COMMIT",
     "DINOV3_URL",
     "DINO_MODELS",
+    "CELL_OUTPUT",
     "CELL_ROLE",
     "FLOW_ITERATIONS",
+    "NO_CHANNEL",
     "NORMALIZE_REFUSAL",
     "NUCLEAR_ROLE",
+    "NUCLEI_OUTPUT",
+    "OUTPUT_MASK_TYPES",
     "LoadedModel",
     "ModelChoice",
     "Settings",
+    "channel_roles_entry",
     "check_device",
     "check_dinov3",
     "choose_model",
@@ -122,6 +132,7 @@ __all__ = [
     "device_status",
     "diameter_from_text",
     "dinov3_install_command",
+    "input_channels",
     "install_dinov3",
     "installed_dinov3_commit",
     "installed_version",
@@ -278,9 +289,9 @@ class SegmentationJob:
         The mask type and the masks folder.
     overwrite
         Replace masks that are already there (default: skip them).
-    channel_roles
-        The role of each of ``plan.channel_ids`` (``cell`` ones, then one ``nuclear``), recorded
-        with them; ``()`` records none (null).
+    channel_roles, output
+        The role of each of ``plan.channel_ids`` and the output (``cells`` or ``nuclei``),
+        recorded with them; ``()`` and None record none (null).
     """
 
     inputs: RunInputs
@@ -291,12 +302,13 @@ class SegmentationJob:
     masks_root: Path
     overwrite: bool = False
     channel_roles: tuple[str, ...] = ()
+    output: str | None = None
 
     def __post_init__(self) -> None:
         """Refuse a job without resolved channels or with roles that do not fit them."""
         if self.plan is None:
             raise SegmentationError("No channels are resolved: choose channels the run has.")
-        channel_roles_entry(self.plan.channel_ids, self.channel_roles)
+        channel_roles_entry(self.plan.channel_ids, self.channel_roles, self.output)
 
 
 @dataclass(frozen=True)
@@ -435,7 +447,10 @@ def _batch(job: SegmentationJob, batch_id: str, images: list[SegmentedImage]) ->
         model_file=loaded.file,
         parameters={
             **inference_parameters(loaded, job.settings, job.plan.channel_ids),
-            "channel_roles": channel_roles_entry(job.plan.channel_ids, job.channel_roles),
+            "channel_roles": channel_roles_entry(
+                job.plan.channel_ids, job.channel_roles, job.output
+            ),
+            "output": job.output,
         },
         channel_ids=job.plan.channel_ids,
         device=loaded.device,

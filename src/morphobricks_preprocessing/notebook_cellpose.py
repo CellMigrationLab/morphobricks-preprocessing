@@ -37,6 +37,8 @@ from .segmentation_handoff import (
 from .segmentation_record import SegmentationError, check_mask_type
 
 NONE = "(none)"
+OUTPUT_NAMES = {cp.CELL_OUTPUT: "Cell mask", cp.NUCLEI_OUTPUT: "Nuclei mask"}
+"""The outputs offered, as the notebook names them. *Both* comes with #440."""
 P = ParamSpec("P")
 T = TypeVar("T")
 REFUSALS = (SegmentationError, RunInputsError)
@@ -67,73 +69,60 @@ def _card(kind: str, title: str, lines: tuple[str, ...] = (), *, raw: bool = Fal
 
 
 class ChannelPicker:
-    """Dropdowns of the run's channel IDs by role, resolved by ID as soon as they change.
+    """A cell channel and a nuclear channel, both optional, by channel ID, for one output.
 
-    As in ZeroCostDL4Mic: the cell (or cell-border) channel, up to two more cell channels, and
-    optionally a nuclear channel. Cellpose gets them in that order, the cell channels first,
-    at most three in all (:func:`.segmentation_cellpose.check_channel_count` refuses more). The
-    roles only label and order the choice; the channels are resolved by ID as before.
+    Owner, 23 November 2026: a **cell mask** reads the cell channel, then the nuclear channel
+    if one is chosen; a **nuclei mask** reads the nuclear channel only
+    (:func:`.segmentation_cellpose.input_channels`, which refuses a choice that does not fit).
+    The roles only name and order the channels; they are resolved by ID as before. Nothing is
+    chosen for the user: both start blank.
 
     The options are the channel IDs of the run; one that not every image has says so, and
     choosing it shows the resolver's refusal (``A_SCOPE_INCOMPLETE``) unchanged under the
     dropdowns. :attr:`plan` is the resolved selection, or None while the choice is refused.
     """
 
-    def __init__(self, inputs: RunInputs) -> None:
-        """Build the dropdowns for ``inputs`` and resolve the first choice."""
-        self.inputs = inputs
+    def __init__(self, inputs: RunInputs, output: str = cp.CELL_OUTPUT) -> None:
+        """Build the dropdowns for ``inputs`` and the ``output`` and resolve the choice."""
+        self.inputs, self.output = inputs, output
         coverage = cp.channel_coverage(inputs)
-        shared = [c for c, (have, total) in coverage.items() if have == total]
         options = [
-            (c if have == total else f"{c} (in {have} of {total} images)", c)
-            for c, (have, total) in coverage.items()
-        ]
-        first = shared[0] if shared else next(iter(coverage), "")
-        style = {"description_width": "11em"}
-        self.cell_dropdowns = [
-            widgets.Dropdown(options=options, value=first, description="Cell channel", style=style),
+            (NONE, ""),
             *(
-                widgets.Dropdown(
-                    options=[(NONE, ""), *options],
-                    value="",
-                    description=f"Cell channel {n}",
-                    style=style,
-                )
-                for n in (2, 3)
+                (c if have == total else f"{c} (in {have} of {total} images)", c)
+                for c, (have, total) in coverage.items()
             ),
         ]
-        self.nuclear = widgets.Dropdown(
-            options=[(NONE, ""), *options], value="", description="Nuclear channel", style=style
+        style = {"description_width": "11em"}
+        self.cell = widgets.Dropdown(
+            options=options, value="", description="Cell channel", style=style
         )
-        self.dropdowns = [*self.cell_dropdowns, self.nuclear]
+        self.nuclear = widgets.Dropdown(
+            options=options, value="", description="Nuclear channel", style=style
+        )
+        self.dropdowns = [self.cell, self.nuclear]
         self.message = widgets.HTML()
         self.plan: SegmentationPlan | None = None
         self.refusal = ""
+        self.channel_ids: tuple[str, ...] = ()
+        self.channel_roles: tuple[str, ...] = ()
         for dropdown in self.dropdowns:
             dropdown.observe(self._changed, names="value")
         self._changed()
 
-    @property
-    def channel_ids(self) -> tuple[str, ...]:
-        """The chosen channel IDs in Cellpose's order: cell channels, then the nuclear one."""
-        return tuple(d.value for d in self.dropdowns if d.value)
-
-    @property
-    def channel_roles(self) -> tuple[str, ...]:
-        """The role of each of :attr:`channel_ids` (``cell`` or ``nuclear``), recorded with it."""
-        cells = sum(1 for d in self.cell_dropdowns if d.value)
-        return (cp.CELL_ROLE,) * cells + ((cp.NUCLEAR_ROLE,) if self.nuclear.value else ())
-
     def _changed(self, _change: object = None) -> None:
         """Resolve the choice; show what was resolved, or the refusal verbatim."""
         try:
-            cp.check_channel_count(self.channel_ids)
-            self.plan = resolve_segmentation(self.inputs, self.channel_ids)
+            ids, roles = cp.input_channels(self.output, self.cell.value, self.nuclear.value)
+            self.channel_ids, self.channel_roles = ids, roles
+            cp.check_channel_count(ids)
+            self.plan = resolve_segmentation(self.inputs, ids)
             self.refusal = ""
-            named = zip(self.channel_ids, self.channel_roles, strict=True)
-            note = _card("ok", "Channels: " + ", ".join(f"{c} ({r})" for c, r in named))
+            named = ", ".join(f"{c} ({r})" for c, r in zip(ids, roles, strict=True))
+            note = _card("ok", f"{OUTPUT_NAMES[self.output]} from {named}")
         except REFUSALS as exc:
             self.plan, self.refusal = None, str(exc)
+            self.channel_ids = self.channel_roles = ()
             note = _card(
                 "error", "These channels cannot be used", (_verbatim(self.refusal),), raw=True
             )
@@ -159,9 +148,10 @@ class ChannelPicker:
     def box(self) -> widgets.VBox:
         """Return the dropdowns and the message under them."""
         help_line = widgets.HTML(
-            "<div class='mb-help'>The <b>cell channel</b> (cytoplasm or cell border) is the one "
-            "to segment; add up to two more cell channels and, optionally, a <b>nuclear "
-            "channel</b>. Cellpose gets them in this order, at most three in all.</div>"
+            "<div class='mb-help'>Choose by channel ID. The <b>cell channel</b> (cytoplasm or "
+            "cell border) and the <b>nuclear channel</b> are both optional, but at least one is "
+            "needed. A cell mask reads the cell channel, then the nuclear channel if one is "
+            "chosen; a nuclei mask reads the nuclear channel only.</div>"
         )
         return widgets.VBox([*self.dropdowns, help_line, self.message])
 
@@ -251,18 +241,22 @@ class CellposeWorkflow:
         )
 
     @stops
-    def choose_channels(self, mask_type: str) -> None:
-        """Check the mask type and show the channel dropdowns (cell 4)."""
+    def choose_channels(self, mask_type: str, output: str = cp.CELL_OUTPUT) -> None:
+        """Check the mask type and the output, and show the channel dropdowns (cell 4)."""
         self._need("run", 3)
+        if output not in OUTPUT_NAMES:
+            raise SegmentationError(
+                f"The output must be one of {', '.join(OUTPUT_NAMES)}, not {output!r}."
+            )
         check_mask_type(mask_type)
         todo = images_to_segment(self.inputs, mask_type, self.masks_root)
         self.mask_type, self.loaded = mask_type, None
-        self.picker = ChannelPicker(self.inputs)
+        self.picker = ChannelPicker(self.inputs, output)
         self._show(
             _card(
                 "info",
-                f"Mask type {mask_type}: {len(todo)} of {len(self.inputs.fovs())} images "
-                "have no mask yet",
+                f"{OUTPUT_NAMES[output]}, mask type {mask_type}: {len(todo)} of "
+                f"{len(self.inputs.fovs())} images have no mask yet",
             )
         )
         self._show(self.picker.box())
@@ -375,6 +369,7 @@ class CellposeWorkflow:
             self.masks_root,
             overwrite,
             self.picker.channel_roles,
+            self.picker.output,
         )
         bar = widgets.HTML()
         display(bar)

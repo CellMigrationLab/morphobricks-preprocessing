@@ -23,7 +23,7 @@ from IPython.display import display
 
 from . import notebook_style as ui
 from . import segmentation_cellpose as cp
-from .notebook_cellpose import CellposeWorkflow, CellStop, _card, _verbatim
+from .notebook_cellpose import OUTPUT_NAMES, CellposeWorkflow, CellStop, _card, _verbatim
 from .segmentation_cellpose_model import BUILTIN_MODELS
 
 DEVICE_OPTIONS = ("cuda", "mps", "cpu")
@@ -199,29 +199,74 @@ class CellposeNotebook(CellposeWorkflow):
         self._form("open", form)
 
     def channels_step(self) -> None:
-        """Show the form of cell 4: the mask type; the channel dropdowns come after it."""
-        mask_type = _text("Cells", "e.g. Cells or Nuclei")
+        """Show the form of cell 4: the output and the mask type; the channels come after it.
+
+        The mask type follows the output (``Cells`` or ``Nuclei``) until the user types another.
+        Changing either after the channels were chosen drops that choice (and a loaded model),
+        so nothing runs with an output or mask type the form no longer shows.
+        """
+        output = widgets.RadioButtons(
+            options=[(name, key) for key, name in OUTPUT_NAMES.items()],
+            value=cp.CELL_OUTPUT,
+            description="Output",
+            style=_STYLE,
+        )
+        mask_type = _text(cp.OUTPUT_MASK_TYPES[cp.CELL_OUTPUT], "e.g. Cells or Nuclei")
+        changed = widgets.HTML()
+
+        def follow(change: dict) -> None:
+            if mask_type.value in ("", *cp.OUTPUT_MASK_TYPES.values()):
+                mask_type.value = cp.OUTPUT_MASK_TYPES[change["new"]]
+
+        def drop(_: object) -> None:
+            if self.picker is not None:
+                self.picker = self.loaded = None
+                changed.value = ui.status(
+                    "warn", "Changed: press Choose the channels again, then load the model."
+                )
+
+        output.observe(follow, names="value")
+        output.observe(drop, names="value")
+        mask_type.observe(drop, names="value")
         cards = [
+            ui.card(
+                "Output",
+                [
+                    output,
+                    ui.help_text(
+                        "<b>Cell mask</b>: Cellpose reads the cell channel, then the nuclear "
+                        "channel if one is chosen. <b>Nuclei mask</b>: it reads the nuclear "
+                        "channel only."
+                    ),
+                ],
+            ),
             ui.card(
                 "Mask type",
                 [
                     mask_type,
                     ui.help_text(
-                        "The mask type to make: one folder name, for example <b>Cells</b> or "
-                        "<b>Nuclei</b>. The channel dropdowns appear below once it is checked."
+                        "The mask type to make: one folder name. It follows the output "
+                        "(<b>Cells</b> or <b>Nuclei</b>); type another if you like. The channel "
+                        "dropdowns appear below once it is checked."
                     ),
+                    changed,
                 ],
-            )
+            ),
         ]
+
+        def choose() -> None:
+            changed.value = ""
+            self.choose_channels(mask_type.value, output.value)
+
         form = StepForm(
             self,
-            "4 · Choose the mask type and the channels",
-            "Choose one to three channels <b>by channel ID</b>, in the order Cellpose gets them.",
+            "4 · Choose the output and the channels",
+            "Choose a cell channel, a nuclear channel or both, <b>by channel ID</b>.",
             cards,
             "Choose the channels",
             "list",
-            lambda: self.choose_channels(mask_type.value),
-            {"mask_type": mask_type},
+            choose,
+            {"output": output, "mask_type": mask_type},
         )
         self._form("channels", form)
 

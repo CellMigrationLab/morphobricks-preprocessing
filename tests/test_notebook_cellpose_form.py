@@ -77,6 +77,7 @@ def test_the_forms_start_with_the_former_defaults():
     assert value == {
         "run_folder": "",
         "masks_folder": "",
+        "output": "cells",
         "mask_type": "Cells",
         "model": "cpsam_v2",
         "custom_model_file": "",
@@ -105,7 +106,8 @@ def test_every_field_reaches_the_workflow_as_given(monkeypatch):
     values = {
         "run_folder": " /data/run ",  # passed as typed: the workflow's own checks apply
         "masks_folder": "/data/masks",
-        "mask_type": "Nuclei",
+        "output": "nuclei",
+        "mask_type": "Nuclear",
         "model": "cpdino",
         "custom_model_file": "/models/mine",
         "device": "mps",
@@ -125,7 +127,7 @@ def test_every_field_reaches_the_workflow_as_given(monkeypatch):
         assert form.stopped is None and not form.button.disabled
     assert calls == [
         ("open", (" /data/run ", "/data/masks")),
-        ("choose_channels", ("Nuclei",)),
+        ("choose_channels", ("Nuclear", "nuclei")),
         ("set_settings", ("17.5", 0.7, -1.5, 3)),
         ("load", ("cpdino", "/models/mine", "mps", True, True)),
         ("preview", ("a/b.tif",)),
