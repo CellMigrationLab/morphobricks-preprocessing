@@ -259,6 +259,63 @@ def test_package_code_loading_a_module_by_a_computed_name_is_refused(repo):
         pin_differences(repo.path, repo.pin, head, NOTEBOOK)
 
 
+# (4) a use the review found the check could not follow (each returned [] at c6552c9) ----------
+
+CLI_CHANGED = {f"{PKG}/unused.py": "def other():\n    return 3\n"}
+"""A change only the command line module runs (``cli`` imports ``unused``)."""
+STARTS_CLI = "['morphobricks-preprocessing', 'run']"
+REFUSED = {
+    # A command the cell starts by a name the COMMANDS check did not look at.
+    "a command by an aliased subprocess": (
+        {},
+        CLI_CHANGED,
+        [*NOTEBOOK, f"import subprocess as sp\n\nsp.run({STARTS_CLI})\n"],
+    ),
+    "a command imported from subprocess": (
+        {},
+        CLI_CHANGED,
+        [*NOTEBOOK, f"from subprocess import run\n\nrun({STARTS_CLI})\n"],
+    ),
+    "a command imported from os": (
+        {},
+        CLI_CHANGED,
+        [*NOTEBOOK, "from os import system\n\nsystem('morphobricks-preprocessing run')\n"],
+    ),
+    "subprocess bound to another name": (
+        {},
+        CLI_CHANGED,
+        [*NOTEBOOK, f"import subprocess\n\nrunner = subprocess\nrunner.run({STARTS_CLI})\n"],
+    ),
+    "a command kept to call later": (
+        {},
+        CLI_CHANGED,
+        [*NOTEBOOK, f"import subprocess\n\nstart = subprocess.run\nstart({STARTS_CLI})\n"],
+    ),
+    "an os.exec call": (
+        {},
+        CLI_CHANGED,
+        [*NOTEBOOK, f"import os\n\nos.execvp('morphobricks-preprocessing', {STARTS_CLI})\n"],
+    ),
+    "IPython's system": (
+        {},
+        CLI_CHANGED,
+        [*NOTEBOOK, "get_ipython().system('morphobricks-preprocessing run')\n"],
+    ),
+}
+
+
+def _pin_and_head(repo, pin_files, head_files):
+    return _commit(repo.path, pin_files), _commit(repo.path, head_files)
+
+
+@pytest.mark.parametrize("case", REFUSED)
+def test_a_use_the_review_found_is_refused(repo, case):
+    pin_files, head_files, cells = REFUSED[case]
+    pin, head = _pin_and_head(repo, pin_files, head_files)
+    with pytest.raises(PinScopeError):
+        pin_differences(repo.path, pin, head, cells)
+
+
 # the real notebook --------------------------------------------------------------------------
 
 

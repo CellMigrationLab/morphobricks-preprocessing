@@ -42,10 +42,18 @@ LOADERS = frozenset(
     {"import_module", "__import__", "exec", "eval", "compile", "run_module", "run_path"}
 )
 """Calls that load code by a name or text the import statements do not show."""
+SHELLS = frozenset({"subprocess", "os"})
+"""The modules whose :data:`COMMANDS` start a program. A cell uses them only by their own name
+(no ``as``, no ``from ... import``, no other binding), so every command call is seen."""
 COMMANDS = frozenset(
-    {"run", "Popen", "call", "check_call", "check_output", "system", "popen", "getoutput"}
+    {"run", "Popen", "call", "check_call", "check_output", "getoutput", "getstatusoutput"}
+    | {"system", "popen", "startfile", "posix_spawn", "posix_spawnp"}
+    | {f"exec{s}" for s in ("l", "le", "lp", "lpe", "v", "ve", "vp", "vpe")}
+    | {f"spawn{s}" for s in ("l", "le", "lp", "lpe", "v", "ve", "vp", "vpe")}
 )
 """``subprocess`` and ``os`` calls that start a program."""
+HIDDEN_RUNNERS = frozenset({"get_ipython"})
+"""Names that run commands or code the cell's syntax does not show (IPython's ``system``)."""
 
 
 class PinScopeError(Exception):
@@ -90,8 +98,37 @@ def _starts_pip(node: ast.Call) -> bool:
     return head == ["sys.executable", "'-m'", "'pip'"]
 
 
+def _refuse_hidden_commands(tree: ast.AST, where: str) -> None:
+    """Raise ``PinScopeError`` for a cell command the :data:`COMMANDS` check could miss.
+
+    A command module bound to another name (``import subprocess as sp``, ``from os import
+    system``, ``runner = subprocess``, ``getattr(os, ...)``), a command kept to call later
+    (``start = subprocess.run``) and IPython's runners are refused.
+    """
+    owners = {id(n.value) for n in ast.walk(tree) if isinstance(n, ast.Attribute)}
+    called = {id(n.func) for n in ast.walk(tree) if isinstance(n, ast.Call)}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            bad = [a.name for a in node.names if a.name in SHELLS and a.asname]
+        elif isinstance(node, ast.ImportFrom):
+            bad = [node.module] if node.module in SHELLS else []
+        elif isinstance(node, ast.Name):
+            shell = node.id in SHELLS and id(node) not in owners
+            bad = [node.id] if shell or node.id in HIDDEN_RUNNERS else []
+        elif isinstance(node, ast.Attribute) and node.attr in COMMANDS:
+            shell = isinstance(node.value, ast.Name) and node.value.id in SHELLS
+            bad = [ast.unparse(node)] if shell and id(node) not in called else []
+        else:
+            bad = []
+        if bad:
+            raise PinScopeError(
+                f"{where} reaches a command by a name the check cannot follow: {bad}"
+            )
+
+
 def _refuse_unseen_use(tree: ast.AST, where: str) -> None:
     """Raise ``PinScopeError`` for a notebook use of code no import statement shows."""
+    _refuse_hidden_commands(tree, where)
     for node in ast.walk(tree):
         if isinstance(node, ast.Constant) and isinstance(node.value, str):
             if PACKAGE in node.value:
