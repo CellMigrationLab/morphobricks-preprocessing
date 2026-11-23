@@ -189,7 +189,8 @@ def png_bytes(pixels: np.ndarray) -> bytes:
     )
 
 
-def _as_colour(pixels: np.ndarray) -> np.ndarray:
+def as_colour(pixels: np.ndarray) -> np.ndarray:
+    """Return a grey (Y, X) panel as (Y, X, 3) colour; a colour panel unchanged."""
     return pixels if pixels.ndim == 3 else np.repeat(pixels[..., None], 3, axis=2)
 
 
@@ -207,14 +208,14 @@ def strip_png(panels: Sequence[Panel], gap: int = GAP) -> bytes:
     colour = any(p.pixels.ndim == 3 for p in panels)
     pieces = []
     for index, panel in enumerate(panels):
-        shown = _as_colour(panel.pixels) if colour else panel.pixels
+        shown = as_colour(panel.pixels) if colour else panel.pixels
         if index:
             pieces.append(np.full((shown.shape[0], gap, *shown.shape[2:]), 255, np.uint8))
         pieces.append(shown)
     return png_bytes(np.concatenate(pieces, axis=1))
 
 
-def _outline(labels: np.ndarray) -> np.ndarray:
+def outline(labels: np.ndarray) -> np.ndarray:
     """Return the pixels of an object that touch another value in a 4-neighbourhood."""
     edge = np.zeros(labels.shape, bool)
     for axis in (0, 1):
@@ -252,13 +253,13 @@ def mask_overlay_png(panel: Panel, labels: np.ndarray, representation: str | Non
         raise OverlayRefused(
             f"the mask is {labels.shape} and the image {panel.pixels.shape[:2]}: not resampled"
         )
-    shown = _as_colour(panel.pixels).copy()
+    shown = as_colour(panel.pixels).copy()
     if representation == BINARY:
         mark = labels != 0
         blend = (1 - _TINT_SHARE) * shown[mark] + _TINT_SHARE * np.array(_TINT)
         shown[mark] = np.rint(blend).astype(np.uint8)
     else:
-        edge = _outline(labels)
+        edge = outline(labels)
         palette = np.array(_OUTLINES, np.uint8)
         shown[edge] = palette[labels[edge].astype(np.int64) % len(palette)]
     return png_bytes(shown)
