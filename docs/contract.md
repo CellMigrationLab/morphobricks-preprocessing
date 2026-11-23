@@ -1602,3 +1602,25 @@ recomputes.
 a 2048 x 2048 plane against a histogram step of about 74 ms per channel plane, over the design's
 +50 % limit), background noise or SNR, stripes, bright artefacts, near-duplicates, time-lapse and
 Z profiles. The channel-identity check does not use the metrics yet.
+
+## 20. Header reading for other tools
+
+Other tools (for example the OpticalFlow3D Profiler, on single-channel TZYX time-lapses) may read
+image headers and run the header checks without a run. The stable entry points are:
+
+| Entry point | What it gives |
+|---|---|
+| `inspect_tiff(path)`, `inspect_image(path)` (also `.zarr`) | A `TiffMetadata`: shape, dtype, axes the header names, channel names, series count, physical sizes; no pixels are read |
+| `read_physical_sizes(path)` | A `PhysicalSizes`: pixel sizes X and Y, z-step, time step (`t`, with `time_unit`) and a unit per axis; ImageJ `finterval` and OME `TimeIncrement` are read |
+| `check_metadata(files, allow_z=True)`, `inspect_images(root, paths, allow_z=True)` | The `ValidationIssue` list of the header checks (§8) |
+
+Z is read: ImageJ and OME TZYX stacks give axes `TZYX` and the Z size. Only preprocessing's own
+experiment checks refuse Z by default (`z_stack_not_supported`, §2): `check_metadata(files)` and
+`inspect_experiment` keep that refusal, and `allow_z=True` switches off that one error; unreadable
+files, several series, pixel types, arrangement, channel counts and names, sizes, plane counts,
+pixel sizes and units are checked as before. `case_conflict` is not a header check: it comes from
+folder discovery (`discover_experiment`, §1), so it is not reported from headers alone. Moving the
+Z gate out of the header checks is issue #438.
+
+The base install depends on `morphobricks-normalization` through a git URL (a release tag, not on
+PyPI), so a tool that installs this package needs git access to that repository.

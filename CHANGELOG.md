@@ -25,6 +25,12 @@ old pin are refused with `spec_commit_mismatch`, as at every re-pin.
 
 ### Added
 
+- **`check_metadata(files, *, allow_z=False)` and `inspect_images(..., allow_z=False)`: header
+  checks of Z-stacks for other tools (related: #438).** With `allow_z=True`,
+  `z_stack_not_supported` is not reported; every other header check runs unchanged. The default
+  keeps preprocessing's own refusal of Z. `inspect_experiment` (the experiment checks) takes no
+  such keyword. `docs/contract.md` §20 names the stable entry points for header reading.
+
 - **Cellpose notebook, a reused batch ID is not recovered as the old batch's (external audit B1,
   22 November 2026).** When the record write failed, the recovery check compared only the latest
   entry's batch ID and mask SHA-256, so a reused ID with another model or settings and identical
