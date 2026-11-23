@@ -42,10 +42,10 @@ from .notebook_channels_view import CHOOSE, columns, unit_name
 from .repeat_review import Override, RefusedUnit, TagReview
 from .repeat_tags import (
     GroupKey,
-    header_names,
     override_holds,
     pairing_collision,
     recount,
+    relapsed,
     repeat_apart,
     repeat_fill,
     repeat_groups,
@@ -510,16 +510,6 @@ class RepeatRows:
 
 
 RELAPSED = "its header changed since you confirmed it: confirm it again"
-
-
-def relapsed(confirmed: Override | None, layout: UnitLayout) -> bool:
-    """Return True when the unit was confirmed for other header names than its own now.
-
-    The confirmation no longer covers it (:func:`.repeat_tags.override_holds`), and it is listed
-    again even when its new header fits its row and its tags are complete: a changed header is
-    reviewed by the user, never counted unasked.
-    """
-    return confirmed is not None and header_names(layout) != confirmed.names
 
 
 def _found_text(found: Sequence) -> str:

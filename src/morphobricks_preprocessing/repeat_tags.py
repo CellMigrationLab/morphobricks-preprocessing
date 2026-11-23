@@ -54,11 +54,22 @@ def override_holds(
     neither lapse it nor stand in for it. A changed header or tag lists the unit again, never
     counted unasked.
     """
-    return (
-        override is not None
-        and tuple(tags) == override.tags
-        and header_names(layout) == override.names
-    )
+    return override is not None and tuple(tags) == override.tags and _names_hold(override, layout)
+
+
+def relapsed(override: Override | None, layout: UnitLayout) -> bool:
+    """Return True when the unit was confirmed for other header names than its own now.
+
+    The confirmation no longer covers it (:func:`override_holds`), and it is listed again even
+    when its new header fits its row and its tags are complete: a changed header is reviewed by
+    the user, never counted unasked.
+    """
+    return override is not None and not _names_hold(override, layout)
+
+
+def _names_hold(override: Override, layout: UnitLayout) -> bool:
+    """Return True when the unit's own header names are the ones it was confirmed for."""
+    return header_names(layout) == override.names
 
 
 def recount(tags: Sequence[str | None], layout: UnitLayout) -> str | None:
@@ -194,6 +205,7 @@ __all__ = [
     "override_holds",
     "pairing_collision",
     "recount",
+    "relapsed",
     "repeat_fill",
     "repeat_groups",
     "repeat_lead",

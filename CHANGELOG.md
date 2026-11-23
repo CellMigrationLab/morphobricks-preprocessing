@@ -79,7 +79,7 @@ old pin are refused with `spec_commit_mismatch`, as at every re-pin.
     length is refused. A refused unit fast mode no longer offers (now inside the layout) stays
     refused.
   - A confirmed unit whose own header changes is listed again ("its header changed since you
-    confirmed it: confirm it again", `notebook_channels_repeat.relapsed`), also when its new
+    confirmed it: confirm it again", `repeat_tags.relapsed`), also when its new
     header fits its row and its tags are complete; a re-check no longer drops the refusal of a
     unit whose confirmation still holds, so it stays the source of **Confirm the same tags**.
   - A refusal is never dropped while its unit is still in the folder: a refused unit set to
