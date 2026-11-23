@@ -15,6 +15,7 @@ import pytest
 from notebook_pin import (
     PinScopeError,
     code_sources,
+    history_missing,
     install_setting,
     notebook_modules,
     pin_differences,
@@ -268,10 +269,18 @@ def test_the_real_notebook_runs_the_cellpose_code_and_not_the_preprocessing_app(
     try:
         blobs = tree_blobs(ROOT, "HEAD")
     except (OSError, subprocess.CalledProcessError):
-        pytest.skip("this checkout is not a Git repository")
+        history_missing("this checkout is not a Git repository")
     used = used_files(ROOT, blobs, notebook_modules(sources))
     for module in ("__init__", "notebook_cellpose", "segmentation_cellpose", "run_inputs"):
         assert f"{PKG}/{module}.py" in used
     assert f"{PKG}/segmentation_cellpose_model.py" in used  # imported inside a function
     for module in ("notebook_ui", "cli", "notebook_stepper"):  # the other notebook, the CLI
         assert f"{PKG}/{module}.py" not in used
+
+
+@pytest.mark.parametrize("ci", ["", "true"])
+def test_a_missing_history_skips_locally_and_fails_in_ci(monkeypatch, ci):
+    monkeypatch.setenv("CI", ci)
+    outcome = pytest.fail.Exception if ci else pytest.skip.Exception
+    with pytest.raises(outcome, match="not in this checkout"):
+        history_missing("the pinned commit is not in this checkout")

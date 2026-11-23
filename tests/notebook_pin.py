@@ -20,10 +20,13 @@ from __future__ import annotations
 
 import ast
 import json
+import os
 import re
 import subprocess
 import tomllib
 from pathlib import Path
+
+import pytest
 
 PACKAGE = "morphobricks_preprocessing"
 SOURCE_ROOT = "src"
@@ -47,6 +50,14 @@ COMMANDS = frozenset(
 
 class PinScopeError(Exception):
     """Raised when what a notebook or the package uses cannot be derived from the source."""
+
+
+def history_missing(reason: str) -> None:
+    """Skip a test that needs the Git history, or fail it in CI (``CI`` set), whose checkout
+    holds the full history so that the pin check runs there (issue #421)."""
+    if os.environ.get("CI"):
+        pytest.fail(f"{reason}: CI must check out the full history (fetch-depth: 0)")
+    pytest.skip(reason)
 
 
 def code_sources(notebook: Path) -> list[str]:

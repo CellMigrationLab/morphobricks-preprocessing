@@ -22,7 +22,7 @@ from morphobricks_preprocessing import notebook_cellpose
 from morphobricks_preprocessing import segmentation_cellpose as cp
 from morphobricks_preprocessing.manifest import MANIFEST_FILENAME
 from morphobricks_preprocessing.segmentation_record import read_record
-from notebook_pin import code_sources, install_setting, pin_differences
+from notebook_pin import code_sources, history_missing, install_setting, pin_differences
 from test_segmentation_handoff import MASKS_SECTION
 
 ROOT = Path(__file__).parents[1]
@@ -125,7 +125,7 @@ def test_the_pins_are_cellpose_4_2_1_1_and_a_preprocessing_commit_with_this_code
     assert "DEVELOPMENT_OVERRIDE = False" in source(INSTALL)
     command = ["git", "-C", str(ROOT), "cat-file", "-e", f"{ref}^{{commit}}"]
     if subprocess.run(command, capture_output=True).returncode != 0:
-        pytest.skip("the pinned commit is not in this checkout (shallow clone or no git)")
+        history_missing("the pinned commit is not in this checkout (shallow clone or no git)")
     # The notebook installs the package at RELEASE_REF: that commit must hold the code the
     # notebook's cells run (every module they import, at any depth), the build's inputs and
     # the install-relevant pyproject.toml, exactly as HEAD has them (issue #421).
