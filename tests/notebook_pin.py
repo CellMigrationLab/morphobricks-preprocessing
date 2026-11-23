@@ -259,7 +259,12 @@ def notebook_modules(sources: list[str]) -> set[str]:
     """
     names, trees = set(), []
     for number, source in enumerate(sources, start=1):
-        tree = ast.parse(source)
+        try:
+            tree = ast.parse(source)
+        except SyntaxError as exc:
+            magic = [line for line in source.splitlines() if line.lstrip()[:1] in ("!", "%")]
+            what = f"an IPython line {magic[0].strip()!r}" if magic else "code that is not Python"
+            raise PinScopeError(f"cell {number} has {what}: the check cannot follow it") from exc
         _refuse_unseen_use(tree, f"cell {number}")
         names |= _package_imports(tree, f"cell {number}")
         trees.append(tree)

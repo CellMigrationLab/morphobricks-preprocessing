@@ -234,12 +234,14 @@ UNSEEN = {
     ),
     "a shell command": "import os\n\nos.system('morphobricks-preprocessing run')\n",
     "a relative import": "from . import notebook_cellpose\n",
+    "a shell line": "!pip install morphobricks-preprocessing\n",
+    "a line magic": "%pip install morphobricks-preprocessing\n",
 }
 
 
 @pytest.mark.parametrize("use", UNSEEN)
 def test_a_use_the_check_cannot_follow_is_refused(repo, use):
-    with pytest.raises(PinScopeError):
+    with pytest.raises(PinScopeError):  # never a bare SyntaxError for an IPython line
         pin_differences(repo.path, repo.pin, repo.pin, [*NOTEBOOK, UNSEEN[use]])
 
 
