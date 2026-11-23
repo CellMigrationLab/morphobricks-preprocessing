@@ -42,6 +42,7 @@ from .notebook_channels_view import CHOOSE, columns, unit_name
 from .repeat_review import Override, RefusedUnit, TagReview
 from .repeat_tags import (
     GroupKey,
+    header_names,
     override_holds,
     pairing_collision,
     recount,
@@ -131,6 +132,9 @@ class RepeatRows:
                 continue
             tags = tags_of(layout, answers.units.get(key))
             confirmed = self.override.confirmed.get(key)
+            if relapsed(confirmed, layout):  # its own header changed: confirmed for another one
+                out[key] = text or RELAPSED
+                continue
             if override_holds(confirmed, layout, tags):
                 continue  # the user confirmed these tags (:mod:`.notebook_channels_override`)
             if None in tags or differences(layout, tags, lead, self.grid.labels, answers.channels):
@@ -172,9 +176,15 @@ class RepeatRows:
                 kept[key] = Refusal(moved, layout, lead, old.tags, old.channels)
                 continue  # never compared, cut or padded: every channel is chosen again
             own = tags_of(layout, answers.units.get(key))
+            confirmed = self.override.confirmed.get(key)
+            if relapsed(confirmed, layout):  # checked before anything may drop the refusal
+                kept[key] = Refusal(RELAPSED, layout, lead, old.tags, old.channels)
+                continue
             found = self.contradictions(layout, old, lead)
             found = found or differences(layout, own, lead, grid.labels, answers.channels)
-            if found:
+            if override_holds(confirmed, layout, own):  # kept: the source of the one-click offer
+                kept[key] = Refusal(_found_text(found), layout, lead, old.tags, old.channels)
+            elif found:
                 kept[key] = Refusal(_found_text(found), layout, lead, old.tags, old.channels)
             elif None in own:  # listed while its own tags are incomplete (:meth:`listed`)
                 kept[key] = Refusal(
@@ -487,6 +497,19 @@ class RepeatRows:
             self.grid.matrix.sync_statement()
             self.grid.refresh()
         return ok
+
+
+RELAPSED = "its header changed since you confirmed it: confirm it again"
+
+
+def relapsed(confirmed: Override | None, layout: UnitLayout) -> bool:
+    """Return True when the unit was confirmed for other header names than its own now.
+
+    The confirmation no longer covers it (:func:`.repeat_tags.override_holds`), and it is listed
+    again even when its new header fits its row and its tags are complete: a changed header is
+    reviewed by the user, never counted unasked.
+    """
+    return confirmed is not None and header_names(layout) != confirmed.names
 
 
 def _found_text(found: Sequence) -> str:

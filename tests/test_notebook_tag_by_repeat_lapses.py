@@ -187,3 +187,31 @@ def test_a_refused_unit_with_a_channel_less_asks_every_channel_again(tmp_path):
         rows.override.cells[(GONE, index)].value = tag
     assert rows.override.confirm() and GONE not in rows.listed()
     assert nb.draft_answers.units[GONE].channels == TAGS
+
+
+# Blocker 4: a confirmed unit whose own header changes -----------------------------------------
+
+
+def test_a_confirmed_unit_whose_own_header_changes_to_fit_the_row_is_listed_again(
+    tmp_path, statement_off
+):
+    nb, root, rows = _strict(tmp_path, statement_off)
+    _confirm(nb, rows, GONE, "override", None)  # confirmed as the row's tags, header P, Q, Ch3
+    assert GONE not in rows.listed() and nb.draft_answers.units[GONE].channels == TAGS
+    _count_changed(nb, root, GONE, ["X", "Y", "Ch3"], KINDS4[:3], UNITS.index(GONE) + 1)
+    # its own header now names what the row's reference names, its tags unchanged: at 3ac71c8
+    # the refusal and the confirmation were dropped and the unit counted unasked
+    assert GONE in rows.refused and GONE in rows.listed()
+    assert "header changed since you confirmed it" in rows.listed()[GONE]
+    assert not nb.save_experiment()
+    rows.override.buttons[GONE].click()
+    assert rows.override.confirm() and GONE not in rows.listed()
+    assert rows.override.confirmed[GONE].names == ("X", "Y", "Ch3")
+
+
+def test_a_confirmed_reference_keeps_offering_the_one_click_after_a_restart(tmp_path):
+    _, root, masks, out = _reference_gone(tmp_path)
+    nb = opened(root, masks, out)  # GONE, confirmed, is the row's reference now
+    rows = nb.channel_grid.by_repeat
+    assert GONE in rows.refused and GONE not in rows.listed()  # its confirmation still holds
+    assert set(rows.override.same_buttons) == {OTHER}  # at 3ac71c8: GONE's record was dropped
