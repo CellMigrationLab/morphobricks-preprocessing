@@ -305,3 +305,24 @@ def test_nuclei_settings_without_a_loaded_nuclei_model_are_refused(cells, monkey
     with pytest.raises(notebook_cellpose.CellStop, match="load the nuclei model first"):
         workflow.preview()  # the preview refuses the nuclei the same way
     assert nothing_written(cells, "Cells", "Nuclei")
+
+
+def test_a_failing_hook_after_cells_still_runs_the_nuclei_then_raises(cells):
+    choose_both(cells)
+    run_cell(cells.ns, MODEL, device="cpu")
+    workflow, fovs = cells.ns["workflow"], cells.run.inputs.fovs()
+    handed = []
+
+    def hook(result):
+        handed.append(result)
+        if len(handed) == 1:
+            raise RuntimeError("hook failed")
+
+    workflow.on_masks_written = hook
+    with pytest.raises(RuntimeError, match="hook failed"):
+        workflow.run()
+    assert len(handed) == 2  # the nuclei were handed on too
+    assert counts(workflow.results["Cells"]) == {"written": len(fovs)}
+    assert counts(workflow.results["Nuclei"]) == {"written": len(fovs)}
+    assert len(read_record(cells.run.masks, "Nuclei").batches[0].images) == len(fovs)
+    assert any("Mask type Cells stopped" in card for card in workflow.shown)

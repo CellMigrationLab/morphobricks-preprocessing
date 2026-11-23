@@ -375,8 +375,8 @@ class CellposeWorkflow:
 
         Each mask type is its own batch, one after the other (cells first): its own record,
         skip and overwrite, and the per-mask rollback of :func:`.segmentation_cellpose.run_batch`.
-        A batch that stops with an error does not stop the next; the first error is raised once
-        every batch has run.
+        A batch that stops with an error, or an :attr:`on_masks_written` hook that raises, does
+        not stop the next; the first error is raised once every batch has run.
 
         Returns
         -------
@@ -390,13 +390,12 @@ class CellposeWorkflow:
         for job in jobs:
             try:
                 self.results[job.mask_type] = result = self._run_job(job, titled=len(jobs) > 1)
+                if self.on_masks_written is not None:
+                    self.on_masks_written(result)
             except Exception as exc:  # the other mask type still runs; raised after it
                 if len(jobs) > 1:
                     self._show(_card("error", f"Mask type {job.mask_type} stopped", (_named(exc),)))
                 error = error or exc
-                continue
-            if self.on_masks_written is not None:
-                self.on_masks_written(result)
         self.result = next(iter(self.results.values()), None)
         if error is not None:
             raise error
