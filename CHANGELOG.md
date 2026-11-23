@@ -8,6 +8,7 @@ v0.5.1: no run before v0.5.1 is read.)
 
 ## Unreleased
 
+- **The run report counts the declared repeat groups as the biological repeats (#456).** `discovery_report.txt` said "N biological repeats" from the distinct condition and repeat-folder labels, so 3 conditions × 2 declared repeat groups whose folder names cross the groups were reported as 6 (or 4) biological repeats. It now says "2 biological repeats (repeat groups)", from the design derived from the published description (`DesignTable.groups`; also `repeat_groups` in `discovery_report.json`), and "biological repeats not counted: no repeat groups declared" without one (as for `check`). The notebook's folder scan no longer counts repeat folders as biological repeats either.
 - Cellpose batch recovery after a failed record write also requires the batch's whole image list to be the one written (a reused batch ID that leaves out earlier images is refused and the mask restored; ChatGPT al FILE 1).
 
 **One header-name rule (#368).** Whether a raw header name is a confirmed name of a channel is now
