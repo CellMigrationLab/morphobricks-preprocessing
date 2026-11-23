@@ -31,6 +31,14 @@ def segment_reads(monkeypatch):
 
 
 @pytest.fixture
+def mixed_run(tmp_path):
+    """A described run with a fourth stain in one repeat (the Cellpose tests; no Cellpose)."""
+    from cellpose_stub import mixed_run as build
+
+    return build(tmp_path)
+
+
+@pytest.fixture
 def statement_off(monkeypatch):
     """Open *Tag channels* with "same channels in the same order" unticked: the PR 17b blocks.
 

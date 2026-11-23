@@ -220,7 +220,8 @@ def test_version_metadata_matches_labconstrictor_index():
         for line in VERSIONS.read_text(encoding="utf-8").splitlines()
         if line and not line.startswith("#")
     )
-    assert index == {NOTEBOOK.stem: _setting("current_version")}
+    # Other notebooks have their own entry (and their own test); this one is checked here.
+    assert index[NOTEBOOK.stem] == _setting("current_version")
 
 
 def _kernel_notebook(nbformat, *, roles=(INSTALL, DRIVE, RUN), colab_drive=None, override=True):

@@ -8,6 +8,8 @@ v0.5.1: no run before v0.5.1 is read.)
 
 ## Unreleased
 
+- Cellpose batch recovery after a failed record write also requires the batch's whole image list to be the one written (a reused batch ID that leaves out earlier images is refused and the mask restored; ChatGPT al FILE 1).
+
 **One header-name rule (#368).** Whether a raw header name is a confirmed name of a channel is now
 decided by one function, `description_identity.header_name_matches` (equal after NFC, never trimmed,
 never case-folded), used by the notebook's channel matrix, the fast layout, the physical check and
@@ -23,6 +25,61 @@ old pin are refused with `spec_commit_mismatch`, as at every re-pin.
 
 ### Added
 
+- **Cellpose notebook, a reused batch ID is not recovered as the old batch's (external audit B1,
+  22 November 2026).** When the record write failed, the recovery check compared only the latest
+  entry's batch ID and mask SHA-256, so a reused ID with another model or settings and identical
+  mask bytes (refused by `write_record`) was reported `written` under the earlier batch's
+  provenance. The check now needs the record's batch of that ID to have the expected batch's
+  provenance (`SegmentationBatch.same_provenance`) and the image's latest entry to be exactly the
+  expected one; otherwise the error propagates and `write_mask` rolls back. The earlier-mask note
+  still comes from a `stray_backups` diff read under the lock (`on_published` is not told whether
+  its writer made a backup; changing its signature is outside this fix).
+- **Cellpose notebook, provenance under the write lock (external audit of PR #375, 22 November
+  2026).** Each mask's SHA-256 and its record append now run in `write_mask`'s `on_published`,
+  under the type's write lock (then the record's lock; never the reverse), so two overlapping
+  batches can no longer leave a latest record entry naming one batch while the bytes on disk are
+  the other's. A hash, newest-entry or record failure (an interrupt too) makes `write_mask` roll
+  back under that lock (#397): an overwritten mask is restored byte for byte, a new one removed.
+  `_withdraw`, its identity stamp and its own (wrong-folder) lock are gone. An existing mask not
+  shown to be its latest recorded one is `needs_attention` in the table and counts, not
+  `skipped`. The fail-safe tests compare on-disk SHA-256 with the latest record entry.
+- **Cellpose notebook, review fixes (PR #375)**: the per-image hash/record step now catches
+  `BaseException`, so a `KeyboardInterrupt` (stop button) between `write_mask` and the image's record
+  write withdraws the mask (identity-checked) and then re-raises; the identity stamp and SHA-256 are
+  taken under `write_mask`'s write lock (`on_published`, PR #367); a retry compares a recorded mask's
+  SHA-256 with its latest record entry and reports "exists, but differs from its recorded provenance".
+- **Cellpose notebook, failure-safe record (external audit C6).** A published mask is never left
+  without its record entry: each mask is hashed and recorded right after publication, before the
+  next image; if that fails the mask is removed (only if still the file written; otherwise a
+  `WITHOUT provenance` warning names it), the image is `failed`, the remaining images are
+  `failed` as not started and the batch stops. A retry reports a mask without a record entry
+  as `exists without provenance` instead of a plain skip. A diameter giving fewer than one flow
+  iteration is refused instead of clamped to 1; the docs and notebook say the verified device is
+  the network's placement, not Cellpose's CPU post-processing. `Settings` moved to
+  `segmentation_cellpose_settings` (re-exported).
+- **Cellpose notebook** (`notebooks/MorphoBricks_Cellpose.ipynb`, step 2 of the segmentation
+  hand-off; owner request of 21 November 2026): opens a described run, chooses the mask type and
+  the channels **by channel ID** (dropdowns; a channel only some images have is refused with
+  the resolver's `A_SCOPE_INCOMPLETE` message, shown unchanged), loads **Cellpose 4.2.1.1**
+  (`cpsam_v2` by default, `cpsam`, `cpdino`, `cpdino-vitb`, or a model file), previews one image,
+  segments every image without a mask and ends with a table of every image as written, skipped
+  or failed with its error, then says how to declare the new mask type and rerun preprocessing.
+  Cellpose is not a dependency: `segmentation_cellpose`, `segmentation_cellpose_model` and
+  `notebook_cellpose` import `cellpose`, `torch` and `dinov3` only inside functions. What
+  Cellpose 4.2.1.1 does silently is refused: a model name or file it cannot find becomes
+  `cpsam_v2` (the model is validated before loading and the loaded weights file must be the one
+  asked for), a missing GPU becomes the CPU (the device is stated, an unavailable one is refused,
+  and the model must sit on it), uncached weights are downloaded (only with the download box
+  ticked, after the notebook says they come from Hugging Face), channels beyond the first three
+  are dropped by position (more than three are refused), and no diameter means the model's native
+  scale, not an estimate (a blank diameter is recorded as the native scale, 0 is refused). The
+  SHA-256 and file name of the weights, every effective setting and the DINOv3 commit
+  (`cpdino` models, installed only when ticked, `--no-deps`, at a pinned commit that is not
+  verified against `cpdino`) go into the `SegmentationBatch`, with the full normalisation, the
+  flow iterations, whether the weights were downloaded and from where, and a note that Cellpose may
+  run its flow-threshold step on the CPU (and the masks on the CPU on `mps`). The model's device is
+  verified on every parameter and buffer of the network. The batch ID is `new_batch_id()`. 2D
+  images only.
 - **Segmentation hand-off** (owner request of 21 November 2026, step 1 of the Cellpose notebook
   plan): `segmentation_handoff` and `segmentation_record` (numpy and tifffile only; no
   segmentation tool is imported). `images_to_segment` lists the run's images that have no mask
@@ -67,6 +124,15 @@ old pin are refused with `spec_commit_mismatch`, as at every re-pin.
   new mask stayed and the earlier one was lost; now the target's inode says whether the move happened
   and the earlier mask is restored (a new mask removed). New `stray_backups(masks_root, mask_type)`
   lists `.<name>.previous.<random>` copies left by killed processes; they are reported, never deleted.
+- **Cellpose batch: the mask and its record stay together when `write_record` fails after saving**
+  (review of #375). If the record file was saved and then the call raised (`OSError` releasing the
+  lock, `KeyboardInterrupt` after the replace, or an interrupt before the entry was noted), the
+  callback re-reads the record; when the image's latest entry is this batch with this SHA-256 the mask
+  is kept (not rolled back), an error stops the batch and an interrupt is raised again with the image
+  in the final record. An interrupt after a successful commit is no longer swallowed. Whether an
+  earlier mask was replaced (the table's "restored" or "removed" note) is read under the write lock.
+  The notebook's batch summary lists stray `.previous` copies (`stray_backups`), never deleting them.
+  New `segmentation_cellpose_commit` module (`check_newest` moved there).
 - **Channel-identity check after the run** (contract §14.1, design
   `channel-identity-check-2026-11-21` in MorphoFeature's `claude/restart-doc`): from the image
   summaries the intensity checks already make (no pixel read), every imaging unit's channel is
