@@ -9,7 +9,9 @@ reads the commit with the same functions (one text in both cells, tested here).
 import ast
 import json
 import subprocess
+import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -19,9 +21,9 @@ from test_notebook_setup import INSTALL, RELEASE_REF, REPOSITORY, checkout_at
 from test_notebook_setup import setup_environment as cell_1  # noqa: F401
 
 NOTEBOOKS = Path(__file__).parents[1] / "notebooks"
-INSTALLED_COMMIT = ("_direct_url", "_installed_commit", "_replace_other_commit")
-"""The install cells' functions that read the installed commit and replace another one: one
-text in both notebooks."""
+INSTALLED_COMMIT = ("_direct_url", "_installed_commit", "_replace_other_commit", "_loaded")
+"""The install cells' functions that read the installed commit, replace another one and see a
+copy the kernel already loaded: one text in both notebooks."""
 PINNED = f"morphobricks-preprocessing[notebook] @ git+{REPOSITORY}@{RELEASE_REF}"
 MAIN = "de3f7a476da8a3dc49c81b20935a9a1a4831a435"
 """A commit of main whose version is the release's, 0.8.0 (the #371 review's example)."""
@@ -133,6 +135,38 @@ def test_setup_replaces_the_same_version_from_another_commit_that_pip_keeps(cell
     assert state.namespace["SETUP_RECORD"]["preprocessing_commit"] == RELEASE_REF
     state.start(INSTALL, fresh=False)
     assert len(state.installs) == 2  # running the cell again installs nothing more
+
+
+@pytest.mark.parametrize("record", [git_record(MAIN, REPOSITORY), None], ids=["main", "none"])
+def test_setup_asks_for_a_restart_when_pip_replaced_a_loaded_copy(
+    cell_1,  # noqa: F811
+    monkeypatch,
+    record,
+):
+    # The kernel imported another preprocessing before cell 1 ran: pip replaces the files, but
+    # the module already loaded stays the old copy until the kernel restarts.
+    state = cell_1
+    state.direct_url = record
+    loaded = SimpleNamespace(__file__="/old/morphobricks_preprocessing/__init__.py")
+    monkeypatch.setitem(sys.modules, "morphobricks_preprocessing", loaded)
+    with pytest.raises(RuntimeError, match="already has another copy loaded. Restart the kernel"):
+        state.start(INSTALL)
+    forced_then_installed(state.installs, PINNED)
+    assert state.imports == [] and state.namespace["SETUP_RECORD"] == {}
+    monkeypatch.delitem(sys.modules, "morphobricks_preprocessing")  # the restart
+    state.start(INSTALL)
+    assert len(state.installs) == 2  # pip has nothing more to do
+    assert state.namespace["SETUP_RECORD"]["preprocessing_commit"] == RELEASE_REF
+
+
+def test_setup_keeps_a_loaded_release_when_pip_only_adds_requirements(cell_1, monkeypatch):  # noqa: F811
+    state = cell_1
+    state.available.remove("matplotlib")
+    loaded = SimpleNamespace(__file__="/site/morphobricks_preprocessing/__init__.py")
+    monkeypatch.setitem(sys.modules, "morphobricks_preprocessing", loaded)
+    state.start(INSTALL)  # the loaded copy is the installed RELEASE_REF: no restart
+    (command,) = state.installs
+    assert "--force-reinstall" not in command
 
 
 def test_setup_installs_without_forcing_when_nothing_is_installed(cell_1):  # noqa: F811

@@ -6,6 +6,7 @@ the installed versions and pip's PEP 610 record as real pip does (``installed_re
 
 import subprocess
 import sys
+from types import SimpleNamespace
 
 import pytest
 
@@ -48,6 +49,8 @@ def installer(monkeypatch):
     monkeypatch.setattr(metadata, "version", fake_version)
     install_record_double(monkeypatch, state)
     monkeypatch.setattr(subprocess, "run", fake_run)
+    # A fresh runtime: this test process imported the package, a kernel running cell 1 has not.
+    monkeypatch.delitem(sys.modules, "morphobricks_preprocessing")
     return state
 
 
@@ -147,10 +150,26 @@ def test_an_install_that_upgrades_a_loaded_numpy_or_opencv_says_to_restart(insta
     assert "numpy" in sys.modules  # loaded by the kernel, as in Colab
     installer.versions.update(cellpose="4.0.0", numpy="1.26.4")
     installer.upgrades = {"numpy": "2.1.0"}
-    with pytest.raises(RuntimeError, match=r"upgraded numpy 1.26.4 -> 2.1.0.*Restart the runtime"):
+    with pytest.raises(RuntimeError, match=r"changed numpy 1.26.4 -> 2.1.0.*Restart the runtime"):
         run_cell({}, INSTALL)
     run_cell({}, INSTALL)  # after the restart: nothing more is installed, and it is ready
     assert len(installer.pip) == 1
+
+
+def test_replacing_a_loaded_preprocessing_of_the_same_version_says_to_restart(
+    installer, monkeypatch
+):
+    # The version does not change (0.8.0 from another commit), so the module shows it.
+    installer.direct_url = git_record("2" * 40, setting("REPOSITORY"))
+    loaded = SimpleNamespace(__file__="/old/morphobricks_preprocessing/__init__.py")
+    monkeypatch.setitem(sys.modules, "morphobricks_preprocessing", loaded)
+    expected = f"changed MorphoBricks preprocessing to commit {setting('RELEASE_REF')[:12]} while"
+    with pytest.raises(RuntimeError, match=expected + ".*Restart the runtime"):
+        run_cell({}, INSTALL)
+    forced_then_installed(installer.pip, PINNED)
+    monkeypatch.delitem(sys.modules, "morphobricks_preprocessing")  # the restart
+    run_cell({}, INSTALL)
+    assert len(installer.pip) == 2  # nothing more is installed
 
 
 def test_an_upgrade_of_a_package_the_kernel_has_not_loaded_needs_no_restart(installer):

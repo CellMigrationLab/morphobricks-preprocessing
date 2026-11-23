@@ -49,7 +49,10 @@ A local checkout is installed in editable mode when it needs dependencies. Setup
 preprocessing version and commit, the normalization and ipywidgets versions, the notebook
 version and the selected source; after an installation it reads the commit again and stops if
 pip did not install `RELEASE_REF`. Installation needs internet access, and the GitHub option needs Git. If another copy
-of the package is already loaded, restart the kernel before switching source checkouts.
+of the package is already loaded, restart the kernel before switching source checkouts. When
+pip replaces a preprocessing the kernel had already imported, cell 1 stops and asks for a
+restart (the loaded module stays the old copy until then); run it again after the restart: it
+installs nothing more. The Cellpose notebook's cell 1 does the same.
 
 To install everything manually instead, run these commands in the environment used by
 your notebook kernel:
