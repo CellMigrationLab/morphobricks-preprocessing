@@ -291,8 +291,14 @@ old pin are refused with `spec_commit_mismatch`, as at every re-pin.
   and in `pyproject.toml` except the `[tool]` tables no build reads (Ruff, pytest, the code rules;
   `[project]`, `[build-system]` and `[tool.hatch]` stay strict). A cell that reaches code another
   way (a module loaded by name, `exec`, a command other than `python -m pip`) is refused, never
-  assumed unchanged. The Preprocessing notebook's tests read their cells and pins through the same
-  helpers (`code_sources`, `install_setting`).
+  assumed unchanged; so are a command reached by an alias, a `from` import or `get_ipython`, a
+  second install not at `@{RELEASE_REF}` and an IPython `!`/`%` line. Package code that runs a
+  file or text (`exec`, `runpy`, `spec_from_file_location`) is refused, a package module it names
+  in a string (`python -m morphobricks_preprocessing.x`) is followed, and the build must ship only
+  `src/morphobricks_preprocessing` with known `[tool.hatch]` settings and no `hatch.toml`. CI's
+  test job checks out the full history so this check runs there; a missing pin fails in CI
+  instead of skipping. The Preprocessing notebook's tests read their cells and pins through the
+  same helpers (`code_sources`, `install_setting`).
 
 - **Another memory limit recomputes the rows when planes are read in blocks**: the image QC
   neighbour metrics of a plane read in blocks depend on its blocks, so rows measured under

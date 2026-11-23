@@ -12,8 +12,15 @@ those import, at any depth and inside functions too, at ``RELEASE_REF`` and at `
 (:func:`module_closure`). :func:`pin_differences` names every file of that code, every
 non-Python file of the package, the build's own inputs and the install-relevant part of
 ``pyproject.toml`` that differ between the two commits. A use the derivation cannot follow
-(code loaded by a computed name, a command other than ``python -m pip``) is refused with
-:class:`PinScopeError`, never assumed unchanged.
+is refused with :class:`PinScopeError`, never assumed unchanged: in a cell, code loaded by a
+name or from text or a file, a command other than ``python -m pip`` (or one reached by an
+alias, a ``from`` import or IPython), an install other than at ``@{RELEASE_REF}``, an IPython
+``!``/``%`` line; in package code, a module loaded by a computed name or a file or text run;
+in the build, a second wheel package, an unknown backend or ``[tool.hatch]`` setting, or a
+``hatch.toml``. Package code that names a package module in a string runs it as an import.
+
+One known gap: package code that assembles a module name at runtime and passes it to
+something other than a loader (``[sys.executable, "-m", f"{PACKAGE}.{name}"]``) is not seen.
 """
 
 from __future__ import annotations
