@@ -66,7 +66,11 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
         python-version: ["3.11", "3.13"]
     steps:
+      # Full history: the Cellpose notebook's pin check compares its RELEASE_REF commit with
+      # HEAD and fails in CI when that commit is missing (issue #421). The history is ~9 MB.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
