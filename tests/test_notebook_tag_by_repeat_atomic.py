@@ -130,3 +130,29 @@ def test_a_row_click_saves_a_tags_and_b_refusal_together_or_neither(
     rows.override.confirm_button.click()
     assert OTHER not in rows.listed() and GONE in rows.listed()
     assert OTHER in _draft(exp[2]).tag_review.confirmed
+
+
+# After the one write: no second statement save or redraw (review an, FILE) ----------------------
+
+FILLED = (LEAD, ("ctrl", "rep2", "t2"))
+"""The rep2 units the row fills (their header fits it)."""
+
+
+def test_a_fast_row_click_marks_its_units_in_its_one_redraw(tmp_path, monkeypatch):
+    nb, exp, row, _ = _before_the_click(tmp_path, True)
+    for layout in nb.channel_grid.layouts:  # the image types: the markers need them
+        nb.channel_types.radios[layout.key].value = "channels"
+    grid, calls = nb.channel_grid, []
+    refresh, sync = grid.refresh, grid.matrix.sync_statement
+    monkeypatch.setattr(grid, "refresh", lambda: calls.append("refresh") or refresh())
+    monkeypatch.setattr(grid.matrix, "sync_statement", lambda *a: calls.append("sync") or sync(*a))
+    grid.by_repeat.buttons[row].click()
+    assert sorted(calls) == ["refresh", "sync"]  # at 1e4c3d6: each twice
+    assert all(_draft(exp[2]).units[k].channels_from == "unit" for k in FILLED)
+    assert set(FILLED) <= grid.matrix.own
+
+
+def test_a_refused_fast_row_click_switches_no_unit_to_its_own(tmp_path):
+    nb, _, row, _ = _before_the_click(tmp_path, True)
+    _click(nb, row, 1, "refused")
+    assert not set(FILLED) & nb.channel_grid.matrix.own
