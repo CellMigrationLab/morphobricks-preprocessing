@@ -117,8 +117,16 @@ class CellposeWorkflow:
         self.picker = self.loaded = self.nuclei_loaded = self.nuclei_settings = None
 
     def model_for(self, output: str) -> tuple[cp.LoadedModel, cp.Settings]:
-        """Return the model and the settings that segment the masks of ``output``."""
-        if output == cp.NUCLEI_OUTPUT and self.nuclei_loaded is not None:
+        """Return the model and the settings that segment the masks of ``output``.
+
+        Nuclei settings of their own without their model loaded are refused: the nuclei are
+        never segmented with the cells' model instead.
+        """
+        if output == cp.NUCLEI_OUTPUT and self.nuclei_settings is not None:
+            if self.nuclei_loaded is None:
+                raise SegmentationError(
+                    "The nuclei have their own model: load the nuclei model first (cell 5)."
+                )
             return self.nuclei_loaded, self.nuclei_settings
         return self.loaded, self.settings
 

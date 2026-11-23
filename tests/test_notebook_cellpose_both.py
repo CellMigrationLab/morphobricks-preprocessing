@@ -268,3 +268,40 @@ def test_the_record_of_both_is_plain_json_without_a_partner(cells):
     for mask_type, other in (("Cells", "Nuclei"), ("Nuclei", "Cells")):
         data = json.loads(record_path(cells.run.masks, mask_type).read_text(encoding="utf-8"))
         assert other not in json.dumps(data["batches"][0]["parameters"])
+
+
+# review fixes: no silent substitution, one failure does not stop the other batch ------------------
+
+
+def settings_and_cell_model(workflow):
+    """Set the cells' settings and load their model, as cell 5 does first."""
+    workflow.set_settings("", 0.4, 0.0, 8)
+    workflow.load("cpsam_v2", "", "cpu", False, False)
+
+
+def nothing_written(cells, *names):
+    masks = cells.run.masks
+    return all(not (masks / n).exists() and not record_path(masks, n).exists() for n in names)
+
+
+@pytest.mark.parametrize("failed_load", [False, True])
+def test_nuclei_settings_without_a_loaded_nuclei_model_are_refused(cells, monkeypatch, failed_load):
+    choose_both(cells)
+    workflow = cells.ns["workflow"]
+    settings_and_cell_model(workflow)
+    workflow.set_nuclei_settings("12", 0.7, 0.0, 8)
+    if failed_load:  # the nuclei model does not load
+
+        def refuse(*args, **kwargs):
+            raise cp.SegmentationError("no weights")
+
+        monkeypatch.setattr(cp, "load_model", refuse)
+        with pytest.raises(notebook_cellpose.CellStop, match="no weights"):
+            workflow.load_nuclei("cpsam", "", "cpu", False, False)
+    assert workflow.nuclei_loaded is None
+    with pytest.raises(notebook_cellpose.CellStop, match="load the nuclei model first"):
+        workflow.run()
+    assert cells.stub.calls == [] and workflow.results == {}  # refused before any image
+    with pytest.raises(notebook_cellpose.CellStop, match="load the nuclei model first"):
+        workflow.preview()  # the preview refuses the nuclei the same way
+    assert nothing_written(cells, "Cells", "Nuclei")
