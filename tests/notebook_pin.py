@@ -38,10 +38,13 @@ BACKEND_TABLES = {"hatchling.build": "hatch"}
 """The ``[tool]`` table each known build backend reads. Every other ``[tool]`` table (Ruff,
 pytest, the code rules) is read by no build and by no code of the package, so a change there
 installs the same thing. With an unknown backend the whole ``pyproject.toml`` is compared."""
-LOADERS = frozenset(
-    {"import_module", "__import__", "exec", "eval", "compile", "run_module", "run_path"}
-)
-"""Calls that load code by a name or text the import statements do not show."""
+NAME_LOADERS = frozenset({"import_module", "__import__"})
+"""Calls that import a module by a name given as a value, not in an import statement."""
+FILE_LOADERS = frozenset({"spec_from_file_location", "SourceFileLoader", "run_path", "run_module"})
+"""Calls that run a file or a module without an import statement (``importlib``, ``runpy``)."""
+TEXT_LOADERS = frozenset({"exec", "eval", "compile"})
+"""Builtins that run code from text. Matched only as bare names (or on ``builtins``): a method
+of the same name, such as a model's ``eval()``, runs no text."""
 SHELLS = frozenset({"subprocess", "os"})
 """The modules whose :data:`COMMANDS` start a program. A cell uses them only by their own name
 (no ``as``, no ``from ... import``, no other binding), so every command call is seen."""
@@ -94,6 +97,18 @@ def _call_name(node: ast.Call) -> str | None:
     return None
 
 
+def _loader(node: ast.Call) -> str | None:
+    """Return the name of a call that loads code no import statement shows, or None."""
+    name = _call_name(node)
+    if name in NAME_LOADERS | FILE_LOADERS:
+        return name
+    owner = node.func.value if isinstance(node.func, ast.Attribute) else None
+    builtin = owner is None or (
+        isinstance(owner, ast.Name) and owner.id in ("builtins", "__builtins__")
+    )
+    return name if name in TEXT_LOADERS and builtin else None
+
+
 def _starts_pip(node: ast.Call) -> bool:
     """Return whether a command call runs ``sys.executable -m pip``."""
     if not node.args or not isinstance(node.args[0], ast.List):
@@ -140,7 +155,7 @@ def _refuse_unseen_use(tree: ast.AST, where: str) -> None:
         if not isinstance(node, ast.Call):
             continue
         name = _call_name(node)
-        if name in LOADERS:
+        if _loader(node):
             raise PinScopeError(f"{where} loads code by {name}(): the pin check cannot follow it")
         owner = node.func.value if isinstance(node.func, ast.Attribute) else None
         is_command = isinstance(owner, ast.Name) and owner.id in ("subprocess", "os")
@@ -227,8 +242,10 @@ def _imported(text: str, module: str, path: str) -> list[str]:
             names.extend([base, *(f"{base}.{alias.name}" for alias in node.names)])
         elif isinstance(node, ast.Constant) and isinstance(node.value, str):
             names.extend([node.value] if DOTTED_NAME.fullmatch(node.value) else [])
-        elif isinstance(node, ast.Call) and _call_name(node) in ("import_module", "__import__"):
+        elif isinstance(node, ast.Call) and _loader(node) in NAME_LOADERS:
             _refuse_computed_name(node, path)
+        elif isinstance(node, ast.Call) and _loader(node):
+            raise PinScopeError(f"{path} runs code from a file or text: {ast.unparse(node)}")
     return names
 
 

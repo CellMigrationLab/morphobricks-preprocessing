@@ -232,6 +232,10 @@ UNSEEN = {
     ),
     "__import__": "name = 'cli'\n__import__(name)\n",
     "code run from text": "exec(open('cell.py').read())\n",
+    "code run from text by builtins": "import builtins\n\nbuiltins.exec('x = 1')\n",
+    "a file loaded by its location": (
+        "from importlib import util\n\nutil.spec_from_file_location('m', 'm.py')\n"
+    ),
     "the package named in a string": "import sys\n\nsys.modules['morphobricks_preprocessing']\n",
     "a program run by subprocess": (
         "import subprocess\n\nsubprocess.run(['morphobricks-preprocessing', 'run'])\n"
@@ -264,6 +268,18 @@ def test_package_code_loading_a_module_by_a_computed_name_is_refused(repo):
 CLI_CHANGED = {f"{PKG}/unused.py": "def other():\n    return 3\n"}
 """A change only the command line module runs (``cli`` imports ``unused``)."""
 STARTS_CLI = "['morphobricks-preprocessing', 'run']"
+RUNS_UNUSED = """\
+import builtins
+import runpy
+from importlib import util
+from pathlib import Path
+
+HERE = Path(__file__)
+
+
+def load():
+    return {}
+"""
 REFUSED = {
     # A command the cell starts by a name the COMMANDS check did not look at.
     "a command by an aliased subprocess": (
@@ -301,6 +317,36 @@ REFUSED = {
         CLI_CHANGED,
         [*NOTEBOOK, "get_ipython().system('morphobricks-preprocessing run')\n"],
     ),
+    # Package code that runs another file without importing it.
+    "a file run from its text": (
+        {f"{PKG}/model.py": RUNS_UNUSED.format("exec(HERE.with_name('unused.py').read_text())")},
+        CLI_CHANGED,
+        NOTEBOOK,
+    ),
+    "a file run by runpy": (
+        {f"{PKG}/model.py": RUNS_UNUSED.format("runpy.run_path(HERE.with_name('unused.py'))")},
+        CLI_CHANGED,
+        NOTEBOOK,
+    ),
+    "a module run by runpy": (
+        {f"{PKG}/model.py": RUNS_UNUSED.format("runpy.run_module(f'{__package__}.unused')")},
+        CLI_CHANGED,
+        NOTEBOOK,
+    ),
+    "a file loaded by its location": (
+        {
+            f"{PKG}/model.py": RUNS_UNUSED.format(
+                "util.spec_from_file_location('u', HERE.with_name('unused.py'))"
+            )
+        },
+        CLI_CHANGED,
+        NOTEBOOK,
+    ),
+    "text run by builtins.exec": (
+        {f"{PKG}/model.py": RUNS_UNUSED.format("builtins.exec('import os')")},
+        CLI_CHANGED,
+        NOTEBOOK,
+    ),
 }
 FOLLOWED = {
     # Package code that runs a package module by naming it in a string.
@@ -333,6 +379,17 @@ def test_a_use_the_review_found_is_refused(repo, case):
     pin, head = _pin_and_head(repo, pin_files, head_files)
     with pytest.raises(PinScopeError):
         pin_differences(repo.path, pin, head, cells)
+
+
+ACCEPTED = {
+    # A method named like a builtin runs no text: Cellpose's model.eval(), torch's eval().
+    "a method named eval": [*NOTEBOOK, "model = workflow\nmodel.eval()\n"],
+}
+
+
+@pytest.mark.parametrize("cells", ACCEPTED.values(), ids=list(ACCEPTED))
+def test_a_cell_use_the_check_follows_is_accepted(repo, cells):
+    assert pin_differences(repo.path, repo.pin, repo.pin, cells) == []
 
 
 @pytest.mark.parametrize("case", FOLLOWED)
