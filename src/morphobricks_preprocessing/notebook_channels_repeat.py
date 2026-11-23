@@ -9,9 +9,11 @@ saved pairing puts that folder name of different conditions into different biolo
 the row is flagged with each condition's repeat and fills nothing.
 
 Each unit's header is still checked against the row: a unit whose header contradicts it is
-listed with the contradiction and not filled, never guessed. The list always shows the current
-state: a listed unit leaves it once its current tags fit its header (the user tagged it), and
-while any unit is listed the description is not published (:meth:`RepeatRows.listed`).
+listed with the contradiction and not filled, never guessed. A listed unit leaves the list only
+by an explicit action on that unit: its editor's Confirm, a one-click confirmation, a hand-tag
+of it (each recorded as its confirmation) or a row click that fills it. A header or aliases that
+fit later never release it, and only a unit removed from the folder drops its record. While any
+unit is listed the description is not published (:meth:`RepeatRows.listed`).
 
 - **Fast mode** (Spec ADR 0006): a row offers only the units outside the layout (another
   channel count, a refused header, or switched to their own); units that fit the layout are
@@ -76,7 +78,8 @@ class Refusal(NamedTuple):
     """The labels and aliases when the unit was first refused: what its header is read against.
 
     Aliases saved afterwards, by confirming or tagging other units, are not evidence for this
-    unit: only the user confirming it (or a changed image header) clears the refusal.
+    unit, and neither is a changed image header: only an action on this unit releases the
+    refusal (:meth:`RepeatRows._released`).
     """
 
 
@@ -93,10 +96,10 @@ class RepeatRows:
         """Units a row did not fill: the contradiction, the unit, its row's first unit and tags.
 
         The first unit is None for a unit whose images disagree (:func:`.repeat_tags.repeat_apart`).
-        Only which units a click refused is remembered; whether one is still listed is read from
-        its current tags against its header (:meth:`listed`), never from what happened since. A
-        unit leaves this record after a save that fitted it succeeded (:meth:`apply`), or when
-        the layouts change and it is gone or no longer contradicts its row (:meth:`reconcile`).
+        Whether one is still listed is read from its persisted confirmation only
+        (:meth:`_released`), never from aliases or headers that fit later. A unit leaves this
+        record after a row's save that fitted it succeeded (:meth:`apply`), or when it is removed
+        from the folder (:meth:`reconcile`).
         """
         self.override = OverrideEditor(self)
         """The per-unit override of a listed unit (:mod:`.notebook_channels_override`)."""
@@ -110,16 +113,19 @@ class RepeatRows:
         """What the rows say now: the last notice and every unit still listed."""
 
     def listed(self) -> dict[UnitKey, str]:
-        """Return the units still listed: refused by a row, and not answered in agreement.
+        """Return the units still listed: refused by a row, and not released by an action on them.
 
-        Derived from the current answers on every call: a unit is listed while its tags are
-        incomplete or contradict its header, and leaves the list when they fit it, however it got
-        there. A unit in no row (colour, with channels R, G and B, or unusable) is not listed
-        while it is so: there are no channel tags to confirm, and its refusal is kept
-        (:meth:`reconcile`) to list it again once it is back in a row. A unit whose images
-        disagree stays listed while they do: no tags make it one header. Nothing is listed from
-        the memory of another draft (the notebook was pointed elsewhere and the grid is not open
-        on it yet).
+        A refused unit is listed until the user acts on THAT unit: its editor's Confirm,
+        **Confirm the same tags** or **Confirm all N like it**, or a deliberate hand-tag of it
+        (or a strict-mode block click on it), each recorded as its confirmation in the draft
+        (:meth:`_released`, the same rule as :meth:`standing` and the save). Tags that fit its
+        header only because another unit saved matching aliases, or because its header changed,
+        never release it; a confirmation lapses when its tags or its own header names change. A
+        unit in no row (colour, with channels R, G and B, or unusable) is not listed while it is
+        so: there are no channel tags to confirm, and its refusal is kept (:meth:`reconcile`) to
+        list it again once it is back in a row. A unit whose images disagree stays listed while
+        they do: no tags make it one header. Nothing is listed from the memory of another draft
+        (the notebook was pointed elsewhere and the grid is not open on it yet).
         """
         if self.other_draft():
             return {}
@@ -349,7 +355,8 @@ class RepeatRows:
         (:meth:`.notebook_channels_matrix.MatrixView.trust_headers`), and an untagged refused
         unit is never cleared (:meth:`reconcile` keeps it while its own tags are incomplete). It
         leaves this set only by an explicit action on it: its confirmation
-        (:func:`.repeat_tags.override_holds`), a row click that fills it, or the user tagging it.
+        (:func:`.repeat_tags.override_holds`; a hand-tag of it is recorded as one,
+        :meth:`hand_tagged`), or a row click that fills it.
         """
         if self.other_draft():
             return set()
@@ -388,8 +395,10 @@ class RepeatRows:
             "error",
             f"{len(lines)} imaging unit(s) not filled: their header contradicts their repeat "
             "folder's row, or their images do not agree with each other. Nothing is reordered "
-            "or guessed; tag the first on their own, and correct or separate the images of the "
-            "others. The description is not saved while they are listed.",
+            "or guessed. Each leaves this list only by an action on it: confirm its tags "
+            "(override it) or tag it by hand; a header or alias that fits later never releases "
+            "it. Correct or separate the images of a unit whose images disagree. The "
+            "description is not saved while they are listed.",
             lines,
             raw=True,
         )

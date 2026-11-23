@@ -182,3 +182,18 @@ def test_b2_removing_the_folder_of_a_unit_whose_images_disagreed_drops_its_recor
     rows = nb.channel_grid.by_repeat
     assert MIXED not in rows.refused and MIXED not in rows.listed()
     assert MIXED not in _review(out).refused
+
+
+# The words: the list says what releases a refusal ---------------------------------------------
+
+
+def test_the_list_says_only_an_action_on_the_unit_releases_it(tmp_path, statement_off):
+    from morphobricks_preprocessing import notebook_channels_repeat as repeat
+
+    nb, _, rows = _strict(tmp_path, statement_off)
+    nb.channel_grid.refresh()
+    # at 7e9daf4: "tag the first on their own", and "however it got there" in listed()
+    assert "only by an action on it" in rows.message
+    assert "a header or alias that fits later never releases it" in rows.message
+    assert "however it got there" not in repeat.RepeatRows.listed.__doc__
+    assert "a changed image header" not in repeat.Refusal.channels.__doc__
