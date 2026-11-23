@@ -23,6 +23,8 @@ from test_segmentation_handoff import EXTRA_FIRST
 from test_stage3_channels import described_run, extra_stain
 
 BUILTINS = ("cpsam_v2", "cpsam", "cpdino", "cpdino-vitb")
+PLOT_TITLES = ("original image", "predicted outlines", "predicted masks", "predicted cell pose")
+"""The titles of ``cellpose.plot.show_segmentation``'s four panels in 4.2.1.1."""
 
 
 def weights_bytes(name):
@@ -85,7 +87,9 @@ def model_class(state):
             state.calls.append(SimpleNamespace(x=np.array(x), kwargs=kwargs))
             if state.fail is not None:
                 state.fail(x)
-            return labels_for(x.shape[1:]), [], []
+            shape = x.shape[1:]
+            flows = [np.full((*shape, 3), 7, np.uint8), np.zeros((2, *shape), np.float32)]
+            return labels_for(shape), flows, []
 
     return Model
 
@@ -99,13 +103,22 @@ def modules(state):
     models.CellposeModel = model_class(state)
     if state.has_cpdino:
         models.CPDINO = object
+    plot = types.ModuleType("cellpose.plot")
+
+    def show_segmentation(fig, img, maski, flowi, channels=(0, 0), file_name=None):
+        # Cellpose 4.2.1.1's signature; four panels, like the real one (nothing is saved).
+        state.plotted.append(SimpleNamespace(img=img, masks=maski, flow=flowi, channels=channels))
+        for n, title in enumerate(PLOT_TITLES, start=1):
+            fig.add_subplot(1, 4, n).set_title(title)
+
+    plot.show_segmentation = show_segmentation
     package = types.ModuleType("cellpose")
-    package.models = models
+    package.models, package.plot = models, plot
     torch = types.ModuleType("torch")
     torch.device = Device
     torch.cuda = SimpleNamespace(is_available=lambda: state.cuda)
     torch.backends = SimpleNamespace(mps=SimpleNamespace(is_available=lambda: state.mps))
-    return {"cellpose": package, "cellpose.models": models, "torch": torch}
+    return {"cellpose": package, "cellpose.models": models, "cellpose.plot": plot, "torch": torch}
 
 
 def install(monkeypatch, tmp_path, **options):
@@ -121,6 +134,7 @@ def install(monkeypatch, tmp_path, **options):
     models_dir.mkdir(exist_ok=True)
     state = SimpleNamespace(
         calls=[],
+        plotted=[],
         constructed=[],
         downloaded=[],
         models_dir=models_dir,

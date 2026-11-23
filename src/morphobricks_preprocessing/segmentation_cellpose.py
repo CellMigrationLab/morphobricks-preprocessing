@@ -59,6 +59,7 @@ from .segmentation_cellpose_model import (
     check_dinov3,
     choose_model,
     default_normalization,
+    device_status,
     dinov3_install_command,
     install_dinov3,
     installed_dinov3_commit,
@@ -66,11 +67,21 @@ from .segmentation_cellpose_model import (
     load_model,
     weights_file,
 )
+from .segmentation_cellpose_run import channel_coverage, next_steps_lines, open_run
 from .segmentation_cellpose_settings import (
+    CELL_OUTPUT,
+    CELL_ROLE,
     FLOW_ITERATIONS,
+    NO_CHANNEL,
+    NORMALIZE_REFUSAL,
+    NUCLEAR_ROLE,
+    NUCLEI_OUTPUT,
+    OUTPUT_MASK_TYPES,
     Settings,
+    channel_roles_entry,
     diameter_from_text,
     flow_iterations,
+    input_channels,
     rescale_factor,
 )
 from .segmentation_handoff import (
@@ -85,7 +96,6 @@ from .segmentation_record import (
     SegmentationError,
     SegmentationRecord,
     SegmentedImage,
-    check_mask_type,
     mask_sha256,
     new_batch_id,
     read_record,
@@ -94,22 +104,35 @@ from .segmentation_record import (
 )
 
 __all__ = [
+    "channel_coverage",
+    "next_steps_lines",
+    "open_run",
     "BUILTIN_MODELS",
     "CELLPOSE_VERSION",
     "DEFAULT_MODEL",
     "DINOV3_COMMIT",
     "DINOV3_URL",
     "DINO_MODELS",
+    "CELL_OUTPUT",
+    "CELL_ROLE",
     "FLOW_ITERATIONS",
+    "NO_CHANNEL",
+    "NORMALIZE_REFUSAL",
+    "NUCLEAR_ROLE",
+    "NUCLEI_OUTPUT",
+    "OUTPUT_MASK_TYPES",
     "LoadedModel",
     "ModelChoice",
     "Settings",
+    "channel_roles_entry",
     "check_device",
     "check_dinov3",
     "choose_model",
     "default_normalization",
+    "device_status",
     "diameter_from_text",
     "dinov3_install_command",
+    "input_channels",
     "install_dinov3",
     "installed_dinov3_commit",
     "installed_version",
@@ -145,12 +168,15 @@ def normalization(settings: Settings) -> dict[str, Any]:
     """Return the full normalisation given to Cellpose: its defaults now, with the user's values.
 
     The defaults (``tile_norm_blocksize``, ``sharpen_radius``, ``invert``, ``lowhigh``, ...) come
-    from Cellpose's module global at call time, copied; ``normalize`` and the percentiles are
-    then set from the settings. Nothing is left to Cellpose's defaults, so the record holds all.
+    from Cellpose's module global at call time, copied; ``normalize`` (always on: a setting
+    that is not True is refused) and the percentiles are then set. Nothing is left to Cellpose's
+    defaults, so the record holds all.
     """
+    if settings.normalize is not True:  # Settings refuses it; never reach Cellpose without it
+        raise SegmentationError(NORMALIZE_REFUSAL)
     return {
         **default_normalization(),
-        "normalize": settings.normalize,
+        "normalize": True,
         "percentile": list(NORMALIZE_PERCENTILE),
     }
 
@@ -205,6 +231,15 @@ def segment_image(loaded: LoadedModel, settings: Settings, stack: np.ndarray) ->
         For a stack that is not ``(C, Y, X)`` with 1 to 3 channels, or a result that is not a
         2D label image.
     """
+    return evaluate(loaded, settings, stack)[0]
+
+
+def evaluate(loaded: LoadedModel, settings: Settings, stack: np.ndarray) -> tuple[np.ndarray, Any]:
+    """Return the labels of :func:`segment_image` and Cellpose's flows (``flows[0]`` is RGB).
+
+    The flows are for the preview (``cellpose.plot.show_segmentation``); the batch keeps only
+    the labels. None when Cellpose returned no flows.
+    """
     array = np.asarray(stack)
     if array.ndim != 3:
         raise SegmentationError(f"The stack is {array.ndim}D; Cellpose gets (C, Y, X).")
@@ -213,7 +248,7 @@ def segment_image(loaded: LoadedModel, settings: Settings, stack: np.ndarray) ->
     labels = np.asarray(out[0] if isinstance(out, tuple) else out)
     if labels.ndim != 2:
         raise SegmentationError(f"Cellpose returned {labels.ndim}D labels; a mask is 2D (Y, X).")
-    return labels
+    return labels, (out[1] if isinstance(out, tuple) and len(out) > 1 else None)
 
 
 def inference_parameters(
@@ -263,6 +298,9 @@ class SegmentationJob:
         The mask type and the masks folder.
     overwrite
         Replace masks that are already there (default: skip them).
+    channel_roles, output
+        The role of each of ``plan.channel_ids`` and the output (``cells`` or ``nuclei``),
+        recorded with them; ``()`` and None record none (null).
     """
 
     inputs: RunInputs
@@ -272,11 +310,14 @@ class SegmentationJob:
     mask_type: str
     masks_root: Path
     overwrite: bool = False
+    channel_roles: tuple[str, ...] = ()
+    output: str | None = None
 
     def __post_init__(self) -> None:
-        """Refuse a job without resolved channels, before anything is segmented."""
+        """Refuse a job without resolved channels or with roles that do not fit them."""
         if self.plan is None:
             raise SegmentationError("No channels are resolved: choose channels the run has.")
+        channel_roles_entry(self.plan.channel_ids, self.channel_roles, self.output)
 
 
 @dataclass(frozen=True)
@@ -413,7 +454,13 @@ def _batch(job: SegmentationJob, batch_id: str, images: list[SegmentedImage]) ->
         model_name=loaded.name,
         model_sha256=loaded.sha256,
         model_file=loaded.file,
-        parameters=inference_parameters(loaded, job.settings, job.plan.channel_ids),
+        parameters={
+            **inference_parameters(loaded, job.settings, job.plan.channel_ids),
+            "channel_roles": channel_roles_entry(
+                job.plan.channel_ids, job.channel_roles, job.output
+            ),
+            "output": job.output,
+        },
         channel_ids=job.plan.channel_ids,
         device=loaded.device,
         run_folder=os.fspath(job.inputs.output_folder),
@@ -542,49 +589,3 @@ def run_batch(
         stopped += f" The record could not be written either: {exc}"
         return BatchResult(_batch(job, started, entries), None, stopped, frozenset(attention))
     return BatchResult(batch, record, stopped, frozenset(attention))
-
-
-# --- the run, the channels and what is shown --------------------------------------------------
-
-
-def open_run(run_folder: str) -> RunInputs:
-    """Open the run in ``run_folder`` (preprocessing's own checks; refusals are unchanged).
-
-    Raises
-    ------
-    SegmentationError
-        For a blank folder.
-    RunInputsError
-        For a run that cannot be opened (:meth:`.run_inputs.RunInputs.open`).
-    """
-    if not run_folder.strip():
-        raise SegmentationError("Give the run's output folder (the one holding run_manifest.json).")
-    return RunInputs.open(Path(run_folder.strip()))
-
-
-def channel_coverage(inputs: RunInputs) -> dict[str, tuple[int, int]]:
-    """Return ``{channel ID: (images that have it, images)}``, in the order first met."""
-    fovs = inputs.fovs()
-    order = dict.fromkeys(c for f in fovs for c in (f.channel_ids or ()))
-    return {c: (sum(c in (f.channel_ids or ()) for f in fovs), len(fovs)) for c in order}
-
-
-def next_steps_lines(mask_type: str, masks_root: str | os.PathLike) -> tuple[str, ...]:
-    """Return what to do after the masks are made, as lines of text.
-
-    Raises
-    ------
-    SegmentationError
-        For a mask type preprocessing would refuse.
-    """
-    check_mask_type(mask_type)
-    return (
-        f"1. Declare the new mask type in the experiment description, in the preprocessing "
-        f"notebook (step 4, Masks) or by adding to morphobricks.toml:  [masks.{mask_type}]  "
-        f'source_type = "{mask_type}"  representation = "instances".',
-        "2. Save the description.",
-        f"3. Run preprocessing again with the masks folder {os.fspath(masks_root)} (the "
-        "histograms are reused; the masks are read and checked).",
-        "4. Describe the masks (step 4 of the preprocessing notebook).",
-        "5. Then continue with MorphoFeature.",
-    )
