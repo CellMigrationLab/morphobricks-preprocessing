@@ -48,6 +48,14 @@ if TYPE_CHECKING:
 START = "Override this unit (start from the row's tags)"
 
 
+OTHER_DRAFT = ui.status(
+    "error",
+    "Not saved: these refusals and confirmations belong to another draft.",
+    ["Open Channels again to read this draft's own."],
+)
+"""A click while memory is another draft's: nothing is written (:meth:`.RepeatRows.other_draft`)."""
+
+
 class OverrideEditor:
     """The per-unit override of the listed units, drawn under the rows."""
 
@@ -276,11 +284,7 @@ class OverrideEditor:
         grid, layouts = rows.grid, {u.key: u for u in rows.grid.layouts}
         save, cells, records = {}, [], {}
         if rows.other_draft():  # the record is another draft's: never written into this one
-            rows.notice = ui.status(
-                "error",
-                "Not saved: these refusals and confirmations belong to another draft.",
-                ["Open Channels again to read this draft's own."],
-            )
+            rows.notice = OTHER_DRAFT
             grid.refresh()
             return False
         for key, draft in drafts.items():
@@ -304,4 +308,4 @@ class OverrideEditor:
         return True
 
 
-__all__ = ["START", "OverrideEditor"]
+__all__ = ["OTHER_DRAFT", "START", "OverrideEditor"]

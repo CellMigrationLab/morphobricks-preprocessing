@@ -108,6 +108,14 @@ old pin are refused with `spec_commit_mismatch`, as at every re-pin.
     after a restart. Before, the re-check dropped it and fast mode could tag it from its header.
   - *Check and save* is refreshed right after a confirmation: the save button opens at the last
     confirmation (`RepeatRows.adopt`, called by `TagGrid.commit` before it refreshes).
+  - A row click that fills some units and refuses others saves their tags, aliases and the
+    resulting tag review (the new refusals, the refusals of the filled units dropped) in ONE
+    draft write (`RepeatRows.apply` passes the review as `TagGrid.commit`'s `then`; one
+    review-only write when it fills nothing), and memory takes the new refusals only once that
+    write succeeded (`RepeatRows.adopt`). Before, the tags were written first and the refusals
+    in a second write: a failure or an interruption between the two left a draft with the
+    filled units' tags and no refusal of the others, which fast mode's header trust could tag
+    after a restart. A refused write now leaves the draft and the session as before the click.
 - **Cellpose notebook, a reused batch ID is not recovered as the old batch's (external audit B1,
   22 November 2026).** When the record write failed, the recovery check compared only the latest
   entry's batch ID and mask SHA-256, so a reused ID with another model or settings and identical

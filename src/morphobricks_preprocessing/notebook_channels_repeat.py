@@ -39,7 +39,7 @@ from . import notebook_style as ui
 from .channel_labels import tags_of
 from .channel_matrix import REFUSED, difference_text, differences
 from .draft_answers import ChannelAnswer, DraftAnswers
-from .notebook_channels_override import OverrideEditor
+from .notebook_channels_override import OTHER_DRAFT, OverrideEditor
 from .notebook_channels_view import CHOOSE, columns, unit_name
 from .repeat_review import Override, RefusedUnit, TagReview
 from .repeat_tags import (
@@ -107,6 +107,8 @@ class RepeatRows:
         """Which draft the record above belongs to (:meth:`other_draft`); None before the first."""
         self.unsaved = False
         """True while the last save of the review was refused (retried at the next change)."""
+        self.staged: dict[UnitKey, Refusal] | None = None
+        """A row click's refusals while its one write is made; memory only once it succeeded."""
         self.notice = ""
         """A one-shot message of the last click (shown once, then cleared)."""
         self.message = ""
@@ -255,23 +257,28 @@ class RepeatRows:
         the draft it came from: with another draft open nothing is written. Returns False when
         the review could not be saved.
         """
-        store, mine = self.grid.store, self._review()
-        answers = store.answers()
-        ok = True
-        if self.other_draft():
-            ok = False  # memory is another draft's: never written into this one
-        elif (answers.tag_review or TagReview()) != mine:
-            ok = store.update(replace(answers, tag_review=mine))
+        ok = self._write(self._review())
         self.unsaved = not ok
         return ok
+
+    def _write(self, review: TagReview) -> bool:
+        """Write the whole tag review into the draft when it differs; False when refused."""
+        if self.other_draft():
+            return False  # memory is another draft's: never written into this one
+        answers = self.grid.store.answers()
+        same = (answers.tag_review or TagReview()) == review
+        return same or self.grid.store.update(replace(answers, tag_review=review))
 
     def adopt(self) -> None:
         """Take the confirmations a successful tag write just saved, as the draft now holds them.
 
         Called by :meth:`.TagGrid.commit` after a write that set the whole tag review, before it
         redraws and refreshes *Check and save*: the check reads the confirmations of the very
-        write, never the ones before it. That write held the whole review (:attr:`unsaved`).
+        write, never the ones before it. That write held the whole review (:attr:`unsaved`);
+        after a row click it also held the click's refusals (:attr:`staged`), taken here.
         """
+        if self.staged is not None:  # a row click's refusals, saved by this very write
+            self.refused, self.staged = self.staged, None
         review = self.grid.store.answers().tag_review or TagReview()
         self.override.confirmed = {k: v for k, v in review.confirmed.items() if k in self.refused}
         self.unsaved = False
@@ -291,11 +298,15 @@ class RepeatRows:
         self.override.confirmed = {}
         self.override.editing, self.override.drafts = None, {}
 
-    def _review(self, confirmed: Mapping[UnitKey, Override] | None = None) -> TagReview:
+    def _review(
+        self,
+        confirmed: Mapping[UnitKey, Override] | None = None,
+        refusals: Mapping[UnitKey, Refusal] | None = None,
+    ) -> TagReview:
         """Return what is refused and confirmed now, as the draft file keeps it.
 
-        ``confirmed`` replaces the confirmations in memory (the record a confirmation is about to
-        save together with its tags, :meth:`.OverrideEditor._confirm`).
+        ``confirmed`` and ``refusals`` replace the memory (the record a click is about to save
+        together with its tags, :meth:`.OverrideEditor._confirm` and :meth:`apply`).
         """
         refused = {
             key: RefusedUnit(
@@ -303,7 +314,7 @@ class RepeatRows:
                 None if old.lead is None else old.lead.key,
                 {k: tuple(a.header_names) for k, a in old.channels.items() if a.header_names},
             )
-            for key, old in self.refused.items()
+            for key, old in (self.refused if refusals is None else refusals).items()
         }
         return TagReview(refused, dict(self.override.confirmed if confirmed is None else confirmed))
 
@@ -492,40 +503,51 @@ class RepeatRows:
         self.pending[key][index] = value
 
     def apply(self, key: GroupKey, group: tuple) -> bool:
-        """Save the row's tags for every offered unit its header does not contradict."""
+        """Save the row's tags for every offered unit its header does not contradict.
+
+        The tags, their aliases and the review the click leaves (its new refusals; the filled
+        units' refusals dropped) are ONE draft write (``TagGrid.commit(..., then)``), or one
+        review-only write when it fills nothing. Memory takes it once saved (:meth:`adopt`): a
+        failed write leaves the draft and memory as before, never tags without a refusal.
+        """
         tags = self.pending.get(key, [])
         named = [t for t in tags if t]
         answers = self.grid.store.answers()
         members = repeat_members(self.grid.layouts, key[0])  # the whole folder name, not this row
         if pairing_collision(answers, members) is not None:
             return False
-        if (why := self._row_error(tags)) is not None:
-            self.notice = ui.status("error", "Not saved.", [why])
+        if (why := self._row_error(tags)) is not None or self.other_draft():
+            self.notice = ui.status("error", "Not saved.", [why]) if why else OTHER_DRAFT
             self.grid.refresh()
             return False
         frozen = {k: old.channels for k, old in self.refused.items()}
         save, cells, refused = repeat_fill(answers, group, named, self.grid.labels, frozen)
-        for unit, found in refused.items():
+        staged, lead = dict(self.refused), repeat_lead(group)
+        found = {u: (_found_text(f), lead) for u, f in refused.items()}
+        found |= {u: (html.escape(why), None) for u, why in repeat_apart(group).items()}
+        for unit, (text, ref) in found.items():
             layout = next(u for u in group if u.key == unit)
             snapshot = frozen.get(unit, answers.channels)  # kept from the first refusal
-            self.refused[unit] = Refusal(
-                _found_text(found), layout, repeat_lead(group), tuple(named), snapshot
-            )
-        for unit, why in repeat_apart(group).items():
-            layout = next(u for u in group if u.key == unit)
-            snapshot = frozen.get(unit, answers.channels)
-            self.refused[unit] = Refusal(html.escape(why), layout, None, tuple(named), snapshot)
-        if not save:
-            self.persist()
-            self.grid.refresh()
-            return False
-        ok = self._commit_user(save, cells)
-        if ok:  # a refusal is dropped only once the save that fitted the unit succeeded
-            for unit in save:
-                self.refused.pop(unit, None)
-                self.override.confirmed.pop(unit, None)
-        if not self.persist() and ok:
-            self.grid.refresh()  # shows the line that the review is not saved
+            staged[unit] = Refusal(text, layout, ref, tuple(named), snapshot)
+        for unit in save:  # filled by this click: its refusal goes with the same write
+            staged.pop(unit, None)
+        kept = {k: v for k, v in self.override.confirmed.items() if k in staged}
+        review = self._review(kept, staged)
+        self.staged = staged  # memory takes it in :meth:`adopt`, after the write succeeded
+        try:
+            ok = self._commit_user(save, cells, review) if save else self._save_review(review)
+        finally:
+            self.staged = None
+        return ok and bool(save)
+
+    def _save_review(self, review: TagReview) -> bool:
+        """Write a click's whole tag review alone (it filled no unit); memory takes it if saved."""
+        ok = self._write(review)
+        if ok:
+            self.adopt()
+        else:
+            self.notice = ui.status("error", "Not saved.", [self.grid.store.refusal()])
+        self.grid.refresh()
         return ok
 
     @staticmethod
