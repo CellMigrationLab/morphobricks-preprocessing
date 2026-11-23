@@ -267,7 +267,9 @@ old pin are refused with `spec_commit_mismatch`, as at every re-pin.
   When pip replaced a preprocessing the kernel had already imported, both cells stop and ask for
   a restart: the version is the same, so only the loaded module shows it. If pip still keeps
   another commit after that, the stop gives the exact force-reinstall command instead of asking
-  for a restart that would not help.
+  for a restart that would not help. Outside a local checkout, both cells stop when the imported
+  package is not inside the folder pip installed it in (a checkout's `src` as the working
+  folder), so the banner never shows the pinned commit for other code.
 - **Tag this repeat folder: refusals after a folder re-check** (#372): when the tag grid opens
   on new layouts, `RepeatRows.reconcile()` drops the refused units that are no longer in an
   offered row (removed, now colour or unusable) and recomputes the others against their row's

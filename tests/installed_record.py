@@ -28,7 +28,8 @@ def install_record_double(monkeypatch, state):
     """Answer ``distribution(name).read_text("direct_url.json")`` from ``state.direct_url``.
 
     ``state.direct_url`` is the file's text, None for no file, or an exception to raise; a
-    package missing from ``state.versions`` is not installed.
+    package missing from ``state.versions`` is not installed. ``locate_file`` answers from
+    ``state.site``, the folder pip installed into.
     """
 
     class Distribution:
@@ -37,6 +38,9 @@ def install_record_double(monkeypatch, state):
             if isinstance(state.direct_url, Exception):
                 raise state.direct_url
             return state.direct_url
+
+        def locate_file(self, path):
+            return state.site / path
 
     def distribution(name):
         if name not in state.versions:

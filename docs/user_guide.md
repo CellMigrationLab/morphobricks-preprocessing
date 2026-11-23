@@ -53,7 +53,10 @@ that replaces it (a restart would not help there). Installation needs internet a
 of the package is already loaded, restart the kernel before switching source checkouts. When
 pip replaces a preprocessing the kernel had already imported, cell 1 stops and asks for a
 restart (the loaded module stays the old copy until then); run it again after the restart: it
-installs nothing more. The Cellpose notebook's cell 1 does the same.
+installs nothing more. The Cellpose notebook's cell 1 does the same. Both also stop when the
+package the kernel imports is not the copy pip installed (for example when the working folder
+is a checkout's `src` folder): pip's record would then name a commit that is not the code
+running.
 
 To install everything manually instead, run these commands in the environment used by
 your notebook kernel:

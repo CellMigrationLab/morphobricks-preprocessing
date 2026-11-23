@@ -6,10 +6,12 @@ the installed versions and pip's PEP 610 record as real pip does (``installed_re
 
 import subprocess
 import sys
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
+import morphobricks_preprocessing
 from installed_record import (
     editable_record,
     forced_then_installed,
@@ -33,6 +35,7 @@ def installer(monkeypatch):
     state.direct_url = git_record(setting("RELEASE_REF"), setting("REPOSITORY"))
     state.pip = []
     state.upgrades = {}  # versions pip changes when it runs
+    state.site = Path(morphobricks_preprocessing.__file__).resolve().parents[1]  # this package
     import importlib.metadata as metadata
 
     def fake_version(name):
@@ -174,6 +177,23 @@ def test_replacing_a_loaded_preprocessing_of_the_same_version_says_to_restart(
     monkeypatch.delitem(sys.modules, "morphobricks_preprocessing")  # the restart
     run_cell({}, INSTALL)
     assert len(installer.pip) == 2  # nothing more is installed
+
+
+@pytest.mark.parametrize("override", [False, True])
+def test_a_preprocessing_imported_from_outside_the_install_is_refused(
+    installer, tmp_path, override
+):
+    # pip's record names the pin, but a folder earlier on sys.path holds the copy imported.
+    installer.site = tmp_path / "site-packages"
+    namespace = {}
+    if override:  # a developer's own copy: used as it is
+        run_overridden(namespace)
+        assert namespace["SETUP_RECORD"]["development_override"] is True
+        return
+    with pytest.raises(RuntimeError, match="not from the copy pip installed in") as stop:
+        run_cell(namespace, INSTALL)
+    assert "notebook_cellpose.py" in str(stop.value) and str(installer.site) in str(stop.value)
+    assert namespace["SETUP_RECORD"] == {}
 
 
 def test_an_upgrade_of_a_package_the_kernel_has_not_loaded_needs_no_restart(installer):

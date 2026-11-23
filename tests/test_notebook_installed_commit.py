@@ -7,6 +7,7 @@ reads the commit with the same functions (one text in both cells, tested here).
 """
 
 import ast
+import importlib
 import json
 import subprocess
 import sys
@@ -21,9 +22,16 @@ from test_notebook_setup import INSTALL, RELEASE_REF, REPOSITORY, checkout_at
 from test_notebook_setup import setup_environment as cell_1  # noqa: F401
 
 NOTEBOOKS = Path(__file__).parents[1] / "notebooks"
-INSTALLED_COMMIT = ("_direct_url", "_installed_commit", "_replace_other_commit", "_loaded")
-"""The install cells' functions that read the installed commit, replace another one and see a
-copy the kernel already loaded: one text in both notebooks."""
+INSTALLED_COMMIT = (
+    "_direct_url",
+    "_installed_commit",
+    "_replace_other_commit",
+    "_loaded",
+    "_require_installed_copy",
+)
+"""The install cells' functions that read the installed commit, replace another one, see a
+copy the kernel already loaded and check the imported copy is the installed one: one text in
+both notebooks."""
 PINNED = f"morphobricks-preprocessing[notebook] @ git+{REPOSITORY}@{RELEASE_REF}"
 MAIN = "de3f7a476da8a3dc49c81b20935a9a1a4831a435"
 """A commit of main whose version is the release's, 0.8.0 (the #371 review's example)."""
@@ -172,6 +180,31 @@ def test_setup_keeps_a_loaded_release_when_pip_only_adds_requirements(cell_1, mo
     state.start(INSTALL)  # the loaded copy is the installed RELEASE_REF: no restart
     (command,) = state.installs
     assert "--force-reinstall" not in command
+
+
+def test_setup_refuses_a_copy_imported_from_outside_the_install(
+    cell_1,  # noqa: F811
+    monkeypatch,
+    tmp_path,
+    capsys,
+):
+    # The working folder is a checkout's src/ of another version: it is imported first, while
+    # pip's record names RELEASE_REF. The banner must not say "Ready" with the release commit.
+    state = cell_1
+    imported = importlib.import_module  # the fixture's double
+    local = tmp_path / "src/morphobricks_preprocessing/__init__.py"
+
+    def from_the_working_folder(name):
+        found = imported(name)
+        return (
+            SimpleNamespace(__file__=str(local)) if name == "morphobricks_preprocessing" else found
+        )
+
+    monkeypatch.setattr(importlib, "import_module", from_the_working_folder)
+    with pytest.raises(RuntimeError, match=f"from {local}, not from the copy pip installed in"):
+        state.start(INSTALL)
+    assert "Ready" not in capsys.readouterr().out
+    assert state.namespace["SETUP_RECORD"] == {}
 
 
 def test_setup_installs_without_forcing_when_nothing_is_installed(cell_1):  # noqa: F811

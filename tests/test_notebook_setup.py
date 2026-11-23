@@ -115,6 +115,7 @@ def setup_environment(tmp_path, monkeypatch):
         },
         # What pip recorded for the installed preprocessing (PEP 610); None: no record.
         direct_url=git_record(RELEASE_REF, REPOSITORY),
+        site=tmp_path / "site-packages",  # where pip installs; the fake package is there
     )
 
     install_git_double(monkeypatch, state)
@@ -146,7 +147,7 @@ def setup_environment(tmp_path, monkeypatch):
     def import_interface(name):
         state.imports.append(name)
         if name == "morphobricks_preprocessing":
-            return SimpleNamespace(__file__="/tmp/morphobricks_preprocessing/__init__.py")
+            return SimpleNamespace(__file__=str(state.site / "morphobricks_preprocessing/x.py"))
 
         import ipywidgets as widgets
 
