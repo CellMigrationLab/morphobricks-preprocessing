@@ -16,12 +16,8 @@ import pytest
 from cellpose_stub import install, two_channel_run
 from morphobricks_preprocessing import notebook_cellpose
 from morphobricks_preprocessing import segmentation_cellpose as cp
+from morphobricks_preprocessing import segmentation_cellpose_run as run_module
 from morphobricks_preprocessing.run_inputs import RunInputs
-from morphobricks_preprocessing.segmentation_cellpose_run import (
-    channel_by_number,
-    channel_layouts,
-    channel_number_from_text,
-)
 from morphobricks_preprocessing.segmentation_record import SegmentationError, read_record
 from test_notebook_cellpose import BATCH, CHANNELS, MODEL, OPEN, run_cell
 from test_stage3_channels import described_run, extra_stain
@@ -81,7 +77,7 @@ def test_numbers_serve_the_output_both_too(stub, tmp_path):
 
 def test_a_number_on_a_mixed_3_and_4_channel_run_is_refused_naming_the_images(stub, tmp_path):
     run, namespace = extra_last_run(tmp_path), {}
-    layouts = channel_layouts(run.inputs)
+    layouts = run_module.channel_layouts(run.inputs)
     assert list(layouts) == [("DNA", "ACTIN", "TUB"), ("DNA", "ACTIN", "TUB", "EXTRA")]
     # channel 1 is DNA in every image, yet the number is refused: never resolved per image
     picker = choose_by_number(namespace, run, "nuclei", "", "1")
@@ -104,7 +100,7 @@ def test_a_number_on_a_mixed_3_and_4_channel_run_is_refused_naming_the_images(st
 
 def test_a_number_is_refused_where_extra_comes_first_in_one_repeat(mixed_run):
     with pytest.raises(SegmentationError, match="cannot be used") as refused:
-        channel_by_number(mixed_run.inputs, 2)
+        run_module.channel_by_number(mixed_run.inputs, 2)
     assert "1 = EXTRA, 2 = DNA" in str(refused.value)
 
 
@@ -114,15 +110,21 @@ def test_a_number_is_refused_where_extra_comes_first_in_one_repeat(mixed_run):
 )
 def test_a_number_that_is_not_a_channel_number_is_refused(text, match):
     with pytest.raises(SegmentationError, match=match):
-        channel_number_from_text(text)
-    assert channel_number_from_text(" ") is None and channel_number_from_text(" 2 ") == 2
+        run_module.channel_number_from_text(text)
+    assert (
+        run_module.channel_number_from_text(" ") is None
+        and run_module.channel_number_from_text(" 2 ") == 2
+    )
 
 
 def test_a_number_beyond_the_channels_is_refused(tmp_path):
     run = two_channel_run(tmp_path)
-    assert channel_by_number(run.inputs, 1) == "DNA" and channel_by_number(run.inputs, 2) == "TUB"
+    assert (
+        run_module.channel_by_number(run.inputs, 1) == "DNA"
+        and run_module.channel_by_number(run.inputs, 2) == "TUB"
+    )
     with pytest.raises(SegmentationError, match="images have 2 channels \\(1 = DNA, 2 = TUB\\)"):
-        channel_by_number(run.inputs, 3)
+        run_module.channel_by_number(run.inputs, 3)
 
 
 def test_a_number_for_a_channel_not_read_is_refused():

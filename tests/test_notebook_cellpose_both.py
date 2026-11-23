@@ -247,12 +247,13 @@ def test_the_next_steps_list_both_mask_types_and_pair_nothing(cells):
 @pytest.mark.parametrize(
     ("cell", "nuclear", "message"),
     [
-        ("TUB", "", cp.BOTH_NEEDS),  # no nuclear channel
-        ("", "DNA", cp.BOTH_NEEDS),  # no cell channel
-        ("", "", cp.NO_CHANNEL),  # neither
+        ("TUB", "", "BOTH_NEEDS"),  # no nuclear channel
+        ("", "DNA", "BOTH_NEEDS"),  # no cell channel
+        ("", "", "NO_CHANNEL"),  # neither
     ],
 )
 def test_both_needs_the_cell_and_the_nuclear_channel(cells, cell, nuclear, message):
+    message = getattr(cp, message)
     picker = choose_both(cells, cell=cell, nuclear=nuclear)
     assert picker.targets == () and picker.plan is None and picker.refusal == message
     with pytest.raises(notebook_cellpose.CellStop) as stopped:
