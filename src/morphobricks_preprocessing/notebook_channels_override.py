@@ -38,7 +38,7 @@ from .notebook_channels_view import (
     quoted,
     unit_name,
 )
-from .repeat_tags import Override, header_names, override_holds, recount
+from .repeat_tags import Override, counted, header_names, override_holds, recount
 
 if TYPE_CHECKING:
     from .channel_labels import UnitLayout
@@ -178,7 +178,7 @@ class OverrideEditor:
         Tags of another channel count than the unit's now are never cut or padded: every
         channel is blank, to be chosen again (:func:`.repeat_tags.recount`).
         """
-        if len(tags) != layout.channels:
+        if not counted(tags, layout):
             return [None] * layout.channels
         return [t if t in self.rows.grid.labels else None for t in tags]
 
@@ -279,7 +279,7 @@ class OverrideEditor:
             return False
         for key, draft in drafts.items():
             why = rows._row_error(draft)
-            if len(draft) != layouts[key].channels:  # never cut or padded to the unit's count
+            if not counted(draft, layouts[key]):  # never cut or padded to the unit's count
                 why = f"Tag each of the unit's {layouts[key].channels} channels, each label once."
             if why is not None:
                 rows.notice = ui.status("error", "Not saved.", [why])

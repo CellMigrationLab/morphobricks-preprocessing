@@ -72,13 +72,18 @@ def _names_hold(override: Override, layout: UnitLayout) -> bool:
     return header_names(layout) == override.names
 
 
+def counted(tags: Sequence[str | None], layout: UnitLayout) -> bool:
+    """Return True when there is one tag per channel the unit has now (never cut or padded)."""
+    return len(tags) == layout.channels
+
+
 def recount(tags: Sequence[str | None], layout: UnitLayout) -> str | None:
     """Return why a refusal's tags no longer fit the unit (its channel count changed), else None.
 
     The old tags are never applied, cut or padded to the new count: every channel is chosen
     again (the override editor opens with blank dropdowns).
     """
-    if len(tags) == layout.channels:
+    if counted(tags, layout):
         return None
     return (
         f"its channel count changed ({len(tags)} at the refusal, {layout.channels} now): "
@@ -201,6 +206,7 @@ def pairing_collision(answers: DraftAnswers, group: Sequence[UnitLayout]) -> dic
 __all__ = [
     "GroupKey",
     "Override",
+    "counted",
     "header_names",
     "override_holds",
     "pairing_collision",
