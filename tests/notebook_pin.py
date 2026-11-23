@@ -95,8 +95,11 @@ HIDDEN_RUNNERS = frozenset({"get_ipython"})
 """Names that run commands or code the cell's syntax does not show (IPython's ``system``)."""
 
 
-DOTTED_NAME = re.compile(rf"{PACKAGE}(\.[A-Za-z_][A-Za-z0-9_]*)*")
-"""A string that names a module of the package (``morphobricks_preprocessing.cli``)."""
+DOTTED_NAME = re.compile(rf"{PACKAGE}(\.[A-Za-z_]\w*)*(:[A-Za-z_]\w*(\.[A-Za-z_]\w*)*)?")
+"""A string that names a module of the package (``morphobricks_preprocessing.cli``), or an
+object in one by the ``module:attribute`` form of entry points and ``pkgutil.resolve_name``
+(``morphobricks_preprocessing.cli:main``). The string is followed whatever code it is given
+to, as an import of the module (and of the attribute, should it be a submodule)."""
 
 
 class PinScopeError(Exception):
@@ -386,7 +389,8 @@ def _imported(text: str, module: str, path: str) -> list[str]:
             base = _absolute(node, module, path)
             names.extend([base, *(f"{base}.{alias.name}" for alias in node.names)])
         elif isinstance(node, ast.Constant) and isinstance(node.value, str):
-            names.extend([node.value] if DOTTED_NAME.fullmatch(node.value) else [])
+            named = DOTTED_NAME.fullmatch(node.value)
+            names.extend([node.value.replace(":", ".")] if named else [])
         elif isinstance(node, ast.Call) and _loader(node) in NAME_LOADERS:
             _refuse_computed_name(node, path)
         elif isinstance(node, ast.Call) and _loader(node):

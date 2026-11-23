@@ -9,7 +9,7 @@ import pytest
 
 import test_notebook_cellpose_pin as pin_tests
 from notebook_pin import PinScopeError, pin_differences
-from test_notebook_cellpose_pin import NOTEBOOK, PKG, _pin_and_head
+from test_notebook_cellpose_pin import CLI_CHANGED, NOTEBOOK, PKG, _pin_and_head
 
 repo = pin_tests.repo
 """The fixture: a Git repository whose first commit holds the small package."""
@@ -64,3 +64,22 @@ def test_a_use_the_re_review_found_is_refused(repo, case):
     pin, head = _pin_and_head(repo, head_files, {})
     with pytest.raises(PinScopeError):
         pin_differences(repo.path, pin, head, cells)
+
+
+FOLLOWED = {
+    # (2) a package object named in the "module:attribute" form (pkgutil.resolve_name, an
+    # entry point): the module before the colon is followed like any dotted name.
+    "a module:attribute string resolve_name is given": {
+        f"{PKG}/segment.py": "import pkgutil\n\n\ndef segment():\n"
+        "    return pkgutil.resolve_name('morphobricks_preprocessing.cli:other')()\n"
+    },
+    "a module:attribute string kept in a constant": {
+        f"{PKG}/segment.py": "MAIN = 'morphobricks_preprocessing.cli:other'\n"
+    },
+}
+
+
+@pytest.mark.parametrize("case", FOLLOWED)
+def test_a_use_the_re_review_found_is_followed(repo, case):
+    pin, head = _pin_and_head(repo, FOLLOWED[case], CLI_CHANGED)
+    assert pin_differences(repo.path, pin, head, NOTEBOOK) == [f"{PKG}/unused.py"]
