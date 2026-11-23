@@ -27,7 +27,7 @@ convenience only: the saved data are per unit (the description format does not c
 from __future__ import annotations
 
 import html
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import replace
 from typing import TYPE_CHECKING, NamedTuple
 
@@ -36,12 +36,13 @@ import ipywidgets as widgets
 from . import notebook_style as ui
 from .channel_labels import tags_of
 from .channel_matrix import REFUSED, difference_text, differences
-from .draft_answers import ChannelAnswer
+from .draft_answers import ChannelAnswer, DraftAnswers
 from .notebook_channels_override import OverrideEditor
 from .notebook_channels_view import CHOOSE, columns, unit_name
 from .repeat_review import Override, RefusedUnit, TagReview
 from .repeat_tags import (
     GroupKey,
+    header_names,
     override_holds,
     pairing_collision,
     recount,
@@ -125,24 +126,59 @@ class RepeatRows:
         answers = self.grid.store.answers()
         out = {}
         current = {u.key: u for g in self._rows().values() for u in g}
-        for key, (text, _, lead, _, _) in self.refused.items():
+        for key, refusal in self.refused.items():
             layout = current.get(key)  # the unit as read now, never as at the click
             if layout is None:
                 continue  # gone (dropped by :meth:`reconcile`), or colour or unusable now
-            if lead is None:
-                if repeat_apart((layout,)):
-                    out[key] = text
-                continue
-            tags = tags_of(layout, answers.units.get(key))
-            confirmed = self.override.confirmed.get(key)
-            if relapsed(confirmed, layout):  # its own header changed: confirmed for another one
-                out[key] = text or RELAPSED
-                continue
-            if override_holds(confirmed, layout, tags):
-                continue  # the user confirmed these tags (:mod:`.notebook_channels_override`)
-            if None in tags or differences(layout, tags, lead, self.grid.labels, answers.channels):
-                out[key] = text
+            if not self._released(key, layout, answers):
+                lapsed = relapsed(self.override.confirmed.get(key), layout)
+                out[key] = refusal.text or (RELAPSED if lapsed else UNCONFIRMED)
         return out
+
+    def _released(self, key: UnitKey, layout: UnitLayout, answers: DraftAnswers) -> bool:
+        """Return True when the user's explicit action on this unit releases its refusal.
+
+        The one authority of :meth:`listed`, :meth:`standing` and so the save: the unit's
+        persisted confirmation (``tag_review.confirmed``) still holds for its tags and its own
+        header names (:func:`.repeat_tags.override_holds`). A confirmation is written only by an
+        action on that unit, in the same draft write as its tags: its editor's Confirm, a
+        one-click confirmation (:mod:`.notebook_channels_override`) or a hand-tag of it
+        (:meth:`hand_tagged`). A unit whose images disagree has no header to confirm.
+        """
+        if self.refused[key].lead is None or repeat_apart((layout,)):
+            return False
+        tags = tags_of(layout, answers.units.get(key))
+        return override_holds(self.override.confirmed.get(key), layout, tags)
+
+    def hand_tagged(self, units: Sequence[UnitLayout]) -> Callable | None:
+        """Return what a hand-tag of these units saves with their tags (one write), else None.
+
+        A deliberate hand-tag of one unit, or a click on a block of the strict page (the block
+        shows its units), is an action on each refused unit it tags. When that unit's tags are
+        then complete and fit its own header (read with the aliases this very click saves, as
+        :func:`.channel_matrix.differences` reads any tag), the click is recorded as its
+        confirmation, in the same draft write as the tags (``TagGrid.commit(..., then)``).
+        A fast-mode block of several units confirms nothing. None when no refused unit is
+        tagged (the click is then a plain tag change).
+        """
+        keys = {u.key for u in units} & set(self.refused)
+        if not keys or self.other_draft() or (len(units) > 1 and self.grid.same_channels.value):
+            return None
+        by_key, labels = {u.key: u for u in units}, self.grid.labels
+
+        def then(answers: DraftAnswers) -> DraftAnswers:
+            records = {}
+            for key in keys:
+                layout, lead = by_key[key], self.refused[key].lead
+                tags = tags_of(layout, answers.units.get(key))
+                if lead is None or repeat_apart((layout,)) or None in tags:
+                    continue
+                if not differences(layout, tags, lead, labels, answers.channels):
+                    records[key] = Override(tuple(tags), header_names(layout))
+            review = self._review({**self.override.confirmed, **records})
+            return replace(answers, tag_review=review)
+
+        return then
 
     def reconcile(self) -> None:
         """Bring the refusals up to date with the grid's current layouts (on every opening).
@@ -320,15 +356,11 @@ class RepeatRows:
             return set()
         answers = self.grid.store.answers()
         current = {u.key: u for u in self.grid.layouts}
-        out = set()
-        for key in self.refused:
-            layout = current.get(key)
-            if layout is None:
-                continue
-            tags = tags_of(layout, answers.units.get(key))
-            if not override_holds(self.override.confirmed.get(key), layout, tags):
-                out.add(key)
-        return out
+        return {
+            key
+            for key in self.refused
+            if key in current and not self._released(key, current[key], answers)
+        }
 
     def _rows(self) -> dict:
         """Return every repeat folder and channel count with all its units, in any mode."""
@@ -515,6 +547,10 @@ class RepeatRows:
 
 
 RELAPSED = "its header changed since you confirmed it: confirm it again"
+UNCONFIRMED = (
+    "refused by its repeat folder's row and not confirmed since: a header or aliases that fit "
+    "now never release it; confirm its tags"
+)
 UNTRUSTED = (
     "its own tags are incomplete: a refused unit is never tagged from its header, even one that "
     "fits now; confirm its tags"

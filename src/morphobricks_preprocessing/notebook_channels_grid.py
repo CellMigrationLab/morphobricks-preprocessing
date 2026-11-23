@@ -281,9 +281,8 @@ class TagGrid:
             self.refuse_twice(value, tags.index(value) + 1)
             return
         tags[index] = value
-        self.commit(  # every folder of the block holds these tags
-            {layout.key: tuple(tags) for layout in units}, [(u.key, index) for u in units]
-        )
+        cells, hand = [(u.key, index) for u in units], self.by_repeat.hand_tagged(units)
+        self.commit({u.key: tuple(tags) for u in units}, cells, hand)  # a hand-tag confirms
 
     def refuse_twice(self, value: str, other: int) -> None:
         """Say that ``value`` was not tagged: it already stands at channel ``other``."""

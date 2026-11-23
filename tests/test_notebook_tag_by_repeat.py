@@ -330,7 +330,8 @@ def test_5_a_unit_tagged_to_its_header_before_the_click_is_not_listed_after_chan
     _tag(nb, odd, ("ACTIN", "DNA", "PHASE"))  # the header's own order, before any click
     _set_row(nb, ("rep2", 3), TAGS)  # the row contradicts the header, but the unit fits it
     rows = nb.channel_grid.by_repeat
-    assert not rows.listed()
+    # refused by the click: a tag saved before it is no action on the refusal (review am)
+    assert list(rows.listed()) == [odd] and odd in rows.standing()
     _tag(nb, odd, ("EXTRA", "DNA", "PHASE"))
     assert list(rows.listed()) == [odd]
     _tag(nb, odd, ("ACTIN", "DNA", "PHASE"))

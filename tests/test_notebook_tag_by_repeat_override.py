@@ -196,8 +196,9 @@ def test_a_failed_save_confirms_nothing(tmp_path, statement_off, monkeypatch):
 
 
 def test_editing_after_the_confirmation_voids_it(tmp_path, statement_off):
-    # the grid's own dropdown saves the new tag and the header name as its alias, so the unit is
-    # then answered by that edit (not listed); the confirmation no longer covers its tags
+    # the grid's own dropdown saves the new tag and the header name as its alias: the old
+    # confirmation no longer covers its tags, and that hand-tag of the unit is recorded as its
+    # new confirmation in the same write (review am, 23 Nov)
     nb, _, _, rows = _listed(tmp_path)
     ov = _confirm_gone(nb, rows)
     grid = nb.channel_grid
@@ -207,7 +208,8 @@ def test_editing_after_the_confirmation_voids_it(tmp_path, statement_off):
     grid.cells[(GONE, 0)].value = "EXTRA"
     edited = tags_of(layout, nb.draft_answers.units[GONE])
     assert edited[0] == "EXTRA"
-    assert not override_holds(ov.confirmed[GONE], layout, edited)
+    assert not override_holds(Override(held, ov.confirmed[GONE].names), layout, edited)
+    assert ov.confirmed[GONE].tags == edited and GONE not in rows.listed()
 
 
 def test_a_recheck_that_changes_nothing_keeps_the_unit_unlisted(tmp_path, statement_off):

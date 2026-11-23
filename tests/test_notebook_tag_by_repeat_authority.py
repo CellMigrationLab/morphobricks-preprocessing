@@ -14,8 +14,20 @@ import pytest
 pytest.importorskip("ipywidgets")
 pytest.importorskip("matplotlib")
 
-from test_notebook_check_save import answer_all  # noqa: E402
-from test_notebook_tag_by_repeat_oneclick import GONE, OTHER, _strict  # noqa: E402
+from channel_images import write_channels  # noqa: E402
+from test_notebook_channels import set_labels  # noqa: E402
+from test_notebook_check_save import answer_all, opened  # noqa: E402
+from test_notebook_tag_by_repeat import (  # noqa: E402
+    EXTRA,
+    KINDS4,
+    TAGS,
+    UNITS,
+    _experiment,
+    _set_row,
+)
+from test_notebook_tag_by_repeat_drafts import _review  # noqa: E402
+from test_notebook_tag_by_repeat_oneclick import GONE, OTHER, _confirm, _strict  # noqa: E402
+from test_notebook_tag_by_repeat_recheck import _recheck  # noqa: E402
 
 
 def _hand(nb, key, tags):
@@ -42,3 +54,75 @@ def test_the_save_button_opens_right_after_the_last_confirmation(tmp_path, state
     assert not rows.listed()
     # at 7e9daf4 the confirmation was noted after the save had refreshed the button: disabled
     assert not nb.save_button.disabled
+
+
+# BLOCKER 1: a tagged refused unit and the aliases another unit's confirmation saves -----------
+
+
+def _header_changed(tmp_path, fast):
+    """Every rep2 unit tagged by its row; GONE's and OTHER's headers change; the row refuses them.
+
+    Both keep their complete old tags; neither is confirmed.
+    """
+    extra = ["W"] if fast else []
+    old, new = ["X", "Y", "Ch3", *extra], ["P", "Q", "Ch3", *extra]
+    root, masks, out = _experiment(
+        tmp_path, extra=fast, names=lambda k: old if k[1] == "rep2" else None
+    )
+    nb = opened(root, masks, out)
+    tags, row = (EXTRA, ("rep2", 4)) if fast else (TAGS, ("rep2", 3))
+    set_labels(nb, list(tags))
+    if fast:
+        for index, tag in enumerate(TAGS):
+            nb.channel_grid.matrix.template_cells[(("ctrl", "rep1", "t1"), index)].value = tag
+    _set_row(nb, row, tags)
+    rows = nb.channel_grid.by_repeat
+    assert not rows.listed()
+    kinds = KINDS4 if fast else KINDS4[:3]
+    for key in (GONE, OTHER):
+        write_channels(root.joinpath(*key, "a.tif"), new, kinds, seed=UNITS.index(key) + 1)
+    _recheck(nb)
+    _set_row(nb, row, tags)  # the row again: the changed headers contradict it
+    assert set(rows.listed()) == {GONE, OTHER}
+    assert nb.draft_answers.units[GONE].channels == tags  # complete old tags
+    return nb, root, masks, out
+
+
+def _gone_blocks_the_save(nb, out):
+    rows = nb.channel_grid.by_repeat
+    answer_all(nb)
+    assert GONE in rows.listed() and GONE in rows.refused and GONE in rows.standing()
+    review = _review(out)
+    assert GONE in review.refused and GONE not in review.confirmed  # on disk, unconfirmed
+    assert nb.save_button.disabled
+    assert "row did not fill" in nb.save_blocker.value
+    assert not nb.save_experiment()
+
+
+@pytest.mark.parametrize("action", ["override", "hand"])
+@pytest.mark.parametrize("fast", [True, False])
+def test_b1_a_tagged_refused_unit_stays_listed_after_another_unit_adds_matching_aliases(
+    tmp_path, request, fast, action
+):
+    if not fast:
+        request.getfixturevalue("statement_off")
+    nb, root, masks, out = _header_changed(tmp_path, fast)
+    rows = nb.channel_grid.by_repeat
+    assert nb.channel_grid.same_channels.value == fast
+    _confirm(nb, rows, OTHER, "override", None)  # OTHER: P, Q saved as aliases of its labels
+    # at 7e9daf4 GONE left listed() (the live aliases fit it) and the save opened
+    _gone_blocks_the_save(nb, out)
+    fresh = opened(root, masks, out)  # a restart on the saved draft
+    again = fresh.channel_grid.by_repeat
+    assert fresh.channel_grid.same_channels.value == fast
+    _gone_blocks_the_save(fresh, out)
+    if action == "override":
+        _confirm(fresh, again, GONE, "override", None)  # the explicit action on GONE
+    else:  # a deliberate hand-tag of GONE: one channel cleared and chosen again
+        _hand(fresh, GONE, ())
+        fresh.channel_grid.cells[(GONE, 2)].value = None
+        assert GONE in again.listed()  # incomplete: not a confirmation
+        fresh.channel_grid.cells[(GONE, 2)].value = "PHASE"
+    assert not again.listed() and not fresh.save_button.disabled
+    assert GONE in _review(out).confirmed  # recorded with its tags, in the same write
+    assert GONE not in opened(root, masks, out).channel_grid.by_repeat.listed()  # a restart
