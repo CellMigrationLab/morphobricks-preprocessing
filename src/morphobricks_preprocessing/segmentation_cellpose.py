@@ -69,6 +69,8 @@ from .segmentation_cellpose_model import (
 )
 from .segmentation_cellpose_run import channel_coverage, next_steps_lines, open_run
 from .segmentation_cellpose_settings import (
+    BOTH_NEEDS,
+    BOTH_OUTPUT,
     CELL_OUTPUT,
     CELL_ROLE,
     FLOW_ITERATIONS,
@@ -82,6 +84,7 @@ from .segmentation_cellpose_settings import (
     diameter_from_text,
     flow_iterations,
     input_channels,
+    output_inputs,
     rescale_factor,
 )
 from .segmentation_handoff import (
@@ -113,6 +116,8 @@ __all__ = [
     "DINOV3_COMMIT",
     "DINOV3_URL",
     "DINO_MODELS",
+    "BOTH_NEEDS",
+    "BOTH_OUTPUT",
     "CELL_OUTPUT",
     "CELL_ROLE",
     "FLOW_ITERATIONS",
@@ -133,6 +138,7 @@ __all__ = [
     "diameter_from_text",
     "dinov3_install_command",
     "input_channels",
+    "output_inputs",
     "install_dinov3",
     "installed_dinov3_commit",
     "installed_version",

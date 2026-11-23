@@ -252,7 +252,17 @@ with the same message as before; change the form and press the button again. The
   `ACTIN`), never by position: a **cell channel** (cytoplasm or cell border) and a **nuclear
   channel**, both optional but at least one. A cell mask reads the cell channel, then the
   nuclear one if chosen (a cell channel is required); a nuclei mask reads the nuclear channel
-  only (required). The record names each channel's role and the output. When some images
+  only (required). The record names each channel's role and the output.
+- **Both.** The output **Both** segments each image twice: the cells from the cell channel and
+  the nuclear channel (stacked as cell, nuclear), the nuclei from the nuclear channel alone. It
+  needs both channels. The two are separate mask types (`Cells` and `Nuclei` by default, both
+  editable and different), each with its own `segmentation_record.json`, its own skip, overwrite
+  and rollback and its own table; a batch that stops does not stop the other. One model and
+  one set of settings serve both unless, under **Advanced Cellpose settings**, you tick a
+  different model or settings for the nuclei. The preview shows both results. The notebook
+  never pairs a cell with a nucleus by label number: relate them downstream from the geometry
+  (MorphoRelate, containment or overlap).
+- **Partial channels.** When some images
   have a channel that others lack (a fourth stain in one biological repeat), only the channels
   every image has can be used: the dropdown says which channel is partial, and choosing it
   shows preprocessing's refusal (`A_SCOPE_INCOMPLETE`) unchanged. Cellpose reads at most three
@@ -283,7 +293,7 @@ with the same message as before; change the form and press the button again. The
   file name and SHA-256, every setting (the full normalisation and the flow iterations included), whether the weights were downloaded now and from where, the channels, the device and each image as written,
   skipped or failed. The final table lists every image, with the error of a failed one.
 
-Afterwards declare the mask type in the experiment description (for example `[masks.Cells]`
+Afterwards declare the mask type (both mask types for **Both**) in the experiment description (for example `[masks.Cells]`
 with `source_type = "Cells"` and `representation = "instances"`), save it, run preprocessing
 again with the masks folder, **Describe the masks**, then continue with MorphoFeature.
 

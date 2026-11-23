@@ -79,6 +79,7 @@ def test_the_forms_start_with_the_former_defaults():
         "masks_folder": "",
         "output": "cells",
         "mask_type": "Cells",
+        "nuclei_mask_type": "Nuclei",  # shown for the output Both (#440)
         "model": "cpsam_v2",
         "custom_model_file": "",
         "device": "cuda",  # never chosen for the user: an unavailable GPU is refused
@@ -88,6 +89,13 @@ def test_the_forms_start_with_the_former_defaults():
         "flow_threshold": 0.4,
         "cellprob_threshold": 0.0,
         "batch_size": 8,
+        "separate_nuclei": False,  # Both: one model and settings for both by default (#440)
+        "nuclei_model": "cpsam_v2",
+        "nuclei_custom_model_file": "",
+        "nuclei_diameter": "",
+        "nuclei_flow_threshold": 0.4,
+        "nuclei_cellprob_threshold": 0.0,
+        "nuclei_batch_size": 8,
         "preview_image": None,  # no run is open: the dropdown is empty
         "overwrite": False,
     }
@@ -108,6 +116,7 @@ def test_every_field_reaches_the_workflow_as_given(monkeypatch):
         "masks_folder": "/data/masks",
         "output": "nuclei",
         "mask_type": "Nuclear",
+        "nuclei_mask_type": "Nuclear2",
         "model": "cpdino",
         "custom_model_file": "/models/mine",
         "device": "mps",
@@ -117,6 +126,13 @@ def test_every_field_reaches_the_workflow_as_given(monkeypatch):
         "flow_threshold": 0.7,
         "cellprob_threshold": -1.5,
         "batch_size": 3,
+        "separate_nuclei": False,
+        "nuclei_model": "cpsam",
+        "nuclei_custom_model_file": "",
+        "nuclei_diameter": "9",
+        "nuclei_flow_threshold": 0.5,
+        "nuclei_cellprob_threshold": 0.0,
+        "nuclei_batch_size": 2,
         "preview_image": "a/b.tif",
         "overwrite": True,
     }
@@ -129,7 +145,7 @@ def test_every_field_reaches_the_workflow_as_given(monkeypatch):
         assert form.stopped is None  # (preview and segment stay disabled: no model loaded)
     assert calls == [
         ("open", (" /data/run ", "/data/masks")),
-        ("choose_channels", ("Nuclear", "nuclei")),
+        ("choose_channels", ("Nuclear", "nuclei", "Nuclear2")),
         ("set_settings", ("17.5", 0.7, -1.5, 3)),
         ("load", ("cpdino", "/models/mine", "mps", True, True)),
         ("preview", ("a/b.tif",)),
@@ -315,6 +331,9 @@ def test_the_advanced_settings_are_in_a_collapsed_accordion_with_the_same_defaul
     names = ("diameter", "flow_threshold", "cellprob_threshold", "batch_size")
     for name in names:
         assert id(form.fields[name]) in inside, name
-    for name in set(form.fields) - set(names):
+    nuclei = {n for n in form.fields if n.startswith("nuclei_")} | {"separate_nuclei"}
+    for name in nuclei:  # the nuclei's own model and settings (output Both, #440)
+        assert id(form.fields[name]) in inside, name
+    for name in set(form.fields) - set(names) - nuclei:
         assert id(form.fields[name]) not in inside, name
     assert [form.fields[n].value for n in names] == ["", 0.4, 0.0, 8]

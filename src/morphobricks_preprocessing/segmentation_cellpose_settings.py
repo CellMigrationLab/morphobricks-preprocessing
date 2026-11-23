@@ -141,8 +141,16 @@ NUCLEI_OUTPUT = "nuclei"
 """Output: a nuclei mask, from the nuclear channel only."""
 OUTPUT_MASK_TYPES = {CELL_OUTPUT: "Cells", NUCLEI_OUTPUT: "Nuclei"}
 """The mask type each output proposes (the user may change it)."""
+BOTH_OUTPUT = "both"
+"""Output: a cell mask and a nuclei mask, each segmented on its own (#440); never paired here."""
 NO_CHANNEL = "Choose a cell channel, a nuclear channel or both, by channel ID; neither is chosen."
 """The refusal when neither channel is chosen."""
+BOTH_NEEDS = (
+    "The output Both needs a cell channel and a nuclear channel: the cells are segmented from "
+    "the cell channel and the nuclear channel, the nuclei from the nuclear channel alone. "
+    "Choose both channels, or choose the output Cell mask or Nuclei mask."
+)
+"""The refusal of the output Both without a cell channel or without a nuclear channel."""
 
 
 def input_channels(output: str, cell: str, nuclear: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
@@ -175,6 +183,30 @@ def input_channels(output: str, cell: str, nuclear: str) -> tuple[tuple[str, ...
             )
         return (nuclear,), (NUCLEAR_ROLE,)
     raise SegmentationError(f"The output must be {CELL_OUTPUT} or {NUCLEI_OUTPUT}, not {output!r}.")
+
+
+def output_inputs(
+    output: str, cell: str, nuclear: str
+) -> tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...]:
+    """Return each mask an output makes: ``(mask output, channel IDs, roles)``, cells first.
+
+    A cell mask or a nuclei mask is one entry (:func:`input_channels`). **Both** (#440) is two
+    segmentations of each image, each with its own input: the cells from the cell channel and
+    the nuclear channel, stacked as (cell, nuclear), the nuclei from the nuclear channel alone.
+    It needs both channels. The two masks are never paired by label number.
+
+    Raises
+    ------
+    SegmentationError
+        As :func:`input_channels`, and for Both without a cell or a nuclear channel.
+    """
+    if output != BOTH_OUTPUT:
+        return ((output, *input_channels(output, cell, nuclear)),)
+    if not cell and not nuclear:
+        raise SegmentationError(NO_CHANNEL)
+    if not (cell and nuclear):
+        raise SegmentationError(BOTH_NEEDS)
+    return tuple((o, *input_channels(o, cell, nuclear)) for o in (CELL_OUTPUT, NUCLEI_OUTPUT))
 
 
 def channel_roles_entry(

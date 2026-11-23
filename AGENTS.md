@@ -291,6 +291,10 @@ src/morphobricks_preprocessing/
                     notebook, #441), the same CellposeNotebook forms the Cellpose cells mount
                     notebook_cellpose_preview.py MaskResult, preview_figures: the example result as
                     ZeroCostDL4Mic draws it (cellpose.plot.show_segmentation), one result per mask
+                    notebook_cellpose_channels.py ChannelPicker, MaskTarget: the output's masks (Both:
+                    cells and nuclei, each its own batch and record, never paired; #440) and their
+                    channels by ID; notebook_cellpose_fields.py the forms' fields (paths, model,
+                    settings, the nuclei's own model and settings under Advanced)
   mask_conversion.py RunInputs.binary_to_instances / classes_to_binary (Spec ADR 0005 BM12, step
                     2b): new mask files from a checked mask, refused before any read or write
                     (check_class_image, collisions, idempotent retry); mask_lineage.py their
