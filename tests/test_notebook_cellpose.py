@@ -22,6 +22,7 @@ from cellpose_stub import custom_model, install
 from morphobricks_preprocessing import notebook_cellpose
 from morphobricks_preprocessing import segmentation_cellpose as cp
 from morphobricks_preprocessing.manifest import MANIFEST_FILENAME
+from morphobricks_preprocessing.notebook_cellpose_preview import MaskResult, channel_figure
 from morphobricks_preprocessing.segmentation_record import read_record
 from notebook_pin import code_sources, history_missing, install_setting, pin_differences
 from test_segmentation_handoff import MASKS_SECTION
@@ -45,8 +46,8 @@ TITLES = (
     "# @title 3. Open the preprocessing run",
     "# @title 4. Choose the output and the channels",
     "# @title 5. Choose the model and the settings, then load the model",
-    "# @title 6. Preview one image",
-    "# @title 7. Segment all images",
+    "# @title 6. Preview one example result",
+    "# @title 7. Segment the whole experiment",
     "# @title 8. What to do next",
 )
 HEADINGS = (
@@ -55,8 +56,8 @@ HEADINGS = (
     "## **3. Open the preprocessing run**",
     "## **4. Choose the output and the channels**",
     "## **5. Choose the model and the settings, then load the model**",
-    "## **6. Preview one image**",
-    "## **7. Segment all images**",
+    "## **6. Preview one example result**",
+    "## **7. Segment the whole experiment**",
     "## **8. What to do next**",
 )
 
@@ -393,8 +394,13 @@ def test_the_preview_figure_uses_the_display_contrast_and_shows_non_finite_pixel
     stack[0, 0, 0] = np.nan
     labels = np.zeros((4, 4), np.uint16)
     labels[1:3, 1:3] = 1
-    figure = notebook_cellpose.preview_figure(stack, labels, ("A", "B"))
-    assert len(figure.axes) == 3 and "1 objects" in figure.axes[-1].get_title()
+    result = MaskResult("Cell mask", stack, (("A", "cell"), ("B", "nuclear")), labels, None)
+    figure = channel_figure(result)  # the display panels: each channel by its ID and role
+    assert [axis.get_title() for axis in figure.axes] == [
+        "A (cell, display contrast)",
+        "B (nuclear, display contrast)",
+    ]
+    assert result.objects == 1
 
 
 def test_failures_are_in_the_final_table_and_the_batch_goes_on(cells):
@@ -441,8 +447,10 @@ def test_the_batch_summary_reports_stray_backups_and_deletes_none(cells):
 def test_a_preview_names_an_image_of_the_run_or_is_refused(cells):
     open_and_choose(cells)
     run_cell(cells.ns, MODEL, device="cpu")
+    run_cell(cells.ns, PREVIEW)  # the form offers only the run's images
     with pytest.raises(notebook_cellpose.CellStop, match="not an image of this run"):
-        run_cell(cells.ns, PREVIEW, preview_image="nowhere.tif")
+        cells.ns["workflow"].preview("nowhere.tif")  # the method still refuses another
+    cells.stub.calls.clear()
     name = cells.run.inputs.fovs()[3].relative_path
     run_cell(cells.ns, PREVIEW, preview_image=name)
     assert name in cells.ns["workflow"].shown[-1] and len(cells.stub.calls) == 1

@@ -25,12 +25,18 @@ from . import notebook_style as ui
 from . import segmentation_cellpose as cp
 from .notebook_cellpose import OUTPUT_NAMES, CellposeWorkflow, CellStop, _card, _verbatim
 from .segmentation_cellpose_model import BUILTIN_MODELS
+from .segmentation_handoff import images_to_segment
 
 DEVICE_OPTIONS = ("cuda", "mps", "cpu")
 """The devices offered, in the former form's order; the default is the first (never chosen)."""
 ADVANCED = "Advanced Cellpose settings"
 """The collapsed section of cell 5 with the diameter, the thresholds and the batch size."""
 STOPPED = "This step stopped"
+MODEL_CHANGED = (
+    "The model, the model file or the device in cell 5 changed since the model was loaded: "
+    "press Load the model again. A model is never reloaded without that."
+)
+"""The refusal of a preview or a run whose model choice no longer matches the loaded model."""
 """The title of the card that shows a refusal; its message is the refusal, unchanged."""
 _FIELD = widgets.Layout(width="99%")
 _STYLE = {"description_width": "11em"}
@@ -139,6 +145,7 @@ class StepForm:
                     self.workflow._show(card)
         finally:
             self.button.disabled = False
+            self.workflow._after_step()
 
 
 class CellposeNotebook(CellposeWorkflow):
@@ -152,10 +159,12 @@ class CellposeNotebook(CellposeWorkflow):
         """Start with nothing chosen and no form shown."""
         super().__init__()
         self.forms: dict[str, StepForm] = {}
+        self._loaded_with: tuple[str, str, str] | None = None
 
     def _form(self, name: str, form: StepForm) -> None:
-        """Keep ``form`` as step ``name`` and display it."""
+        """Keep ``form`` as step ``name``, bring the forms in step and display it."""
         self.forms[name] = form
+        self._after_step()
         display(form.widget)
 
     def open_step(self) -> None:
@@ -221,6 +230,7 @@ class CellposeNotebook(CellposeWorkflow):
         def drop(_: object) -> None:
             if self.picker is not None:
                 self.picker = self.loaded = None
+                self._after_step()
                 changed.value = ui.status(
                     "warn", "Changed: press Choose the channels again, then load the model."
                 )
@@ -296,6 +306,7 @@ class CellposeNotebook(CellposeWorkflow):
             value["cellprob_threshold"],
             value["batch_size"],
         )
+        self._loaded_with = None
         self.load(
             value["model"],
             value["custom_model_file"],
@@ -303,31 +314,38 @@ class CellposeNotebook(CellposeWorkflow):
             value["download_weights"],
             value["install_dinov3"],
         )
+        self._loaded_with = _model_choice(fields)
 
     def preview_step(self) -> None:
-        """Show the form of cell 6: the image to preview (blank = the first without a mask)."""
-        image = _text(placeholder="blank = the first image without a mask")
+        """Show the form of cell 6: a dropdown of the run's images and **Preview**.
+
+        As in ZeroCostDL4Mic: choose an image, see Cellpose's result for it, choose another or
+        change the settings in cell 5 and press **Preview** again. The model is not reloaded
+        unless the model or the device changed. Nothing is written. The button is active
+        once a model is loaded.
+        """
+        image = widgets.Dropdown(options=[], description="Image", layout=_FIELD, style=_STYLE)
         cards = [
             ui.card(
-                "Image to preview",
+                "Example image",
                 [
                     image,
                     ui.help_text(
-                        "The image's path in the run, as the run lists it (for example "
-                        "<b>control/rep1/image.tif</b>). Blank: the first image without a mask. "
-                        "Nothing is written."
+                        "Every image of the run, by its path in the run; it starts on the first "
+                        "image without a mask. Nothing is written."
                     ),
                 ],
             )
         ]
         form = StepForm(
             self,
-            "6 · Preview one image",
-            "Segment one image and show its outlines; nothing is written.",
+            "6 · Preview one example result",
+            "Segment one image with the loaded model and the settings of cell 5, and show "
+            "Cellpose's result; nothing is written.",
             cards,
             "Preview",
             "eye",
-            lambda: self.preview(image.value),
+            lambda: self._with_form_settings(lambda: self.preview(image.value or "")),
             {"preview_image": image},
         )
         self._form("preview", form)
@@ -349,15 +367,55 @@ class CellposeNotebook(CellposeWorkflow):
         ]
         form = StepForm(
             self,
-            "7 · Segment all images",
-            "Segment every image, write the masks and the record, and list every image.",
+            "7 · Segment the whole experiment",
+            "Segment every image of the run, write the masks and the record, and list every "
+            "image. The button is active once a model is loaded.",
             cards,
-            "Segment all images",
+            "Segment the whole experiment",
             "play",
-            lambda: self.run(overwrite.value),
+            lambda: self._with_form_settings(lambda: self.run(overwrite.value)),
             {"overwrite": overwrite},
         )
         self._form("segment", form)
+
+    def _with_form_settings(self, step: Callable[[], object]) -> None:
+        """Run ``step`` with the settings cell 5's form shows now, on the model as loaded.
+
+        The settings are checked again (as **Load the model** does); a model, model file or
+        device changed since loading is refused: the model is never reloaded silently.
+        """
+        model = self.forms.get("model")
+        if model is not None and self.loaded is not None:
+            if _model_choice(model.fields) != self._loaded_with:
+                raise CellStop(MODEL_CHANGED)
+            value = {name: field.value for name, field in model.fields.items()}
+            self.set_settings(
+                value["diameter"],
+                value["flow_threshold"],
+                value["cellprob_threshold"],
+                value["batch_size"],
+            )
+        step()
+
+    def _after_step(self) -> None:
+        """Keep the later forms in step: the image list, and the buttons that need a model."""
+        for name in ("preview", "segment"):
+            if name in self.forms:
+                self.forms[name].button.disabled = self.loaded is None
+        if "preview" in self.forms:
+            self._fill_images(self.forms["preview"].fields["preview_image"])
+
+    def _fill_images(self, dropdown: widgets.Dropdown) -> None:
+        """List the run's images in the preview's dropdown, on the first without a mask."""
+        paths = [f.relative_path for f in self.inputs.fovs()] if self.inputs else []
+        if list(dropdown.options) == paths:
+            return
+        first = paths[0] if paths else None
+        if paths and self.mask_type:
+            todo = images_to_segment(self.inputs, self.mask_type, self.masks_root)
+            first = todo[0].relative_path if todo else first
+        dropdown.options = paths
+        dropdown.value = first
 
     def next_step(self) -> None:
         """Show the closing cell's button: what to do now that the masks are made."""
@@ -372,6 +430,15 @@ class CellposeNotebook(CellposeWorkflow):
             {},
         )
         self._form("next", form)
+
+
+def _model_choice(fields: dict[str, widgets.Widget]) -> tuple[str, str, str]:
+    """Return the model, the model file and the device cell 5's form shows."""
+    return (
+        fields["model"].value,
+        fields["custom_model_file"].value.strip(),
+        fields["device"].value,
+    )
 
 
 def _model_fields() -> dict[str, widgets.Widget]:

@@ -88,7 +88,7 @@ def test_the_forms_start_with_the_former_defaults():
         "flow_threshold": 0.4,
         "cellprob_threshold": 0.0,
         "batch_size": 8,
-        "preview_image": "",
+        "preview_image": None,  # no run is open: the dropdown is empty
         "overwrite": False,
     }
     assert set(forms["model"].fields["device"].options) == set(DEVICES)
@@ -120,11 +120,13 @@ def test_every_field_reaches_the_workflow_as_given(monkeypatch):
         "preview_image": "a/b.tif",
         "overwrite": True,
     }
+    monkeypatch.setattr(CellposeNotebook, "_fill_images", lambda self, dropdown: None)  # no run
+    forms["preview"].fields["preview_image"].options = ["a/b.tif", "c.tif"]
     for form in forms.values():
         for name, field in form.fields.items():
             field.value = values[name]
         form.button.click()
-        assert form.stopped is None and not form.button.disabled
+        assert form.stopped is None  # (preview and segment stay disabled: no model loaded)
     assert calls == [
         ("open", (" /data/run ", "/data/masks")),
         ("choose_channels", ("Nuclear", "nuclei")),

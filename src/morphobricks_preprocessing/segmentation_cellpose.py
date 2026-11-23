@@ -231,6 +231,15 @@ def segment_image(loaded: LoadedModel, settings: Settings, stack: np.ndarray) ->
         For a stack that is not ``(C, Y, X)`` with 1 to 3 channels, or a result that is not a
         2D label image.
     """
+    return evaluate(loaded, settings, stack)[0]
+
+
+def evaluate(loaded: LoadedModel, settings: Settings, stack: np.ndarray) -> tuple[np.ndarray, Any]:
+    """Return the labels of :func:`segment_image` and Cellpose's flows (``flows[0]`` is RGB).
+
+    The flows are for the preview (``cellpose.plot.show_segmentation``); the batch keeps only
+    the labels. None when Cellpose returned no flows.
+    """
     array = np.asarray(stack)
     if array.ndim != 3:
         raise SegmentationError(f"The stack is {array.ndim}D; Cellpose gets (C, Y, X).")
@@ -239,7 +248,7 @@ def segment_image(loaded: LoadedModel, settings: Settings, stack: np.ndarray) ->
     labels = np.asarray(out[0] if isinstance(out, tuple) else out)
     if labels.ndim != 2:
         raise SegmentationError(f"Cellpose returned {labels.ndim}D labels; a mask is 2D (Y, X).")
-    return labels
+    return labels, (out[1] if isinstance(out, tuple) and len(out) > 1 else None)
 
 
 def inference_parameters(

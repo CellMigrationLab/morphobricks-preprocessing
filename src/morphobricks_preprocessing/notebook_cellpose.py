@@ -18,15 +18,13 @@ from pathlib import Path
 from typing import ParamSpec, TypeVar
 
 import ipywidgets as widgets
-import numpy as np
 from IPython.display import display
-from matplotlib.figure import Figure
 
 from . import segmentation_cellpose as cp
+from .notebook_cellpose_preview import MaskResult, preview_figures
 from .notebook_progress import progress_html
 from .notebook_stop import CellStop
 from .notebook_style import STYLE_CSS, status, table, tiles
-from .preview_render import as_colour, display_panel, outline
 from .run_inputs import RunInputs, RunInputsError
 from .segmentation_handoff import (
     SegmentationPlan,
@@ -156,30 +154,6 @@ class ChannelPicker:
         return widgets.VBox([*self.dropdowns, help_line, self.message])
 
 
-def preview_figure(stack: np.ndarray, labels: np.ndarray, channel_ids: tuple[str, ...]) -> Figure:
-    """Return the preview: each channel (display contrast only) and the outlines of the labels.
-
-    The contrast stretch (preprocessing's own display contrast, which also shows non-finite
-    pixels as such) is for the eye: the stack that was segmented, and the masks, are the stored
-    values and are never changed by it.
-    """
-    panels = [display_panel(np.asarray(channel)).pixels for channel in stack]
-    edge = outline(np.asarray(labels))
-    figure = Figure(figsize=(4 * (len(panels) + 1), 4))
-    axes = figure.subplots(1, len(panels) + 1, squeeze=False)[0]
-    for axis, panel, name in zip(axes, panels, channel_ids, strict=False):
-        axis.imshow(panel, cmap="gray", vmin=0, vmax=255)
-        axis.set_title(f"{name} (display contrast)")
-    overlay = as_colour(panels[0]).copy()
-    overlay[edge] = (255, 217, 0)
-    axes[-1].imshow(overlay)
-    axes[-1].set_title(f"Cellpose: {int(labels.max())} objects")
-    for axis in axes:
-        axis.axis("off")
-    figure.tight_layout()
-    return figure
-
-
 class CellposeWorkflow:
     """The Cellpose notebook's state: the run, the channels, the model and the batch.
 
@@ -196,6 +170,7 @@ class CellposeWorkflow:
         self.loaded: cp.LoadedModel | None = None
         self.settings: cp.Settings | None = None
         self.result: cp.BatchResult | None = None
+        self.previewed: list[MaskResult] = []
         self.shown: list[str] = []
 
     def _show(self, widget: widgets.Widget) -> None:
@@ -352,9 +327,20 @@ class CellposeWorkflow:
             )
         fov = by_path[image.strip()] if image.strip() else (todo or fovs)[0]
         stack = plan.read(fov)
-        labels = cp.segment_image(self.loaded, self.settings, stack)
-        self._show(_card("info", f"Preview of {fov.relative_path} (nothing is written)"))
-        display(preview_figure(stack, labels, plan.channel_ids))
+        labels, flows = cp.evaluate(self.loaded, self.settings, stack)
+        named = tuple(zip(plan.channel_ids, self.picker.channel_roles, strict=True))
+        results = [MaskResult(OUTPUT_NAMES[self.picker.output], stack, named, labels, flows)]
+        diameter = self.settings.diameter
+        size = f"{diameter:g} pixels" if diameter is not None else "blank = " + cp.NATIVE_SCALE
+        lines = tuple(f"{r.name}: {r.objects} objects; diameter {size}" for r in results)
+        self._show(_card("info", f"Preview of {fov.relative_path} (nothing is written)", lines))
+        try:
+            figures = preview_figures(results)
+        except ValueError as exc:
+            raise SegmentationError(str(exc)) from exc
+        for figure in figures:
+            display(figure)
+        self.previewed = results
 
     @stops
     def run(self, overwrite: bool = False) -> cp.BatchResult:

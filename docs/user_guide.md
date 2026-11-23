@@ -237,11 +237,12 @@ notebook's step 3 (§4), also tells how they relate.
 [`notebooks/MorphoBricks_Cellpose.ipynb`](../notebooks/MorphoBricks_Cellpose.ipynb) makes masks
 for a run you already have (run preprocessing first and describe the experiment). Its cells:
 install (Cellpose 4.2.1.1 and the preprocessing commit it is made for), Google Drive, open the
-run's output folder and a masks folder, choose the mask type and **one to three channels by
-channel ID**, choose the model, device and settings and load the model, preview one image, and
-segment all images. From cell 3 on, each cell shows a form of widgets, the same in Google
+run's output folder and a masks folder, choose the output and the **channels by channel ID**,
+choose the model, device and settings and load the model, preview one example result (a
+dropdown of the run's images and Cellpose's own result panels, as in the ZeroCostDL4Mic
+Cellpose notebook; nothing is written), and segment the whole experiment. From cell 3 on, each cell shows a form of widgets, the same in Google
 Colab, JupyterLab and LabConstrictor: fill it in and press its button (**Open the run**,
-**Choose the channels**, **Load the model**, **Preview**, **Segment all images**). You never edit
+**Choose the channels**, **Load the model**, **Preview**, **Segment the whole experiment**). You never edit
 code. Folders are typed or pasted, or chosen with **Browse…** where a dialog can open (not on
 Colab: copy the path from the **Files** panel). A refusal is shown under the button in a red card,
 with the same message as before; change the form and press the button again. Then:
