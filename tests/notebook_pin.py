@@ -30,10 +30,17 @@ import pytest
 
 PACKAGE = "morphobricks_preprocessing"
 SOURCE_ROOT = "src"
-BUILD_FILES = ("hatch.toml", ".gitignore")
-"""The files the build reads besides the package and ``pyproject.toml``: hatchling reads
-``hatch.toml`` when it exists and leaves out what ``.gitignore`` names, so either can change
-the installed files."""
+BUILD_FILES = (".gitignore",)
+"""The files the build reads besides the package and ``pyproject.toml``: hatchling leaves out
+what ``.gitignore`` names, so it can change the installed files. A ``hatch.toml`` is refused
+(:data:`HATCH_KEYS`)."""
+HATCH_KEYS = frozenset({"metadata.allow-direct-references", "build.targets.wheel.packages"})
+"""The ``[tool.hatch]`` settings the check knows to add no file outside the package. Any other
+setting (``force-include``, ``sources``, build hooks, a version source) or a ``hatch.toml``
+can put other files in the wheel and is refused."""
+BACKEND_REQUIRES = {"hatchling.build": "hatchling"}
+"""The one requirement of each known backend. A further one (a hatch plugin) may read any
+``[tool]`` table, so then the whole ``pyproject.toml`` is compared."""
 BACKEND_TABLES = {"hatchling.build": "hatch"}
 """The ``[tool]`` table each known build backend reads. Every other ``[tool]`` table (Ruff,
 pytest, the code rules) is read by no build and by no code of the package, so a change there
@@ -313,17 +320,34 @@ def install_table(text: str) -> dict:
     if backend not in BACKEND_TABLES:
         raise PinScopeError(f"pyproject.toml has an unknown build backend: {backend!r}")
     own = data.get("tool", {}).get(BACKEND_TABLES[backend], {})
+    unknown = _leaf_keys(own) - HATCH_KEYS
+    if unknown:
+        raise PinScopeError(f"[tool.hatch] has settings the check does not know: {unknown}")
     wheel = own.get("build", {}).get("targets", {}).get("wheel", {})
     if wheel.get("packages") != WHEEL_PACKAGES:
         raise PinScopeError(f"the wheel's packages are not {WHEEL_PACKAGES}: {wheel}")
-    data["tool"] = {BACKEND_TABLES[backend]: own}
+    requires = data.get("build-system", {}).get("requires", [])
+    names = {re.match(r"[A-Za-z0-9._-]*", r).group().lower() for r in requires}
+    if names == {BACKEND_REQUIRES[backend]}:
+        data["tool"] = {BACKEND_TABLES[backend]: own}
     return data
+
+
+def _leaf_keys(table: dict, prefix: str = "") -> set[str]:
+    """Return the dotted key of every value in ``table`` that is not itself a table."""
+    keys = set()
+    for key, value in table.items():
+        name = f"{prefix}{key}"
+        keys |= _leaf_keys(value, f"{name}.") if isinstance(value, dict) else {name}
+    return keys
 
 
 def _install_table_at(repo: Path, blobs: dict[str, str]) -> dict:
     """Return :func:`install_table` of a commit's ``pyproject.toml``."""
     if "pyproject.toml" not in blobs:
         raise PinScopeError("a commit has no pyproject.toml: what it installs is unknown")
+    if "hatch.toml" in blobs:
+        raise PinScopeError("a commit has a hatch.toml: its build settings are not checked")
     return install_table(_blob_texts(repo, [blobs["pyproject.toml"]])[0])
 
 

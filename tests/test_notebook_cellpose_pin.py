@@ -182,7 +182,6 @@ CHANGES = {
         ["pyproject.toml"],
     ),
     "the files the build leaves out": ({".gitignore": "*.json\n"}, [".gitignore"]),
-    "a hatch.toml added": ({"hatch.toml": "[build]\n"}, ["hatch.toml"]),
 }
 
 
@@ -273,6 +272,11 @@ HERE = Path(__file__)
 def load():
     return {}
 """
+FORCE_INCLUDE = '\n[{}.force-include]\n"extra/helper.py" = "morphobricks_preprocessing/helper.py"\n'
+WITH_PLUGIN = (
+    PYPROJECT.replace('["hatchling>=1.27"]', '["hatchling>=1.27", "hatch-plugin==1.0"]')
+    + "\n[tool.plugin]\nlevel = 1\n"
+)
 REFUSED = {
     # A command the cell starts by a name the COMMANDS check did not look at.
     "a command by an aliased subprocess": (
@@ -362,8 +366,29 @@ REFUSED = {
         {"src/helpers/__init__.py": "VALUE = 2\n"},
         NOTEBOOK,
     ),
+    # Build inputs outside src/ that put other files in the wheel.
+    "a file the wheel force-includes": (
+        {
+            "pyproject.toml": PYPROJECT + FORCE_INCLUDE.format("tool.hatch.build.targets.wheel"),
+            "extra/helper.py": "VALUE = 1\n",
+        },
+        {"extra/helper.py": "VALUE = 2\n"},
+        NOTEBOOK,
+    ),
+    "a hatch.toml": (
+        {"hatch.toml": FORCE_INCLUDE.format("build.targets.wheel"), "extra/helper.py": "A = 1\n"},
+        {"extra/helper.py": "A = 2\n"},
+        NOTEBOOK,
+    ),
 }
 FOLLOWED = {
+    # A build plugin may read any [tool] table, so all of pyproject.toml counts.
+    "a [tool] table with a build plugin": (
+        {"pyproject.toml": WITH_PLUGIN},
+        {"pyproject.toml": WITH_PLUGIN.replace("level = 1", "level = 2")},
+        NOTEBOOK,
+        ["pyproject.toml"],
+    ),
     # Package code that runs a package module by naming it in a string.
     "a package module started by python -m": (
         {
