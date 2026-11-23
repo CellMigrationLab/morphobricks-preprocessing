@@ -320,7 +320,7 @@ def test_5_a_change_of_the_image_type_alone_keeps_the_unit_listed(tmp_path, stat
     assert list(rows.listed()) == [odd]  # its tags did not change: still not answered
 
 
-def test_5_a_unit_tagged_to_its_header_before_the_click_is_not_listed_after_change_and_restore(
+def test_5_a_unit_tagged_to_its_header_before_the_click_is_listed_until_a_hand_edit_of_it(
     tmp_path, statement_off
 ):
     root, masks, out = _experiment(tmp_path, names=_contradicting)
