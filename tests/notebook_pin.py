@@ -24,8 +24,6 @@ as an import.
 
 Known gaps: package code that assembles a module name at runtime and passes it to
 something other than a loader (``[sys.executable, "-m", f"{PACKAGE}.{name}"]``) is not seen.
-Likewise a cell function that copies the bare distribution name into another variable before
-giving it to ``pip`` is not seen: only the parameter itself is followed.
 """
 
 from __future__ import annotations
@@ -83,8 +81,9 @@ COMMANDS = frozenset(
 )
 """``subprocess`` and ``os`` calls that start a program."""
 PIP_WORDS = frozenset({"install", "--disable-pip-version-check", "--force-reinstall", "--no-deps"})
-"""The literal words a cell's ``pip`` command may hold after ``-m pip``. The requirements
-come from variables, whose text :func:`_refuse_unpinned_install` checks where it is written.
+"""The literal words a cell's ``pip`` command may get after ``-m pip``, in the call or through
+variables (:func:`_pip_words`). The requirements are f-strings, whose text
+:func:`_refuse_unpinned_install` checks where it is written.
 ``--force-reinstall --no-deps`` replaces an installed preprocessing of the same version from
 another commit (pip keeps it otherwise, #371); it installs the same pinned requirement."""
 INSTALL_SPEC = re.compile(r"morphobricks[-_.]preprocessing|git\+", re.I)
@@ -255,34 +254,70 @@ def _f_string_text(node: ast.JoinedStr) -> str:
     return "".join(v.value if isinstance(v, ast.Constant) else "{}" for v in node.values)
 
 
-def _refuse_name_to_pip(call: ast.Call, nodes: list[ast.AST]) -> None:
-    """Raise ``PinScopeError`` when a cell function given the bare distribution name passes it
-    to ``pip``: that would install the package unpinned (the name may only be read back from
-    the installed metadata). Only the parameter itself is followed, not a copy of it."""
-    functions = [n for n in nodes if isinstance(n, ast.FunctionDef) and n.name == _call_name(call)]
-    for function in functions:
-        params = [a.arg for a in function.args.args]
-        named = {
-            params[i]
-            for i, a in enumerate(call.args[: len(params)])
-            if getattr(a, "value", None) == DISTRIBUTION
-        }
-        for inner in ast.walk(function):
-            if isinstance(inner, ast.Call) and _starts_pip(inner):
-                used = {n.id for n in ast.walk(inner.args[0]) if isinstance(n, ast.Name)}
-                if used & named:
-                    raise PinScopeError(
-                        f"pip is given the bare {DISTRIBUTION}: {ast.unparse(inner)}"
-                    )
+def _values_of(name: str, nodes: list[ast.AST]) -> list[ast.expr]:
+    """Return every value the cells give the variable ``name``.
+
+    That is what is assigned to it, appended, inserted or extended onto it
+    (``wanted.append(...)``) and, for a parameter of a function the cells define, every
+    argument a call of that function gives it. Names are not told apart by scope.
+    """
+    values: list[ast.expr] = []
+    for node in nodes:
+        if isinstance(node, ast.Assign | ast.AnnAssign | ast.AugAssign) and node.value:
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            if any(isinstance(t, ast.Name) and t.id == name for t in targets):
+                values.append(node.value)
+        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+            grows = node.func.attr in ("append", "extend", "insert")
+            if grows and isinstance(node.func.value, ast.Name) and node.func.value.id == name:
+                values.extend(node.args[1:] if node.func.attr == "insert" else node.args)
+        elif isinstance(node, ast.FunctionDef):
+            params = [a.arg for a in node.args.args]
+            if name in params:
+                at = params.index(name)
+                calls = [n for n in nodes if isinstance(n, ast.Call) and _call_name(n) == node.name]
+                values.extend(c.args[at] for c in calls if len(c.args) > at)
+                values.extend(k.value for c in calls for k in c.keywords if k.arg == name)
+    return values
+
+
+def _pip_words(command: ast.Call, nodes: list[ast.AST]) -> list[str]:
+    """Return every literal word a cell's ``pip`` command gets after ``-m pip``.
+
+    Words written in the call and words that reach it through variables are both returned:
+    a name (or ``*name``) is followed to its :func:`_values_of`, through lists and further
+    names, so a word added to a list elsewhere, or the bare distribution name a cell function
+    is given and passes on in a copy or a list, is seen like one written in the call. An
+    f-string is not opened: :func:`_refuse_unpinned_install` checks its text where it is
+    written.
+    """
+    words, pending, seen = [], list(command.args[0].elts[3:]), set()
+    while pending:
+        item = pending.pop()
+        if isinstance(item, ast.Starred):
+            pending.append(item.value)
+        elif isinstance(item, ast.List | ast.Tuple):
+            pending.extend(item.elts)
+        elif isinstance(item, ast.IfExp):
+            pending.extend([item.body, item.orelse])
+        elif isinstance(item, ast.Name) and item.id not in seen:
+            seen.add(item.id)
+            pending.extend(_values_of(item.id, nodes))
+        elif isinstance(item, ast.Constant) and isinstance(item.value, str):
+            words.append(item.value)
+    return words
 
 
 def _refuse_unpinned_install(trees: list[ast.AST]) -> None:
     """Raise ``PinScopeError`` unless every install of the package in the cells is pinned.
 
     ``RELEASE_REF`` and ``REPOSITORY`` are each set once (and named in no string); a ``pip``
-    command holds only :data:`PIP_WORDS` and variables; and every string that can name the
-    package for ``pip`` is the f-string ending ``@{RELEASE_REF}``, the ``REPOSITORY`` value,
-    or the bare distribution name passed to a metadata call or a function the cells define.
+    command is given no literal word but :data:`PIP_WORDS`, written in it or reaching it
+    through variables (:func:`_pip_words`); and every string that can name the package for
+    ``pip`` is the f-string ending ``@{RELEASE_REF}``, the ``REPOSITORY`` value, or the bare
+    distribution name passed to a metadata call or a function the cells define. Such a
+    function may read the installed package by that name, never install it: the name
+    reaching ``pip`` is a word :data:`PIP_WORDS` does not hold.
     """
     nodes = [node for tree in trees for node in ast.walk(tree)]
     for setting in ("RELEASE_REF", "REPOSITORY"):
@@ -301,13 +336,12 @@ def _refuse_unpinned_install(trees: list[ast.AST]) -> None:
             allowed |= {id(v) for v in node.values} | ({id(node)} if _pinned(node) else set())
         elif isinstance(node, ast.Call) and _call_name(node) in METADATA_CALLS | defined:
             allowed |= {id(a) for a in node.args if getattr(a, "value", None) == DISTRIBUTION}
-            _refuse_name_to_pip(node, nodes)
         elif isinstance(node, ast.Assign) and getattr(node.targets[0], "id", "") == "REPOSITORY":
             allowed.add(id(node.value))
         if isinstance(node, ast.Call) and _starts_pip(node):
-            words = node.args[0].elts[3:]
-            if any(isinstance(w, ast.Constant) and w.value not in PIP_WORDS for w in words):
-                raise PinScopeError(f"a pip command the check does not know: {ast.unparse(node)}")
+            unknown = sorted(set(_pip_words(node, nodes)) - PIP_WORDS)
+            if unknown:
+                raise PinScopeError(f"a pip command the check does not know: {unknown}")
     for node in nodes:
         text = _f_string_text(node) if isinstance(node, ast.JoinedStr) else None
         if isinstance(node, ast.Constant) and isinstance(node.value, str):

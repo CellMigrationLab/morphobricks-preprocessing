@@ -9,13 +9,24 @@ import pytest
 
 import test_notebook_cellpose_pin as pin_tests
 from notebook_pin import PinScopeError, pin_differences
-from test_notebook_cellpose_pin import CLI_CHANGED, NOTEBOOK, PKG, _pin_and_head
+from test_notebook_cellpose_pin import CLI_CHANGED, NOTEBOOK, PIP, PKG, _pin_and_head
 
 repo = pin_tests.repo
 """The fixture: a Git repository whose first commit holds the small package."""
 
 LOADS_IN_MODEL = "{}\n\n\ndef load():\n    return {}\n"
 """``model.py`` (which the notebook runs) with an import line and the body of ``load()``."""
+REPLACE = (
+    "from importlib.metadata import distribution\n\n\n"
+    "def replace(name, target):\n"
+    "    distribution(name)\n"
+    "    {}\n"
+    "    subprocess.run([sys.executable, '-m', 'pip', 'install', '--force-reinstall', {}])\n\n\n"
+)
+"""A cell function like the real install cell's forced reinstall, given the bare distribution
+name to read it back from the metadata, with one line that copies it and the word ``pip`` is
+given in the pinned requirement's place."""
+REPLACES_BARE_NAME = "replace('morphobricks-preprocessing', WANTED)\n"
 REFUSED = {
     # (1) a loader reached by an alias or getattr, in a cell and in package code.
     "a cell's aliased import_module": (
@@ -54,6 +65,20 @@ REFUSED = {
             )
         },
         NOTEBOOK,
+    ),
+    # (3) a word, or the bare distribution name a cell function is given, that reaches pip
+    # through a list built elsewhere or a copy.
+    "the bare name a cell function passes to pip in a list": (
+        {},
+        [*NOTEBOOK, REPLACE.format("wanted = [name]", "*wanted") + REPLACES_BARE_NAME],
+    ),
+    "the bare name a cell function passes to pip in a copy": (
+        {},
+        [*NOTEBOOK, REPLACE.format("source = name", "source") + REPLACES_BARE_NAME],
+    ),
+    "a pip word added to a list elsewhere": (
+        {},
+        [*NOTEBOOK, "OPTIONS = ['--editable']\nOPTIONS.append('.')\n" + PIP.format("*OPTIONS")],
     ),
 }
 
