@@ -80,8 +80,9 @@ pip install -e ".[dev]"
 
 The optional `notebook` extra installs the widget dependencies for the notebook
 (`pip install "morphobricks-preprocessing[notebook] @ git+https://github.com/CellMigrationLab/morphobricks-preprocessing.git@v0.8.0"`).
-The notebook's first code cell (**1. Install**) can set this up automatically: it uses a compatible nearby
-checkout or installed package, and installs missing requirements into the active kernel. A standalone
+The notebook's first code cell (**1. Install**) can set this up automatically: it uses a nearby
+checkout or an installed package only when it is the pinned `RELEASE_REF` commit (never by version alone),
+and installs missing requirements into the active kernel. A standalone
 download installs from GitHub if needed (internet access and Git required).
 
 The optional `he-mask` extra installs scikit-image (through `morphobricks-normalization[histology]`)

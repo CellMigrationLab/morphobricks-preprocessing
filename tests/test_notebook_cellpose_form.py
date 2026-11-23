@@ -112,7 +112,7 @@ def test_every_field_reaches_the_workflow_as_given(monkeypatch):
         )
     forms = shown_forms().forms
     values = {
-        "run_folder": " /data/run ",  # passed as typed: the workflow's own checks apply
+        "run_folder": " '/data/run' ",  # tidied as pasted (clean_path); the workflow checks it
         "masks_folder": "/data/masks",
         "output": "nuclei",
         "mask_type": "Nuclear",
@@ -144,7 +144,7 @@ def test_every_field_reaches_the_workflow_as_given(monkeypatch):
         form.button.click()
         assert form.stopped is None  # (preview and segment stay disabled: no model loaded)
     assert calls == [
-        ("open", (" /data/run ", "/data/masks")),
+        ("open", ("/data/run", "/data/masks")),
         ("choose_channels", ("Nuclear", "nuclei", "Nuclear2")),
         ("set_settings", ("17.5", 0.7, -1.5, 3)),
         ("load", ("cpdino", "/models/mine", "mps", True, True)),

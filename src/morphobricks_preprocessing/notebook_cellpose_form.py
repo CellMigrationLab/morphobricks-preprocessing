@@ -6,8 +6,9 @@ shows a form (:class:`StepForm`) built from the Preprocessing app's helpers in
 :mod:`.notebook_style` (``page``, ``card``, ``help_text``, ``button``, ``clean_path``,
 ``ask_directory``, ``ask_open_file``, ``no_dialog_status``): the fields, one main button, and
 under it what the step shows. The button calls the same :class:`.CellposeWorkflow` method a
-cell called before, with the fields' values exactly as given; a refusal that stopped the cell
-(:class:`.CellStop`) is shown with the same message, verbatim, in a red card.
+cell called before, with the fields' values exactly as given (cell 3's paths tidied as pasted,
+``clean_path``); a refusal that stopped the cell (:class:`.CellStop`) is shown with the same
+message, verbatim, in a red card.
 
 The defaults are those of the former form: overwrite, the weights download and the DINOv3
 installation are off, the device is ``cuda`` (an unavailable GPU is refused, never replaced by
@@ -23,7 +24,7 @@ from IPython.display import display
 
 from . import notebook_style as ui
 from . import segmentation_cellpose as cp
-from .notebook_cellpose import CellposeWorkflow, CellStop
+from .notebook_cellpose import CellposeWorkflow, CellStop, output_mask_types
 from .notebook_cellpose_channels import OUTPUT_NAMES, _card, _verbatim
 from .notebook_cellpose_fields import (
     ADVANCED,
@@ -39,6 +40,7 @@ from .notebook_cellpose_fields import (
     path_row,
     text_field,
 )
+from .notebook_cellpose_guard import check_current, check_folders, take_over
 
 __all__ = [
     "ADVANCED",
@@ -50,13 +52,13 @@ __all__ = [
 ]
 
 STOPPED = "This step stopped"
+"""The title of the card that shows a refusal; its message is the refusal, unchanged."""
 MODEL_CHANGED = (
     "The model, the model file or the device in cell 5 (or the nuclei's own model) changed "
     "since the model was loaded: "
     "press Load the model again. A model is never reloaded without that."
 )
 """The refusal of a preview or a run whose model choice no longer matches the loaded model."""
-"""The title of the card that shows a refusal; its message is the refusal, unchanged."""
 
 
 class StepForm:
@@ -99,7 +101,8 @@ class StepForm:
         self.button = ui.button(f" {label}", style="primary", icon=icon, main=True)
         self.output = widgets.Output(layout=FIELD)
         self.stopped: CellStop | None = None
-        self.widget = ui.page(title, purpose, [*cards, self.button, self.output])
+        self.notice = widgets.HTML()  # says when the workflow was replaced (cell 3 run again)
+        self.widget = ui.page(title, purpose, [*cards, self.button, self.notice, self.output])
         self.button.on_click(lambda _: self.submit())
 
     @property
@@ -118,6 +121,7 @@ class StepForm:
         try:
             with self.output:
                 try:
+                    check_current(self.workflow)
                     self.action()
                 except CellStop as exc:
                     self.stopped = exc
@@ -140,6 +144,9 @@ class CellposeNotebook(CellposeWorkflow):
         super().__init__()
         self.forms: dict[str, StepForm] = {}
         self._loaded_with: tuple[str, ...] | None = None
+        self._nuclei_failed = False  # the last Load the model loaded the cells', not the nuclei's
+        self.replaced = False
+        take_over(self)  # the forms of an earlier workflow in this kernel stop working
 
     def _keep(self, name: str, form: StepForm) -> StepForm:
         """Keep ``form`` as step ``name``, bring the forms in step and return it."""
@@ -208,28 +215,27 @@ class CellposeNotebook(CellposeWorkflow):
             cards,
             "Open the run",
             "folder-open",
-            lambda: self.open(run.value, masks.value),
+            lambda: self.open(ui.clean_path(run.value), ui.clean_path(masks.value)),
             {"run_folder": run, "masks_folder": masks},
         )
         return self._keep("open", form)
 
     def channels_form(self) -> StepForm:
-        """Show the form of cell 4: the output and the mask type; the channels come after it.
+        """Show the form of cell 4: the output and the mask type(s); the channels come after it.
 
-        The mask type follows the output (``Cells`` or ``Nuclei``) until the user types another.
-        Changing either after the channels were chosen drops that choice (and a loaded model),
-        so nothing runs with an output or mask type the form no longer shows.
+        The mask type follows the output (``Cells`` or ``Nuclei``) until the user types another;
+        it is taken once typed (Enter, or leaving the box), not at each keystroke, and so is the
+        nuclei mask type of Both. Changing any of them to other than what the channels were
+        chosen with drops that choice (and the loaded models), so nothing runs with an output or
+        mask type the form no longer shows.
         """
         fields, changed = output_fields(OUTPUT_NAMES), widgets.HTML()
         output, mask_type, nuclei_type = fields.values()
+        for box in (mask_type, nuclei_type):  # taken on Enter or leaving the box, not per key
+            box.continuous_update = False
 
         def drop(_: object) -> None:
-            if self.picker is not None:
-                self.drop_choice()
-                self._after_step()
-                changed.value = ui.status(
-                    "warn", "Changed: press Choose the channels again, then load the model."
-                )
+            self._drop_choice(fields, changed)
 
         for field in fields.values():
             field.observe(drop, names="value")
@@ -250,6 +256,26 @@ class CellposeNotebook(CellposeWorkflow):
         )
         return self._keep("channels", form)
 
+    def _drop_choice(self, fields: dict[str, widgets.Widget], changed: widgets.HTML) -> None:
+        """Drop the channels and the model(s) when cell 4 now shows other mask types or output.
+
+        For Both the two mask types are compared; a mask type committed again unchanged drops
+        nothing.
+        """
+        output, mask_type, nuclei_type = (field.value for field in fields.values())
+        shown = (output_mask_types(output, mask_type, nuclei_type), output)
+        if self.picker is not None and (self.mask_types, self.picker.output) != shown:
+            self.drop_choice()
+            self._after_step()
+            changed.value = ui.status(
+                "warn", "Changed: press Choose the channels again, then load the model."
+            )
+
+    def drop_choice(self) -> None:
+        """Forget the channels, the mask types and every loaded model (the choice changed)."""
+        super().drop_choice()
+        self._loaded_with, self._nuclei_failed = None, False
+
     def model_form(self) -> StepForm:
         """Show the form of cell 5: the model, the device, the settings; the button loads."""
         fields, status = model_fields(), widgets.HTML()
@@ -268,10 +294,16 @@ class CellposeNotebook(CellposeWorkflow):
         return self._keep("model", form)
 
     def _load_from(self, fields: dict[str, widgets.Widget]) -> None:
-        """Check the settings, then load the model, with the fields' values (cell 5)."""
+        """Check the settings, then load the model(s), with the fields' values (cell 5).
+
+        The models loaded before are dropped first: a refused load leaves Preview and Segment
+        disabled, never active on a model the form no longer shows. A nuclei model that does
+        not load drops the cells' model just loaded too, and a press then says so.
+        """
+        self.loaded = self.nuclei_loaded = self._loaded_with = None
+        self._nuclei_failed = False
         value = {name: field.value for name, field in fields.items()}
         self._set_form_settings(fields)
-        self._loaded_with = None
         self.load(
             value["model"],
             value["custom_model_file"],
@@ -280,13 +312,17 @@ class CellposeNotebook(CellposeWorkflow):
             value["install_dinov3"],
         )
         if value[SEPARATE_NUCLEI]:
-            self.load_nuclei(
-                value["nuclei_model"],
-                value["nuclei_custom_model_file"],
-                value["device"],
-                value["download_weights"],
-                value["install_dinov3"],
-            )
+            try:
+                self.load_nuclei(
+                    value["nuclei_model"],
+                    value["nuclei_custom_model_file"],
+                    value["device"],
+                    value["download_weights"],
+                    value["install_dinov3"],
+                )
+            except CellStop:
+                self.loaded, self._nuclei_failed = None, True
+                raise
         else:
             self.same_model_for_nuclei()
         self._loaded_with = model_choice(fields)
@@ -375,12 +411,14 @@ class CellposeNotebook(CellposeWorkflow):
         """Run ``step`` with the settings cell 5's form shows now, on the model as loaded.
 
         The settings are checked again (as **Load the model** does); a model, model file or
-        device changed since loading is refused: the model is never reloaded silently.
+        device changed since loading is refused: the model is never reloaded silently. So are
+        run and masks folders in cell 3 other than those opened (``RUN_CHANGED``).
         """
+        check_folders(self)
+        if self._nuclei_failed:  # the cells' model loaded, the nuclei's did not: both dropped
+            raise CellStop("The nuclei model did not load: press Load the model again.")
         model = self.forms.get("model")
         if model is not None and self.loaded is not None:
-            if self._loaded_with is None:  # the cells' model loaded, the nuclei's did not
-                raise CellStop("The nuclei model did not load: press Load the model again.")
             if model_choice(model.fields) != self._loaded_with:
                 raise CellStop(MODEL_CHANGED)
             self._set_form_settings(model.fields)
@@ -388,6 +426,10 @@ class CellposeNotebook(CellposeWorkflow):
 
     def _after_step(self) -> None:
         """Keep the later forms in step: the image list, and the buttons that need a model."""
+        if self.replaced:
+            for form in self.forms.values():
+                form.button.disabled = True
+            return
         for name in ("preview", "segment"):
             if name in self.forms:
                 self.forms[name].button.disabled = self.loaded is None

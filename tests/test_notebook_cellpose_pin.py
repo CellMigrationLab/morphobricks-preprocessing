@@ -283,6 +283,16 @@ PIP = (
     "import subprocess\nimport sys\n\n"
     + "subprocess.run([sys.executable, '-m', 'pip', 'install', {}])\n"
 )
+FORCE = "'--force-reinstall', '--no-deps'"
+REPLACE = (
+    "from importlib.metadata import distribution\n\n\n"
+    "def replace(name, target):\n"
+    "    distribution(name)\n"
+    "    subprocess.run([sys.executable, '-m', 'pip', 'install', " + FORCE + ", {name}])\n\n\n"
+)
+"""The real install cell's forced reinstall: a function given the bare distribution name, to
+read it back from the metadata, and the pinned requirement, to install; ``{name}`` is the
+parameter it passes to pip."""
 REFUSED = {
     # A command the cell starts by a name the COMMANDS check did not look at.
     "a command by an aliased subprocess": (
@@ -413,6 +423,40 @@ REFUSED = {
         [*NOTEBOOK, "WANTED = ['morphobricks-preprocessing']\n" + PIP.format("*WANTED")],
     ),
     "RELEASE_REF set again": ({}, {}, [*NOTEBOOK, "RELEASE_REF = 'main'\n"]),
+    # The forced reinstall (#371 review) keeps the pinned-target rule.
+    "a forced reinstall at a branch": (
+        {},
+        {},
+        [
+            *NOTEBOOK,
+            PIP.format(f"{FORCE}, 'morphobricks-preprocessing @ git+https://h/r.git@main'"),
+        ],
+    ),
+    "a forced reinstall from an unpinned variable": (
+        {},
+        {},
+        [
+            *NOTEBOOK,
+            "SOURCE = f'morphobricks-preprocessing @ git+{REPOSITORY}@main'\n"
+            + PIP.format(f"{FORCE}, SOURCE"),
+        ],
+    ),
+    "a forced reinstall given the bare name": (
+        {},
+        {},
+        [
+            *NOTEBOOK,
+            REPLACE.format(name="name") + "replace('morphobricks-preprocessing', WANTED)\n",
+        ],
+    ),
+    "an uninstall": (
+        {},
+        {},
+        [
+            *NOTEBOOK,
+            PIP.replace("'install'", "'uninstall', '-y'").format("'morphobricks-preprocessing'"),
+        ],
+    ),
 }
 FOLLOWED = {
     # A build plugin may read any [tool] table, so all of pyproject.toml counts.
@@ -464,6 +508,12 @@ ACCEPTED = {
         + 'REPOSITORY = "https://github.com/o/morphobricks-preprocessing.git"\n'
         + "from importlib.metadata import version\n\n"
         + "print(f\"{version('morphobricks-preprocessing')}\")\n",
+        *NOTEBOOK[1:],
+    ],
+    "the real install cell's forced reinstall": [
+        INSTALL_CELL
+        + REPLACE.format(name="target")
+        + "replace('morphobricks-preprocessing', WANTED)\n",
         *NOTEBOOK[1:],
     ],
 }

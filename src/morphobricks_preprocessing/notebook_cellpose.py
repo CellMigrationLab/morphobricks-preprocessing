@@ -66,6 +66,16 @@ def stops(method: Callable[P, T]) -> Callable[P, T]:
     return wrapper
 
 
+def output_mask_types(output: str, mask_type: str, nuclei_mask_type: str = "") -> dict[str, str]:
+    """Return the mask type of each output segmented for ``output`` (two for Both).
+
+    For Both, ``mask_type`` names the cell masks and ``nuclei_mask_type`` the nuclei masks.
+    """
+    if output == cp.BOTH_OUTPUT:
+        return {cp.CELL_OUTPUT: mask_type, cp.NUCLEI_OUTPUT: nuclei_mask_type}
+    return {output: mask_type}
+
+
 class CellposeWorkflow:
     """The Cellpose notebook's state: the run, the channels, the model and the batch.
 
@@ -133,13 +143,18 @@ class CellposeWorkflow:
 
     @stops
     def open(self, run_folder: str, masks_folder: str) -> None:
-        """Open the run and say what it holds (cell 3)."""
+        """Open the run and say what it holds (cell 3).
+
+        What an earlier open chose is dropped first: a refused open leaves no run, channels or
+        model to segment with, so nothing is written to the folders of the run before.
+        """
+        self.inputs = self.masks_root = self.result = None
+        self.results = {}
+        self.drop_choice()
         if not masks_folder.strip():
             raise SegmentationError("Give the masks folder (outside the experiment and the run).")
         inputs = cp.open_run(run_folder)
         self.inputs, self.masks_root = inputs, Path(masks_folder.strip())
-        self.drop_choice()
-        self.result, self.results = None, {}
         coverage = cp.channel_coverage(inputs)
         lines = [
             f"{c}: in {have} of {total} images" + ("" if have == total else " (partial)")
@@ -177,11 +192,7 @@ class CellposeWorkflow:
             raise SegmentationError(
                 f"The output must be one of {', '.join(OUTPUT_NAMES)}, not {output!r}."
             )
-        types = (
-            {cp.CELL_OUTPUT: mask_type, cp.NUCLEI_OUTPUT: nuclei_mask_type}
-            if output == cp.BOTH_OUTPUT
-            else {output: mask_type}
-        )
+        types = output_mask_types(output, mask_type, nuclei_mask_type)
         for name in types.values():
             check_mask_type(name)
         if len({name.casefold() for name in types.values()}) < len(types):
