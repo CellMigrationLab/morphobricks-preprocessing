@@ -82,6 +82,14 @@ old pin are refused with `spec_commit_mismatch`, as at every re-pin.
     confirmed it: confirm it again", `notebook_channels_repeat.relapsed`), also when its new
     header fits its row and its tags are complete; a re-check no longer drops the refusal of a
     unit whose confirmation still holds, so it stays the source of **Confirm the same tags**.
+  - A refusal is never dropped while its unit is still in the folder: a refused unit set to
+    colour (RGB) or unusable keeps its refusal (and confirmation) through a re-check, and is
+    listed again once it is back in a row; only a unit removed from the folder drops it
+    (`RepeatRows.reconcile`). Before, the re-check dropped it, and set back to channels fast
+    mode tagged it from another unit's aliases with no listing or confirmation. While the unit
+    is colour (channels R, G and B) or unusable it is not listed and does not hold the save:
+    there are no channel tags to confirm (`RepeatRows.listed` reads the same rows as
+    `repeat_tags.repeat_groups`).
   - The save button's line says "the tag review is another draft's" only when a review of
     another draft was read; before Channels was opened it names the missing answers first, then
     "this draft's tag review is not read yet".

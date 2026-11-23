@@ -113,19 +113,22 @@ class RepeatRows:
 
         Derived from the current answers on every call: a unit is listed while its tags are
         incomplete or contradict its header, and leaves the list when they fit it, however it got
-        there (an image type alone changes nothing). A unit whose images disagree stays listed
-        while they do: no tags make it one header. Nothing is listed from the memory of another
-        draft (the notebook was pointed elsewhere and the grid is not open on it yet).
+        there. A unit in no row (colour, with channels R, G and B, or unusable) is not listed
+        while it is so: there are no channel tags to confirm, and its refusal is kept
+        (:meth:`reconcile`) to list it again once it is back in a row. A unit whose images
+        disagree stays listed while they do: no tags make it one header. Nothing is listed from
+        the memory of another draft (the notebook was pointed elsewhere and the grid is not open
+        on it yet).
         """
         if self.other_draft():
             return {}
         answers = self.grid.store.answers()
         out = {}
-        current = {u.key: u for u in self.grid.layouts}
+        current = {u.key: u for g in self._rows().values() for u in g}
         for key, (text, _, lead, _, _) in self.refused.items():
             layout = current.get(key)  # the unit as read now, never as at the click
             if layout is None:
-                continue  # no longer in the experiment (:meth:`reconcile` drops it)
+                continue  # gone (dropped by :meth:`reconcile`), or colour or unusable now
             if lead is None:
                 if repeat_apart((layout,)):
                     out[key] = text
@@ -144,9 +147,11 @@ class RepeatRows:
     def reconcile(self) -> None:
         """Bring the refusals up to date with the grid's current layouts (on every opening).
 
-        The same rules as the click, on the layouts as read now: a unit no longer in any row
-        (removed from the folder, now colour or unusable) is dropped, but a unit fast mode does
-        not offer stays (only the user confirming it releases it); a unit whose channel count
+        The same rules as the click, on the layouts as read now: only a unit removed from the
+        folder is dropped; a unit in no row now (colour, unusable, or no labels yet) keeps its
+        refusal as it is, to be read again once it is back in a row (never released by a
+        detour), and a unit fast mode does not offer stays (only the user confirming it releases
+        it); a unit whose channel count
         changed is kept, to have every channel chosen again (:func:`.repeat_tags.recount`); a
         unit whose images
         disagree now is refused for that (:func:`.repeat_tags.repeat_apart`), and one whose
@@ -160,11 +165,13 @@ class RepeatRows:
         grid, kept = self.grid, {}
         rows = self._rows()  # the whole row: its reference never depends on the mode
         answers = grid.store.answers()
+        present = {u.key: u for u in grid.layouts}
         for key, old in self.refused.items():
             group, layout = self._placed(rows, key)
             if layout is None or not grid.labels:
-                continue  # gone, colour or unusable: in no row (a unit fast mode does not
-                # offer stays refused: only the user confirming it releases it)
+                if key in present:  # colour, unusable or no labels now: never a release
+                    kept[key] = old._replace(layout=present[key])
+                continue  # gone from the folder: the only way a refusal is dropped here
             why = repeat_apart(group).get(key)
             if why is not None:
                 kept[key] = Refusal(html.escape(why), layout, None, old.tags, old.channels)
