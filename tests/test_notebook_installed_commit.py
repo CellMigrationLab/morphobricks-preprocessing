@@ -9,6 +9,7 @@ reads the commit with the same functions (one text in both cells, tested here).
 import ast
 import importlib
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -207,7 +208,8 @@ def test_setup_refuses_a_copy_imported_from_outside_the_install(
         )
 
     monkeypatch.setattr(importlib, "import_module", from_the_working_folder)
-    with pytest.raises(RuntimeError, match=f"from {local}, not from the copy pip installed in"):
+    expected = re.escape(f"from {local}, not from the copy pip installed in")
+    with pytest.raises(RuntimeError, match=expected):
         state.start(INSTALL)
     assert "Ready" not in capsys.readouterr().out
     assert state.namespace["SETUP_RECORD"] == {}
