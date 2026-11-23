@@ -113,10 +113,15 @@ def test_setup_stops_when_the_install_leaves_another_commit(cell_1, monkeypatch)
     state = cell_1
     state.direct_url = git_record("2" * 40, REPOSITORY)
     monkeypatch.setattr(subprocess, "run", lambda command, check: state.installs.append(command))
-    with pytest.raises(RuntimeError, match=f"not v0.8.0 \\({RELEASE_REF}\\): pip recorded 2222"):
+    with pytest.raises(RuntimeError, match="pip kept another MorphoBricks preprocessing") as stop:
         state.start(INSTALL)
     forced_then_installed(state.installs, PINNED)
     assert state.namespace["SETUP_RECORD"] == {}
+    # A restart would not help (pip kept the files): the stop gives the command that does.
+    assert f"recorded {'2' * 40}, not v0.8.0 ({RELEASE_REF})" in str(stop.value)
+    assert "Restart" not in str(stop.value)
+    command = f'{sys.executable} -m pip install --force-reinstall --no-deps "{PINNED}"'
+    assert f"Replace it with: {command}, then run this cell again." in str(stop.value)
 
 
 def test_setup_replaces_the_same_version_from_another_commit_that_pip_keeps(cell_1, capsys):  # noqa: F811

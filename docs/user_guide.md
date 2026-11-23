@@ -48,7 +48,8 @@ Missing notebook dependencies are installed into the same Python environment as 
 A local checkout is installed in editable mode when it needs dependencies. Setup prints the
 preprocessing version and commit, the normalization and ipywidgets versions, the notebook
 version and the selected source; after an installation it reads the commit again and stops if
-pip did not install `RELEASE_REF`. Installation needs internet access, and the GitHub option needs Git. If another copy
+pip did not install `RELEASE_REF`, naming the `pip install --force-reinstall --no-deps` command
+that replaces it (a restart would not help there). Installation needs internet access, and the GitHub option needs Git. If another copy
 of the package is already loaded, restart the kernel before switching source checkouts. When
 pip replaces a preprocessing the kernel had already imported, cell 1 stops and asks for a
 restart (the loaded module stays the old copy until then); run it again after the restart: it

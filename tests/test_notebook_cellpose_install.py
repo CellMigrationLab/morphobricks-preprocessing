@@ -140,10 +140,14 @@ def test_the_install_cell_stops_when_the_install_leaves_another_commit(installer
     installer.direct_url = git_record("2" * 40, setting("REPOSITORY"))
     monkeypatch.setattr(subprocess, "run", lambda command, check: installer.pip.append(command))
     namespace = {}
-    with pytest.raises(RuntimeError, match=f"not {setting('RELEASE_REF')}: pip recorded 2222"):
+    with pytest.raises(RuntimeError, match="pip kept another MorphoBricks preprocessing") as stop:
         run_cell(namespace, INSTALL)
     forced_then_installed(installer.pip, PINNED)
     assert namespace["SETUP_RECORD"] == {}
+    assert f"recorded {'2' * 40}, not {setting('RELEASE_REF')}" in str(stop.value)
+    assert "Restart" not in str(stop.value)  # it would not help: the stop gives what does
+    command = f'{sys.executable} -m pip install --force-reinstall --no-deps "{PINNED}"'
+    assert f"Replace it with: {command}, then run this cell again." in str(stop.value)
 
 
 def test_an_install_that_upgrades_a_loaded_numpy_or_opencv_says_to_restart(installer):
