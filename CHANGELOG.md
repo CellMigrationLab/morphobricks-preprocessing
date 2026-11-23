@@ -77,6 +77,9 @@ old pin are refused with `spec_commit_mismatch`, as at every re-pin.
     confirmed it: confirm it again", `notebook_channels_repeat.relapsed`), also when its new
     header fits its row and its tags are complete; a re-check no longer drops the refusal of a
     unit whose confirmation still holds, so it stays the source of **Confirm the same tags**.
+  - The save button's line says "the tag review is another draft's" only when a review of
+    another draft was read; before Channels was opened it names the missing answers first, then
+    "this draft's tag review is not read yet".
 - **Segmentation hand-off** (owner request of 21 November 2026, step 1 of the Cellpose notebook
   plan): `segmentation_handoff` and `segmentation_record` (numpy and tifffile only; no
   segmentation tool is imported). `images_to_segment` lists the run's images that have no mask
