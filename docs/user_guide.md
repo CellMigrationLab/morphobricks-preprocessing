@@ -246,7 +246,10 @@ code. Folders are typed or pasted, or chosen with **Browse…** where a dialog c
 Colab: copy the path from the **Files** panel). A refusal is shown under the button in a red card,
 with the same message as before; change the form and press the button again. Then:
 
-- **Channels.** You choose channels by ID (`DNA`, `ACTIN`), never by position. When some images
+- **Channels.** You choose channels by ID (`DNA`, `ACTIN`), never by position, by role as in
+  ZeroCostDL4Mic: the **cell channel** (cytoplasm or cell border) to segment, up to two more
+  cell channels, and optionally a **nuclear channel**. Cellpose gets the cell channels first,
+  then the nuclear one, and the record names each channel's role. When some images
   have a channel that others lack (a fourth stain in one biological repeat), only the channels
   every image has can be used: the dropdown says which channel is partial, and choosing it
   shows preprocessing's refusal (`A_SCOPE_INCOMPLETE`) unchanged. Cellpose reads at most three

@@ -261,7 +261,8 @@ def open_and_choose(cells, **extra):
     run_cell(cells.ns, OPEN, run_folder=str(run.out), masks_folder=str(run.masks))
     run_cell(cells.ns, CHANNELS, mask_type="Cells")
     picker = cells.ns["workflow"].picker
-    for dropdown, value in zip(picker.dropdowns, extra.get("ids", ("TUB", "DNA", "")), strict=True):
+    ids = extra.get("ids", ("TUB", "", "", "DNA"))  # cell channels 1-3, then the nuclear one
+    for dropdown, value in zip(picker.dropdowns, ids, strict=True):
         dropdown.value = value
     return picker
 
@@ -297,7 +298,7 @@ def test_the_cells_segment_a_mixed_run_end_to_end(cells):
 
 
 def test_a_partial_channel_is_refused_and_the_message_is_shown_verbatim(cells):
-    picker = open_and_choose(cells, ids=("DNA", "EXTRA", ""))
+    picker = open_and_choose(cells, ids=("DNA", "EXTRA", "", ""))
     assert picker.plan is None
     assert "A_SCOPE_INCOMPLETE" in picker.refusal and "EXTRA" in picker.refusal
     assert picker.refusal.startswith("The channel 'EXTRA' is present in 4 of 12 images")
@@ -382,7 +383,7 @@ def test_a_channel_choice_refused_after_loading_stops_the_cell_once_and_starts_n
         stopped.value.__cause__ is not None and stopped.value.__context__ is stopped.value.__cause__
     )
     assert cells.stub.calls == [] and not cells.run.masks.exists()  # no image, no record
-    picker.dropdowns[1].value = "DNA"  # a valid choice again: the cell runs
+    picker.dropdowns[1].value = ""  # a valid choice again: the cell runs
     run_cell(cells.ns, cell)
     assert len(cells.stub.calls) >= 1
 

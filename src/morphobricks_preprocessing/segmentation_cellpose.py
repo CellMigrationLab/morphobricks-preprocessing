@@ -66,10 +66,14 @@ from .segmentation_cellpose_model import (
     load_model,
     weights_file,
 )
+from .segmentation_cellpose_run import channel_coverage, next_steps_lines, open_run
 from .segmentation_cellpose_settings import (
+    CELL_ROLE,
     FLOW_ITERATIONS,
     NORMALIZE_REFUSAL,
+    NUCLEAR_ROLE,
     Settings,
+    channel_roles_entry,
     diameter_from_text,
     flow_iterations,
     rescale_factor,
@@ -86,7 +90,6 @@ from .segmentation_record import (
     SegmentationError,
     SegmentationRecord,
     SegmentedImage,
-    check_mask_type,
     mask_sha256,
     new_batch_id,
     read_record,
@@ -95,14 +98,19 @@ from .segmentation_record import (
 )
 
 __all__ = [
+    "channel_coverage",
+    "next_steps_lines",
+    "open_run",
     "BUILTIN_MODELS",
     "CELLPOSE_VERSION",
     "DEFAULT_MODEL",
     "DINOV3_COMMIT",
     "DINOV3_URL",
     "DINO_MODELS",
+    "CELL_ROLE",
     "FLOW_ITERATIONS",
     "NORMALIZE_REFUSAL",
+    "NUCLEAR_ROLE",
     "LoadedModel",
     "ModelChoice",
     "Settings",
@@ -268,6 +276,9 @@ class SegmentationJob:
         The mask type and the masks folder.
     overwrite
         Replace masks that are already there (default: skip them).
+    channel_roles
+        The role of each of ``plan.channel_ids`` (``cell`` ones, then one ``nuclear``), recorded
+        with them; ``()`` records none (null).
     """
 
     inputs: RunInputs
@@ -277,11 +288,13 @@ class SegmentationJob:
     mask_type: str
     masks_root: Path
     overwrite: bool = False
+    channel_roles: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
-        """Refuse a job without resolved channels, before anything is segmented."""
+        """Refuse a job without resolved channels or with roles that do not fit them."""
         if self.plan is None:
             raise SegmentationError("No channels are resolved: choose channels the run has.")
+        channel_roles_entry(self.plan.channel_ids, self.channel_roles)
 
 
 @dataclass(frozen=True)
@@ -418,7 +431,10 @@ def _batch(job: SegmentationJob, batch_id: str, images: list[SegmentedImage]) ->
         model_name=loaded.name,
         model_sha256=loaded.sha256,
         model_file=loaded.file,
-        parameters=inference_parameters(loaded, job.settings, job.plan.channel_ids),
+        parameters={
+            **inference_parameters(loaded, job.settings, job.plan.channel_ids),
+            "channel_roles": channel_roles_entry(job.plan.channel_ids, job.channel_roles),
+        },
         channel_ids=job.plan.channel_ids,
         device=loaded.device,
         run_folder=os.fspath(job.inputs.output_folder),
@@ -547,49 +563,3 @@ def run_batch(
         stopped += f" The record could not be written either: {exc}"
         return BatchResult(_batch(job, started, entries), None, stopped, frozenset(attention))
     return BatchResult(batch, record, stopped, frozenset(attention))
-
-
-# --- the run, the channels and what is shown --------------------------------------------------
-
-
-def open_run(run_folder: str) -> RunInputs:
-    """Open the run in ``run_folder`` (preprocessing's own checks; refusals are unchanged).
-
-    Raises
-    ------
-    SegmentationError
-        For a blank folder.
-    RunInputsError
-        For a run that cannot be opened (:meth:`.run_inputs.RunInputs.open`).
-    """
-    if not run_folder.strip():
-        raise SegmentationError("Give the run's output folder (the one holding run_manifest.json).")
-    return RunInputs.open(Path(run_folder.strip()))
-
-
-def channel_coverage(inputs: RunInputs) -> dict[str, tuple[int, int]]:
-    """Return ``{channel ID: (images that have it, images)}``, in the order first met."""
-    fovs = inputs.fovs()
-    order = dict.fromkeys(c for f in fovs for c in (f.channel_ids or ()))
-    return {c: (sum(c in (f.channel_ids or ()) for f in fovs), len(fovs)) for c in order}
-
-
-def next_steps_lines(mask_type: str, masks_root: str | os.PathLike) -> tuple[str, ...]:
-    """Return what to do after the masks are made, as lines of text.
-
-    Raises
-    ------
-    SegmentationError
-        For a mask type preprocessing would refuse.
-    """
-    check_mask_type(mask_type)
-    return (
-        f"1. Declare the new mask type in the experiment description, in the preprocessing "
-        f"notebook (step 4, Masks) or by adding to morphobricks.toml:  [masks.{mask_type}]  "
-        f'source_type = "{mask_type}"  representation = "instances".',
-        "2. Save the description.",
-        f"3. Run preprocessing again with the masks folder {os.fspath(masks_root)} (the "
-        "histograms are reused; the masks are read and checked).",
-        "4. Describe the masks (step 4 of the preprocessing notebook).",
-        "5. Then continue with MorphoFeature.",
-    )

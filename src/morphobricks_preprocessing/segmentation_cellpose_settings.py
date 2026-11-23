@@ -129,3 +129,39 @@ def flow_iterations(settings: Settings) -> int:
         return int(FLOW_ITERATIONS / rescale_factor(settings))
     except (OverflowError, ZeroDivisionError):  # a diameter so large its rescale rounds to 0
         return 0
+
+
+CELL_ROLE = "cell"
+"""The role of a cell or cell-border channel (ZeroCostDL4Mic's "channel to segment")."""
+NUCLEAR_ROLE = "nuclear"
+"""The role of the optional nuclear channel, given to Cellpose after the cell channels."""
+
+
+def channel_roles_entry(
+    channel_ids: tuple[str, ...], roles: tuple[str, ...]
+) -> list[dict[str, str]] | None:
+    """Return the record's ``channel_roles``: each channel ID with its role, in Cellpose's order.
+
+    The roles only label the channels chosen by ID: the cell channels first, then at most one
+    nuclear channel. No roles (``()``) are recorded as null, never guessed.
+
+    Raises
+    ------
+    SegmentationError
+        For roles that do not match the channels one for one, an unknown role, a nuclear
+        channel before a cell channel, more than one nuclear channel or no cell channel.
+    """
+    if not roles:
+        return None
+    if len(roles) != len(channel_ids) or set(roles) - {CELL_ROLE, NUCLEAR_ROLE}:
+        raise SegmentationError(
+            f"Each channel needs one role ({CELL_ROLE} or {NUCLEAR_ROLE}); got {list(roles)} "
+            f"for {list(channel_ids)}."
+        )
+    cells = roles.count(CELL_ROLE)
+    if cells == 0 or roles[cells:] not in ((), (NUCLEAR_ROLE,)):
+        raise SegmentationError(
+            "Choose one or more cell channels, then at most one nuclear channel, in that "
+            f"order; got {list(roles)}."
+        )
+    return [{"channel_id": c, "role": r} for c, r in zip(channel_ids, roles, strict=True)]

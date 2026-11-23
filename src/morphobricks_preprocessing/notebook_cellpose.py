@@ -73,7 +73,12 @@ def _card(kind: str, title: str, lines: tuple[str, ...] = (), *, raw: bool = Fal
 
 
 class ChannelPicker:
-    """Up to three dropdowns of the run's channel IDs, resolved by ID as soon as they change.
+    """Dropdowns of the run's channel IDs by role, resolved by ID as soon as they change.
+
+    As in ZeroCostDL4Mic: the cell (or cell-border) channel, up to two more cell channels, and
+    optionally a nuclear channel. Cellpose gets them in that order, the cell channels first,
+    at most three in all (:func:`.segmentation_cellpose.check_channel_count` refuses more). The
+    roles only label and order the choice; the channels are resolved by ID as before.
 
     The options are the channel IDs of the run; one that not every image has says so, and
     choosing it shows the resolver's refusal (``A_SCOPE_INCOMPLETE``) unchanged under the
@@ -90,15 +95,23 @@ class ChannelPicker:
             for c, (have, total) in coverage.items()
         ]
         first = shared[0] if shared else next(iter(coverage), "")
-        self.dropdowns = [
-            widgets.Dropdown(options=options, value=first, description="Channel 1"),
+        style = {"description_width": "11em"}
+        self.cell_dropdowns = [
+            widgets.Dropdown(options=options, value=first, description="Cell channel", style=style),
             *(
                 widgets.Dropdown(
-                    options=[(NONE, ""), *options], value="", description=f"Channel {n}"
+                    options=[(NONE, ""), *options],
+                    value="",
+                    description=f"Cell channel {n}",
+                    style=style,
                 )
                 for n in (2, 3)
             ),
         ]
+        self.nuclear = widgets.Dropdown(
+            options=[(NONE, ""), *options], value="", description="Nuclear channel", style=style
+        )
+        self.dropdowns = [*self.cell_dropdowns, self.nuclear]
         self.message = widgets.HTML()
         self.plan: SegmentationPlan | None = None
         self.refusal = ""
@@ -108,8 +121,14 @@ class ChannelPicker:
 
     @property
     def channel_ids(self) -> tuple[str, ...]:
-        """The chosen channel IDs, in the order of the dropdowns (blank ones left out)."""
+        """The chosen channel IDs in Cellpose's order: cell channels, then the nuclear one."""
         return tuple(d.value for d in self.dropdowns if d.value)
+
+    @property
+    def channel_roles(self) -> tuple[str, ...]:
+        """The role of each of :attr:`channel_ids` (``cell`` or ``nuclear``), recorded with it."""
+        cells = sum(1 for d in self.cell_dropdowns if d.value)
+        return (cp.CELL_ROLE,) * cells + ((cp.NUCLEAR_ROLE,) if self.nuclear.value else ())
 
     def _changed(self, _change: object = None) -> None:
         """Resolve the choice; show what was resolved, or the refusal verbatim."""
@@ -117,7 +136,8 @@ class ChannelPicker:
             cp.check_channel_count(self.channel_ids)
             self.plan = resolve_segmentation(self.inputs, self.channel_ids)
             self.refusal = ""
-            note = _card("ok", "Channels: " + ", ".join(self.channel_ids))
+            named = zip(self.channel_ids, self.channel_roles, strict=True)
+            note = _card("ok", "Channels: " + ", ".join(f"{c} ({r})" for c, r in named))
         except REFUSALS as exc:
             self.plan, self.refusal = None, str(exc)
             note = _card(
@@ -144,7 +164,12 @@ class ChannelPicker:
 
     def box(self) -> widgets.VBox:
         """Return the dropdowns and the message under them."""
-        return widgets.VBox([*self.dropdowns, self.message])
+        help_line = widgets.HTML(
+            "<div class='mb-help'>The <b>cell channel</b> (cytoplasm or cell border) is the one "
+            "to segment; add up to two more cell channels and, optionally, a <b>nuclear "
+            "channel</b>. Cellpose gets them in this order, at most three in all.</div>"
+        )
+        return widgets.VBox([*self.dropdowns, help_line, self.message])
 
 
 def preview_figure(stack: np.ndarray, labels: np.ndarray, channel_ids: tuple[str, ...]) -> Figure:
@@ -355,6 +380,7 @@ class CellposeWorkflow:
             self.mask_type,
             self.masks_root,
             overwrite,
+            self.picker.channel_roles,
         )
         bar = widgets.HTML()
         display(bar)
