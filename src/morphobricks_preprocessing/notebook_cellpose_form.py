@@ -160,14 +160,41 @@ class CellposeNotebook(CellposeWorkflow):
         super().__init__()
         self.forms: dict[str, StepForm] = {}
         self._loaded_with: tuple[str, str, str] | None = None
+        self.on_masks_written: Callable[[cp.BatchResult], object] | None = None
 
-    def _form(self, name: str, form: StepForm) -> None:
-        """Keep ``form`` as step ``name``, bring the forms in step and display it."""
+    def _keep(self, name: str, form: StepForm) -> StepForm:
+        """Keep ``form`` as step ``name``, bring the forms in step and return it."""
         self.forms[name] = form
         self._after_step()
-        display(form.widget)
+        return form
+
+    # Each cell of the notebook mounts one step; segmentation_app mounts them all at once.
 
     def open_step(self) -> None:
+        """Show cell 3's form: the run's output folder and the masks folder."""
+        display(self.open_form().widget)
+
+    def channels_step(self) -> None:
+        """Show cell 4's form: the output, the mask type and the channels."""
+        display(self.channels_form().widget)
+
+    def model_step(self) -> None:
+        """Show cell 5's form: the model, the device and the settings."""
+        display(self.model_form().widget)
+
+    def preview_step(self) -> None:
+        """Show cell 6's form: the example result."""
+        display(self.preview_form().widget)
+
+    def segment_step(self) -> None:
+        """Show cell 7's form: segment the whole experiment."""
+        display(self.segment_form().widget)
+
+    def next_step(self) -> None:
+        """Show the closing cell's form: what to do next."""
+        display(self.next_form().widget)
+
+    def open_form(self) -> StepForm:
         """Show the form of cell 3: the run's output folder and the masks folder."""
         status = widgets.HTML()
         run = _text(placeholder="e.g. /content/drive/MyDrive/run_output")
@@ -205,9 +232,9 @@ class CellposeNotebook(CellposeWorkflow):
             lambda: self.open(run.value, masks.value),
             {"run_folder": run, "masks_folder": masks},
         )
-        self._form("open", form)
+        return self._keep("open", form)
 
-    def channels_step(self) -> None:
+    def channels_form(self) -> StepForm:
         """Show the form of cell 4: the output and the mask type; the channels come after it.
 
         The mask type follows the output (``Cells`` or ``Nuclei``) until the user types another.
@@ -278,9 +305,9 @@ class CellposeNotebook(CellposeWorkflow):
             choose,
             {"output": output, "mask_type": mask_type},
         )
-        self._form("channels", form)
+        return self._keep("channels", form)
 
-    def model_step(self) -> None:
+    def model_form(self) -> StepForm:
         """Show the form of cell 5: the model, the device, the settings; the button loads."""
         fields, status = _model_fields(), widgets.HTML()
         found, line = cp.device_status()  # seen before loading; it chooses nothing
@@ -295,7 +322,7 @@ class CellposeNotebook(CellposeWorkflow):
             lambda: self._load_from(fields),
             fields,
         )
-        self._form("model", form)
+        return self._keep("model", form)
 
     def _load_from(self, fields: dict[str, widgets.Widget]) -> None:
         """Check the settings, then load the model, with the fields' values (cell 5)."""
@@ -316,7 +343,7 @@ class CellposeNotebook(CellposeWorkflow):
         )
         self._loaded_with = _model_choice(fields)
 
-    def preview_step(self) -> None:
+    def preview_form(self) -> StepForm:
         """Show the form of cell 6: a dropdown of the run's images and **Preview**.
 
         As in ZeroCostDL4Mic: choose an image, see Cellpose's result for it, choose another or
@@ -348,9 +375,9 @@ class CellposeNotebook(CellposeWorkflow):
             lambda: self._with_form_settings(lambda: self.preview(image.value or "")),
             {"preview_image": image},
         )
-        self._form("preview", form)
+        return self._keep("preview", form)
 
-    def segment_step(self) -> None:
+    def segment_form(self) -> StepForm:
         """Show the form of cell 7: overwrite (off by default) and the button that segments."""
         overwrite = widgets.Checkbox(value=False, description="Replace masks that already exist")
         cards = [
@@ -373,10 +400,16 @@ class CellposeNotebook(CellposeWorkflow):
             cards,
             "Segment the whole experiment",
             "play",
-            lambda: self._with_form_settings(lambda: self.run(overwrite.value)),
+            lambda: self._with_form_settings(lambda: self._segment(overwrite.value)),
             {"overwrite": overwrite},
         )
-        self._form("segment", form)
+        return self._keep("segment", form)
+
+    def _segment(self, overwrite: bool) -> None:
+        """Segment the whole experiment, then hand the batch to :attr:`on_masks_written`."""
+        result = self.run(overwrite)
+        if self.on_masks_written is not None:
+            self.on_masks_written(result)
 
     def _with_form_settings(self, step: Callable[[], object]) -> None:
         """Run ``step`` with the settings cell 5's form shows now, on the model as loaded.
@@ -417,7 +450,7 @@ class CellposeNotebook(CellposeWorkflow):
         dropdown.options = paths
         dropdown.value = first
 
-    def next_step(self) -> None:
+    def next_form(self) -> StepForm:
         """Show the closing cell's button: what to do now that the masks are made."""
         form = StepForm(
             self,
@@ -429,7 +462,7 @@ class CellposeNotebook(CellposeWorkflow):
             self.next_steps,
             {},
         )
-        self._form("next", form)
+        return self._keep("next", form)
 
 
 def _model_choice(fields: dict[str, widgets.Widget]) -> tuple[str, str, str]:
