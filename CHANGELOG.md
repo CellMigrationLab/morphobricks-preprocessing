@@ -67,6 +67,12 @@ old pin are refused with `spec_commit_mismatch`, as at every re-pin.
     (`TagGrid.commit(..., also)`): a refused write saves neither and confirms nothing. The save
     button stays disabled while the tag review is not saved in the draft, and any later saved
     tag change retries it.
+  - A refused unit whose channel count changed (a re-check) no longer breaks the override
+    editor: it stays listed ("its channel count changed (N at the refusal, M now): choose every
+    channel again", `repeat_tags.recount`) and the editor opens with one blank dropdown per
+    channel it has now; the old tags are never cut, padded or applied, and a draft of another
+    length is refused. A refused unit fast mode no longer offers (now inside the layout) stays
+    refused.
 - **Segmentation hand-off** (owner request of 21 November 2026, step 1 of the Cellpose notebook
   plan): `segmentation_handoff` and `segmentation_record` (numpy and tifffile only; no
   segmentation tool is imported). `images_to_segment` lists the run's images that have no mask

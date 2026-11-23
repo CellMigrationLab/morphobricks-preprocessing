@@ -44,6 +44,7 @@ from .repeat_tags import (
     GroupKey,
     override_holds,
     pairing_collision,
+    recount,
     repeat_apart,
     repeat_fill,
     repeat_groups,
@@ -139,8 +140,11 @@ class RepeatRows:
     def reconcile(self) -> None:
         """Bring the refusals up to date with the grid's current layouts (on every opening).
 
-        The same rules as the click, on the layouts as read now: a unit no longer in any offered
-        row (removed from the folder, now colour or unusable) is dropped; a unit whose images
+        The same rules as the click, on the layouts as read now: a unit no longer in any row
+        (removed from the folder, now colour or unusable) is dropped, but a unit fast mode does
+        not offer stays (only the user confirming it releases it); a unit whose channel count
+        changed is kept, to have every channel chosen again (:func:`.repeat_tags.recount`); a
+        unit whose images
         disagree now is refused for that (:func:`.repeat_tags.repeat_apart`), and one whose
         images agree again is dropped; any other keeps its row's *current* reference
         (:func:`.repeat_tags.repeat_lead`) and is kept only while its header still contradicts
@@ -150,13 +154,13 @@ class RepeatRows:
         surviving contradiction is never cleared because the screen reopened.
         """
         grid, kept = self.grid, {}
-        offered = {u.key for g in self._offered().values() for u in g} if grid.labels else set()
         rows = self._rows()  # the whole row: its reference never depends on the mode
         answers = grid.store.answers()
         for key, old in self.refused.items():
             group, layout = self._placed(rows, key)
-            if layout is None or key not in offered:
-                continue
+            if layout is None or not grid.labels:
+                continue  # gone, colour or unusable: in no row (a unit fast mode does not
+                # offer stays refused: only the user confirming it releases it)
             why = repeat_apart(group).get(key)
             if why is not None:
                 kept[key] = Refusal(html.escape(why), layout, None, old.tags, old.channels)
@@ -164,6 +168,9 @@ class RepeatRows:
             lead = repeat_lead(group)
             if old.lead is None or lead is None:
                 continue  # its images agree again: nothing to compare was ever clicked
+            if (moved := recount(old.tags, layout)) is not None:
+                kept[key] = Refusal(moved, layout, lead, old.tags, old.channels)
+                continue  # never compared, cut or padded: every channel is chosen again
             own = tags_of(layout, answers.units.get(key))
             found = self.contradictions(layout, old, lead)
             found = found or differences(layout, own, lead, grid.labels, answers.channels)
@@ -266,7 +273,10 @@ class RepeatRows:
 
         Read against the aliases of the refusal (:attr:`Refusal.channels`), never the ones
         saved since: the one rule of :func:`.channel_matrix.differences`, on that snapshot.
+        Nothing when the unit's channel count changed since (:func:`.repeat_tags.recount`).
         """
+        if recount(refusal.tags, layout) is not None:
+            return ()
         return differences(layout, refusal.tags, lead, self.grid.labels, refusal.channels)
 
     def standing(self) -> set[UnitKey]:

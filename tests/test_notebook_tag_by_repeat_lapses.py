@@ -11,17 +11,31 @@ import shutil
 
 import pytest
 
+from channel_images import write_channels
+
 pytest.importorskip("ipywidgets")
 pytest.importorskip("matplotlib")
 
+from test_notebook_channels import set_labels  # noqa: E402
 from test_notebook_check_save import answer_all, opened  # noqa: E402
+from test_notebook_tag_by_repeat import (  # noqa: E402
+    EXTRA,
+    KINDS4,
+    TAGS,
+    UNITS,
+    _experiment,
+    _set_row,
+)
 from test_notebook_tag_by_repeat_oneclick import (  # noqa: E402
     GONE,
     LEAD,
     OTHER,
     THIRD,
     _confirm,
+    _fast,
+    _like,
     _strict,
+    _text,
 )
 from test_notebook_tag_by_repeat_recheck import _recheck  # noqa: E402
 from test_notebook_tag_by_repeat_review import _saved_fast  # noqa: E402
@@ -123,3 +137,53 @@ def test_the_save_stays_closed_while_the_review_is_not_saved(tmp_path, statement
     nb.channel_grid.split(OTHER)
     nb.channel_grid.cells[(OTHER, 2)].value = None  # any saved tag change retries the review
     assert not rows.unsaved and OTHER in rows.listed()
+
+
+# Blocker 3: a channel-count change ------------------------------------------------------------
+
+
+def _count_changed(nb, root, key, names, kinds, seed):
+    """Rewrite one unit's image with another number of channels and check the folder again."""
+    write_channels(root.joinpath(*key, "a.tif"), names, kinds, seed=seed)
+    _recheck(nb)
+
+
+def _choose_again(nb, rows, key, count):
+    """Open the unit's override after a count change: blank dropdowns, nothing raises."""
+    rows.override.buttons[key].click()  # at 3ac71c8 (3 to 4 channels): IndexError
+    assert rows.override.editing == key
+    assert rows.override.drafts[key] == [None] * count  # never the old tags cut or padded
+    assert [rows.override.cells[(key, i)].value for i in range(count)] == [None] * count
+    assert "choose every channel again" in _text(rows)
+    assert not rows.override.confirm()  # nothing chosen yet: refused, still listed
+    assert key in rows.listed() and _untagged(nb, key)
+
+
+def test_a_refused_unit_with_a_channel_more_asks_every_channel_again(tmp_path, statement_off):
+    root, masks, out = _experiment(tmp_path, names=_like((GONE, OTHER), False))
+    nb = opened(root, masks, out)
+    set_labels(nb, list(EXTRA))
+    _set_row(nb, ("rep2", 3), TAGS)
+    rows = nb.channel_grid.by_repeat
+    assert GONE in rows.listed() and len(rows.refused[GONE].tags) == 3
+    _count_changed(nb, root, GONE, ["P", "Q", "Ch3", "W"], KINDS4, UNITS.index(GONE) + 1)
+    assert GONE in rows.listed() and GONE in rows.refused
+    _choose_again(nb, rows, GONE, 4)
+    for index, tag in enumerate(EXTRA):
+        rows.override.cells[(GONE, index)].value = tag
+    assert rows.override.confirm() and GONE not in rows.listed()
+    assert nb.draft_answers.units[GONE].channels == EXTRA
+
+
+def test_a_refused_unit_with_a_channel_less_asks_every_channel_again(tmp_path):
+    nb, root, rows = _fast(tmp_path)
+    assert len(rows.refused[GONE].tags) == 4
+    _count_changed(nb, root, GONE, ["P", "Q", "Ch3"], KINDS4[:3], UNITS.index(GONE) + 1)
+    assert GONE in rows.listed() and GONE in rows.refused
+    _choose_again(nb, rows, GONE, 3)
+    rows.override.drafts[GONE] = list(EXTRA)  # four tags for three channels: never cut
+    assert not rows.override.confirm() and _untagged(nb, GONE)
+    for index, tag in enumerate(TAGS):
+        rows.override.cells[(GONE, index)].value = tag
+    assert rows.override.confirm() and GONE not in rows.listed()
+    assert nb.draft_answers.units[GONE].channels == TAGS

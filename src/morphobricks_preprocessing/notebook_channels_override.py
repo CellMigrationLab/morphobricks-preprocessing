@@ -38,7 +38,7 @@ from .notebook_channels_view import (
     quoted,
     unit_name,
 )
-from .repeat_tags import Override, header_names, override_holds
+from .repeat_tags import Override, header_names, override_holds, recount
 
 if TYPE_CHECKING:
     from .channel_labels import UnitLayout
@@ -169,11 +169,17 @@ class OverrideEditor:
     def start(self, key: UnitKey) -> None:
         """Open the editor on a unit with the row's tags; nothing is saved."""
         self.editing = key
-        self.drafts[key] = self._known(self.rows.refused[key].tags)
+        self.drafts[key] = list(self.rows.refused[key].tags)
         self.rows.grid.refresh()
 
-    def _known(self, tags: Sequence[str | None]) -> list[str | None]:
-        """Return tags with a label that is no longer one left blank (renamed or removed)."""
+    def _known(self, tags: Sequence[str | None], layout: UnitLayout) -> list[str | None]:
+        """Return tags with a label that is no longer one left blank (renamed or removed).
+
+        Tags of another channel count than the unit's now are never cut or padded: every
+        channel is blank, to be chosen again (:func:`.repeat_tags.recount`).
+        """
+        if len(tags) != layout.channels:
+            return [None] * layout.channels
         return [t if t in self.rows.grid.labels else None for t in tags]
 
     def cancel(self) -> None:
@@ -193,14 +199,18 @@ class OverrideEditor:
         rows = self.rows
         grid, refusal = rows.grid, rows.refused[key]
         lead = refusal.lead
-        draft = self.drafts[key] = self._known(self.drafts[key])  # a label may change meanwhile
+        draft = self.drafts[key] = self._known(self.drafts[key], layout)  # labels may change
+        moved = recount(refusal.tags, layout)
         found = {  # read against the aliases of the refusal, as before any confirmation
-            d.index: d for d in differences(layout, draft, lead, grid.labels, refusal.channels)
+            d.index: d
+            for d in differences(layout, draft, lead, grid.labels, refusal.channels)
+            if moved is None
         }
         options = [(CHOOSE, None), *((label, label) for label in grid.labels)]
-        info = (
-            f"<b>{html.escape(unit_name(key))}</b>: the row's tags are the start; "
-            "change only what is different"
+        info = f"<b>{html.escape(unit_name(key))}</b>: " + (
+            html.escape(moved)
+            if moved
+            else "the row's tags are the start; change only what is different"
         )
         cells: list[widgets.Widget] = [widgets.HTML(info)]
         for index in range(width):
@@ -240,6 +250,8 @@ class OverrideEditor:
             )
         tag = draft[index]
         shown = chip(tag, labels) if tag else blank_chip("not tagged")
+        if len(row) != len(draft):  # another channel count: no row tag to be "as"
+            return shown
         return f"{'as the row' if tag == row[index] else 'changed'} {shown}"
 
     def confirm(self) -> bool:
@@ -266,7 +278,10 @@ class OverrideEditor:
         if rows.other_draft():  # the record is another draft's: never written into this one
             return False
         for key, draft in drafts.items():
-            if (why := rows._row_error(draft)) is not None:
+            why = rows._row_error(draft)
+            if len(draft) != layouts[key].channels:  # never cut or padded to the unit's count
+                why = f"Tag each of the unit's {layouts[key].channels} channels, each label once."
+            if why is not None:
                 rows.notice = ui.status("error", "Not saved.", [why])
                 grid.refresh()
                 return False

@@ -61,6 +61,20 @@ def override_holds(
     )
 
 
+def recount(tags: Sequence[str | None], layout: UnitLayout) -> str | None:
+    """Return why a refusal's tags no longer fit the unit (its channel count changed), else None.
+
+    The old tags are never applied, cut or padded to the new count: every channel is chosen
+    again (the override editor opens with blank dropdowns).
+    """
+    if len(tags) == layout.channels:
+        return None
+    return (
+        f"its channel count changed ({len(tags)} at the refusal, {layout.channels} now): "
+        "choose every channel again"
+    )
+
+
 def repeat_groups(
     layouts: Sequence[UnitLayout], colour: Collection[UnitKey] = ()
 ) -> dict[GroupKey, tuple[UnitLayout, ...]]:
@@ -179,6 +193,7 @@ __all__ = [
     "header_names",
     "override_holds",
     "pairing_collision",
+    "recount",
     "repeat_fill",
     "repeat_groups",
     "repeat_lead",
