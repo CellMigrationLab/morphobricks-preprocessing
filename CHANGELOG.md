@@ -116,6 +116,13 @@ old pin are refused with `spec_commit_mismatch`, as at every re-pin.
     in a second write: a failure or an interruption between the two left a draft with the
     filled units' tags and no refusal of the others, which fast mode's header trust could tag
     after a restart. A refused write now leaves the draft and the session as before the click.
+  - A strict-mode block whose click would confirm refused units names them under its dropdowns,
+    outside the folded folder list ("A tag chosen here also confirms the refused unit(s) ...";
+    `OverrideEditor.scope`, shown exactly when `RepeatRows.hand_tagged` would record one). The
+    shipped stepper folds a block of more than three folders, so before a refused unit in it
+    could be confirmed by a shared click without its name on screen. A fast-mode block of
+    several units, a template edit, **Tag like the saved group** and a header pre-tag still
+    record no confirmation.
 - **Cellpose notebook, a reused batch ID is not recovered as the old batch's (external audit B1,
   22 November 2026).** When the record write failed, the recovery check compared only the latest
   entry's batch ID and mask SHA-256, so a reused ID with another model or settings and identical

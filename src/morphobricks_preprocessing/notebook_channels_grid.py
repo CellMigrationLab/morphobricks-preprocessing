@@ -409,6 +409,7 @@ class TagGrid:
         out: list[widgets.Widget] = [widgets.HTML(self._block_text(units, colour, apart))]
         if first.usable and not colour:
             out.append(self._answer_row(units, width))
+            out += self.by_repeat.override.scope(units)  # names the refused units it confirms
         pending = [u for u in units if u.usable and self._pending(u)]
         if pending:
             button = ui.button(

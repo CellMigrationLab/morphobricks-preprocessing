@@ -420,8 +420,12 @@ editing, or the confirmed ones. An image that cannot be drawn gets a sentence sa
    exactly as **Confirm these tags** does (all N or none).
    Tagging a listed acquisition by hand on the grid (every channel, fitting its header) is
    saved as your confirmation of it, so it counts and can be offered as the source of **Confirm
-   the same tags**. Tags that fit only because you confirmed *another* acquisition with the same
-   header names, or because the header changed, never count it. If you rename or remove a label after an acquisition was listed, its
+   the same tags**. With the statement unticked, a tag chosen for a block of folders is your
+   confirmation of every listed acquisition in that block: the block names them under its
+   dropdowns ("A tag chosen here also confirms the refused unit(s) ..."), also when its folder
+   list is folded; take an acquisition out of the block first to leave it listed. Tags that fit
+   only because you confirmed *another* acquisition with the same header names, or because the
+   header changed, never count it. If you rename or remove a label after an acquisition was listed, its
    override opens with that channel left blank: choose a label that still exists. What is
    listed and what you confirmed is saved with your answers: after you close and reopen the
    notebook, a listed acquisition is still listed, and still not counted, until you confirm it.

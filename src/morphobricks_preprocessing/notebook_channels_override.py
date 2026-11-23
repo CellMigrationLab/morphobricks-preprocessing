@@ -262,6 +262,28 @@ class OverrideEditor:
             return shown
         return f"{'as the row' if tag == row[index] else 'changed'} {shown}"
 
+    def scope(self, units: Sequence[UnitLayout]) -> list[widgets.Widget]:
+        """Name the refused units a click on these dropdowns confirms, beside the dropdowns.
+
+        A click on a strict-mode block is recorded as the confirmation of each refused unit in it
+        (:meth:`.RepeatRows.hand_tagged`, the same test, so the line is shown exactly when a
+        click can record one). The shipped notebook folds the folder list of a block of more than
+        three folders (:data:`.notebook_channels_grid.FOLDERS_LISTED`), so the names are said
+        here, outside the fold, before any click: never a confirmation of a unit not on screen.
+        """
+        rows = self.rows
+        if rows.hand_tagged(units) is None:
+            return []
+        names = [html.escape(unit_name(u.key)) for u in units if u.key in rows.refused]
+        alone = " To leave one listed, take it out of this block first." if len(units) > 1 else ""
+        return [
+            widgets.HTML(
+                "<div class='mb-help' style='color:#92400E'>A tag chosen here also confirms "
+                f"the refused unit(s) {', '.join(names)}: each counts with the tags shown once "
+                f"they are complete and fit its header.{alone}</div>"
+            )
+        ]
+
     def confirm(self) -> bool:
         """Save the draft as this unit's tags, and count the unit as tagged only if that worked."""
         key = self.editing
