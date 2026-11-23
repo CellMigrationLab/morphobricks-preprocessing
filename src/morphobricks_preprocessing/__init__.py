@@ -247,6 +247,7 @@ from .segmentation_handoff import (
     mask_path,
     resolve_segmentation,
     segmentation_input,
+    stray_backups,
     write_mask,
 )
 from .segmentation_record import (
@@ -502,6 +503,7 @@ __all__ = [
     "sample_planes",
     "scan_masks",
     "segmentation_input",
+    "stray_backups",
     "series_axes_from_metadata",
     "space_unit",
     "to_micrometers",

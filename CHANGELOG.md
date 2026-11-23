@@ -50,6 +50,23 @@ old pin are refused with `spec_commit_mismatch`, as at every re-pin.
   from an older run, still reads, token `""`). `write_mask(..., on_published=callable)` calls it with the
   published path while the write lock is still held (not when refused; its error propagates, the mask
   stays), so a caller can hash or stamp the file before another writer can replace it.
+- **`write_mask` rolls back when `on_published` fails** (external audit of #375, 22 November 2026).
+  The caller's provenance step now runs in the callback under the type's write lock; if it raises
+  (any exception, `KeyboardInterrupt` too), `write_mask` restores an overwritten mask byte for byte
+  from a hidden copy kept beside it (`.<name>.previous.<random>`, skipped by the masks step, removed
+  on success) or removes a new mask, still under the lock, then re-raises. A rollback that cannot
+  restore or remove raises `SegmentationError` naming both files and keeps the copy. Before, a
+  failed overwrite left the new mask published and the earlier valid mask was lost. The record's
+  duplicate-image check is linear (a seen-set instead of `list.count` per entry).
+- **Docs: `on_published` rollback and record durability** (external audit, 22 November 2026): the
+  `write_mask` docstring and contract §15.5 say that the rollback happens on every callback exception
+  even after the callback committed (it must reconcile its own post-commit failures), and that the
+  record is replaced atomically but not fsynced (not a power-loss guarantee). Behaviour unchanged.
+- **`write_mask` decides its rollback from the file system** (review of #397): an interrupt right
+  after the move but before `write_mask` returned used to delete the copy of the earlier mask, so the
+  new mask stayed and the earlier one was lost; now the target's inode says whether the move happened
+  and the earlier mask is restored (a new mask removed). New `stray_backups(masks_root, mask_type)`
+  lists `.<name>.previous.<random>` copies left by killed processes; they are reported, never deleted.
 - **Channel-identity check after the run** (contract §14.1, design
   `channel-identity-check-2026-11-21` in MorphoFeature's `claude/restart-doc`): from the image
   summaries the intensity checks already make (no pixel read), every imaging unit's channel is
