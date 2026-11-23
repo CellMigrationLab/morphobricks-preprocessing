@@ -265,6 +265,8 @@ with the same message as before; change the form and press the button again. The
   the device you chose. Cellpose may still move its flow-threshold quality step to the CPU when
   GPU memory is short, and always computes the masks on the CPU on `mps`; that is Cellpose's
   behaviour, it is not refused, and the record notes it.
+- **Advanced Cellpose settings** (a closed section of the model form): the diameter, the flow
+  and cell probability thresholds (0.4 and 0) and the batch size (8).
 - **Diameter** is in pixels. Blank means the model's own native scale (Cellpose 4.2.1.1 does
   not estimate a diameter); 0 is refused.
 - **Normalisation** is always Cellpose's own, per image (each channel to its 1st to 99th

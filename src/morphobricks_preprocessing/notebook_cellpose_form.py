@@ -28,6 +28,8 @@ from .segmentation_cellpose_model import BUILTIN_MODELS
 
 DEVICE_OPTIONS = ("cuda", "mps", "cpu")
 """The devices offered, in the former form's order; the default is the first (never chosen)."""
+ADVANCED = "Advanced Cellpose settings"
+"""The collapsed section of cell 5 with the diameter, the thresholds and the batch size."""
 STOPPED = "This step stopped"
 """The title of the card that shows a refusal; its message is the refusal, unchanged."""
 _FIELD = widgets.Layout(width="99%")
@@ -353,6 +355,26 @@ def _model_fields() -> dict[str, widgets.Widget]:
     }
 
 
+def _advanced(fields: dict[str, widgets.Widget]) -> widgets.VBox:
+    """Return the advanced Cellpose settings: diameter, thresholds and batch size."""
+    return widgets.VBox(
+        [
+            fields["diameter"],
+            ui.help_text(
+                "Diameter in pixels. Blank = the model's native scale (Cellpose 4.2.1.1 does not "
+                "estimate it). Never 0."
+            ),
+            fields["flow_threshold"],
+            fields["cellprob_threshold"],
+            fields["batch_size"],
+            ui.help_text(
+                "Flow threshold 0.4, cell probability threshold 0 and batch size 8 are "
+                "Cellpose's defaults."
+            ),
+        ]
+    )
+
+
 def _model_cards(fields: dict[str, widgets.Widget], status: widgets.HTML) -> list[widgets.Widget]:
     """Return cell 5's cards: the model and device, the downloads, the settings.
 
@@ -395,18 +417,11 @@ def _model_cards(fields: dict[str, widgets.Widget], status: widgets.HTML) -> lis
         ui.card(
             "Settings",
             [
-                fields["diameter"],
-                ui.help_text(
-                    "Diameter in pixels. Blank = the model's native scale (Cellpose 4.2.1.1 "
-                    "does not estimate it). Never 0."
-                ),
-                fields["flow_threshold"],
-                fields["cellprob_threshold"],
                 ui.help_text(
                     "Normalisation is always Cellpose's own, per image: each channel to its "
                     "1st-99th percentile. Images are never sent to Cellpose unnormalised."
                 ),
-                fields["batch_size"],
+                ui.accordion(ADVANCED, [_advanced(fields)]),  # collapsed: the defaults suit most
             ],
         ),
     ]

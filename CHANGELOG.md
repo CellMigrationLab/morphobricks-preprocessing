@@ -8,6 +8,7 @@ v0.5.1: no run before v0.5.1 is read.)
 
 ## Unreleased
 
+- **Cellpose notebook: Advanced Cellpose settings.** The diameter, the flow and cell probability thresholds and the batch size are in a collapsed *Advanced Cellpose settings* section of the model form, with the same defaults (blank, 0.4, 0, 8).
 - **Cellpose notebook: Versions and citation.** A closing Markdown section gives the Cellpose version, where `segmentation_record.json` stores the versions (`tool_version`, `cellpose_version`, model SHA-256, `dinov3_commit`), and the citations Cellpose 4.2.1.1's README asks for (Cellpose-SAM 2025, Cellpose 2021, Cellpose 2.0 2022). The `cpdino` models' citation is left as a TODO: Cellpose's README and model documentation name none.
 - **Cellpose notebook: the device status before loading.** The model form shows whether PyTorch finds a GPU here (`cuda` with its name, or `mps`) or none, as soon as it appears (`device_status`). It chooses nothing: the device stays the user's and an unavailable GPU is still refused.
 - **Cellpose notebook: `CellStop` defined once** (`notebook_stop`, re-exported by `notebook_cellpose`). Cells 2 to 8 import it instead of each defining a copy; cell 1 (install) keeps its own, as it runs before the package is installed. A cell run before cell 1 now stops with an `ImportError` naming cell 1.

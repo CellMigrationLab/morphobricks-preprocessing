@@ -10,6 +10,7 @@ import html
 import json
 from pathlib import Path
 
+import ipywidgets as widgets
 import pytest
 
 from cellpose_stub import install
@@ -296,3 +297,20 @@ def test_the_cells_run_in_a_plain_jupyter_kernel(mixed_run):
     assert "REFUSAL ''" in text(notebook.cells[2]) and "Run opened" in text(notebook.cells[2])
     assert "REFUSAL ''" in text(notebook.cells[4]) and "CHANNELS (" in text(notebook.cells[4])
     assert NOTEBOOK.exists()
+
+
+def test_the_advanced_settings_are_in_a_collapsed_accordion_with_the_same_defaults():
+    form = shown_forms().forms["model"]
+    (advanced,) = [
+        w
+        for w in walk(form.widget)
+        if isinstance(w, widgets.Accordion) and w.get_title(0) == form_module.ADVANCED
+    ]
+    assert advanced.selected_index is None  # collapsed
+    inside = set(map(id, walk(advanced)))
+    names = ("diameter", "flow_threshold", "cellprob_threshold", "batch_size")
+    for name in names:
+        assert id(form.fields[name]) in inside, name
+    for name in set(form.fields) - set(names):
+        assert id(form.fields[name]) not in inside, name
+    assert [form.fields[n].value for n in names] == ["", 0.4, 0.0, 8]
