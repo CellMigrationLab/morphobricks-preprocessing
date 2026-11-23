@@ -22,6 +22,7 @@ from morphobricks_preprocessing import notebook_cellpose
 from morphobricks_preprocessing import segmentation_cellpose as cp
 from morphobricks_preprocessing.manifest import MANIFEST_FILENAME
 from morphobricks_preprocessing.segmentation_record import read_record
+from notebook_pin import code_sources, history_missing, install_setting, pin_differences
 from test_segmentation_handoff import MASKS_SECTION
 
 ROOT = Path(__file__).parents[1]
@@ -55,14 +56,11 @@ def notebook():
 
 
 def source(number):
-    code = [c for c in notebook()["cells"] if c["cell_type"] == "code"]
-    return "".join(code[number]["source"])
+    return code_sources(NOTEBOOK)[number]
 
 
 def setting(name):
-    match = re.search(rf'^{name} = "([^"]*)"$', source(INSTALL), re.M)
-    assert match is not None, f"the install cell sets no {name}"
-    return match.group(1)
+    return install_setting(source(INSTALL), name)
 
 
 def with_params(number, params):
@@ -125,15 +123,16 @@ def test_the_pins_are_cellpose_4_2_1_1_and_a_preprocessing_commit_with_this_code
     assert re.fullmatch(r"[0-9a-f]{40}", ref)
     assert setting("REPOSITORY").endswith("CellMigrationLab/morphobricks-preprocessing.git")
     assert "DEVELOPMENT_OVERRIDE = False" in source(INSTALL)
-    ours = ("src", "pyproject.toml")
-    probe = subprocess.run(
-        ["git", "-C", str(ROOT), "diff", "--quiet", ref, "HEAD", "--", *ours], capture_output=True
-    )
-    if probe.returncode > 1:
-        pytest.skip("the pinned commit is not in this checkout (shallow clone or no git)")
+    command = ["git", "-C", str(ROOT), "cat-file", "-e", f"{ref}^{{commit}}"]
+    if subprocess.run(command, capture_output=True).returncode != 0:
+        history_missing("the pinned commit is not in this checkout (shallow clone or no git)")
     # The notebook installs the package at RELEASE_REF: that commit must hold the code the
-    # notebook's cells call, so nothing under src/ may have changed since.
-    assert probe.returncode == 0, "src/ changed after RELEASE_REF: move the pin to the new commit"
+    # notebook's cells run (every module they import, at any depth), the build's inputs and
+    # the install-relevant pyproject.toml, exactly as HEAD has them (issue #421).
+    changed = pin_differences(ROOT, ref, "HEAD", code_sources(NOTEBOOK))
+    assert changed == [], (
+        f"what the notebook runs changed after RELEASE_REF: move the pin ({changed})"
+    )
 
 
 def test_the_version_file_names_the_notebooks_current_version():

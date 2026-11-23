@@ -7,6 +7,8 @@ from pathlib import Path
 
 import pytest
 
+from notebook_pin import code_sources, install_setting
+
 ROOT = Path(__file__).parents[1]
 NOTEBOOK = ROOT / "notebooks/MorphoBricks_Preprocessing.ipynb"
 VERSIONS = ROOT / "notebooks/notebook_latest_versions.yaml"
@@ -31,12 +33,8 @@ def _notebook():
     return json.loads(NOTEBOOK.read_text(encoding="utf-8"))
 
 
-def _code_cells():
-    return [cell for cell in _notebook()["cells"] if cell["cell_type"] == "code"]
-
-
 def _source(role):
-    return "".join(_code_cells()[role]["source"])
+    return code_sources(NOTEBOOK)[role]
 
 
 def _all_code():
@@ -44,9 +42,7 @@ def _all_code():
 
 
 def _setting(name):
-    match = re.search(rf'^{name} = "([^"]*)"$', _source(INSTALL), re.M)
-    assert match is not None, f"the install cell sets no {name}"
-    return match.group(1)
+    return install_setting(_source(INSTALL), name)
 
 
 def test_notebook_is_an_introduction_and_three_explained_code_cells():
