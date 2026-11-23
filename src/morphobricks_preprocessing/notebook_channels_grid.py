@@ -39,13 +39,14 @@ from . import notebook_style as ui
 from .channel_answers import tagged
 from .channel_labels import (
     UnitLayout,
+    named,
     positions,
     proposal_for,
     remaining,
     tags_of,
     usage,
 )
-from .draft_answers import UnitKey
+from .draft_answers import DraftAnswers, UnitKey
 from .notebook_channel_thumbs import COLOUR_TEXT, CONTRAST_TEXT, Thumbnails
 from .notebook_channels_matrix import STATEMENT, TagMatrix
 from .notebook_channels_repeat import RepeatRows
@@ -78,15 +79,6 @@ def partial_text(label: str, used: int, total: int) -> str:
 def folder_order(layout: UnitLayout) -> tuple:
     """Return the display order of a folder: its labels, numbers as numbers (rep2, rep10)."""
     return tuple(natural_key(part) for part in layout.key)
-
-
-def named(layout: UnitLayout) -> bool:
-    """Return True when the header names every channel of a usable unit (a block can hold it).
-
-    Every image of the unit must have that header: a unit whose later images differ is never
-    grouped on its first image alone.
-    """
-    return layout.usable and layout.uniform and all(layout.name(i) for i in range(layout.channels))
 
 
 class TagGrid:
@@ -210,7 +202,12 @@ class TagGrid:
         self.refresh()
         self._on_change()
 
-    def commit(self, tags: Mapping, cells: Sequence, then: Callable | None = None) -> bool:
+    def commit(
+        self,
+        tags: Mapping[UnitKey, Sequence[str | None]],
+        cells: Sequence[tuple[UnitKey, int]],
+        then: Callable[[DraftAnswers], DraftAnswers] | None = None,
+    ) -> bool:
         """Save the units' tags the user's click set (``cells`` clicked), redraw; False if refused.
 
         The click is one change (:func:`.channel_answers.tagged`, ``then`` in the same write),
