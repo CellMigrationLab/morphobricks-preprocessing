@@ -418,9 +418,10 @@ editing, or the confirmed ones. An image that cannot be drawn gets a sentence sa
    *tags*" and offers **Confirm the same tags**; when several listed acquisitions have them it
    also offers **Confirm all N like it**. Nothing is counted until you click; the buttons save
    exactly as **Confirm these tags** does (all N or none).
-   An acquisition you tagged by hand on the grid counts, but it is not offered as the source of
-   **Confirm the same tags** for others; only one confirmed with **Confirm these tags** (or by
-   a one-click button) is. If you rename or remove a label after an acquisition was listed, its
+   Tagging a listed acquisition by hand on the grid (every channel, fitting its header) is
+   saved as your confirmation of it, so it counts and can be offered as the source of **Confirm
+   the same tags**. Tags that fit only because you confirmed *another* acquisition with the same
+   header names, or because the header changed, never count it. If you rename or remove a label after an acquisition was listed, its
    override opens with that channel left blank: choose a label that still exists. What is
    listed and what you confirmed is saved with your answers: after you close and reopen the
    notebook, a listed acquisition is still listed, and still not counted, until you confirm it.

@@ -43,8 +43,10 @@ old pin are refused with `spec_commit_mismatch`, as at every re-pin.
   headers as <unit>, which you confirmed as <tags>" with **Confirm the same tags**, and
   **Confirm all N like it** when several are listed: one click each through the same
   validation and save as the editor (all or none), never automatic.
-  A unit tagged by hand on the grid is counted too, but is not a source of **Confirm the same
-  tags** (only a confirmation from the editor or a one-click is).
+  A deliberate hand-tag of a listed unit on the grid (or a strict-mode block click on it) that
+  leaves its tags complete and fitting its header is recorded as its confirmation, in the same
+  draft write as its tags (`RepeatRows.hand_tagged`), so it counts and can be the source of
+  **Confirm the same tags** like any confirmation.
   - A label renamed or removed after a refusal no longer breaks the editor: that cell opens blank
     (the unit stays unconfirmed until it is tagged), and a label gone is never offered by a
     one-click button. Before, the dropdown raised and every later redraw raised too.
@@ -93,6 +95,19 @@ old pin are refused with `spec_commit_mismatch`, as at every re-pin.
   - The save button's line says "the tag review is another draft's" only when a review of
     another draft was read; before Channels was opened it names the missing answers first, then
     "this draft's tag review is not read yet".
+  - One authority releases a refusal: the unit's persisted confirmation (`tag_review`), read by
+    `RepeatRows.listed`, `RepeatRows.standing` and so the save (`RepeatRows._released`). Before,
+    a refused unit with complete saved tags left the list, and the save opened, when another
+    unit's confirmation saved aliases matching its header. A header or aliases that fit later
+    never release a refusal, and a re-check keeps every refusal of a unit still in the folder
+    (it says "refused by its repeat folder's row and not confirmed since" when nothing else is
+    left to say).
+  - A unit refused because its own images disagreed keeps its refusal once they agree: it takes
+    its row's reference and is listed ("its images agree again since the refusal ... confirm
+    them") with its editor; its tags are never read from the new header, also in fast mode
+    after a restart. Before, the re-check dropped it and fast mode could tag it from its header.
+  - *Check and save* is refreshed right after a confirmation: the save button opens at the last
+    confirmation (`RepeatRows.adopt`, called by `TagGrid.commit` before it refreshes).
 - **Cellpose notebook, a reused batch ID is not recovered as the old batch's (external audit B1,
   22 November 2026).** When the record write failed, the recovery check compared only the latest
   entry's batch ID and mask SHA-256, so a reused ID with another model or settings and identical
