@@ -45,10 +45,18 @@ BUILD_FILES = (".gitignore",)
 """The files the build reads besides the package and ``pyproject.toml``: hatchling leaves out
 what ``.gitignore`` names, so it can change the installed files. A ``hatch.toml`` is refused
 (:data:`HATCH_KEYS`)."""
-HATCH_KEYS = frozenset({"metadata.allow-direct-references", "build.targets.wheel.packages"})
-"""The ``[tool.hatch]`` settings the check knows to add no file outside the package. Any other
-setting (``force-include``, ``sources``, build hooks, a version source) or a ``hatch.toml``
-can put other files in the wheel and is refused."""
+HATCH_KEYS = frozenset(
+    {"metadata.allow-direct-references", "build.targets.wheel.packages", "build.exclude"}
+)
+"""The ``[tool.hatch]`` settings the check knows to add no file outside the package. They are
+compared, so a change of one is reported as ``pyproject.toml``: ``build.exclude`` applies to
+every target, the wheel included, but only leaves files out. Any other setting
+(``force-include``, ``sources``, build hooks, a version source) or a ``hatch.toml`` can put
+other files in the wheel and is refused."""
+HATCH_IGNORED = frozenset({"build.targets.sdist", "envs"})
+"""The ``[tool.hatch]`` tables that do not change the wheel pip builds from Git, left out of
+the comparison: pip builds the wheel from the source tree, not from an sdist, and ``envs``
+are Hatch's development environments."""
 BACKEND_REQUIRES = {"hatchling.build": "hatchling"}
 """The one requirement of each known backend. A further one (a hatch plugin) may read any
 ``[tool]`` table, so then the whole ``pyproject.toml`` is compared."""
@@ -484,15 +492,16 @@ def install_table(text: str) -> dict:
     """Return ``pyproject.toml`` without the ``[tool]`` tables no build reads.
 
     ``[project]`` (dependencies, extras, version, scripts) and ``[build-system]`` are kept
-    whole; of ``[tool]`` only the build backend's own table is kept. Raises
-    ``PinScopeError`` for a backend not in :data:`BACKEND_TABLES` or a wheel whose packages
-    are not :data:`WHEEL_PACKAGES`.
+    whole; of ``[tool]`` only the build backend's own table is kept, without
+    :data:`HATCH_IGNORED` (all of it with a build plugin). Raises ``PinScopeError`` for a
+    backend not in :data:`BACKEND_TABLES` or a wheel whose packages are not
+    :data:`WHEEL_PACKAGES`.
     """
     data = tomllib.loads(text)
     backend = data.get("build-system", {}).get("build-backend")
     if backend not in BACKEND_TABLES:
         raise PinScopeError(f"pyproject.toml has an unknown build backend: {backend!r}")
-    own = data.get("tool", {}).get(BACKEND_TABLES[backend], {})
+    own = _without(data.get("tool", {}).get(BACKEND_TABLES[backend], {}), HATCH_IGNORED)
     unknown = _leaf_keys(own) - HATCH_KEYS
     if unknown:
         raise PinScopeError(f"[tool.hatch] has settings the check does not know: {unknown}")
@@ -504,6 +513,15 @@ def install_table(text: str) -> dict:
     if names == {BACKEND_REQUIRES[backend]}:
         data["tool"] = {BACKEND_TABLES[backend]: own}
     return data
+
+
+def _without(table: dict, dropped: frozenset[str], prefix: str = "") -> dict:
+    """Return a copy of ``table`` without the subtables whose dotted key is in ``dropped``."""
+    return {
+        key: _without(value, dropped, f"{prefix}{key}.") if isinstance(value, dict) else value
+        for key, value in table.items()
+        if f"{prefix}{key}" not in dropped
+    }
 
 
 def _leaf_keys(table: dict, prefix: str = "") -> set[str]:
