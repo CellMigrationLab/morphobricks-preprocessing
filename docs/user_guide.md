@@ -32,17 +32,33 @@ Cell 1 chooses one source:
    use that checkout's source code. The checkout must be the commit the notebook pins
    (`RELEASE_REF`) with no uncommitted changes, and setup prints its commit and tree state. Any
    other commit or edited tree is refused; developers set `DEVELOPMENT_OVERRIDE = True` at the
-   top of cell 1 to use it, and the printed header then says so.
+   top of cell 1 to use it, and the printed header then says so. An editable install
+   (`pip install -e`) of a checkout elsewhere follows the same rule: used when it is the clean
+   `RELEASE_REF` commit, otherwise refused (never replaced, since a developer set it up).
+   `DEVELOPMENT_OVERRIDE` covers local checkouts only: an installed package of another commit
+   is still replaced.
 2. **Matching installed package:** otherwise, reuse an installed preprocessing package only
-   when its version matches the notebook.
+   when pip recorded (its `direct_url.json`, PEP 610) that it installed `RELEASE_REF` from the
+   notebook's GitHub repository. The version number alone is never enough: the same version
+   built from another commit, another repository or no record is replaced by `RELEASE_REF`
+   (#371). pip would keep such a package (same version), so cell 1 reinstalls the package
+   alone at `RELEASE_REF` (`--force-reinstall --no-deps`) before installing what is missing.
 3. **Pinned GitHub source:** otherwise install the notebook's immutable `RELEASE_REF`, never
    moving `main`.
 
 Missing notebook dependencies are installed into the same Python environment as the kernel.
 A local checkout is installed in editable mode when it needs dependencies. Setup prints the
-preprocessing, normalization and ipywidgets versions, the notebook version and the selected
-source. Installation needs internet access, and the GitHub option needs Git. If another copy
-of the package is already loaded, restart the kernel before switching source checkouts.
+preprocessing version and commit, the normalization and ipywidgets versions, the notebook
+version and the selected source; after an installation it reads the commit again and stops if
+pip did not install `RELEASE_REF`, naming the `pip install --force-reinstall --no-deps` command
+that replaces it (a restart would not help there). Installation needs internet access, and the GitHub option needs Git. If another copy
+of the package is already loaded, restart the kernel before switching source checkouts. When
+pip replaces a preprocessing the kernel had already imported, cell 1 stops and asks for a
+restart (the loaded module stays the old copy until then); run it again after the restart: it
+installs nothing more. The Cellpose notebook's cell 1 does the same. Both also stop when the
+package the kernel imports is not the copy pip installed (for example when the working folder
+is a checkout's `src` folder): pip's record would then name a commit that is not the code
+running.
 
 To install everything manually instead, run these commands in the environment used by
 your notebook kernel:
@@ -239,7 +255,9 @@ for a run you already have (run preprocessing first and describe the experiment)
 install (Cellpose 4.2.1.1 and the preprocessing commit it is made for), Google Drive, open the
 run's output folder and a masks folder, choose the mask type and **one to three channels by
 channel ID**, choose the model, device and settings and load the model, preview one image, and
-segment all images. Then:
+segment all images. Its `DEVELOPMENT_OVERRIDE = True` (top of cell 1, for developers) differs
+from the Preprocessing notebook's: it keeps whatever preprocessing is installed, of any commit
+or none recorded (the banner then says "commit unknown" and that the override is on). Then:
 
 - **Channels.** You choose channels by ID (`DNA`, `ACTIN`), never by position. When some images
   have a channel that others lack (a fourth stain in one biological repeat), only the channels

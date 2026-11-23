@@ -14,13 +14,17 @@ non-Python file of the package, the build's own inputs and the install-relevant 
 ``pyproject.toml`` that differ between the two commits. A use the derivation cannot follow
 is refused with :class:`PinScopeError`, never assumed unchanged: in a cell, code loaded by a
 name or from text or a file, a command other than ``python -m pip`` (or one reached by an
-alias, a ``from`` import or IPython), an install other than at ``@{RELEASE_REF}``, an IPython
-``!``/``%`` line; in package code, a module loaded by a computed name or a file or text run;
-in the build, a second wheel package, an unknown backend or ``[tool.hatch]`` setting, or a
-``hatch.toml``. Package code that names a package module in a string runs it as an import.
+alias, a ``from`` import or IPython), an install other than at ``@{RELEASE_REF}`` (a forced
+reinstall included, and the bare distribution name a cell function passes on to ``pip``),
+an IPython ``!``/``%`` line; in package code, a module loaded by a computed name or a file or
+text run; in the build, a second wheel package, an unknown backend or ``[tool.hatch]``
+setting, or a ``hatch.toml``. Package code that names a package module in a string runs it
+as an import.
 
-One known gap: package code that assembles a module name at runtime and passes it to
+Known gaps: package code that assembles a module name at runtime and passes it to
 something other than a loader (``[sys.executable, "-m", f"{PACKAGE}.{name}"]``) is not seen.
+Likewise a cell function that copies the bare distribution name into another variable before
+giving it to ``pip`` is not seen: only the parameter itself is followed.
 """
 
 from __future__ import annotations
@@ -73,9 +77,11 @@ COMMANDS = frozenset(
     | {f"spawn{s}" for s in ("l", "le", "lp", "lpe", "v", "ve", "vp", "vpe")}
 )
 """``subprocess`` and ``os`` calls that start a program."""
-PIP_WORDS = frozenset({"install", "--disable-pip-version-check"})
+PIP_WORDS = frozenset({"install", "--disable-pip-version-check", "--force-reinstall", "--no-deps"})
 """The literal words a cell's ``pip`` command may hold after ``-m pip``. The requirements
-come from variables, whose text :func:`_refuse_unpinned_install` checks where it is written."""
+come from variables, whose text :func:`_refuse_unpinned_install` checks where it is written.
+``--force-reinstall --no-deps`` replaces an installed preprocessing of the same version from
+another commit (pip keeps it otherwise, #371); it installs the same pinned requirement."""
 INSTALL_SPEC = re.compile(r"morphobricks[-_.]preprocessing|git\+", re.I)
 """Text that can name this package (or any Git source) for ``pip``."""
 METADATA_CALLS = frozenset({"version", "distribution"})
@@ -219,6 +225,27 @@ def _f_string_text(node: ast.JoinedStr) -> str:
     return "".join(v.value if isinstance(v, ast.Constant) else "{}" for v in node.values)
 
 
+def _refuse_name_to_pip(call: ast.Call, nodes: list[ast.AST]) -> None:
+    """Raise ``PinScopeError`` when a cell function given the bare distribution name passes it
+    to ``pip``: that would install the package unpinned (the name may only be read back from
+    the installed metadata). Only the parameter itself is followed, not a copy of it."""
+    functions = [n for n in nodes if isinstance(n, ast.FunctionDef) and n.name == _call_name(call)]
+    for function in functions:
+        params = [a.arg for a in function.args.args]
+        named = {
+            params[i]
+            for i, a in enumerate(call.args[: len(params)])
+            if getattr(a, "value", None) == DISTRIBUTION
+        }
+        for inner in ast.walk(function):
+            if isinstance(inner, ast.Call) and _starts_pip(inner):
+                used = {n.id for n in ast.walk(inner.args[0]) if isinstance(n, ast.Name)}
+                if used & named:
+                    raise PinScopeError(
+                        f"pip is given the bare {DISTRIBUTION}: {ast.unparse(inner)}"
+                    )
+
+
 def _refuse_unpinned_install(trees: list[ast.AST]) -> None:
     """Raise ``PinScopeError`` unless every install of the package in the cells is pinned.
 
@@ -244,6 +271,7 @@ def _refuse_unpinned_install(trees: list[ast.AST]) -> None:
             allowed |= {id(v) for v in node.values} | ({id(node)} if _pinned(node) else set())
         elif isinstance(node, ast.Call) and _call_name(node) in METADATA_CALLS | defined:
             allowed |= {id(a) for a in node.args if getattr(a, "value", None) == DISTRIBUTION}
+            _refuse_name_to_pip(node, nodes)
         elif isinstance(node, ast.Assign) and getattr(node.targets[0], "id", "") == "REPOSITORY":
             allowed.add(id(node.value))
         if isinstance(node, ast.Call) and _starts_pip(node):
