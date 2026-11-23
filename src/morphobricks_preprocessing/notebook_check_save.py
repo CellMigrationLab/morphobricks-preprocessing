@@ -225,6 +225,7 @@ class _CheckSaveScreen(_ReplicateBoxes):
             and not self._moves_open()
             and not rows
             and not self.channel_grid.by_repeat.other_draft()  # its refusals are not read yet
+            and not self.channel_grid.by_repeat.unsaved  # the draft does not hold the review
         )
         self.save_button.disabled = not ready or self._saved_current()
         self.save_note.value = (
@@ -255,6 +256,11 @@ class _CheckSaveScreen(_ReplicateBoxes):
             or (
                 [f"{len(rows)} imaging unit(s) a repeat folder's row did not fill: see Channels"]
                 if rows
+                else []
+            )
+            or (
+                ["the tag review is not saved in the draft: change a tag on Channels to retry"]
+                if self.channel_grid.by_repeat.unsaved
                 else []
             )
             or ["these answers are refused: see the red message above the button"]

@@ -14,8 +14,15 @@ import pytest
 pytest.importorskip("ipywidgets")
 pytest.importorskip("matplotlib")
 
-from test_notebook_check_save import opened  # noqa: E402
-from test_notebook_tag_by_repeat_oneclick import LEAD, OTHER, THIRD  # noqa: E402
+from test_notebook_check_save import answer_all, opened  # noqa: E402
+from test_notebook_tag_by_repeat_oneclick import (  # noqa: E402
+    GONE,
+    LEAD,
+    OTHER,
+    THIRD,
+    _confirm,
+    _strict,
+)
 from test_notebook_tag_by_repeat_recheck import _recheck  # noqa: E402
 from test_notebook_tag_by_repeat_review import _saved_fast  # noqa: E402
 
@@ -54,3 +61,65 @@ def test_a_reference_change_after_a_restart_keeps_the_refused_unit_listed(tmp_pa
     assert _untagged(nb, OTHER) and OTHER in rows.listed() and OTHER in rows.refused
     assert not nb.save_experiment()
     assert THIRD not in rows.refused
+
+
+# Blocker 2: one draft write per confirmation; the save waits for the review --------------------
+
+
+def _writes(nb, monkeypatch, fail=lambda answers: False):
+    """Record the answers of every draft write; refuse the writes ``fail`` says (a disk error)."""
+    written, save = [], nb._save_description
+
+    def recorded():
+        if fail(nb.draft_answers):
+            nb._save_problem = "the disk refused the write (test)"
+            return False
+        written.append(nb.draft_answers)
+        return save()
+
+    monkeypatch.setattr(nb, "_save_description", recorded)
+    return written
+
+
+def _confirmed_on(answers, key):
+    return answers.tag_review is not None and key in answers.tag_review.confirmed
+
+
+def test_confirm_the_same_tags_writes_the_tags_and_the_confirmation_in_one_write(
+    tmp_path, statement_off, monkeypatch
+):
+    nb, _, rows = _strict(tmp_path, statement_off)
+    _confirm(nb, rows, GONE, "override", None)
+    written = _writes(nb, monkeypatch)
+    rows.override.same_buttons[OTHER].click()
+    tagged = [a for a in written if (u := a.units.get(OTHER)) is not None and all(u.channels)]
+    assert tagged, "OTHER was never written"
+    assert _confirmed_on(tagged[0], OTHER)  # at 3ac71c8: tags first, the confirmation after
+    assert len([a for a in written if a.tag_review != written[0].tag_review]) <= 1
+
+
+def test_a_refused_confirmation_write_saves_neither_tags_nor_confirmation(
+    tmp_path, statement_off, monkeypatch
+):
+    nb, _, rows = _strict(tmp_path, statement_off)
+    _confirm(nb, rows, GONE, "override", None)
+    _writes(nb, monkeypatch, fail=lambda answers: _confirmed_on(answers, OTHER))
+    assert not rows.override.confirm_same(OTHER)  # at 3ac71c8: True, tags saved, review not
+    assert _untagged(nb, OTHER) and OTHER not in rows.override.confirmed
+    assert OTHER in rows.listed() and not nb.save_experiment()
+
+
+def test_the_save_stays_closed_while_the_review_is_not_saved(tmp_path, statement_off):
+    nb, _, rows = _strict(tmp_path, statement_off)
+    _confirm(nb, rows, GONE, "override", None)
+    rows.override.same_buttons[OTHER].click()
+    answer_all(nb)
+    assert not rows.listed() and not nb.save_button.disabled
+    rows.unsaved = True  # a later write of the review was refused
+    nb._refresh_check_save()
+    assert nb.save_button.disabled  # at 3ac71c8: enabled, the review not in the draft
+    assert "tag review is not saved" in nb.save_blocker.value
+    assert not nb.save_experiment()
+    nb.channel_grid.split(OTHER)
+    nb.channel_grid.cells[(OTHER, 2)].value = None  # any saved tag change retries the review
+    assert not rows.unsaved and OTHER in rows.listed()

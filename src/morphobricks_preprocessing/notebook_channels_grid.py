@@ -210,17 +210,17 @@ class TagGrid:
         self.refresh()
         self._on_change()
 
-    def commit(
-        self, tags: Mapping[UnitKey, Sequence[str | None]], cells: Sequence[tuple[UnitKey, int]]
-    ) -> bool:
+    def commit(self, tags: Mapping, cells: Sequence, then: Callable | None = None) -> bool:
         """Save the units' tags the user's click set (``cells`` clicked), redraw; False if refused.
 
-        The click is one change (:func:`.channel_answers.tagged`), applied to the strict page's
-        draft too: there, the click makes the unit's whole tags the user's.
+        The click is one change (:func:`.channel_answers.tagged`, ``then`` in the same write),
+        applied to the strict page's draft too: there, the click makes the unit's whole tags the
+        user's.
         """
-        ok = save_change(self.store, tagged(self.layouts, tags, cells))
+        ok = save_change(self.store, tagged(self.layouts, tags, cells, then))
         self.message = "" if ok else ui.status("error", "Not saved.", [self.store.refusal()])
         ok and self.matrix.sync_statement(cells)  # the user's clicked cells (ADR 0006)
+        ok and self.by_repeat.unsaved and self.by_repeat.persist()  # retry a refused review
         self.refresh()
         self._on_change()
         return ok

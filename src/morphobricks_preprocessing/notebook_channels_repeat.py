@@ -39,7 +39,7 @@ from .channel_matrix import REFUSED, difference_text, differences
 from .draft_answers import ChannelAnswer
 from .notebook_channels_override import OverrideEditor
 from .notebook_channels_view import CHOOSE, columns, unit_name
-from .repeat_review import RefusedUnit, TagReview
+from .repeat_review import Override, RefusedUnit, TagReview
 from .repeat_tags import (
     GroupKey,
     override_holds,
@@ -219,8 +219,12 @@ class RepeatRows:
         self.override.confirmed = {}
         self.override.editing, self.override.drafts = None, {}
 
-    def _review(self) -> TagReview:
-        """Return what is refused and confirmed now, as the draft file keeps it."""
+    def _review(self, confirmed: Mapping[UnitKey, Override] | None = None) -> TagReview:
+        """Return what is refused and confirmed now, as the draft file keeps it.
+
+        ``confirmed`` replaces the confirmations in memory (the record a confirmation is about to
+        save together with its tags, :meth:`.OverrideEditor._confirm`).
+        """
         refused = {
             key: RefusedUnit(
                 old.tags,
@@ -229,7 +233,7 @@ class RepeatRows:
             )
             for key, old in self.refused.items()
         }
-        return TagReview(refused, dict(self.override.confirmed))
+        return TagReview(refused, dict(self.override.confirmed if confirmed is None else confirmed))
 
     def restore(self, layouts: Sequence[UnitLayout]) -> None:
         """Take the refusals and confirmations of the draft file (a notebook opened on it).
@@ -458,9 +462,16 @@ class RepeatRows:
             return "Tag every channel of the row, each label once."
         return None
 
-    def _commit_user(self, save: dict, cells: list) -> bool:
-        """Save units' tags as the user's action; in fast mode they are then tagged on their own."""
-        ok = self.grid.commit(save, cells)
+    def _commit_user(self, save: dict, cells: list, review: TagReview | None = None) -> bool:
+        """Save units' tags as the user's action; in fast mode they are then tagged on their own.
+
+        With ``review``, the draft's tag review is set in the same change: the tags and the
+        review are one draft write, saved together or not at all.
+        """
+        then = None if review is None else (lambda a: replace(a, tag_review=review))
+        ok = self.grid.commit(save, cells, then)
+        if ok and review is not None:
+            self.unsaved = False  # the draft now holds the review in memory
         if ok and self.grid.same_channels.value:  # the user's action: tagged on their own
             self.grid.matrix.own.update(save)
             self.grid.matrix.sync_statement()

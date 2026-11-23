@@ -147,7 +147,7 @@ def test_confirm_all_confirms_none_when_any_would_be_refused(tmp_path, monkeypat
     assert nb.draft_answers == before and set(ov.confirmed) == {GONE}
     assert set(rows.listed()) == {OTHER, THIRD}
     monkeypatch.undo()
-    monkeypatch.setattr(type(nb.channel_grid), "commit", lambda self, tags, cells: False)
+    monkeypatch.setattr(type(nb.channel_grid), "commit", lambda self, tags, cells, then=None: False)
     assert not ov.confirm_all(GONE)
     assert set(ov.confirmed) == {GONE} and set(rows.listed()) == {OTHER, THIRD}
 

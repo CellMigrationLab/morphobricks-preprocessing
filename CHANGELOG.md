@@ -62,6 +62,11 @@ old pin are refused with `spec_commit_mismatch`, as at every re-pin.
     whatever its row's reference is now (`RepeatRows.standing` is the refused units without a
     holding confirmation, kept in the draft's `tag_review`): removing the units before it in its
     row no longer lets it be tagged from aliases and cleared.
+  - **Confirm these tags**, **Confirm the same tags** and **Confirm all N like it** save the
+    tags and the draft's tag review with the new confirmations in ONE draft write
+    (`TagGrid.commit(..., also)`): a refused write saves neither and confirms nothing. The save
+    button stays disabled while the tag review is not saved in the draft, and any later saved
+    tag change retries it.
 - **Segmentation hand-off** (owner request of 21 November 2026, step 1 of the Cellpose notebook
   plan): `segmentation_handoff` and `segmentation_record` (numpy and tifffile only; no
   segmentation tool is imported). `images_to_segment` lists the run's images that have no mask

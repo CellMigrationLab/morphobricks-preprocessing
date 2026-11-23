@@ -190,7 +190,7 @@ def test_confirm_is_refused_on_an_incomplete_or_duplicate_draft(tmp_path, statem
 def test_a_failed_save_confirms_nothing(tmp_path, statement_off, monkeypatch):
     nb, _, _, rows = _listed(tmp_path)
     ov = _open_editor(nb, rows)
-    monkeypatch.setattr(type(nb.channel_grid), "commit", lambda self, tags, cells: False)
+    monkeypatch.setattr(type(nb.channel_grid), "commit", lambda self, tags, cells, then=None: False)
     ov.confirm_button.click()
     assert not ov.confirmed and GONE in rows.listed()
 

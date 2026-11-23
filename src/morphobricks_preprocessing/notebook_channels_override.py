@@ -256,11 +256,15 @@ class OverrideEditor:
 
         The one path of the editor and of the one-click buttons: the same validation
         (``RepeatRows._row_error``) and save (``_commit_user``). What a confirmation needs (the
-        unit's header names) is read before the save.
+        unit's header names) is read before the save. The tags and the draft's tag review with
+        the new confirmations are ONE draft write (``TagGrid.commit(..., also)``): a refused
+        write saves neither, and nothing is counted as confirmed.
         """
         rows = self.rows
         grid, layouts = rows.grid, {u.key: u for u in rows.grid.layouts}
         save, cells, records = {}, [], {}
+        if rows.other_draft():  # the record is another draft's: never written into this one
+            return False
         for key, draft in drafts.items():
             if (why := rows._row_error(draft)) is not None:
                 rows.notice = ui.status("error", "Not saved.", [why])
@@ -270,12 +274,12 @@ class OverrideEditor:
             save[key] = tuple(t for t in draft if t)
             cells += [(key, i) for i in range(layout.channels)]
             records[key] = Override(save[key], header_names(layout))
-        if not rows._commit_user(save, cells):
-            return False
+        review = rows._review({**self.confirmed, **records})
+        if not rows._commit_user(save, cells, review):
+            return False  # one write: neither the tags nor the confirmation were saved
         self.confirmed.update(records)
         for key in save:
             self.drafts.pop(key, None)
-        rows.persist()
         grid.refresh()
         return True
 

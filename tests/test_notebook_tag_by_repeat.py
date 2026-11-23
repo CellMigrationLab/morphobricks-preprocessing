@@ -225,7 +225,7 @@ def test_2_a_refused_save_moves_no_unit_under_tagged_on_their_own(tmp_path, monk
     nb = opened(root, masks, out)
     set_labels(nb, list(EXTRA))
     grid = nb.channel_grid
-    monkeypatch.setattr(type(grid), "commit", lambda self, tags, cells: False)
+    monkeypatch.setattr(type(grid), "commit", lambda self, tags, cells, then=None: False)
     _set_row(nb, ("rep2", 4), EXTRA)
     assert not grid.matrix.own  # nothing saved, nothing switched
 
@@ -510,7 +510,7 @@ def test_b5_a_failed_corrective_save_keeps_the_unit_listed_and_check_save_refusi
     for drop, tag in zip(rows.drops[("rep2", 3)], ("ACTIN", "DNA", "PHASE"), strict=True):
         drop.value = tag  # a corrective row that fits the header
 
-    def failing(self, tags, cells):
+    def failing(self, tags, cells, then=None):
         raise RuntimeError("the save failed")
 
     monkeypatch.setattr(type(grid), "commit", failing)
@@ -544,7 +544,7 @@ def test_b5_a_corrective_save_the_grid_refuses_keeps_the_unit_listed(
     group = rows._offered()[("rep2", 3)]
     for drop, tag in zip(rows.drops[("rep2", 3)], ("ACTIN", "DNA", "PHASE"), strict=True):
         drop.value = tag
-    monkeypatch.setattr(type(grid), "commit", lambda self, tags, cells: False)
+    monkeypatch.setattr(type(grid), "commit", lambda self, tags, cells, then=None: False)
     assert not rows.apply(("rep2", 3), group)
     assert list(rows.listed()) == [odd]
 
