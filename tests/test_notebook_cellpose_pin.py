@@ -302,6 +302,25 @@ REFUSED = {
         [*NOTEBOOK, "get_ipython().system('morphobricks-preprocessing run')\n"],
     ),
 }
+FOLLOWED = {
+    # Package code that runs a package module by naming it in a string.
+    "a package module started by python -m": (
+        {
+            f"{PKG}/segment.py": "import subprocess\nimport sys\n\n\ndef segment():\n"
+            "    command = [sys.executable, '-m', 'morphobricks_preprocessing.cli']\n"
+            "    return subprocess.run(command, check=True)\n"
+        },
+        CLI_CHANGED,
+        NOTEBOOK,
+        [f"{PKG}/unused.py"],
+    ),
+    "a package module named in a constant": (
+        {f"{PKG}/segment.py": "HELPER = 'morphobricks_preprocessing.cli'\n"},
+        CLI_CHANGED,
+        NOTEBOOK,
+        [f"{PKG}/unused.py"],
+    ),
+}
 
 
 def _pin_and_head(repo, pin_files, head_files):
@@ -314,6 +333,13 @@ def test_a_use_the_review_found_is_refused(repo, case):
     pin, head = _pin_and_head(repo, pin_files, head_files)
     with pytest.raises(PinScopeError):
         pin_differences(repo.path, pin, head, cells)
+
+
+@pytest.mark.parametrize("case", FOLLOWED)
+def test_a_use_the_review_found_is_followed(repo, case):
+    pin_files, head_files, cells, changed = FOLLOWED[case]
+    pin, head = _pin_and_head(repo, pin_files, head_files)
+    assert pin_differences(repo.path, pin, head, cells) == changed
 
 
 # the real notebook --------------------------------------------------------------------------

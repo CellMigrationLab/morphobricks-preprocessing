@@ -56,6 +56,10 @@ HIDDEN_RUNNERS = frozenset({"get_ipython"})
 """Names that run commands or code the cell's syntax does not show (IPython's ``system``)."""
 
 
+DOTTED_NAME = re.compile(rf"{PACKAGE}(\.[A-Za-z_][A-Za-z0-9_]*)*")
+"""A string that names a module of the package (``morphobricks_preprocessing.cli``)."""
+
+
 class PinScopeError(Exception):
     """Raised when what a notebook or the package uses cannot be derived from the source."""
 
@@ -194,17 +198,26 @@ def _absolute(node: ast.ImportFrom, module: str, path: str) -> str:
     return ".".join([*parts, *([node.module] if node.module else [])])
 
 
-def _loaded_name(node: ast.Call, path: str) -> list[str]:
-    """Return the module a loader call in the package names, or raise when it is computed."""
+def _refuse_computed_name(node: ast.Call, path: str) -> None:
+    """Raise ``PinScopeError`` unless a loader call in the package names a module literally.
+
+    The literal name itself is taken as an import by :func:`_imported`, like every package
+    module named in a string.
+    """
     argument = node.args[0] if node.args else None
     if isinstance(argument, ast.Constant) and isinstance(argument.value, str):
         if not argument.value.startswith("."):
-            return [argument.value]
+            return
     raise PinScopeError(f"{path} loads code by a computed name: {ast.unparse(node)}")
 
 
 def _imported(text: str, module: str, path: str) -> list[str]:
-    """Return every module (or module.name) the file ``path`` of ``module`` imports."""
+    """Return every module (or module.name) the file ``path`` of ``module`` imports.
+
+    Every string that is a dotted name of the package counts as an import too: code can run a
+    module it names (``import_module("...")``, ``[sys.executable, "-m", "..."]``) without an
+    import statement.
+    """
     names = []
     for node in ast.walk(ast.parse(text)):
         if isinstance(node, ast.Import):
@@ -212,8 +225,10 @@ def _imported(text: str, module: str, path: str) -> list[str]:
         elif isinstance(node, ast.ImportFrom):
             base = _absolute(node, module, path)
             names.extend([base, *(f"{base}.{alias.name}" for alias in node.names)])
+        elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+            names.extend([node.value] if DOTTED_NAME.fullmatch(node.value) else [])
         elif isinstance(node, ast.Call) and _call_name(node) in ("import_module", "__import__"):
-            names.extend(_loaded_name(node, path))
+            _refuse_computed_name(node, path)
     return names
 
 
