@@ -379,6 +379,8 @@ class CellposeNotebook(CellposeWorkflow):
         """
         model = self.forms.get("model")
         if model is not None and self.loaded is not None:
+            if self._loaded_with is None:  # the cells' model loaded, the nuclei's did not
+                raise CellStop("The nuclei model did not load: press Load the model again.")
             if model_choice(model.fields) != self._loaded_with:
                 raise CellStop(MODEL_CHANGED)
             self._set_form_settings(model.fields)

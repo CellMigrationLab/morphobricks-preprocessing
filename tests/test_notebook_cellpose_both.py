@@ -326,3 +326,23 @@ def test_a_failing_hook_after_cells_still_runs_the_nuclei_then_raises(cells):
     assert counts(workflow.results["Nuclei"]) == {"written": len(fovs)}
     assert len(read_record(cells.run.masks, "Nuclei").batches[0].images) == len(fovs)
     assert any("Mask type Cells stopped" in card for card in workflow.shown)
+
+
+def test_a_failed_nuclei_load_says_so_not_that_the_model_changed(cells, monkeypatch):
+    choose_both(cells)
+    real = cp.load_model
+
+    def refuse_nuclei(name, *args, **kwargs):
+        if name == "cpsam":
+            raise cp.SegmentationError("no weights")
+        return real(name, *args, **kwargs)
+
+    monkeypatch.setattr(cp, "load_model", refuse_nuclei)
+    with pytest.raises(notebook_cellpose.CellStop, match="no weights"):
+        run_cell(cells.ns, MODEL, device="cpu", separate_nuclei=True, nuclei_model="cpsam")
+    for cell in (PREVIEW, BATCH):
+        with pytest.raises(notebook_cellpose.CellStop) as stopped:
+            run_cell(cells.ns, cell)
+        assert "nuclei model did not load" in str(stopped.value)
+        assert str(stopped.value) != MODEL_CHANGED
+    assert cells.stub.calls == [] and nothing_written(cells, "Cells", "Nuclei")
