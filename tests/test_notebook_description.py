@@ -178,6 +178,20 @@ def test_a_reference_is_chosen_saved_and_marks_the_control(root, out):
     assert saved(out).conditions == {}
 
 
+def test_no_comparison_replaces_a_saved_reference_and_survives_a_reopen(root, out):
+    # Issue #408: the explicit "no comparison" clears the saved reference, on the page, in the
+    # saved draft and after the notebook is opened again; the control mark goes with it.
+    nb = labelled(root, out)
+    nb.reference_boxes["drug"].value = "ctrl"
+    nb.reference_boxes["drug"].value = ""
+    assert dict(nb.draft.references) == {}
+    assert saved(out).conditions["drug"].reference == ""
+    assert "the reference of drug" not in nb.references_grid.children[1].children[2].value
+    again = labelled(root, out)
+    assert again.reference_boxes["drug"].value == ""
+    assert dict(again.draft.references) == {}
+
+
 def test_a_loop_of_references_is_refused_at_once(root, out):
     nb = labelled(root, out)
     nb.reference_boxes["drug"].value = "ctrl"
