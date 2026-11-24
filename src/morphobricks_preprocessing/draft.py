@@ -361,6 +361,11 @@ def draft_from_discovery(
     labels where allowed (Q6: the same rule for conditions, technical repeats and repeats), and
     ``used_ids`` (the IDs the lineage retired) are never proposed again, and ``listed_ids``
     (the published file's whole registry) are kept listed (:attr:`Draft.listed_ids`).
+    A caller that reopens a published description and publishes the draft (``publish_draft``)
+    must pass both, ``used_ids=retired_ids(description)`` and
+    ``listed_ids=description.used_ids``: without ``listed_ids`` the ID of a repeat or condition
+    removed in the save is dropped from ``used_ids`` and the publication is refused with
+    ``R_USED_ID_DROPPED`` (it fails safe; issue #283).
     No image is opened, no folder renamed and no file written.
     """
     used = {kind: tuple(values) for kind, values in (used_ids or {}).items()}
