@@ -6,12 +6,21 @@ nothing here validates, repairs, defaults or converts. Arrays whose order is not
 two models are equal exactly when the files mean the same (section 9.2); a unit's ``channels``
 keep their declared order. An optional field is ``None`` when the file did not write it, and
 an optional array keeps the difference between absent and ``[]``.
+
+The model is immutable all the way down (#489): every table (``conditions``, ``channels``,
+``repeats``, ``used_ids``, ``masks``, a repeat's ``members``, a member's ``technical_repeats``)
+is a read-only ``MappingProxyType`` over a copy the model alone holds, made when the model is
+built, and every array is a tuple. One parsed model is shared by every reader of the same bytes
+(:mod:`.description_consume`), so no consumer can change what another sees or what a later
+digest is taken of. A model pickles (and ``copy.deepcopy`` copies) through its tables' plain
+dicts and is rebuilt read-only.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
+from types import MappingProxyType
 from typing import Any
 
 from .description_read import read_description_bytes
@@ -21,6 +30,27 @@ from .description_rules import CHANNEL_LAYOUT, CHANNELS_FROM, SCHEMA_ID, USED_ID
 Table = Mapping[str, Any]
 USED_KINDS = USED_IDS.fields
 """The kinds of ``used_ids``, in the order the file writes them."""
+
+
+def _frozen(table: Mapping) -> Mapping:
+    """Return a read-only view of a copy of ``table``: no one else holds the copy (#489)."""
+    return MappingProxyType(dict(table))
+
+
+def _freeze(model: object, *names: str) -> None:
+    """Replace the named tables of a frozen dataclass instance with read-only copies."""
+    for name in names:
+        object.__setattr__(model, name, _frozen(getattr(model, name)))
+
+
+def _reduce(model: object) -> tuple:
+    """Return the pickle recipe of a model holding read-only tables (each as a plain dict).
+
+    ``MappingProxyType`` does not pickle; the model is rebuilt by its own constructor, which
+    makes the tables read-only again.
+    """
+    values = (getattr(model, f.name) for f in fields(model))
+    return (type(model), tuple(dict(v) if isinstance(v, MappingProxyType) else v for v in values))
 
 
 class DescriptionError(Exception):
@@ -91,6 +121,12 @@ class Member:
     image_count: int
     technical_repeats: Mapping[str, Unit]
 
+    def __post_init__(self) -> None:
+        _freeze(self, "technical_repeats")
+
+    def __reduce__(self) -> tuple:
+        return _reduce(self)
+
 
 @dataclass(frozen=True)
 class Repeat:
@@ -100,6 +136,12 @@ class Repeat:
     confirmed_on: str
     members: Mapping[str, Member]
     display_name: str | None = None
+
+    def __post_init__(self) -> None:
+        _freeze(self, "members")
+
+    def __reduce__(self) -> tuple:
+        return _reduce(self)
 
 
 @dataclass(frozen=True)
@@ -117,6 +159,8 @@ class Description:
     """A whole experiment description. ``masks`` is empty when the file has none.
 
     ``channel_layout`` is None for a strict per-unit file, the only meaning of its absence.
+    Every table is a read-only copy (``MappingProxyType``) and every ``used_ids`` value a tuple,
+    whatever mappings and sequences were given (#489).
     """
 
     conditions: Mapping[str, Condition]
@@ -127,6 +171,14 @@ class Description:
     schema_version: int = 1
     schema: str = SCHEMA_ID
     channel_layout: ChannelLayout | None = None
+
+    def __post_init__(self) -> None:
+        _freeze(self, "conditions", "channels", "repeats", "masks")
+        used = {kind: tuple(ids) for kind, ids in self.used_ids.items()}
+        object.__setattr__(self, "used_ids", MappingProxyType(used))
+
+    def __reduce__(self) -> tuple:
+        return _reduce(self)
 
     @property
     def fast_mode(self) -> bool:

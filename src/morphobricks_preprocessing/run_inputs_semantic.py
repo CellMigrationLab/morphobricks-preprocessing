@@ -24,11 +24,12 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from .channel_plan import channel_coverage
 from .description import Description
 from .description_consume import read_published_description
 from .description_file import DESCRIPTION_FILENAME
 from .description_record import KEY as DESCRIPTION_KEY
-from .description_record import check_declared_overrides
+from .description_record import UnitRecordMismatch, check_declared_overrides
 from .description_unnamed import FIELD as UNNAMED_FIELD
 from .description_write import SECTIONS
 from .description_write import section_digests as published_digests
@@ -37,11 +38,13 @@ from .manifest import FileEntry, RunManifest
 from .mask_representation import CHECKED, file_status, predates_value_rule, read_checked
 from .mask_rules import stale_check_message
 from .run_inputs_error import (
+    ChannelCoverageMismatchError,
     ChannelNotFoundError,
     DescriptionRequiredError,
     MaskUncheckedError,
     RunInputsError,
     SectionDigestMismatchError,
+    UnitRecordMismatchError,
 )
 
 if TYPE_CHECKING:
@@ -66,6 +69,8 @@ def check_description(output: Path, manifest: RunManifest) -> Description:
         ``A_DESCRIPTION_REQUIRED``: the manifest records no description.
     DraftRefusedError
         ``A_DRAFT_REFUSED``: the published file holds an unconfirmed repeat.
+    UnitRecordMismatchError
+        ``manifest_unit_record_mismatch``: a unit record is not the published file's unit.
     RunInputsError
         When the file is gone, not valid, or not the file the run read (changed since).
     """
@@ -83,9 +88,10 @@ def check_description(output: Path, manifest: RunManifest) -> Description:
         )
     try:
         check_declared_overrides(recorded, description)
-    except ValueError as error:
-        raise RunInputsError(
-            f"The run manifest contradicts its experiment description: {error}."
+    except UnitRecordMismatch as error:
+        raise UnitRecordMismatchError(
+            f"The run manifest contradicts its experiment description: {error}. Run "
+            "preprocessing again."
         ) from error
     return description
 
@@ -112,6 +118,40 @@ def check_section_digests(manifest: RunManifest, description: Description) -> No
             f"{SectionDigestMismatchError.code}: the run manifest records {fields} other than "
             f"the digest of that section of {DESCRIPTION_FILENAME}, the description the run "
             "read (the manifest was changed since the run). Run preprocessing again."
+        )
+
+
+def check_channel_coverage(manifest: RunManifest, description: Description) -> None:
+    """Refuse a recorded ``channel_coverage`` that is not the published description's (#490).
+
+    ``description`` is the one :func:`check_description` returned (its SHA-256 checked). The
+    coverage the run wrote is :func:`.channel_plan.channel_coverage` of that description, so the
+    manifest must record exactly it: every biological repeat, every declared channel, each with
+    its status, counts and lacking units. Nothing is filled in or repaired.
+
+    Raises
+    ------
+    ChannelCoverageMismatchError
+        ``manifest_channel_coverage_mismatch``, naming each biological repeat that differs
+        (missing, extra or with another entry).
+    """
+    recorded = manifest.experiment_description["channel_coverage"]
+    expected = channel_coverage(description)
+    differ = sorted(
+        (
+            str(key)
+            for key in set(recorded) | set(expected)
+            if recorded.get(key) != expected.get(key)
+        ),
+    )
+    if differ:
+        where = f"{DESCRIPTION_KEY}.channel_coverage"
+        shown = ", ".join(f"{where}.{key}" for key in differ[:5])
+        more = f" and {len(differ) - 5} more" if len(differ) > 5 else ""
+        raise ChannelCoverageMismatchError(
+            f"{ChannelCoverageMismatchError.code}: the run manifest records {shown}{more} other "
+            f"than the channel coverage of {DESCRIPTION_FILENAME}, the description the run read "
+            "(the manifest was changed since the run). Run preprocessing again."
         )
 
 
