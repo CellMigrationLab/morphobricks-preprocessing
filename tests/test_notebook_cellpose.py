@@ -134,20 +134,35 @@ def test_the_cells_stay_thin_the_logic_is_in_the_package():
 
 def test_the_pins_are_cellpose_4_2_1_1_and_a_preprocessing_commit_with_this_code():
     assert setting("CELLPOSE_VERSION") == cp.CELLPOSE_VERSION == "4.2.1.1"
-    ref = setting("RELEASE_REF")
+
+
+PINNED_NOTEBOOKS = {
+    # name: whether its cells include the Preprocessing install cell (local checkouts, #441)
+    "MorphoBricks_Cellpose": False,
+    "MorphoBricks_Preprocessing_Cellpose": True,
+}
+"""The notebooks whose ``RELEASE_REF`` the pin-scope check covers (#421, #422, #441)."""
+
+
+@pytest.mark.parametrize("name", PINNED_NOTEBOOKS)
+def test_the_pin_is_a_preprocessing_commit_with_this_code(name):
+    path = ROOT / "notebooks" / f"{name}.ipynb"
+    install_cell = code_sources(path)[INSTALL]
+    ref = install_setting(install_cell, "RELEASE_REF")
     assert re.fullmatch(r"[0-9a-f]{40}", ref)
-    assert setting("REPOSITORY").endswith("CellMigrationLab/morphobricks-preprocessing.git")
-    assert "DEVELOPMENT_OVERRIDE = False" in source(INSTALL)
+    repository = install_setting(install_cell, "REPOSITORY")
+    assert repository.endswith("CellMigrationLab/morphobricks-preprocessing.git")
+    assert "DEVELOPMENT_OVERRIDE = False" in install_cell
     command = ["git", "-C", str(ROOT), "cat-file", "-e", f"{ref}^{{commit}}"]
     if subprocess.run(command, capture_output=True).returncode != 0:
         history_missing("the pinned commit is not in this checkout (shallow clone or no git)")
     # The notebook installs the package at RELEASE_REF: that commit must hold the code the
     # notebook's cells run (every module they import, at any depth), the build's inputs and
     # the install-relevant pyproject.toml, exactly as HEAD has them (issue #421).
-    changed = pin_differences(ROOT, ref, "HEAD", code_sources(NOTEBOOK))
-    assert changed == [], (
-        f"what the notebook runs changed after RELEASE_REF: move the pin ({changed})"
+    changed = pin_differences(
+        ROOT, ref, "HEAD", code_sources(path), checkout=PINNED_NOTEBOOKS[name]
     )
+    assert changed == [], f"what {name} runs changed after RELEASE_REF: move the pin ({changed})"
 
 
 def test_the_version_file_names_the_notebooks_current_version():

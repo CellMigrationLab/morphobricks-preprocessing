@@ -62,7 +62,7 @@ def walk(widget):
 @pytest.mark.parametrize("path", NOTEBOOKS, ids=lambda p: p.stem)
 def test_no_notebook_has_a_colab_form_field(path):
     """A ``# @param`` is a comment outside Colab: a user there would have to edit code."""
-    assert len(NOTEBOOKS) == 2
+    assert len(NOTEBOOKS) == 3  # Preprocessing, Cellpose, Preprocessing_Cellpose (#441)
     for cell in json.loads(path.read_text(encoding="utf-8"))["cells"]:
         text = "".join(cell["source"])
         assert "@param" not in text and "@markdown" not in text, text[:80]
