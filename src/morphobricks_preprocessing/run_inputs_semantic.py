@@ -29,7 +29,7 @@ from .description import Description
 from .description_consume import read_published_description
 from .description_file import DESCRIPTION_FILENAME
 from .description_record import KEY as DESCRIPTION_KEY
-from .description_record import check_declared_overrides
+from .description_record import UnitRecordMismatch, check_declared_overrides
 from .description_unnamed import FIELD as UNNAMED_FIELD
 from .description_write import SECTIONS
 from .description_write import section_digests as published_digests
@@ -44,6 +44,7 @@ from .run_inputs_error import (
     MaskUncheckedError,
     RunInputsError,
     SectionDigestMismatchError,
+    UnitRecordMismatchError,
 )
 
 if TYPE_CHECKING:
@@ -68,6 +69,8 @@ def check_description(output: Path, manifest: RunManifest) -> Description:
         ``A_DESCRIPTION_REQUIRED``: the manifest records no description.
     DraftRefusedError
         ``A_DRAFT_REFUSED``: the published file holds an unconfirmed repeat.
+    UnitRecordMismatchError
+        ``manifest_unit_record_mismatch``: a unit record is not the published file's unit.
     RunInputsError
         When the file is gone, not valid, or not the file the run read (changed since).
     """
@@ -85,9 +88,10 @@ def check_description(output: Path, manifest: RunManifest) -> Description:
         )
     try:
         check_declared_overrides(recorded, description)
-    except ValueError as error:
-        raise RunInputsError(
-            f"The run manifest contradicts its experiment description: {error}."
+    except UnitRecordMismatch as error:
+        raise UnitRecordMismatchError(
+            f"The run manifest contradicts its experiment description: {error}. Run "
+            "preprocessing again."
         ) from error
     return description
 

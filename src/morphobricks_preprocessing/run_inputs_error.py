@@ -24,9 +24,11 @@ refused with the codes the run itself uses for a masks folder (issue #487):
 
 A manifest whose recorded description section digests are not those of the published
 description the run read is refused with :class:`SectionDigestMismatchError`
-(``manifest_section_digest_mismatch``, issue #490), and one whose recorded channel coverage is not
+(``manifest_section_digest_mismatch``, issue #490); one whose recorded channel coverage is not
 the published description's with :class:`ChannelCoverageMismatchError`
-(``manifest_channel_coverage_mismatch``).
+(``manifest_channel_coverage_mismatch``); one whose unit records are not the
+published description's units with :class:`UnitRecordMismatchError`
+(``manifest_unit_record_mismatch``, issue #491).
 """
 
 from __future__ import annotations
@@ -138,6 +140,18 @@ class ChannelCoverageMismatchError(RunInputsError):
     """
 
     code = "manifest_channel_coverage_mismatch"
+
+
+class UnitRecordMismatchError(RunInputsError):
+    """A recorded unit is not a unit of the published description (#491).
+
+    Each record of ``experiment_description.units`` names a declared unit (repeat, condition,
+    technical repeat), once, with its channels and, for a unit declared ``rgb``, its declared
+    ``rgb_header_override``; the message names the unit record and the field. Nothing is
+    filled in or skipped.
+    """
+
+    code = "manifest_unit_record_mismatch"
 
 
 class RunStoppedError(RunInputsError):
