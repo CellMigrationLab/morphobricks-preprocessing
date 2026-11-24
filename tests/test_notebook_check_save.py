@@ -276,6 +276,36 @@ def test_a_removed_folder_needs_yes_remove_before_saving(exp):
     assert "ctrl,rep2" not in (out / DESIGN_FILENAME).read_text(encoding="utf-8")
 
 
+def test_save_stays_blocked_for_an_id_edit_made_together_with_a_folder_answer(exp):
+    # Issue #475: the folder drug was renamed drugB on disk. "Yes, remove" answers for drug's
+    # folders, and the new folder's ID is typed as the removed one (drug): the folder and the
+    # ID of condition drug change in one save. Save stays disabled with a message naming it,
+    # where main enabled Save and publication raised a bare ValueError.
+    root, masks, out = exp
+    saved_nb(exp)
+    published = (out / DESCRIPTION_FILENAME).read_bytes()
+    shutil.move(root / "drug", root / "drugB")
+    shutil.move(masks / "Nuclei" / "drug", masks / "Nuclei" / "drugB")
+    nb = opened(root, masks, out)
+    nb.id_inputs[("conditions", "drugB")].value = "drug"
+    nb.reference_boxes["drugB"].value = "ctrl"
+    tag(nb)
+    for toggle in list(nb.same_way.values()):
+        if not toggle.value:
+            toggle.button.click()
+    (row,) = nb.removals_box.children
+    assert "Every folder of drug is gone" in row.children[0].value
+    row.children[1].click()  # the folder answer: Yes, remove
+    assert nb.save_button.disabled
+    assert "folder_and_id_changed" in nb.checks.value
+    assert "the folder and the ID of condition drug" in nb.checks.value
+    assert "Undo the ID edit" in nb.checks.value
+    assert "refused" in nb.save_blocker.value
+    assert not nb.save_experiment()
+    assert (out / DESCRIPTION_FILENAME).read_bytes() == published
+    assert not (out / RECORDS_FILENAME).exists()
+
+
 def test_the_draft_carries_the_pairing_across_a_reopen(tmp_path):
     root, masks, out = tmp_path / "exp", tmp_path / "masks", tmp_path / "out"
     for i, folder in enumerate(["ctrl/rep1", "ctrl/rep2", "drug/rep1", "drug/day2"]):
