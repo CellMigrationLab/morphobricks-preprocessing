@@ -101,7 +101,7 @@ def test_changing_the_output_after_choosing_drops_the_choice(cells):
     workflow = cells.ns["workflow"]
     workflow.forms["channels"].fields["output"].value = "nuclei"
     assert workflow.picker is None and workflow.loaded is None
-    with pytest.raises(notebook_cellpose.CellStop, match="Run cell 5 first"):
+    with pytest.raises(notebook_cellpose.CellStop, match="Press Load the model first"):
         run_cell(cells.ns, BATCH)  # the model is dropped with the choice
 
 
@@ -109,7 +109,7 @@ def test_an_unknown_output_is_refused(cells):
     run = cells.run
     run_cell(cells.ns, OPEN, run_folder=str(run.out), masks_folder=str(run.masks))
     with pytest.raises(notebook_cellpose.CellStop, match="output must be one of"):
-        cells.ns["workflow"].choose_channels("Cells", "both")
+        cells.ns["workflow"].choose_channels("Cells", "all")
 
 
 @pytest.mark.parametrize(

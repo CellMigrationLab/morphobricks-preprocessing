@@ -61,9 +61,11 @@ def test_without_folders_the_boxes_are_blank_and_nothing_opens():
 
 
 def test_the_folders_come_from_a_preprocessing_apps_finished_run(mixed_run, stub):
-    box = widgets.Text(value=f"  '{mixed_run.masks}'  ")  # tidied as the app tidies it
     done = SimpleNamespace(result=SimpleNamespace(written=True, output_folder=mixed_run.out))
-    done.masks_folder = box
+    # The app's own rule (#441): the masks folder it checked, else the one its run recorded;
+    # never what its masks box says now.
+    done.masks_folder = widgets.Text(value="/typed/after/the/run")
+    done._runs_masks_folder = lambda: mixed_run.masks
     assert app_folders(done) == (str(mixed_run.out), str(mixed_run.masks))
     assert segmentation_app(app=done).workflow.inputs is not None
     unfinished = SimpleNamespace(result=SimpleNamespace(written=False, output_folder="x"))

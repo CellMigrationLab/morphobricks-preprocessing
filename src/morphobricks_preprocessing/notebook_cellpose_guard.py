@@ -25,12 +25,13 @@ if TYPE_CHECKING:
     from .notebook_cellpose_form import CellposeNotebook
 
 RUN_CHANGED = (
-    "The run folder or the masks folder in cell 3 changed since the run was opened: press Open "
-    "the run again. Nothing is written to a folder the form no longer shows."
+    "The run folder or the masks folder of the Open the run step changed since the run was "
+    "opened: press Open the run again. Nothing is written to a folder the form no longer shows."
 )
 """The refusal of a preview or a run whose cell 3 folders no longer match the run opened."""
 REPLACED = (
-    "Replaced: cell 3 was run again, so this form no longer works. Use the forms shown after it."
+    "Replaced: this segmentation step was run again, so this form no longer works. Use the "
+    "forms shown after it."
 )
 """What a retired form says, and the refusal of a press on it."""
 _current: weakref.ReferenceType[CellposeNotebook] | None = None
@@ -39,8 +40,10 @@ _current: weakref.ReferenceType[CellposeNotebook] | None = None
 def check_folders(workflow: CellposeNotebook) -> None:
     """Refuse when cell 3's form shows other folders than those the run was opened with.
 
-    The fields are tidied as **Open the run** tidies them (``clean_path``); the run folder is
-    compared resolved, as :class:`.RunInputs` holds it.
+    The fields are tidied as **Open the run** tidies them (``clean_path``) and both are compared
+    resolved now, with the folders fixed when the run was opened (:class:`.RunInputs` holds the
+    run folder resolved, the workflow the masks folder): a relative path that the kernel's
+    working directory, changed since, sends elsewhere is refused (review aq, B1).
 
     Raises
     ------
@@ -53,7 +56,8 @@ def check_folders(workflow: CellposeNotebook) -> None:
     run = ui.clean_path(form.fields["run_folder"].value)
     masks = ui.clean_path(form.fields["masks_folder"].value)
     same_run = bool(run) and Path(run).resolve() == workflow.inputs.output_folder
-    if not (same_run and bool(masks) and Path(masks) == workflow.masks_root):
+    same_masks = bool(masks) and Path(masks).expanduser().resolve() == workflow.masks_root
+    if not (same_run and same_masks):
         raise CellStop(RUN_CHANGED)
 
 
@@ -83,9 +87,12 @@ def retire(workflow: CellposeNotebook) -> None:
     workflow.replaced = True
     widgets = [w for form in workflow.forms.values() for w in _walk(form.widget)]
     if workflow.picker is not None:
-        widgets.extend(workflow.picker.dropdowns)
+        picker = workflow.picker
+        widgets.extend(
+            [*picker.dropdowns, *getattr(picker, "number_fields", ()), getattr(picker, "by", None)]
+        )
     for widget in widgets:
-        if widget.has_trait("disabled"):
+        if widget is not None and widget.has_trait("disabled"):
             widget.disabled = True
     for form in workflow.forms.values():
         form.notice.value = ui.status("warn", REPLACED)

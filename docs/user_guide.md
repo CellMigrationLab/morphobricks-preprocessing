@@ -271,7 +271,24 @@ banner then says "commit unknown" and that the override is on). Then:
   `ACTIN`), never by position: a **cell channel** (cytoplasm or cell border) and a **nuclear
   channel**, both optional but at least one. A cell mask reads the cell channel, then the
   nuclear one if chosen (a cell channel is required); a nuclei mask reads the nuclear channel
-  only (required). The record names each channel's role and the output. When some images
+  only (required). The record names each channel's role and the output.
+- **Both.** The output **Both** segments each image twice: the cells from the cell channel and
+  the nuclear channel (stacked as cell, nuclear), the nuclei from the nuclear channel alone. It
+  needs both channels. The two are separate mask types (`Cells` and `Nuclei` by default, both
+  editable and different), each with its own `segmentation_record.json`, its own skip, overwrite
+  and rollback and its own table; a batch that stops does not stop the other. One model and
+  one set of settings serve both unless, under **Advanced Cellpose settings**, you tick a
+  different model or settings for the nuclei. The preview shows both results. The notebook
+  never pairs a cell with a nucleus by label number: relate them downstream from the geometry
+  (MorphoRelate, containment or overlap).
+- **Channels by number.** Tags (channel IDs) are the default. You may instead choose **By
+  number** and type a channel's number (its C position, 1 for the first), only when every
+  image of the run has the same channel IDs at the same positions: the number is translated
+  once to that ID, resolved like a tag, and the record keeps the ID with the number typed
+  (`channel_number` in `channel_roles`). When the layouts differ (3 channels in some repeats
+  and 4 in others) the number is refused with the images of each layout named: choose the
+  channel by its tag. A number is never resolved image by image.
+- **Partial channels.** When some images
   have a channel that others lack (a fourth stain in one biological repeat), only the channels
   every image has can be used: the dropdown says which channel is partial, and choosing it
   shows preprocessing's refusal (`A_SCOPE_INCOMPLETE`) unchanged. Cellpose reads at most three
@@ -302,9 +319,40 @@ banner then says "commit unknown" and that the override is on). Then:
   file name and SHA-256, every setting (the full normalisation and the flow iterations included), whether the weights were downloaded now and from where, the channels, the device and each image as written,
   skipped or failed. The final table lists every image, with the error of a failed one.
 
-Afterwards declare the mask type in the experiment description (for example `[masks.Cells]`
+Afterwards declare the mask type (both mask types for **Both**) in the experiment description (for example `[masks.Cells]`
 with `source_type = "Cells"` and `representation = "instances"`), save it, run preprocessing
 again with the masks folder, **Describe the masks**, then continue with MorphoFeature.
+
+### Preprocessing, Cellpose and the masks in one notebook (optional)
+
+[`notebooks/MorphoBricks_Preprocessing_Cellpose.ipynb`](../notebooks/MorphoBricks_Preprocessing_Cellpose.ipynb)
+does the whole flow. Its cells 1 to 3 are exactly those of the Preprocessing notebook (cell 1
+pins its own preprocessing commit, the one holding cells 4 and 5; it never installs Cellpose):
+run the experiment in the app of cell 3. Then:
+
+- **4. Segment with Cellpose** segments the run the app just finished, in the masks folder
+  that run uses (the masks folder the app checked, else the one the run recorded; type one
+  under **Open the run** when it has none). With no finished run in the app (none yet, or a
+  run that stopped) it says so and names cell 3; you may also type the output folder of an
+  earlier finished run. A run whose images changed since it ran is refused. The first time,
+  Cellpose 4.2.1.1 and PyTorch are installed, only when you tick **Install Cellpose 4.2.1.1
+  (with PyTorch) now** and press the button; if the installation changes `numpy` or `opencv`
+  while they are loaded, restart the runtime, run cells 1 to 3 again (run preprocessing again
+  in cell 3: the histograms are reused), then cell 4. Then the same steps as the Cellpose
+  notebook above, one under the other; their messages name the step (for example *Press Load
+  the model first*), and **What to do next** points to cell 5.
+- **5. Register the masks** shows, for each mask type cell 4 wrote, the declaration it would
+  add (`[masks.Cells]` with `source_type = "Cells"` and `representation = "instances"`). Tick
+  each one and press **Register the masks**: the app of cell 3 then checks the folders again
+  with the masks folder, answers the mask on **Masks**, saves the description, runs again
+  (the histograms of unchanged images are reused) and describes the masks. Masks written into
+  the masks folder the run already used are fine. If its folder check asks you to confirm the
+  axes again, do it in cell 3 (step **Axes**) and press the button again (or run cell 5
+  again). It refuses, changing nothing, a mask type that collides with a mask already declared,
+  a masks folder inside the experiment, masks of another run or masks folder than the app's,
+  images changed since the run, a run cell 3 published again after cell 4 opened it (open the
+  run again in cell 4 and segment again), and, after that stop, axes other than those the
+  segmented run recorded or another experiment in cell 3.
 
 ## 3. Supported images
 
@@ -691,10 +739,10 @@ the same bytes in every file except that time (and the manifest SHA-256 the repo
 | `--confirm-repeat-codes` | Confirm the `repeat_codes` of `--lab-links` for this run. The run prints each pair; without this option a file with repeat codes is refused (`lab_links_repeat_codes_not_confirmed`), also when a code is spelled like the ID: the lab tool's codes and the description's IDs are separate names |
 | `--no-masks` | Drop the masks folder an earlier run recorded, with the mask axes stated for its masks (those of OME-Zarr label images are kept) |
 | `--no-exclude` | Clear the exclusions an earlier run recorded, so every image is analysed again (not together with `--exclude`) |
-| `--remove-stale-lock` | Remove the lock left by a run that was stopped or whose computer restarted (`check`, `run`, `masks` and `calibrate`); give it only when no other run uses the output folder |
+| `--remove-stale-lock` | Remove the lock left by a run that was stopped or whose computer restarted (`check`, `run`, `masks` and `calibrate`); give it only when no other run uses the output folder, on any computer (only Linux and macOS can tell whether a process on this computer still runs) |
 | `--outlier-limit N`, `--saturation-limit FRACTION`, `--min-images N` | Limits of the intensity checks printed after the run (default 3, 0.01 and 5) |
 | `--log FILE` | Write technical details to a file (`run`, `masks`, `convert`). It is checked before anything is written and opened only once the other options are checked: a file inside the experiment or masks folder (given or recorded by the earlier run), inside the folder of the copies (`convert`), or named as one of the run's files in the output folder (`plane_histograms.csv`, `run_manifest.json`, the reports, `experiment_design.csv`, `calibration.csv`, `mask_relationships.json`, the lock) is refused and nothing is written; so is a file that is a hard link (it has another name). Any other name in the output folder is fine, for example `run.log` |
-| `--masks FOLDER` | The masks folder (§2). `check` lists the mask types found and checks every mask from its header; `run` stops on a mask error and records the masks in `run_manifest.json` |
+| `--masks FOLDER` | The masks folder (§2). `check` lists the mask types found and checks every mask from its header; `run` stops on a mask error and records the masks in `run_manifest.json`. A masks folder other than the one an earlier run recorded does not reuse the mask axes stated for that folder's masks (`--mask-axes`): state them again for the new folder (those of OME-Zarr label images are kept) |
 | `--mask-axes TYPE=ROLES` | The axes of a mask type, one role (Y, X, Z or T) per axis as stored, stated once per type: `Cells=TYX` for plain stacks of time points whose files do not name their axes; a 2D mask needs none, and `Cells=YX` (the removed shared 2D mask) is the error `shared_mask_not_supported` (repeatable; `check`, `run`, `masks`). Masks are never reordered. |
 
 After writing, `run` prints the intensity checks of the table, grouped by kind, each with
@@ -900,6 +948,17 @@ projection whose metadata still give the z-step of its stack gets no Z size, and
 statement for an axis some images lack is a warning naming them
 (`calibration_axis_absent`). In Python, `write_calibration(calibration, output_folder)`
 writes the file (see §9).
+
+`calibrate` never writes inside the experiment folder: an output folder that is the experiment
+folder or inside it (also through a link) is refused with `output_inside_experiment` before
+anything is created or written, against the experiment folder you give, or, with only
+`--output`, against the experiment the run in that output folder recorded. With only `--output`
+and no run there yet, no experiment is known: give the experiment folder too
+(`calibrate /data/exp1 --output /data/exp1_out ...`) so the check can be made. The command still
+runs in that case, but says so on the error output (stderr): "Note: no experiment was given and
+none is recorded in <output folder>, so it was not checked that the output folder is outside the
+experiment (give the experiment folder to check it)." It is not an error and does not change the
+exit status; it is not printed when the experiment is given or recorded.
 
 ### Named-axis copies (`convert`)
 
@@ -1333,7 +1392,7 @@ continues.
 | `invalid_name` | Error | A folder or image name starts or ends with a space, or is `NA`, `nan`, `none`, `null`, `n/a` or `<NA>` (any case), which tables read as a missing value. Rename it. |
 | `duplicate_position_id` | Error | Two images in one folder have the same name apart from the extension or upper/lower case (`img_01.tif` and `img_01.ome.zarr`), so their positions cannot be told apart. Rename one, or move it out of the experiment. |
 | `folder_too_deep` | Error | Folders below the technical repeat. Move the images up, or select a lower folder as the experiment. |
-| `output_inside_experiment` | Error | The output folder is inside the experiment. Choose another. |
+| `output_inside_experiment` | Error | The output folder is inside the experiment. Choose another. `calibrate` refuses it too, before it creates the folder or writes `calibration.csv` (`OutputInsideExperimentError` from `write_calibration` and `update_calibration`). Without an experiment given or recorded in the output folder it cannot be checked: `calibrate` then prints a one-line note on stderr and goes on. |
 | `no_images` | Error | No images to analyse (or all excluded). Check the folder. |
 | `unreadable_tiff` | Error | A TIFF file cannot be opened. Export it again, or exclude it. |
 | `unreadable_ome_zarr` | Error | A `.zarr` folder is not an OME-Zarr image that can be read; the message says why. That includes an image whose metadata do not name its axes (OME-NGFF 0.3 to 0.5 require them), and every OME-NGFF 0.1 or 0.2 store (their metadata never name the axes): the axes are never guessed. Re-save an 0.1 or 0.2 store as OME-NGFF 0.4 or later. Export it again as OME-Zarr (OME-NGFF 0.4 or 0.5) with its axes, or exclude it. |
@@ -1366,12 +1425,13 @@ continues.
 | `copy_folder_overlaps_experiment` | Error | `convert`: the folder for the copies is the experiment folder, inside it, or holds it. Choose a new folder outside the experiment. |
 | `copy_folder_overlaps_masks` | Error | `convert`: the folder for the copies is the masks folder, inside it, or holds it; copies there would be read as masks. Choose a folder outside the masks folder. |
 | `copy_folder_not_a_folder` | Error | `convert`: the path given with `--to` is a file. Choose a folder. |
-| `copy_path_too_long` | Error | `convert` on Windows: a copy would have a file whose path, while it is written in the conversion's work folder, is longer than 259 characters, which Windows cannot handle. Nothing is written. Choose a folder for the copies with a shorter path, or shorten the names of the images or folders named. |
+| `copy_path_too_long` | Error | `convert` on Windows: a copy would have a file whose path, while it is written in the conversion's work folder, is longer than 259 characters, or a folder whose path is longer than 247, which Windows cannot handle. Nothing is written. Choose a folder for the copies with a shorter path, or shorten the names of the images or folders named. Not checked when Windows' long paths are enabled (the `LongPathsEnabled` setting). |
 | `copy_names_collide` | Error | An OME-Zarr copy: two images of one folder differ only by their extension, so their copies would have the same name. Nothing is written. Rename or exclude one of them. |
 | `copy_folder_has_links` | Error | `convert`: the folder for the copies holds symbolic links (directory junctions on Windows) or mount points, named `link -> target`, through which the copies would be written elsewhere, perhaps over the originals. Nothing is written; remove them or choose a new, empty folder. |
 | `copy_folder_unreadable` | Error | `convert`: a folder below the folder for the copies cannot be read, or disappeared while it was checked, so it cannot be checked for links or mount points; it is named. Nothing is written. Make it readable or remove it, or choose a new, empty folder. |
-| `conversion_work_folder_in_use` | Error | `convert`: the folder for the copies holds the work folder of a conversion whose process still runs on this computer (its lock was probably removed by mistake). Nothing is removed or written. Wait for it to finish; if that process is not a conversion, move or remove the work folder yourself. |
-| `conversion_work_folder_unowned` | Error | `convert`: the folder for the copies holds `.mbconv` (or `.morphobricks-conversion.partial`, its earlier name), the name of the folder a conversion writes its copies in, but not as a conversion leaves it: its owner file is missing or not well formed, or it holds something else than that file and the folder `files`. Nothing is removed or written. Move or remove it yourself, or choose a new, empty folder. |
+| `conversion_work_folder_in_use` | Error | `convert`: the folder for the copies holds the work folder of a conversion whose process still runs on this computer (its lock was probably removed by mistake). Nothing is removed or written. Wait for it to finish; if that process is not a conversion, move or remove the work folder yourself. Only Linux and macOS can tell whether a process runs, and only on this computer: on Windows, or for a conversion on another computer, the work folder is taken for one left by a stopped conversion and removed. The folder's lock is what keeps two conversions apart, so remove a lock (`--remove-stale-lock`) only once you are sure no conversion into that folder is running on any computer. |
+| `conversion_work_folder_unowned` | Error | `convert`: the folder for the copies holds `.mbconv` (or `.morphobricks-conversion.partial`, its earlier name), the name of the folder a conversion writes its copies in, but not as a conversion leaves it: its owner file is missing or not well formed, or it holds something else than that file and the folder `files`. An owner file of NUL bytes only is named as unreadable, possibly left by a power loss, so ownership cannot be proven. Nothing is removed or written. Move or remove it yourself, or choose a new, empty folder. |
+| `conversion_work_folder_not_removed` | Error | `convert`: the folder for the copies holds the work folder of a conversion that was stopped, and it cannot be removed: a file in it may be open in another program (an antivirus, or a sync client such as OneDrive). Nothing is written, and the work folder is named. Close those programs or wait, then convert again; or remove the work folder yourself. |
 | `copy_folder_not_empty` | Error | `convert`: the folder for the copies holds files and no conversion record. Nothing is overwritten; choose a new or empty folder. When the folder also holds the work folder of a stopped conversion, the message says the files named may be copies it had moved into place when it was interrupted: remove them, then convert again. |
 | `copy_differs` | Error | `convert`: images in the folder of copies differ from the copies this conversion would write (an original changed, other roles, a copy changed, an image no longer in the experiment), or the folder holds copies of another experiment. Nothing is overwritten; convert into a new folder, or remove those copies first. |
 | `cannot_convert_pixel_type` | Error | `convert`: images of 64-bit integers cannot be saved as OME-TIFF, and pixel values are never changed to fit. Save them again with named axes in a 32-bit type if their values fit, or correct the roles. |
@@ -1436,7 +1496,8 @@ continues.
 | `mask_hierarchy_cycle` | Warning (mask step) | The direct parents of some mask types form a cycle (for example A inside B in some images, B inside C in others and C inside A), so no parent-child hierarchy can be inferred for them. The hierarchy lists them together as `[cycle: …]` with every link. Check those masks; nothing is guessed. |
 | `no_finite_pixels` | Warning | Some planes have a channel without finite pixels; those channels are left out of group statistics. |
 | `excluded_images`, `excluded_path_not_found` | Warning | Images excluded as requested, or an excluded path that matches no image. |
-| `masks_folder_not_found` | Error | The masks folder does not exist. Select the folder that holds one folder per kind of mask. |
+| `masks_folder_not_found` | Error | The masks folder does not exist. Select the folder that holds one folder per kind of mask. Later bricks opening a run (`RunInputs.open(..., masks_root=...)`) refuse a masks folder given that does not exist or is a file with the same code (`MasksFolderNotFoundError`); it is never read as a folder without masks. Give the folder that holds the masks, or leave `masks_root` out to use the one the run recorded. |
+| `masks_folder_unreadable` | Error | A masks folder given to a later brick (`RunInputs.open(..., masks_root=...)`) cannot be listed, for example for lack of permission, so its masks cannot be checked against the run (`MasksFolderUnreadableError`); the message names the folder and the reason. Check its permissions, or give another folder. |
 | `output_inside_masks` | Error | The output folder is inside the masks folder, where the run's files would be read as masks. Choose another output folder. |
 | `experiment_inside_masks` | Error | The experiment folder is inside the masks folder, where its images would be read as masks. Select the folder that holds only the masks, next to the experiment folder. |
 | `copies_inside_masks` | Error | The masks folder holds named-axis copies (a conversion record), which would be read as masks. Move the copies out of the masks folder. |

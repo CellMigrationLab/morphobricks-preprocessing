@@ -55,8 +55,6 @@ from .description_reconcile import (
     reconcile,
 )
 from .description_run_text import physical_issues
-from .design import DESIGN_FILENAME
-from .design_derive import write_derived_design
 from .discovery import DiscoveryResult, default_output_folder, discover_experiment
 from .draft import Draft, DraftError, draft_from_discovery
 from .draft_answers import DraftAnswers, description_from_draft
@@ -323,11 +321,12 @@ def _publish_fast(
         return 1
     output.mkdir(parents=True, exist_ok=True)
     try:
-        publication = publish_description(output, candidate, base_sha256="absent")
+        publication = publish_description(
+            output, candidate, base_sha256="absent", write_design=True
+        )
     except (PublicationRefused, DescriptionError, ValueError) as exc:
         print(f"Not published: {exc}")
         return 1
-    write_derived_design(candidate, output / DESIGN_FILENAME)
     print(
         f"Published {publication.path} in fast mode (channel list "
         f"{list(candidate.channel_layout.channels)})."

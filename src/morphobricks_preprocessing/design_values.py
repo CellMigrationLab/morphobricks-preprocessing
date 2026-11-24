@@ -13,6 +13,8 @@ import datetime
 import unicodedata
 from collections.abc import Iterable
 
+from .type_names import type_name
+
 DATE_FORMAT = "YYYY-MM-DD"
 """The form of ``confirmed_on``: an ISO 8601 calendar date, e.g. ``2026-10-26``."""
 
@@ -113,3 +115,43 @@ def is_date(value: str) -> bool:
     except ValueError:
         return False
     return True
+
+
+_TEXT, _BOOL, _COUNT = "text", "True or False", "a whole number of at least 0"
+_TYPES = (
+    *((c, _TEXT) for c in ("condition", "biological_repeat", "repeat_group", "confirmed_on")),
+    *((c, _BOOL) for c in ("control", "confirmed")),
+    *((c, _COUNT) for c in ("image_count", "technical_repeat_count")),
+)
+"""Each ``DesignRow`` column with the exact type it must hold, as a message says it."""
+
+
+def type_faults(row: object) -> list[tuple[str, str]]:
+    """Return ``(column, message)`` for each value of ``row`` of the wrong type (#410).
+
+    A value is wrong when it has not its exact type, or is a count below 0.
+
+    Exact types (``type(x) is ...``): a ``bool`` is not a count and ``1`` or ``"false"`` is
+    not a ``control``; nothing is converted by truthiness or by ``str``.
+    """
+    faults = []
+    for column, expected in _TYPES:
+        value = getattr(row, column)
+        right = {_TEXT: str, _BOOL: bool, _COUNT: int}[expected]
+        if type(value) is not right:
+            article = "a text" if expected == _TEXT else expected
+            faults.append((column, f"{column} must be {article}, not {_found(value)}"))
+        elif expected == _COUNT and value < 0:
+            faults.append((column, f"{column} must be {expected}, not {value!r}"))
+    return faults
+
+
+def wrong_types(row: object) -> list[tuple[str, str]]:
+    """Return ``(column, expected type)`` for each column of ``row`` with a type fault."""
+    expected = dict(_TYPES)
+    return [(column, expected[column]) for column, _ in type_faults(row)]
+
+
+def _found(value: object) -> str:
+    """Return a value and its type for a message, e.g. ``'false' (of type str)``."""
+    return f"{value!r} (of type {type_name(value)})"

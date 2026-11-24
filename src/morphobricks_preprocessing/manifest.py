@@ -367,13 +367,47 @@ def read_manifest(path: str | os.PathLike) -> RunManifest:
     ManifestFormatError
         If the file is not valid JSON or not a manifest of this version.
     """
+    return parse_manifest(Path(path).read_bytes(), path)
+
+
+def parse_manifest(raw: bytes, path: str | os.PathLike) -> RunManifest:
+    """Parse the bytes of a manifest read from ``path`` (named in a refusal).
+
+    The bytes are decoded as strict UTF-8 without universal newlines, and a byte order mark
+    is refused (JSON text has none); what is accepted, and its SHA-256, are those of the
+    bytes. Only the position in a refusal is reported as before bytes were decoded by
+    ``read_text``: a CR LF or lone CR counts as one newline character, so the ``char`` offset
+    of a malformed manifest with CR LF line ends is the one of the same text with LF.
+
+    Raises
+    ------
+    ManifestFormatError
+        If the bytes are not valid JSON or not a manifest of this version.
+    """
     try:
-        data = json.loads(Path(path).read_text(encoding="utf-8"))
+        text = raw.decode("utf-8")
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError as exc:
+            raise _with_universal_newlines(text, exc) from exc
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise ManifestFormatError(f"{path} is not a valid manifest: {exc}") from exc
     if not isinstance(data, dict):
         raise ManifestFormatError(f"{path} is not a valid manifest.")
     return RunManifest.from_dict(data)
+
+
+def _with_universal_newlines(text: str, error: json.JSONDecodeError) -> json.JSONDecodeError:
+    """Return the error as the text with CR LF and CR read as LF reports it (position only).
+
+    Only the error's position is taken from the normalised text; it is never parsed for its
+    value. When it does not fail there, the original error stands.
+    """
+    try:
+        json.loads(text.replace("\r\n", "\n").replace("\r", "\n"))
+    except json.JSONDecodeError as normalised:
+        return normalised
+    return error
 
 
 def _parent(relative_path: str) -> str:

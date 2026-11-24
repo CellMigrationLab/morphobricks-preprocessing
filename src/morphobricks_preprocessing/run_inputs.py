@@ -36,9 +36,10 @@ groups from the published description (``Fov.repeat_group``, :meth:`RunInputs.re
 
 from __future__ import annotations
 
+import hashlib
 import os
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
@@ -61,7 +62,7 @@ from .manifest import (
     FileEntry,
     RunManifest,
     file_sha256,
-    read_manifest,
+    parse_manifest,
 )
 from .mask_conversion import ConversionInputs
 from .mask_record import shared_mask_text
@@ -71,10 +72,12 @@ from .planes import DEFAULT_MEMORY_LIMIT
 from .recorded_sizes import RecordedSize
 from .required_description import FIX, is_published, required_message
 from .run.generation import published_path, read_stable
-from .run_inputs_error import DescriptionRequiredError
+from .run_inputs_error import (
+    DescriptionRequiredError,
+)
 from .run_inputs_error import RunInputsError as RunInputsError  # re-exported (moved)
 from .run_inputs_image import LazyImage as LazyImage  # re-exported (moved)
-from .run_inputs_mask import MaskInputs
+from .run_inputs_mask import MaskInputs, given_masks_root
 from .run_inputs_projection import ProjectionInputs
 from .run_inputs_resolve import ResolvingInputs
 from .run_inputs_semantic import SemanticInputs, check_description, with_identity
@@ -198,6 +201,10 @@ class RunInputs(
         The run manifest.
     records
         The table's rows, as read when opened.
+    manifest_sha256
+        The SHA-256 of the exact ``run_manifest.json`` bytes ``manifest`` was parsed from, taken
+        when opened (never the file's later): a brick names the run it read by it and refuses a
+        run published again since (review ar, B2). None only in a ``RunInputs`` built by hand.
     """
 
     output_folder: Path
@@ -205,6 +212,7 @@ class RunInputs(
     masks_root: Path | None
     manifest: RunManifest
     records: tuple[PlaneRecord, ...]
+    manifest_sha256: str | None = field(default=None, compare=False)
 
     @classmethod
     def open(
@@ -222,7 +230,9 @@ class RunInputs(
         experiment_root
             Where the experiment is now; by default where the run read it.
         masks_root
-            Where the masks folder is now; by default where the run read it.
+            Where the masks folder is now; by default where the run read it. A folder given
+            must exist and be listable, else ``MasksFolderNotFoundError`` or
+            ``MasksFolderUnreadableError`` (#487), before any image or mask is checked.
 
         Raises
         ------
@@ -266,7 +276,7 @@ class RunInputs(
         masks_root: str | os.PathLike | None,
     ) -> RunInputs:
         """Read the manifest and the files it names, checking their SHA-256."""
-        manifest = _manifest(output)
+        manifest, digest = _manifest(output)
         table = published_path(output, OUTPUT_FILENAME, manifest.csv_sha256)
         _check_sha(table, manifest.csv_sha256, "histogram table")
         if manifest.experiment_design_sha256 is not None:
@@ -276,7 +286,12 @@ class RunInputs(
         check_description(output, manifest)  # A_DRAFT_REFUSED, or changed since the run
         root = Path(experiment_root or manifest.experiment_root).resolve()
         _check_conversion(root, manifest)
-        masks = masks_root or (manifest.masks or {}).get("folder")
+        # A masks folder given is used as given, never replaced by the recorded one (#487).
+        masks = (
+            (manifest.masks or {}).get("folder")
+            if masks_root is None
+            else given_masks_root(masks_root)
+        )
         refused = [] if masks is None else masks_folder_issues(masks, root, output)
         if refused:
             # A run recorded before these folder rules (audit B1) is refused as a new one is.
@@ -287,6 +302,7 @@ class RunInputs(
             masks_root=None if masks is None else Path(masks).resolve(),
             manifest=manifest,
             records=_records(table, manifest),
+            manifest_sha256=digest,
         )
 
     def fovs(self) -> tuple[Fov, ...]:
@@ -436,8 +452,11 @@ class RunInputs(
             return False
 
 
-def _manifest(output: Path) -> RunManifest:
-    """Read an output folder's manifest; an older version is refused (re-run preprocessing).
+def _manifest(output: Path) -> tuple[RunManifest, str]:
+    """Read an output folder's manifest and the SHA-256 of the bytes it was parsed from.
+
+    An older version is refused (re-run preprocessing). The bytes are read once: the SHA-256
+    and the manifest are of the same file whatever is published meanwhile.
 
     Raises
     ------
@@ -461,7 +480,8 @@ def _manifest(output: Path) -> RunManifest:
         raise RunInputsError(f"{output} holds no {MANIFEST_FILENAME}: run preprocessing first.")
     if not is_published(output):
         raise DescriptionRequiredError(f"{required_message(output)} {FIX}")
-    return read_manifest(path)
+    raw = path.read_bytes()
+    return parse_manifest(raw, path), hashlib.sha256(raw).hexdigest()
 
 
 def _check_sha(path: Path, expected: str, what: str) -> None:

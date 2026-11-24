@@ -156,8 +156,12 @@ def test_the_preview_takes_a_second_mask_without_change(monkeypatch, tmp_path):
 # a plain Jupyter kernel, with the stand-in model ------------------------------------------------
 
 
-def test_the_preview_runs_in_a_plain_jupyter_kernel(mixed_run, tmp_path):
-    """Cells 2 to 6 in a real kernel (not Colab), the model a stand-in: the preview shows."""
+@pytest.mark.parametrize(("output", "masks"), [("cells", 1), ("both", 2)])
+def test_the_preview_runs_in_a_plain_jupyter_kernel(mixed_run, tmp_path, output, masks):
+    """Cells 2 to 6 in a real kernel (not Colab), the model a stand-in: the preview shows.
+
+    With the output Both (#440) the image is segmented twice and both results are drawn.
+    """
     nbformat = pytest.importorskip("nbformat")
     pytest.importorskip("ipykernel", reason="the dev extra installs ipykernel")
     from test_notebook_file import _execute
@@ -179,6 +183,7 @@ def test_the_preview_runs_in_a_plain_jupyter_kernel(mixed_run, tmp_path):
         "assert form.refusal == '', form.refusal\n"
     )
     choose = new(
+        f"workflow.forms['channels'].fields['output'].value = {output!r}\n"
         "workflow.forms['channels'].button.click()\n"
         "workflow.picker.cell.value, workflow.picker.nuclear.value = 'TUB', 'DNA'\n"
     )
@@ -208,4 +213,6 @@ def test_the_preview_runs_in_a_plain_jupyter_kernel(mixed_run, tmp_path):
     text = "".join(o.get("text", "") for o in notebook.cells[-1].outputs)
     assert "BEFORE True" in text and f"IMAGES {len(mixed_run.inputs.fovs())}" in text
     assert "REFUSAL ''" in text and "Preview of" in text and "nothing is written" in text
-    assert "WRITTEN False" in text and "PLOTTED 1" in text
+    assert "WRITTEN False" in text and f"PLOTTED {masks}" in text
+    if output == "both":
+        assert "Cell mask: 2 objects" in text and "Nuclei mask: 2 objects" in text

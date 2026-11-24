@@ -53,7 +53,7 @@ def test_a_refused_open_leaves_nothing_to_segment_with(loaded, tmp_path):
     assert opener.refusal and html.escape(opener.refusal) in workflow.shown[-1]
     segment = workflow.forms["segment"]
     assert segment.button.disabled and workflow.forms["preview"].button.disabled
-    assert press_segment(segment) == "Run cell 5 first."
+    assert press_segment(segment) == "Press Load the model first."
     assert STOPPED in workflow.shown[-1]
     assert snapshot(loaded.run.masks) == before and loaded.stub.calls == []
     assert snapshot(tmp_path / "new_masks") is None
@@ -122,7 +122,7 @@ def test_the_mask_type_is_taken_once_typed_and_a_change_still_drops_the_model(lo
     assert workflow.loaded is not None
     mask_type.value = "Cytoplasm"
     assert workflow.picker is None and workflow.loaded is None
-    assert press_segment(workflow.forms["segment"]) == "Run cell 5 first."
+    assert press_segment(workflow.forms["segment"]) == "Press Load the model first."
 
 
 def test_a_quoted_pasted_path_opens_the_run(mixed_run, monkeypatch, tmp_path):

@@ -17,7 +17,12 @@ from morphobricks_preprocessing import (
     write_manifest,
 )
 from morphobricks_preprocessing.image_names import position_id
-from morphobricks_preprocessing.manifest import file_entry_for, file_sha256, package_versions
+from morphobricks_preprocessing.manifest import (
+    file_entry_for,
+    file_sha256,
+    package_versions,
+    parse_manifest,
+)
 from tiff_tree import write_tiff
 
 
@@ -245,6 +250,43 @@ def test_malformed_manifests_are_refused(tmp_path, content):
     path.write_text(content, encoding="utf-8")
     with pytest.raises(ManifestFormatError):
         read_manifest(path)
+
+
+def _parse(raw):
+    return parse_manifest(raw, "m.json")
+
+
+def test_a_malformed_manifest_with_crlf_reports_the_position_of_its_lf_text():
+    """#497: CR LF is one newline character in the position, as when ``read_text`` decoded it."""
+    with pytest.raises(ManifestFormatError) as crlf:
+        _parse(b'{\r\n"a": x}')
+    with pytest.raises(ManifestFormatError) as lf:
+        _parse(b'{\n"a": x}')
+    assert str(crlf.value) == str(lf.value)
+    assert "line 2 column 6 (char 7)" in str(crlf.value)  # the raw bytes would say char 8
+    with pytest.raises(ManifestFormatError, match=r"line 2 column 6 \(char 7\)"):
+        _parse(b'{\r"a": x}')  # a lone CR is a newline too
+
+
+def test_a_manifest_with_crlf_is_accepted_as_it_is_and_hashes_its_own_bytes(tmp_path):
+    path = tmp_path / "m.json"
+    write_manifest(manifest(), path)
+    lf = path.read_bytes()
+    crlf = lf.replace(b"\n", b"\r\n")
+    assert crlf != lf and b"\r\n" in crlf
+    assert _parse(crlf) == _parse(lf)
+    path.write_bytes(crlf)
+    assert file_sha256(path) == hashlib.sha256(crlf).hexdigest()  # the bytes are not normalised
+
+
+def test_a_manifest_that_is_not_utf8_is_refused():
+    with pytest.raises(ManifestFormatError, match="is not a valid manifest: .*utf-8"):
+        _parse(b'{"manifest_version": "\xff\xfe"}')
+
+
+def test_a_manifest_with_a_utf8_byte_order_mark_is_refused():
+    with pytest.raises(ManifestFormatError, match="Unexpected UTF-8 BOM"):
+        _parse(b"\xef\xbb\xbf" + json.dumps(manifest().to_dict()).encode("utf-8"))
 
 
 def test_bad_role_in_manifest_is_refused():

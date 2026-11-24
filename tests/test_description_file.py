@@ -29,6 +29,7 @@ from morphobricks_preprocessing.run.description_file import (
     ABSENT,
     PublicationRefused,
     RecordsFileError,
+    _candidate_records,
     publish_description,
     read_records,
 )
@@ -208,14 +209,18 @@ def test_no_records_file_reads_as_no_records(tmp_path):
     assert read_records(tmp_path) == ()
 
 
-def test_a_failed_append_puts_the_previous_file_back(tmp_path, monkeypatch):
+def test_a_failed_write_of_the_records_leaves_the_published_file_as_before(tmp_path, monkeypatch):
     base = _published(tmp_path)
     before = _snapshot(tmp_path)
 
-    def broken(folder, records):
-        raise OSError("disk full")
+    real = publication._prepare_file
 
-    monkeypatch.setattr(publication, "_append_records", broken)
+    def broken(path, data):
+        if path.name == RECORDS_FILENAME:
+            raise OSError("disk full")
+        return real(path, data)
+
+    monkeypatch.setattr(publication, "_prepare_file", broken)
     with pytest.raises(OSError, match="disk full"):
         publish_description(
             tmp_path,
@@ -227,12 +232,14 @@ def test_a_failed_append_puts_the_previous_file_back(tmp_path, monkeypatch):
 
 
 def _fail_binary_writes(monkeypatch, *, after_full_bytes: bool) -> None:
-    """Make a binary write stream opened with ``os.fdopen`` raise once it is written to.
+    """Make the records file's write stream raise once it is written to.
 
-    The records file is the only binary write stream a publication opens (the description goes
-    through a text stream). With ``after_full_bytes`` false, only half of the bytes are written.
+    A publication with records opens two binary write streams with ``os.fdopen``: the
+    description's temporary file, then the records file's; only the second fails. With
+    ``after_full_bytes`` false, only half of the bytes are written.
     """
     real = os.fdopen
+    opened = []
 
     class Failing:
         def __init__(self, stream):
@@ -257,7 +264,10 @@ def _fail_binary_writes(monkeypatch, *, after_full_bytes: bool) -> None:
 
     def fdopen(fd, mode="r", *args, **kwargs):
         stream = real(fd, mode, *args, **kwargs)
-        return Failing(stream) if "b" in mode and ("w" in mode or "a" in mode) else stream
+        if "b" not in mode or not ("w" in mode or "a" in mode):
+            return stream
+        opened.append(fd)
+        return Failing(stream) if len(opened) > 1 else stream
 
     monkeypatch.setattr(publication.os, "fdopen", fdopen)
 
@@ -282,13 +292,50 @@ def test_a_write_that_fails_inside_the_append_leaves_file_and_records_as_before(
     assert _snapshot(tmp_path) == before  # file, records, no temporary file, no lock
 
 
+def test_a_temporary_file_that_cannot_be_removed_does_not_skip_the_put_back(tmp_path, monkeypatch):
+    base = _published(tmp_path)
+    (tmp_path / RECORDS_FILENAME).write_bytes(SEEDED)
+    before = _snapshot(tmp_path)
+    real_replace, real_unlink = os.replace, Path.unlink
+
+    def replace(source, target):  # the second rename (the records) fails after the first
+        if Path(target).name == RECORDS_FILENAME:
+            raise OSError("rename failed")
+        real_replace(source, target)
+
+    def unlink(self, *args, **kwargs):
+        if self.name.endswith(".tmp"):  # a temporary file
+            raise PermissionError("cannot remove")
+        real_unlink(self, *args, **kwargs)
+
+    monkeypatch.setattr(publication.os, "replace", replace)
+    monkeypatch.setattr(Path, "unlink", unlink)
+    with pytest.raises(OSError, match="rename failed") as raised:
+        publish_description(
+            tmp_path,
+            description_from_bytes(BY_NAME["t01"].data),
+            base_sha256=base,
+            confirmations=RENAMES,
+        )
+    monkeypatch.undo()
+    assert any("could not be removed" in note for note in raised.value.__notes__)
+    leftovers = {p.name for p in tmp_path.iterdir()} - set(before)
+    assert all(name.endswith(".tmp") for name in leftovers)  # only the temporary files remain
+    assert {k: v for k, v in _snapshot(tmp_path).items() if k in before} == before
+
+
 def test_a_failed_fsync_of_the_records_leaves_file_and_records_as_before(tmp_path, monkeypatch):
     base = _published(tmp_path)
     (tmp_path / RECORDS_FILENAME).write_bytes(SEEDED)
     before = _snapshot(tmp_path)
 
+    real, synced = os.fsync, []
+
     def broken(fd):
-        raise OSError("fsync failed")
+        synced.append(fd)
+        if len(synced) > 1:  # the description's temporary file is synced first
+            raise OSError("fsync failed")
+        real(fd)
 
     monkeypatch.setattr(publication.os, "fsync", broken)
     with pytest.raises(OSError, match="fsync failed"):
@@ -315,12 +362,15 @@ def test_a_record_whose_hash_is_not_the_published_file_is_history_not_an_error(t
     assert (tmp_path / RECORDS_FILENAME).read_bytes().startswith(SEEDED)
 
 
-def test_a_failed_append_removes_a_first_publication(tmp_path, monkeypatch):
-    def broken(folder, records):
-        raise OSError("disk full")
+def test_a_failed_rename_removes_a_first_publication(tmp_path, monkeypatch):
+    real = os.replace
 
-    monkeypatch.setattr(publication, "_append_records", broken)
-    with pytest.raises(OSError, match="disk full"):
+    def broken(source, target):
+        real(source, target)
+        raise OSError("failed after the rename")
+
+    monkeypatch.setattr(publication.os, "replace", broken)
+    with pytest.raises(OSError, match="after the rename"):
         publish_description(tmp_path, V01, base_sha256=ABSENT)
     assert list(tmp_path.iterdir()) == []
 
@@ -411,7 +461,7 @@ BAD_RECORDS = {
 @pytest.mark.parametrize("name", sorted(BAD_RECORDS))
 def test_a_new_record_the_reader_refuses_is_not_appended(tmp_path, name):
     with pytest.raises(RecordsFileError) as refusal:
-        publication._append_records(tmp_path, (BAD_RECORDS[name],))
+        _candidate_records(tmp_path, (BAD_RECORDS[name],))
     assert refusal.value.code == "R_RECORDS_FILE_INVALID"
     assert not (tmp_path / RECORDS_FILENAME).exists()
 
@@ -419,7 +469,8 @@ def test_a_new_record_the_reader_refuses_is_not_appended(tmp_path, name):
 @pytest.mark.parametrize("name", sorted(BAD_RECORDS))
 def test_a_publication_with_a_refused_record_writes_neither_file(tmp_path, monkeypatch, name):
     base = _published(tmp_path)
-    publication._append_records(tmp_path, (GOOD,))  # a records file that must stay as it is
+    # a records file that must stay as it is
+    (tmp_path / RECORDS_FILENAME).write_bytes(_candidate_records(tmp_path, (GOOD,)))
     before = _snapshot(tmp_path)
     monkeypatch.setattr(publication, "_record", lambda *_: BAD_RECORDS[name])
     with pytest.raises(RecordsFileError) as refusal:

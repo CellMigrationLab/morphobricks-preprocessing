@@ -94,12 +94,16 @@ src/morphobricks_preprocessing/
                     is wrong with a malformed one (PhysicalSizes.invalid, issue #94)
   dataset.py        dataset consistency from the folders: biological repeats per condition, balance
                     table, unbalanced_images, repeat_missing_conditions, CONSISTENCY_CODES (P2)
+  type_names.py     type_name(value): a type's name in a message, short for a builtin, qualified
+                    otherwise (numpy.bool); the one helper of the writers' type refusals (#470)
   design.py         the rows of experiment_design.csv (an output only since v0.5.1): DesignTable/
                     DesignRow (read-only), the run's reconcile_design and design_issues against
-                    the folders, write_experiment_design, parse_design_bytes (the strict parser
+                    the folders, write_experiment_design (experiment_design_text: the checked
+                    text, nothing written), parse_design_bytes (the strict parser
                     of a written file; nothing reads the file to prefill a draft); no reader for other bricks (SWEEP-PP)
   design_derive.py  derive_design/write_derived_design: experiment_design.csv from a published
-                    description (Spec experiment-v1 11), written by design.write_experiment_design
+                    description (Spec experiment-v1 11), written by design.write_experiment_design;
+                    derived_design_bytes (checked, nothing written: publication, #400)
   design_values.py  the design file's header check (no column twice or unnamed, #83), booleans,
                     counts, dates and DesignFormatError (pure; re-exported by design.py)
   description_rules.py  the one table of the experiment-description rules (Stage 1, Spec
@@ -274,7 +278,9 @@ src/morphobricks_preprocessing/
                     or failed in a SegmentationBatch, with each channel's role, cell or nuclear:
                     channel_roles_entry), Settings refuses normalize off (always Cellpose's own);
                     segmentation_cellpose_run.py open_run, channel_coverage, next_steps_lines (the
-                    preview reuses preview_render's display_panel and outline);
+                    preview reuses preview_render's display_panel and outline), channel_layouts and
+                    channel_by_number (a channel number only when every image has the same channel
+                    IDs at the same C positions, translated once to the ID; #440);
                     segmentation_cellpose_model.py choose_model (a built-in name or an existing file,
                     before loading), load_model (the weights file and device verified after loading, no
                     download without allow_download, SHA-256 recorded, DINOv3 at a pinned commit);
@@ -292,8 +298,19 @@ src/morphobricks_preprocessing/
                     notebook_cellpose_app.py segmentation_app(run_folder, masks_folder, app=,
                     on_masks_written=): every step as one widget for any cell (the combined
                     notebook, #441), the same CellposeNotebook forms the Cellpose cells mount
+                    notebook_preprocessing_cellpose.py segmentation_step(app): cell 4 of
+                    notebooks/MorphoBricks_Preprocessing_Cellpose.ipynb (#441), segmentation_app
+                    on the Preprocessing app's finished run; cellpose_install.py installs
+                    Cellpose 4.2.1.1 only on the user's tick (restart when numpy/opencv changed);
+                    notebook_mask_register.py register_step(app, segmentation): cell 5, a
+                    declaration to tick per mask type, then the app's own check, Masks answer,
+                    save, run and Describe the masks
                     notebook_cellpose_preview.py MaskResult, preview_figures: the example result as
                     ZeroCostDL4Mic draws it (cellpose.plot.show_segmentation), one result per mask
+                    notebook_cellpose_channels.py ChannelPicker, MaskTarget: the output's masks (Both:
+                    cells and nuclei, each its own batch and record, never paired; #440) and their
+                    channels by ID; notebook_cellpose_fields.py the forms' fields (paths, model,
+                    settings, the nuclei's own model and settings under Advanced)
   mask_conversion.py RunInputs.binary_to_instances / classes_to_binary (Spec ADR 0005 BM12, step
                     2b): new mask files from a checked mask, refused before any read or write
                     (check_class_image, collisions, idempotent retry); mask_lineage.py their
@@ -329,7 +346,8 @@ src/morphobricks_preprocessing/
                     rows, outcome), modes.py (restart/full, RunMode with verify_content), recorded.py (inputs reused from
                     the earlier run, InputChange), lock.py (the output folder's O_EXCL lock,
                     remove_stale_lock), output_guard.py (the output folder against the
-                    masks folder, given or recorded, before anything is written),
+                    masks folder, given or recorded, before anything is written; for
+                    calibrate also against the experiment, output_inside_experiment, #486),
                     check_step.py (write_check_report), mask_step.py
                     (the masks step shared by CLI `masks` and the notebook: prepare_mask_step,
                     describe_masks, recorded_masks; PP-10d), result.py (RunResult),
@@ -407,7 +425,8 @@ src/morphobricks_preprocessing/
                     its image's fingerprint (source_changed_during_check), planes checked
                     against the memory limit first, PlannedCopy per image;
                     copy_folder_issues (the folder rule) and preview_conversion (the plan,
-                    space needed and free, for the notebook card; writes nothing, PP-11b)
+                    with the conversion's store and projection, #488; space needed and
+                    free, for the notebook card; writes nothing, PP-11b)
   conversion_reuse.py compare: unchanged copies reused, anything else there refused; links_below:
                     links and mount points in the copy tree (is_link, MountCheck), refused (#447);
                     a folder it cannot read is refused too (copy_folder_unreadable, #467)
@@ -416,10 +435,12 @@ src/morphobricks_preprocessing/
                     #482, .morphobricks-conversion.partial, is recovered the same way;
                     owner file first; a killed one's is
                     removed only with a well-formed owner file, nothing else but files/, and
-                    a holder that no longer runs (run.lock.holder_running); its own only
+                    a holder not known to run (run.lock.holder_running: POSIX, this
+                    computer only; the lock is the real guard); its own only
                     while the owner file holds its token; an empty one, or one holding only
                     an empty or cut-short owner file, is removed by rmdir; both before the
-                    space check, remove_leftover, #448, #482),
+                    space check, remove_leftover, #448, #482; a removal refused is
+                    conversion_work_folder_not_removed, #488),
                     moved into place
                     together (any failure removes what it wrote); nothing else is removed;
                     each write and move checks its way again for links (_Route, #467)

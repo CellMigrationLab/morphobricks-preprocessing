@@ -21,26 +21,41 @@ import ipywidgets as widgets
 from IPython.display import display
 
 from . import segmentation_cellpose as cp
+from .notebook_cellpose_channels import (
+    NONE,
+    OUTPUT_NAMES,
+    REFUSALS,
+    ChannelPicker,
+    MaskTarget,
+    _card,
+)
 from .notebook_cellpose_preview import MaskResult, preview_figures
 from .notebook_progress import progress_html
 from .notebook_stop import CellStop
-from .notebook_style import STYLE_CSS, status, table, tiles
-from .run_inputs import RunInputs, RunInputsError
-from .segmentation_handoff import (
-    SegmentationPlan,
-    images_to_segment,
-    resolve_segmentation,
-    stray_backups,
+from .notebook_style import STYLE_CSS, table, tiles
+from .run_inputs import Fov, RunInputs
+from .segmentation_cellpose_run import (
+    channel_layouts,
+    check_manifest,
+    numbered_layout,
+    open_pinned,
 )
+from .segmentation_handoff import images_to_segment, stray_backups
 from .segmentation_record import SegmentationError, check_mask_type
 
-NONE = "(none)"
-OUTPUT_NAMES = {cp.CELL_OUTPUT: "Cell mask", cp.NUCLEI_OUTPUT: "Nuclei mask"}
-"""The outputs offered, as the notebook names them. *Both* comes with #440."""
+__all__ = [
+    "NONE",
+    "OUTPUT_NAMES",
+    "REFUSALS",
+    "CellposeWorkflow",
+    "CellStop",
+    "ChannelPicker",
+    "MaskTarget",
+    "stops",
+]
+
 P = ParamSpec("P")
 T = TypeVar("T")
-REFUSALS = (SegmentationError, RunInputsError)
-"""What the hand-off and the run refuse with; their messages are shown unchanged."""
 
 
 def stops(method: Callable[P, T]) -> Callable[P, T]:
@@ -56,102 +71,22 @@ def stops(method: Callable[P, T]) -> Callable[P, T]:
     return wrapper
 
 
-def _verbatim(text: str) -> str:
-    """Return ``text`` as an HTML block that keeps its line breaks and shows it unchanged."""
-    return f"<pre style='white-space:pre-wrap;margin:0'>{html.escape(text)}</pre>"
+def output_mask_types(output: str, mask_type: str, nuclei_mask_type: str = "") -> dict[str, str]:
+    """Return the mask type of each output segmented for ``output`` (two for Both).
 
-
-def _card(kind: str, title: str, lines: tuple[str, ...] = (), *, raw: bool = False) -> widgets.HTML:
-    """Return a status card as a widget, with the notebook's look."""
-    return widgets.HTML(f"<div class='mb-root'>{status(kind, title, lines, raw=raw)}</div>")
-
-
-class ChannelPicker:
-    """A cell channel and a nuclear channel, both optional, by channel ID, for one output.
-
-    Owner, 23 November 2026: a **cell mask** reads the cell channel, then the nuclear channel
-    if one is chosen; a **nuclei mask** reads the nuclear channel only
-    (:func:`.segmentation_cellpose.input_channels`, which refuses a choice that does not fit).
-    The roles only name and order the channels; they are resolved by ID as before. Nothing is
-    chosen for the user: both start blank.
-
-    The options are the channel IDs of the run; one that not every image has says so, and
-    choosing it shows the resolver's refusal (``A_SCOPE_INCOMPLETE``) unchanged under the
-    dropdowns. :attr:`plan` is the resolved selection, or None while the choice is refused.
+    For Both, ``mask_type`` names the cell masks and ``nuclei_mask_type`` the nuclei masks.
     """
+    if output == cp.BOTH_OUTPUT:
+        return {cp.CELL_OUTPUT: mask_type, cp.NUCLEI_OUTPUT: nuclei_mask_type}
+    return {output: mask_type}
 
-    def __init__(self, inputs: RunInputs, output: str = cp.CELL_OUTPUT) -> None:
-        """Build the dropdowns for ``inputs`` and the ``output`` and resolve the choice."""
-        self.inputs, self.output = inputs, output
-        coverage = cp.channel_coverage(inputs)
-        options = [
-            (NONE, ""),
-            *(
-                (c if have == total else f"{c} (in {have} of {total} images)", c)
-                for c, (have, total) in coverage.items()
-            ),
-        ]
-        style = {"description_width": "11em"}
-        self.cell = widgets.Dropdown(
-            options=options, value="", description="Cell channel", style=style
-        )
-        self.nuclear = widgets.Dropdown(
-            options=options, value="", description="Nuclear channel", style=style
-        )
-        self.dropdowns = [self.cell, self.nuclear]
-        self.message = widgets.HTML()
-        self.plan: SegmentationPlan | None = None
-        self.refusal = ""
-        self.channel_ids: tuple[str, ...] = ()
-        self.channel_roles: tuple[str, ...] = ()
-        for dropdown in self.dropdowns:
-            dropdown.observe(self._changed, names="value")
-        self._changed()
 
-    def _changed(self, _change: object = None) -> None:
-        """Resolve the choice; show what was resolved, or the refusal verbatim."""
-        try:
-            ids, roles = cp.input_channels(self.output, self.cell.value, self.nuclear.value)
-            self.channel_ids, self.channel_roles = ids, roles
-            cp.check_channel_count(ids)
-            self.plan = resolve_segmentation(self.inputs, ids)
-            self.refusal = ""
-            named = ", ".join(f"{c} ({r})" for c, r in zip(ids, roles, strict=True))
-            note = _card("ok", f"{OUTPUT_NAMES[self.output]} from {named}")
-        except REFUSALS as exc:
-            self.plan, self.refusal = None, str(exc)
-            self.channel_ids = self.channel_roles = ()
-            note = _card(
-                "error", "These channels cannot be used", (_verbatim(self.refusal),), raw=True
-            )
-        self.message.value = note.value
-
-    def current_plan(self) -> SegmentationPlan:
-        """Resolve the dropdowns as they are now and return the plan, or refuse (once).
-
-        The dropdowns may have changed since the model was loaded; every step that segments
-        calls this first, so a refused choice stops the cell with the resolver's message
-        before anything starts.
-
-        Raises
-        ------
-        SegmentationError
-            With the resolver's message, when the choice is refused.
-        """
-        self._changed()
-        if self.plan is None:
-            raise SegmentationError(self.refusal)
-        return self.plan
-
-    def box(self) -> widgets.VBox:
-        """Return the dropdowns and the message under them."""
-        help_line = widgets.HTML(
-            "<div class='mb-help'>Choose by channel ID. The <b>cell channel</b> (cytoplasm or "
-            "cell border) and the <b>nuclear channel</b> are both optional, but at least one is "
-            "needed. A cell mask reads the cell channel, then the nuclear channel if one is "
-            "chosen; a nuclei mask reads the nuclear channel only.</div>"
-        )
-        return widgets.VBox([*self.dropdowns, help_line, self.message])
+NEEDED = {
+    "run": "Press Open the run first.",
+    "channels": "Press Choose the channels first.",
+    "model": "Press Load the model first.",
+}
+"""The refusal of a step whose earlier step has not run, by what it needs (the step's button)."""
 
 
 class CellposeWorkflow:
@@ -159,19 +94,31 @@ class CellposeWorkflow:
 
     Each notebook cell calls one method; a method that needs an earlier cell says which one.
     ``shown`` keeps the HTML of every card shown (for tests and for reading the notebook back).
+
+    The output Both (#440) makes two mask types, :attr:`mask_types` by output (``cells``,
+    ``nuclei``). Both use :attr:`loaded` and :attr:`settings` unless a nuclei model was loaded
+    (:meth:`load_nuclei`): then the nuclei use :attr:`nuclei_loaded` and
+    :attr:`nuclei_settings`. Each mask type is its own batch, record, skip and overwrite.
     """
 
     def __init__(self) -> None:
         """Start with nothing chosen."""
         self.inputs: RunInputs | None = None
         self.masks_root: Path | None = None
+        self.run_manifest_sha256: str | None = None  # of the manifest opened (review aq, B2)
         self.mask_type = ""
+        self.mask_types: dict[str, str] = {}
         self.picker: ChannelPicker | None = None
         self.loaded: cp.LoadedModel | None = None
         self.settings: cp.Settings | None = None
+        self.nuclei_loaded: cp.LoadedModel | None = None
+        self.nuclei_settings: cp.Settings | None = None
         self.result: cp.BatchResult | None = None
+        self.results: dict[str, cp.BatchResult] = {}
         self.previewed: list[MaskResult] = []
         self.shown: list[str] = []
+        self.on_masks_written: Callable[[cp.BatchResult], object] | None = None
+        self.register_with: str | None = None
 
     def _show(self, widget: widgets.Widget) -> None:
         """Display ``widget`` (the style sheet goes first, once)."""
@@ -180,15 +127,39 @@ class CellposeWorkflow:
         self.shown.append(getattr(widget, "value", ""))
         display(widget)
 
-    def _need(self, what: str, cell: int) -> None:
-        """Refuse a step whose earlier cell has not run."""
+    def _need(self, what: str) -> None:
+        """Refuse a step whose earlier step has not run, naming that step's button.
+
+        The step is named, never a cell number: the component runs in the Cellpose notebook,
+        one step per cell, and in one cell of the combined notebook.
+        """
         missing = {
             "run": self.inputs is None,
             "channels": self.picker is None,
             "model": self.loaded is None,
         }[what]
         if missing:
-            raise SegmentationError(f"Run cell {cell} first.")
+            raise SegmentationError(NEEDED[what])
+
+    def drop_choice(self) -> None:
+        """Forget the channels, the mask types and every loaded model (the choice changed)."""
+        self.picker = self.loaded = self.nuclei_loaded = self.nuclei_settings = None
+        self.mask_types = {}
+
+    def model_for(self, output: str) -> tuple[cp.LoadedModel, cp.Settings]:
+        """Return the model and the settings that segment the masks of ``output``.
+
+        Nuclei settings of their own without their model loaded are refused: the nuclei are
+        never segmented with the cells' model instead.
+        """
+        if output == cp.NUCLEI_OUTPUT and self.nuclei_settings is not None:
+            if self.nuclei_loaded is None:
+                raise SegmentationError(
+                    "The nuclei have their own model: load it first (Advanced settings of the Load "
+                    "the model step)."
+                )
+            return self.nuclei_loaded, self.nuclei_settings
+        return self.loaded, self.settings
 
     @stops
     def open(self, run_folder: str, masks_folder: str) -> None:
@@ -197,16 +168,27 @@ class CellposeWorkflow:
         What an earlier open chose is dropped first: a refused open leaves no run, channels or
         model to segment with, so nothing is written to the folders of the run before.
         """
-        self.inputs = self.masks_root = self.picker = self.loaded = self.result = None
+        self.inputs = self.masks_root = self.result = self.run_manifest_sha256 = None
+        self.results = {}
+        self.drop_choice()
         if not masks_folder.strip():
             raise SegmentationError("Give the masks folder (outside the experiment and the run).")
-        inputs = cp.open_run(run_folder)
-        self.inputs, self.masks_root = inputs, Path(masks_folder.strip())
+        inputs, pinned = open_pinned(run_folder)
+        # The physical folder, fixed now: a relative path never follows a later change of the
+        # kernel's working directory (review aq, B1).
+        self.inputs, self.masks_root = inputs, Path(masks_folder.strip()).expanduser().resolve()
+        self.run_manifest_sha256 = pinned
         coverage = cp.channel_coverage(inputs)
         lines = [
             f"{c}: in {have} of {total} images" + ("" if have == total else " (partial)")
             for c, (have, total) in coverage.items()
         ]
+        layouts = channel_layouts(inputs)
+        lines.append(
+            f"Channel numbers: {numbered_layout(next(iter(layouts)))}, the same in every image."
+            if len(layouts) == 1 and None not in layouts
+            else "Channel numbers differ between images: choose the channels by tag."
+        )
         deep = cp.non_2d_images(inputs)
         if deep:
             lines.append(
@@ -220,24 +202,37 @@ class CellposeWorkflow:
         )
 
     @stops
-    def choose_channels(self, mask_type: str, output: str = cp.CELL_OUTPUT) -> None:
-        """Check the mask type and the output, and show the channel dropdowns (cell 4)."""
-        self._need("run", 3)
+    def choose_channels(
+        self, mask_type: str, output: str = cp.CELL_OUTPUT, nuclei_mask_type: str = ""
+    ) -> None:
+        """Check the mask type(s) and the output, and show the channel dropdowns (cell 4).
+
+        For Both, ``mask_type`` names the cell masks and ``nuclei_mask_type`` the nuclei masks;
+        the two must differ.
+        """
+        self._need("run")
         if output not in OUTPUT_NAMES:
             raise SegmentationError(
                 f"The output must be one of {', '.join(OUTPUT_NAMES)}, not {output!r}."
             )
-        check_mask_type(mask_type)
-        todo = images_to_segment(self.inputs, mask_type, self.masks_root)
-        self.mask_type, self.loaded = mask_type, None
-        self.picker = ChannelPicker(self.inputs, output)
-        self._show(
-            _card(
-                "info",
-                f"{OUTPUT_NAMES[output]}, mask type {mask_type}: {len(todo)} of "
-                f"{len(self.inputs.fovs())} images have no mask yet",
+        types = output_mask_types(output, mask_type, nuclei_mask_type)
+        for name in types.values():
+            check_mask_type(name)
+        if len({name.casefold() for name in types.values()}) < len(types):
+            raise SegmentationError(
+                f"The cell and the nuclei mask types must differ (both are {mask_type!r}): each "
+                "is its own folder of masks. Rename one."
             )
+        todo = {o: images_to_segment(self.inputs, t, self.masks_root) for o, t in types.items()}
+        self.drop_choice()
+        self.mask_types, self.mask_type = types, next(iter(types.values()))
+        self.picker = ChannelPicker(self.inputs, output)
+        lines = tuple(
+            f"{OUTPUT_NAMES[o]}, mask type {t}: {len(todo[o])} of {len(self.inputs.fovs())} "
+            "images have no mask yet"
+            for o, t in types.items()
         )
+        self._show(_card("info", lines[0], lines[1:]))
         self._show(self.picker.box())
 
     @stops
@@ -253,12 +248,19 @@ class CellposeWorkflow:
         Normalisation is not a choice: it is always Cellpose's own, per image (1st to 99th
         percentile of each channel).
         """
-        self.settings = cp.Settings(
-            cp.diameter_from_text(diameter),
-            flow_threshold,
-            cellprob_threshold,
-            batch_size=batch_size,
-        )
+        self.settings = _settings(diameter, flow_threshold, cellprob_threshold, batch_size)
+
+    @stops
+    def set_nuclei_settings(
+        self,
+        diameter: str,
+        flow_threshold: float,
+        cellprob_threshold: float,
+        batch_size: int,
+    ) -> None:
+        """Check the settings of a separate nuclei model (output Both, cell 5's Advanced)."""
+        self._need_both()
+        self.nuclei_settings = _settings(diameter, flow_threshold, cellprob_threshold, batch_size)
 
     @stops
     def load(
@@ -270,10 +272,59 @@ class CellposeWorkflow:
         install_dino: bool,
     ) -> None:
         """Say what loading does, then load the verified model (cell 5)."""
-        self._need("channels", 4)
-        self.picker.current_plan()
+        self._need("channels")
+        self.picker.current_targets()
         if self.settings is None:
-            raise SegmentationError("Set the settings first: run set_settings in cell 5.")
+            raise SegmentationError("Set the settings first: press Load the model.")
+        self.loaded = None
+        self.loaded = self._load_model(
+            model, custom_model_file, device, download_weights, install_dino, self.settings
+        )
+
+    @stops
+    def load_nuclei(
+        self,
+        model: str,
+        custom_model_file: str,
+        device: str,
+        download_weights: bool,
+        install_dino: bool,
+    ) -> None:
+        """Load a separate model for the nuclei of the output Both (cell 5's Advanced)."""
+        self._need_both()
+        if self.nuclei_settings is None:
+            raise SegmentationError(
+                "Set the nuclei settings first (Advanced settings of the Load the model step)."
+            )
+        self.nuclei_loaded = None
+        self.nuclei_loaded = self._load_model(
+            model, custom_model_file, device, download_weights, install_dino, self.nuclei_settings
+        )
+
+    def _need_both(self) -> None:
+        """Refuse a separate nuclei model unless the output chosen in cell 4 is Both."""
+        self._need("channels")
+        if self.picker.output != cp.BOTH_OUTPUT:
+            raise SegmentationError(
+                "A separate nuclei model is for the output Both only; choose Both in the Choose "
+                "the channels step, or untick the separate nuclei model (Advanced settings of "
+                "the Load the model step)."
+            )
+
+    def same_model_for_nuclei(self) -> None:
+        """Segment the nuclei of Both with the model and the settings of the cells."""
+        self.nuclei_loaded = self.nuclei_settings = None
+
+    def _load_model(
+        self,
+        model: str,
+        custom_model_file: str,
+        device: str,
+        download_weights: bool,
+        install_dino: bool,
+        settings: cp.Settings,
+    ) -> cp.LoadedModel:
+        """Load the model chosen, verified, and show what was loaded."""
         chosen = custom_model_file.strip() or model
         if install_dino and chosen in cp.DINO_MODELS:
             self._show(_card("info", "Installing DINOv3", (" ".join(cp.dinov3_install_command()),)))
@@ -291,8 +342,7 @@ class CellposeWorkflow:
                 ),
             )
         )
-        self.loaded = cp.load_model(chosen, device, allow_download=download_weights)
-        loaded, diameter = self.loaded, self.settings.diameter
+        loaded = cp.load_model(chosen, device, allow_download=download_weights)
         self._show(
             _card(
                 "ok",
@@ -306,38 +356,41 @@ class CellposeWorkflow:
                         if loaded.downloaded
                         else "Weights were already on this computer (nothing downloaded)"
                     ),
-                    "Diameter: "
-                    + (
-                        f"{diameter:g} pixels"
-                        if diameter is not None
-                        else "blank = " + cp.NATIVE_SCALE
-                    ),
+                    "Diameter: " + _diameter(settings),
                 ),
             )
         )
+        return loaded
 
     @stops
     def preview(self, image: str = "") -> None:
-        """Segment one image and show it with the outlines; nothing is written (cell 6)."""
-        self._need("model", 5)
-        plan = self.picker.current_plan()
+        """Segment one image and show it with the outlines; nothing is written (cell 6).
+
+        For Both, the image is segmented twice, the cells and the nuclei, each shown.
+        """
+        self._need("model")
+        targets = self.picker.current_targets()
         fovs = self.inputs.fovs()
-        todo = images_to_segment(self.inputs, self.mask_type, self.masks_root)
         by_path = {f.relative_path: f for f in fovs}
         if image.strip() and image.strip() not in by_path:
             raise SegmentationError(
                 f"{image.strip()!r} is not an image of this run. Leave it blank, or use a path "
                 f"such as {fovs[0].relative_path}."
             )
-        fov = by_path[image.strip()] if image.strip() else (todo or fovs)[0]
-        stack = plan.read(fov)
-        labels, flows = cp.evaluate(self.loaded, self.settings, stack)
-        named = tuple(zip(plan.channel_ids, self.picker.channel_roles, strict=True))
-        results = [MaskResult(OUTPUT_NAMES[self.picker.output], stack, named, labels, flows)]
-        diameter = self.settings.diameter
-        size = f"{diameter:g} pixels" if diameter is not None else "blank = " + cp.NATIVE_SCALE
-        lines = tuple(f"{r.name}: {r.objects} objects; diameter {size}" for r in results)
-        self._show(_card("info", f"Preview of {fov.relative_path} (nothing is written)", lines))
+        fov = by_path[image.strip()] if image.strip() else (self.first_without_mask() or fovs[0])
+        check_manifest(self.inputs, self.run_manifest_sha256)  # the run opened, still
+        results, lines = [], []
+        for target in targets:
+            loaded, settings = self.model_for(target.output)
+            stack = target.plan.read(fov)
+            labels, flows = cp.evaluate(loaded, settings, stack)
+            named = tuple(zip(target.channel_ids, target.roles, strict=True))
+            result = MaskResult(OUTPUT_NAMES[target.output], stack, named, labels, flows)
+            results.append(result)
+            lines.append(f"{result.name}: {result.objects} objects; diameter {_diameter(settings)}")
+        self._show(
+            _card("info", f"Preview of {fov.relative_path} (nothing is written)", tuple(lines))
+        )
         try:
             figures = preview_figures(results)
         except ValueError as exc:
@@ -346,46 +399,99 @@ class CellposeWorkflow:
             display(figure)
         self.previewed = results
 
+    def first_without_mask(self) -> Fov | None:
+        """Return the run's first image that lacks a mask of a mask type to make, or None."""
+        missing = {
+            f.relative_path
+            for t in self.mask_types.values()
+            for f in images_to_segment(self.inputs, t, self.masks_root)
+        }
+        return next((f for f in self.inputs.fovs() if f.relative_path in missing), None)
+
     @stops
-    def run(self, overwrite: bool = False) -> cp.BatchResult:
-        """Segment the images, write the masks and the record, and show the table (cell 7)."""
-        self._need("model", 5)
-        job = cp.SegmentationJob(
+    def run(self, overwrite: bool = False) -> dict[str, cp.BatchResult]:
+        """Segment the images, write the masks and the record, and show the table (cell 7).
+
+        Each mask type is its own batch, one after the other (cells first): its own record,
+        skip and overwrite, and the per-mask rollback of :func:`.segmentation_cellpose.run_batch`.
+        A batch that stops with an error, or an :attr:`on_masks_written` hook that raises, does
+        not stop the next; the first error is raised once every batch has run.
+
+        Returns
+        -------
+        dict
+            The :class:`.segmentation_cellpose.BatchResult` of each mask type that ran, by mask
+            type; :attr:`result` is the first (the only one unless the output is Both).
+        """
+        self._need("model")
+        jobs = [self._job(target, overwrite) for target in self.picker.current_targets()]
+        check_manifest(self.inputs, self.run_manifest_sha256)  # each batch checks it again
+        self.results, error = {}, None
+        for job in jobs:
+            try:
+                self.results[job.mask_type] = result = self._run_job(job, titled=len(jobs) > 1)
+                if self.on_masks_written is not None:
+                    self.on_masks_written(result)
+            except Exception as exc:  # the other mask type still runs; raised after it
+                if len(jobs) > 1:
+                    self._show(_card("error", f"Mask type {job.mask_type} stopped", (_named(exc),)))
+                error = error or exc
+        self.result = next(iter(self.results.values()), None)
+        if error is not None:
+            raise error
+        return dict(self.results)
+
+    def _job(self, target: MaskTarget, overwrite: bool) -> cp.SegmentationJob:
+        """Return the batch of one mask type."""
+        loaded, settings = self.model_for(target.output)
+        return cp.SegmentationJob(
             self.inputs,
-            self.picker.current_plan(),
-            self.loaded,
-            self.settings,
-            self.mask_type,
+            target.plan,
+            loaded,
+            settings,
+            self.mask_types[target.output],
             self.masks_root,
             overwrite,
-            self.picker.channel_roles,
-            self.picker.output,
+            target.roles,
+            target.output,
+            target.numbers,
+            run_manifest_sha256=self.run_manifest_sha256,
         )
+
+    def _run_job(self, job: cp.SegmentationJob, *, titled: bool) -> cp.BatchResult:
+        """Run one batch with a progress line, then show its summary and table."""
         bar = widgets.HTML()
         display(bar)
         started = time.monotonic()
 
         def progress(done: int, total: int, item: str) -> None:
-            bar.value = progress_html("Segmenting", done, total, item, time.monotonic() - started)
+            bar.value = progress_html(
+                f"Segmenting {job.mask_type}" if titled else "Segmenting",
+                done,
+                total,
+                item,
+                time.monotonic() - started,
+            )
 
-        self.result = result = cp.run_batch(job, progress=progress)
+        result = cp.run_batch(job, progress=progress)
         counts = result.counts()
         rows = [["Image", "Status", "Message"], *map(list, result.rows())]
-        failed = counts["failed"]
         if result.stopped:
             self._show(_card("error", "The batch stopped early", (result.stopped,)))
-        if strays := stray_backups(self.masks_root, self.mask_type):  # reported, never deleted
+        if strays := stray_backups(self.masks_root, job.mask_type):  # reported, never deleted
             names = ", ".join(p.name for p in strays)
             self._show(_card("warn", f"Copies of earlier masks left by a stopped run: {names}"))
+        heading = f"<h4>Mask type {html.escape(job.mask_type)}</h4>" if titled else ""
         self._show(
             widgets.HTML(
                 "<div class='mb-root'>"
+                + heading
                 + tiles(
                     [
                         ("✅", str(counts["written"]), "written"),
                         ("⏩", str(counts["skipped"]), "skipped"),
                         ("⚠️", str(counts[cp.NEEDS_ATTENTION]), "need attention"),
-                        ("❌", str(failed), "failed"),
+                        ("❌", str(counts["failed"]), "failed"),
                     ]
                 )
                 + table(rows)
@@ -397,6 +503,32 @@ class CellposeWorkflow:
     @stops
     def next_steps(self) -> None:
         """Say what to do now that the masks are made (the closing cell)."""
-        self._need("channels", 4)
-        lines = cp.next_steps_lines(self.mask_type, self.masks_root)
+        self._need("channels")
+        lines = cp.next_steps_lines(
+            tuple(self.mask_types.values()), self.masks_root, register_with=self.register_with
+        )
         self._show(_card("info", "Next steps", lines))
+
+
+def _settings(
+    diameter: str, flow_threshold: float, cellprob_threshold: float, batch_size: int
+) -> cp.Settings:
+    """Return the checked settings of the form's text and numbers."""
+    return cp.Settings(
+        cp.diameter_from_text(diameter),
+        flow_threshold,
+        cellprob_threshold,
+        batch_size=batch_size,
+    )
+
+
+def _diameter(settings: cp.Settings) -> str:
+    """Return the diameter as the cards say it: pixels, or the native scale."""
+    if settings.diameter is not None:
+        return f"{settings.diameter:g} pixels"
+    return "blank = " + cp.NATIVE_SCALE
+
+
+def _named(exc: BaseException) -> str:
+    """Return an error as ``Type: message``."""
+    return f"{type(exc).__name__}: {exc}"
