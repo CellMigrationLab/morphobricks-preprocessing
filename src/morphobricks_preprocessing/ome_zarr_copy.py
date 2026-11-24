@@ -3,7 +3,7 @@
 Owner (11 November 2026): the notebook can also save the experiment as OME-Zarr, once the axes
 are confirmed, as a recorded conversion. A copy is written by
 :func:`.conversion.convert_experiment` with ``store="ome-zarr"``: the same plan, lock,
-``.partial`` discipline and conversion record as the named-axis OME-TIFF copies, with these
+work folder (``.partial``) and conversion record as the named-axis OME-TIFF copies, with these
 writers in place of :mod:`.ome_tiff_copy`'s.
 
 The store is written directly (no ``zarr`` package is needed to write it; reading it needs the
@@ -198,7 +198,7 @@ def write_named_zarr(
     source
         The TIFF image.
     target
-        The folder to write (the caller's ``.partial`` folder); it must not exist.
+        The folder to write (the caller's folder in its work folder); it must not exist.
     layout
         The copy's axes, shape and metadata (:func:`.copy_axes.copy_layout`).
     mapping
