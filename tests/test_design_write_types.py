@@ -158,3 +158,14 @@ def test_a_type_error_and_a_name_error_each_keep_their_own_action():
     bad = DesignTable((replace(CTRL, control="false"), replace(DRUG, repeat_group=" rep1")))
     (issue,) = design_issues(bad)
     assert issue.action.startswith("Give control as True or False. Give every repeat group a name")
+
+
+def test_design_issues_and_the_writer_agree_that_an_empty_design_is_refused(tmp_path):
+    """#470: ``design_issues`` returned ``[]`` for a table the writer refuses."""
+    path = tmp_path / DESIGN_FILENAME
+    with pytest.raises(DesignFormatError, match="lists no folder"):
+        write_experiment_design(DesignTable(()), path)
+    assert not path.exists()
+    (issue,) = design_issues(DesignTable(()))
+    assert issue.code == "invalid_experiment_design" and "lists no folder" in issue.message
+    assert issue.action

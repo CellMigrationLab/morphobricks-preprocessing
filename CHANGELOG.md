@@ -8,6 +8,7 @@ v0.5.1: no run before v0.5.1 is read.)
 
 ## Unreleased
 
+- **`design_issues` refuses an empty design, as the writer does (#470).** `design_issues(DesignTable(()))` returned `[]` while `write_experiment_design` refused the table ("lists no folder"). It now reports `invalid_experiment_design`.
 - **A non-text ID key is a `DescriptionTypeError`, not a bare `TypeError` (#470).** A model with `conditions={1: ...}` raised a `TypeError` from `key_path`, so Check and save did not turn it into an issue. The writer now refuses it as `E_TYPE`, naming the key and its type.
 - **A wrong type in the design has its own action (#470).** `design_issues` told a caller who gave a `control` or count of the wrong type to name repeat groups and dates. The action is now "Give <column> as <expected type>" for each wrong column; the repeat-group/date text stays for the other problems.
 - **Type refusals name a numpy type with its module (#470).** `DescriptionTypeError`, `reader_issue` and the design writer said "of type bool" for a numpy bool (`np.bool_.__name__`); they now say `numpy.bool`, `numpy.int64`. Builtins stay short (`str`, `int`). One helper, `type_names.type_name`.

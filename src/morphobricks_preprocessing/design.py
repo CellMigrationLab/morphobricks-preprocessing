@@ -241,8 +241,19 @@ def design_issues(design: DesignTable) -> list[ValidationIssue]:
         group with two folders of one condition; ``design_not_confirmed`` for groups not
         confirmed yet. All are errors. A value of the wrong type (a ``control`` that is not a
         bool, a count that is not an int; #410) is ``invalid_experiment_design`` and the
-        group checks are not run.
+        group checks are not run. A design without a row is ``invalid_experiment_design`` too
+        (#470): the writer refuses it, as its parser does a file that lists no folder.
     """
+    if not design.rows:
+        return [
+            error(
+                "invalid_experiment_design",
+                "The experiment design lists no folder, so there is nothing to confirm or process.",
+                [],
+                "Check that the experiment folder holds condition folders with images, then "
+                "save the experiment description again (Check and save).",
+            )
+        ]
     issues = []
     invalid = _design_problems(design)
     if invalid:
