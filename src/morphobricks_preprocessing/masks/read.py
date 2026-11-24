@@ -19,7 +19,7 @@ from ..zarr_input import (
     is_zarr_name,
     open_ngff_labels,
 )
-from .header import _axes_problem, _known_axes, _mask_header
+from .header import MaskLossyCodecError, _axes_problem, _known_axes, _mask_header, refuse_lossy
 from .labels import check_labels
 from .layout import _plane_index, _stated_axes, _tiff_axes, _yx
 from .model import FOLDER, OME_ZARR, MaskFile
@@ -52,7 +52,8 @@ def read_mask(
     ValueError
         If the mask's dimensions are not the ones its header gave (``mask.axes``), or ``z``
         or ``t`` is missing or outside the mask, or the plane holds a label outside 0 to
-        :data:`LARGEST_LABEL` (:func:`check_labels`).
+        :data:`LARGEST_LABEL` (:func:`check_labels`), or a TIFF mask is stored with a lossy
+        codec (:class:`.header.MaskLossyCodecError`).
     """
     pixels = read_mask_plane(mask, masks_folder, experiment_root, z=z, t=t)
     check_labels(pixels, f"the mask {mask.path}")
@@ -155,8 +156,9 @@ def read_mask_file(
     Raises
     ------
     ValueError
-        If the mask cannot be opened or holds several series, has a dimension its metadata
-        does not name as Z or T, is not of integers or booleans, ``z`` or ``t`` is missing
+        If the mask cannot be opened or holds several series, is stored with a lossy codec
+        (:class:`.header.MaskLossyCodecError`, ``mask_lossy_codec``), has a dimension its
+        metadata does not name as Z or T, is not of integers or booleans, ``z`` or ``t`` is missing
         or outside the mask, or a label is outside 0 to :data:`LARGEST_LABEL`.
     """
     path = Path(path).absolute()  # the reader joins the mask's path to its folder
@@ -164,6 +166,8 @@ def read_mask_file(
     mask = MaskFile("", "", path.as_posix(), OME_ZARR if label_image else FOLDER)
     try:
         axes, shape, dtype = _mask_header(mask, path.parent, path.parent)
+    except MaskLossyCodecError:
+        raise
     except (OSError, ValueError, tifffile.TiffFileError, NgffError, ZarrUnavailableError) as exc:
         raise ValueError(f"the mask {path} could not be opened: {exc}") from exc
     if not _known_axes(axes):
@@ -196,6 +200,7 @@ def _read_tiff_plane(
     """
     with tifffile.TiffFile(path) as tif:
         series = tif.series[0]
+        refuse_lossy(series, path)
         axes, shape = _tiff_axes(series)
         if roles is not None:
             axes = _stated_axes(axes, shape, roles)
