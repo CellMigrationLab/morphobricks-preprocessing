@@ -66,7 +66,7 @@ from .planes import DEFAULT_MEMORY_LIMIT
 from .planned_copy import PlannedCopy
 from .projection import Projection
 from .projection_issues import projection_differs_issue
-from .run.lock import OutputLockedError, output_lock
+from .run.lock import OutputLockedError, folder_lock
 from .validation import ValidationIssue, has_errors
 
 logger = logging.getLogger(__name__)
@@ -228,7 +228,7 @@ def convert_experiment(
         return ConversionResult(dest, False, _sorted(issues))
     dest.mkdir(parents=True, exist_ok=True)
     try:
-        with output_lock(dest):
+        with folder_lock(dest):
             options = _Options(
                 confirmation_of(mapping)[0], missing_as_singleton, memory_limit, projection
             )

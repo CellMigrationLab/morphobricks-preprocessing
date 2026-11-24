@@ -15,7 +15,7 @@ import tifffile
 
 import morphobricks_preprocessing.mounts as mounts_module
 from morphobricks_preprocessing import convert_experiment
-from test_convert_run import SWAPPED, swapped_experiment
+from test_convert_run import SWAPPED, codes, swapped_experiment
 from test_links import _can_link
 
 LINKED = "copy_folder_has_links"
@@ -137,3 +137,34 @@ def test_real_subfolders_already_there_convert_as_before(tmp_path):
     assert tifffile.imread(copies / "ctrl/r1/a.tif").shape == (2, 9, 6)
     again = convert_experiment(exp, SWAPPED, copies)
     assert again.written and len(again.reused) == 3
+
+
+# Follow-ups of the review of #465 (issue #467) -------------------------------------------
+
+
+def test_a_linked_publication_folder_is_refused_before_anything_is_removed_through_it(
+    linkable,
+):
+    # Issue #467 (1): the copy tree's lock finished a run's publication first, so a
+    # ``.publish`` link into the experiment lost its ``publication.json`` there, then the
+    # conversion stopped with a bare OSError.
+    exp, copies = swapped_experiment(linkable / "exp"), linkable / "copies"
+    (exp / "ctrl/publication.json").write_text('{"files": {}}')
+    before = _tree(exp)
+    copies.mkdir()
+    (copies / ".publish").symlink_to(exp / "ctrl", target_is_directory=True)
+    _refused(convert_experiment(exp, SWAPPED, copies), ".publish ->")
+    assert _tree(exp) == before
+
+
+def test_a_publication_folder_in_the_copy_tree_is_neither_finished_nor_removed(tmp_path):
+    # Issue #467 (1): a conversion never finishes or discards a run's publication: the
+    # copy tree is not a run's output folder, so a ``.publish`` folder there is the user's.
+    exp, copies = swapped_experiment(tmp_path / "exp"), tmp_path / "copies"
+    notes = copies / ".publish" / "notes.txt"
+    notes.parent.mkdir(parents=True)
+    notes.write_bytes(b"mine")
+    result = convert_experiment(exp, SWAPPED, copies)
+    assert not result.written and codes(result.issues) == ["copy_folder_not_empty"]
+    assert result.issues[0].paths == (".publish/notes.txt",)
+    assert notes.read_bytes() == b"mine"
