@@ -16,6 +16,13 @@ channels* in the same session reconciled and wrote that stale memory over the sa
 erasing a refusal or a confirmation. Memory now remembers the review it last took from or wrote
 into the draft (:attr:`ReviewMemory.seen`); when the draft holds another one, memory takes the
 draft's again (:meth:`ReviewMemory.sync`) before anything reads the refusals or writes a review.
+
+External re-check av (24 November 2026): a row click that fills no unit writes its review alone
+(:meth:`.RepeatRows._save_review`); that write is marked seen only when memory takes it
+(:meth:`ReviewMemory.adopt`), never before, so an interruption in between is one :meth:`sync`
+sees. Another notebook's write is refused by the draft file's generation
+(:func:`.run.draft_file.save_draft`): memory is this notebook's, and is never written over a
+draft it did not read.
 """
 
 from __future__ import annotations
@@ -87,7 +94,12 @@ class ReviewMemory:
         """Write the whole tag review into the draft when it differs; False when refused.
 
         Only over the review memory saw (:attr:`seen`): a draft that holds another one is not
-        written, and memory takes it (:meth:`sync`).
+        written, and memory takes it (:meth:`sync`). The write of a row click's review
+        (:attr:`staged`, :meth:`.RepeatRows._save_review`) leaves :attr:`seen` as it was: it
+        is acknowledged by :meth:`adopt`, together with memory taking the refusals (external
+        re-check av, 24 November 2026: acknowledged here, an interruption before :meth:`adopt`
+        left memory behind a draft :meth:`sync` took for the one memory saw, and the stale
+        memory was written over the refusals).
         """
         if self.other_draft():
             return False  # memory is another draft's: never written into this one
@@ -96,9 +108,9 @@ class ReviewMemory:
         if self.saved(review):
             return True
         ok = self.grid.store.update(replace(self.grid.store.answers(), tag_review=review))
-        if ok:
+        if ok and self.staged is None:
             self.seen = self._saved_review()
-        return ok
+        return ok  # a row click's write is acknowledged only as memory takes it (adopt)
 
     def saved(self, review: TagReview | None = None) -> bool:
         """Return True when the draft holds ``review`` (memory's by default): else no publish."""
@@ -117,10 +129,13 @@ class ReviewMemory:
         (:attr:`unsaved`); after a row click it also held the click's refusals (:attr:`staged`),
         taken here.
         """
+        review, refused = self._saved_review(), self.refused
         if self.staged is not None:  # a row click's refusals, saved by this very write
-            self.refused, self.staged = self.staged, None
-        review = self._saved_review()
-        self.override.confirmed = {k: v for k, v in review.confirmed.items() if k in self.refused}
+            refused = self.staged
+        confirmed = {k: v for k, v in review.confirmed.items() if k in refused}
+        # memory takes the write first and acknowledges it last (:attr:`seen`): stopped in
+        # between, memory differs from what it saw and :meth:`sync` takes the draft's again
+        self.refused, self.staged, self.override.confirmed = refused, None, confirmed
         self.seen, self.unsaved = review, False
 
     def sync(self) -> bool:
