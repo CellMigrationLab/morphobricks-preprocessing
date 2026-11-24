@@ -362,3 +362,22 @@ def test_changing_the_output_or_opening_a_run_forgets_the_mask_types(cells):
     run = cells.run
     run_cell(cells.ns, OPEN, run_folder=str(run.out), masks_folder=str(run.masks))
     assert workflow.mask_types == {} and workflow.picker is None
+
+
+def test_the_notebook_text_explains_both_numbers_and_separate_results():
+    """External review aq, FILE 3: sections 4 and 7 said one output, one mask type, tags only."""
+    from test_notebook_cellpose import notebook
+
+    markdown = {}
+    for cell in notebook()["cells"]:
+        text = "".join(cell["source"])
+        for section in ("## **4.", "## **7."):
+            if cell["cell_type"] == "markdown" and section in text:
+                markdown[section] = text
+    four, seven = markdown["## **4."], markdown["## **7."]
+    for text in ("**Both**", "`Cells` and `Nuclei`", "nuclear channel only", "By number"):
+        assert text in four
+    assert "counted from **1** (1 is the first channel, not 0)" in four
+    assert "same channels in the same order" in four and "by tag" in four
+    for text in ("**Both**", "two separate batches", "independent", "the other still runs"):
+        assert text in seven

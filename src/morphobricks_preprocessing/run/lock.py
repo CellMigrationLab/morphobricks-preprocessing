@@ -75,21 +75,51 @@ def output_lock(output_folder: str | os.PathLike) -> Iterator[LockHolder]:
     PublicationIncompleteError
         When an unfinished publication's files cannot be moved into place.
     """
+    with folder_lock(output_folder) as holder:
+        finish_publication(Path(output_folder))
+        yield holder
+
+
+@contextmanager
+def folder_lock(folder: str | os.PathLike) -> Iterator[LockHolder]:
+    """Hold the lock of :func:`output_lock` on a folder that is no run's output folder.
+
+    The same lock file, taken and refused the same way, but nothing in the folder is read
+    or changed: no publication is finished or discarded. A conversion holds it on its copy
+    tree (issue #467): a ``.publish`` folder there is not a run's, and finishing it would
+    remove or move files, through a link even, before the copy tree is checked.
+
+    Parameters
+    ----------
+    folder
+        The folder; it must exist.
+
+    Yields
+    ------
+    LockHolder
+        This holder, as recorded in the lock file.
+
+    Raises
+    ------
+    OutputLockedError
+        When another run or conversion holds the lock.
+    """
     stack = ExitStack()
     try:
-        holder = stack.enter_context(exclusive_lock(Path(output_folder) / LOCK_FILENAME))
+        holder = stack.enter_context(exclusive_lock(Path(folder) / LOCK_FILENAME))
     except LockHeldError as held:
         raise OutputLockedError(held.path, held.holder) from None
     with stack:
-        finish_publication(Path(output_folder))
         yield holder
 
 
 def remove_stale_lock(output_folder: str | os.PathLike) -> LockHolder | None:
     """Remove a lock the user confirmed is stale (its run was killed or the computer restarted).
 
-    Call it only after the user confirmed that no other run uses the output folder. A
-    lock held by a process that is still running on this computer is never removed.
+    Call it only after the user confirmed that no other run or conversion uses the folder,
+    on any computer: that confirmation is the guard. A lock held by a process known to be
+    running on this computer is never removed, but only POSIX can tell (on Windows, and for
+    a holder on another computer, the lock is removed).
 
     Parameters
     ----------
@@ -104,13 +134,13 @@ def remove_stale_lock(output_folder: str | os.PathLike) -> LockHolder | None:
     Raises
     ------
     OutputLockedError
-        When the holder is a process still running on this computer.
+        When the holder is a process known to be running on this computer (POSIX only).
     """
     holder = read_lock(output_folder)
     if holder is None:
         return None
     path = Path(output_folder) / LOCK_FILENAME
-    if holder.host == socket.gethostname() and _running(holder.pid):
+    if holder_running(holder):
         raise OutputLockedError(path, holder)
     path.unlink(missing_ok=True)
     return holder
@@ -168,6 +198,18 @@ def looks_stale(holder: LockHolder) -> bool:
         and holder.host == socket.gethostname()
         and (not _running(pid))
     )
+
+
+def holder_running(holder: LockHolder) -> bool:
+    """Return True when the holder is a process that may still be running on this computer.
+
+    The liveness check of :func:`remove_stale_lock`, also used for the owner of a
+    conversion's work folder (:mod:`.conversion_write`, issue #482). Only POSIX can tell
+    (:func:`_running`); elsewhere, and for a holder on another computer, the answer is False,
+    so such a holder counts as gone. The lock itself is the real guard: removing it means the
+    user confirms that no run or conversion is using the folder, on any computer.
+    """
+    return holder.host == socket.gethostname() and _running(holder.pid)
 
 
 def _running(pid: int) -> bool:

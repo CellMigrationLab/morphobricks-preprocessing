@@ -233,6 +233,62 @@ def test_the_projection_is_deterministic():
     assert _project(stack, "mean").tobytes() == _project(stack, "mean").tobytes()
 
 
+def _accumulated(stack: np.ndarray, method: str) -> PlaneAccumulator:
+    acc = PlaneAccumulator(stack.shape[1:], stack.dtype, method, stack.shape[0])
+    for plane in stack:
+        acc.add(plane)
+    return acc
+
+
+FLOAT_MEAN_STACKS = [
+    np.array([[[2.0, 1.0]], [[6.0, 1.0]]]),  # sum 8 and 2: the issue's example
+    np.array([[[0.1, -3.5, np.nan, np.inf]], [[0.2, 7.25, 1.0, 1.0]], [[0.7, 1e30, 2.0, 3.0]]]),
+    np.array([[[1.0, 3.0]]]),  # one slice
+]
+
+
+@pytest.mark.parametrize("values", FLOAT_MEAN_STACKS)
+@pytest.mark.parametrize("dtype", ["float32", "float64"])
+def test_a_float_mean_equals_numpy_mean_every_time_it_is_asked(dtype, values):
+    # Issue #434: result() divided the running float64 sum in place, so a second call
+    # divided again and the first returned plane changed under the caller.
+    stack = values.astype(dtype)
+    want = np.mean(stack, axis=0, dtype=np.float64)
+    acc = _accumulated(stack, "mean")
+    first = acc.result()
+    kept = first.copy()
+    second = acc.result()
+    assert first.dtype == second.dtype == np.dtype("float64")
+    assert first.tobytes() == want.tobytes()
+    assert second.tobytes() == want.tobytes()
+    assert first.tobytes() == kept.tobytes()  # the plane given first is not changed later
+    assert second is first  # made once, the same plane every time
+
+
+def test_a_refused_float_sum_is_refused_again():
+    big = np.finfo(np.float64).max
+    acc = _accumulated(np.array([[[big]], [[big]]]), "mean")
+    for _ in range(2):
+        with pytest.raises(ProjectionRefused) as refused:
+            acc.result()
+        assert refused.value.code == "projection_overflow"
+
+
+@pytest.mark.parametrize("method", ["max", "mean", "sum"])
+@pytest.mark.parametrize("dtype", ["uint16", "int16", "float32"])
+def test_repeated_results_are_the_same_for_the_other_cases(dtype, method):
+    stack = _stack(dtype, slices=4, seed=5)
+    acc = _accumulated(stack, method)
+    first = acc.result()
+    kept = first.copy()
+    assert acc.result().tobytes() == kept.tobytes()
+    assert first.tobytes() == kept.tobytes()
+    assert kept.tobytes() == _project(stack, method).tobytes()
+    if dtype.startswith("u") or dtype.startswith("i"):
+        if method == "mean":
+            assert kept.tobytes() == np.mean(stack, axis=0, dtype=np.float64).tobytes()
+
+
 def test_rule_records_the_arithmetic():
     rule = projection_dtype("uint16", "sum", 3)
     assert rule.dtype_rule == "sum uint16->uint32 exact, bound Z<=65537"

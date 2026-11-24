@@ -41,10 +41,13 @@ from typing import Any
 
 import numpy as np
 
-from ._io import file_sha256
-from .manifest import MANIFEST_FILENAME
 from .run_inputs import Fov, RunInputs
-from .segmentation_cellpose_commit import check_newest, is_recorded, replaced_earlier_mask
+from .segmentation_cellpose_commit import (
+    after_commit,
+    check_newest,
+    is_recorded,
+    replaced_earlier_mask,
+)
 from .segmentation_cellpose_model import (
     BUILTIN_MODELS,
     CELLPOSE_VERSION,
@@ -71,9 +74,11 @@ from .segmentation_cellpose_run import (
     MAX_CHANNELS,
     channel_coverage,
     check_channel_count,
+    check_manifest,
     next_steps_lines,
     non_2d_images,
     open_run,
+    pinned_manifest,
 )
 from .segmentation_cellpose_settings import (
     BOTH_NEEDS,
@@ -299,7 +304,8 @@ class SegmentationJob:
     loaded, settings
         The verified model and the inference settings.
     mask_type, masks_root
-        The mask type and the masks folder.
+        The mask type and the masks folder, fixed resolved when the job is made (a relative
+        folder never follows a later change of the working directory; review ar, B1).
     overwrite
         Replace masks that are already there (default: skip them).
     channel_roles, output
@@ -308,6 +314,10 @@ class SegmentationJob:
     channel_numbers
         The channel number typed for a channel chosen by number (#440), as
         ``((channel ID, number), ...)``; recorded with the ID it was translated to.
+    run_manifest_sha256
+        The SHA-256 of the run manifest ``inputs`` was read from, by default and only
+        ``inputs.manifest_sha256`` (another is refused, never the file's now; review ar, B2).
+        The record names it, and a batch refuses a manifest changed since.
     """
 
     inputs: RunInputs
@@ -320,9 +330,13 @@ class SegmentationJob:
     channel_roles: tuple[str, ...] = ()
     output: str | None = None
     channel_numbers: tuple[tuple[str, int], ...] = ()
+    run_manifest_sha256: str | None = None
 
     def __post_init__(self) -> None:
-        """Refuse a job without resolved channels or with roles that do not fit them."""
+        """Fix the masks folder; refuse a job without resolved channels or with unfit roles."""
+        object.__setattr__(self, "masks_root", Path(self.masks_root).expanduser().resolve())
+        pinned = pinned_manifest(self.inputs, self.run_manifest_sha256)
+        object.__setattr__(self, "run_manifest_sha256", pinned)
         if self.plan is None:
             raise SegmentationError("No channels are resolved: choose channels the run has.")
         self.roles_entry()
@@ -393,6 +407,7 @@ def _segment_one(
             entry = SegmentedImage(image, "written", mask_sha256=mask_sha256(path))
             state["replaced"] = replaced_earlier_mask(root, kind, strays)  # exact, under the lock
             check_newest(root, kind, batch_id, image)
+            check_manifest(job.inputs, job.run_manifest_sha256)  # the run opened, still (aq B2)
             state["expected"] = _batch(job, batch_id, [*entries, entry])
             _write_batch(job, batch_id, [*entries, entry], state["expected"])
             state["entry"] = entry
@@ -419,7 +434,7 @@ def _segment_one(
         )
     except BaseException as exc:
         if "entry" in state:  # written and recorded; only the earlier mask's copy is left over
-            return _after_commit(entries, state["entry"], exc)
+            return after_commit(entries, state["entry"], exc)
         if "error" not in state:  # nothing was published
             if isinstance(exc, Exception):  # reported in the table, never dropped
                 return SegmentedImage(image, "failed", f"{type(exc).__name__}: {exc}"), ""
@@ -434,22 +449,8 @@ def _segment_one(
             raise
         return failed, failed.message
     if "late" in state:  # the record was saved, then something failed: stop, keep the mask
-        return _after_commit(entries, state["entry"], state["late"])
+        return after_commit(entries, state["entry"], state["late"])
     return state["entry"], ""
-
-
-def _after_commit(
-    entries: list[SegmentedImage], entry: SegmentedImage, exc: BaseException
-) -> tuple[SegmentedImage, str]:
-    """Stop the batch after a failure that came once ``entry`` was recorded and its mask kept.
-
-    An error is reported in the table and stops the batch. An interrupt (``KeyboardInterrupt``)
-    is raised again, with the image in ``entries`` first so the final record keeps its entry.
-    """
-    if isinstance(exc, Exception):
-        return entry, f"{type(exc).__name__}: {exc}"
-    entries.append(entry)
-    raise exc
 
 
 def _batch(job: SegmentationJob, batch_id: str, images: list[SegmentedImage]) -> SegmentationBatch:
@@ -470,7 +471,7 @@ def _batch(job: SegmentationJob, batch_id: str, images: list[SegmentedImage]) ->
         channel_ids=job.plan.channel_ids,
         device=loaded.device,
         run_folder=os.fspath(job.inputs.output_folder),
-        run_manifest_sha256=file_sha256(job.inputs.output_folder / MANIFEST_FILENAME),
+        run_manifest_sha256=job.run_manifest_sha256,  # pinned, never the file's now (aq B2)
         images=tuple(images),
     )
 
@@ -547,6 +548,7 @@ def run_batch(
         For a masks folder or mask type the hand-off refuses, or a record that is not valid.
         A record that cannot be written at the end is raised too (every mask is recorded by then).
     """
+    check_manifest(job.inputs, job.run_manifest_sha256)
     chosen = tuple(job.inputs.fovs() if fovs is None else fovs)
     missing = {
         f.relative_path for f in images_to_segment(job.inputs, job.mask_type, job.masks_root)

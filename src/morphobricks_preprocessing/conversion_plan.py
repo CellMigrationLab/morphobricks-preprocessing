@@ -38,15 +38,17 @@ from .conversion_issues import (
     names_collide_issue,
     not_a_folder_issue,
     overlap_issue,
+    path_too_long_issue,
     pixel_type_issue,
 )
-from .conversion_record import CONVERTED, COPIED, RECORD_FILENAME, CopyEntry
+from .conversion_record import CONVERTED, COPIED, PROJECTED, RECORD_FILENAME, CopyEntry
+from .conversion_write import WORK_FOLDER, partial_path
 from .copy_axes import copy_layout
 from .fingerprint import Fingerprint
 from .links import relative_inside
 from .metadata import TiffMetadata
 from .ome_tiff_copy import copy_nbytes
-from .ome_zarr_copy import OME_TIFF, OME_ZARR, as_zarr_copy
+from .ome_zarr_copy import OME_TIFF, OME_ZARR, STORES, as_zarr_copy
 from .planes import DEFAULT_MEMORY_LIMIT, check_planes
 from .planned_copy import PlannedCopy
 from .projection import Projection
@@ -105,12 +107,37 @@ def plan_conversion(
         which are otherwise copied byte for byte. Two images that would get the same copy
         name stop the plan (``copy_names_collide``). Default ``"ome-tiff"``.
 
+    On Windows, a copy any of whose files would have a path longer than
+    :data:`WINDOWS_MAX_PATH` characters, or any of whose folders a path longer than
+    :data:`WINDOWS_MAX_FOLDER`, while it is written in the work folder, stops the plan too
+    (``copy_path_too_long``, :func:`long_path_issue`); not when Windows' long paths are
+    enabled (``LongPathsEnabled``).
+
     Returns
     -------
     tuple
         The planned copies, sorted by path (empty when an error stops the conversion),
         and the issues: the errors that stop it, and the warnings.
     """
+    planned, issues = _plan(
+        root, mapping, destination, exclude, missing_as_singleton, memory_limit, **how
+    )
+    too_long = long_path_issue(root, destination, planned) if _windows() else None
+    if too_long is not None:
+        return (), [*issues, too_long]
+    return planned, issues
+
+
+def _plan(
+    root: Path,
+    mapping: AxisMapping | ConfirmedAxes,
+    destination: Path,
+    exclude: Iterable[str],
+    missing_as_singleton: bool,
+    memory_limit: int,
+    **how: Unpack[PlanOptions],
+) -> tuple[tuple[PlannedCopy, ...], list[ValidationIssue]]:
+    """Plan each image's copy: :func:`plan_conversion` but the length of the copies' paths."""
     projection, masks_folder = how.get("projection"), how.get("masks_folder")
     as_zarr = how.get("store", OME_TIFF) == OME_ZARR
     pre = preflight(root, destination, exclude=exclude, bind_headers=True)
@@ -151,6 +178,87 @@ def plan_conversion(
         else:
             planned.append(_copied(rel, headers.get(rel), source, rel in pre.excluded))
     return _stored(tuple(planned), issues, as_zarr)
+
+
+WINDOWS_MAX_PATH = 259
+"""The longest path Windows handles without long-path support (``MAX_PATH`` 260, with the
+terminating NUL)."""
+WINDOWS_MAX_FOLDER = 247
+"""The longest folder path Windows makes without long-path support (``MAX_PATH`` less 12,
+room for an 8.3 file name): a longer one fails at ``mkdir`` (issue #488)."""
+_FILE_SYSTEM_KEY = r"SYSTEM\CurrentControlSet\Control\FileSystem"
+"""The registry key (``HKEY_LOCAL_MACHINE``) holding Windows' ``LongPathsEnabled``."""
+
+
+def _windows() -> bool:
+    """Return True where Windows' path limits apply: Windows without long paths enabled."""
+    return os.name == "nt" and not _long_paths_enabled()
+
+
+def _long_paths_enabled() -> bool:
+    """Return True when Windows' ``LongPathsEnabled`` setting is 1; False if it cannot be read.
+
+    Called on Windows only (``winreg`` exists nowhere else). Python itself is long-path aware
+    since 3.6, so with the setting on, neither limit applies to what the conversion writes.
+    """
+    try:
+        import winreg  # Windows only
+    except ImportError:
+        return False
+    try:
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, _FILE_SYSTEM_KEY) as key:
+            value, _ = winreg.QueryValueEx(key, "LongPathsEnabled")
+    except OSError:
+        return False
+    return value == 1
+
+
+def long_path_issue(
+    root: Path, dest: Path, planned: tuple[PlannedCopy, ...]
+) -> ValidationIssue | None:
+    """Refuse copies with a path too long for Windows (issues #482 and #488).
+
+    Each copy is written in the work folder (:func:`.conversion_write.partial_path`), whose
+    path is longer than its place in the copy tree; its deepest file must fit
+    :data:`WINDOWS_MAX_PATH` and its deepest folder :data:`WINDOWS_MAX_FOLDER`. An OME-Zarr
+    copy's deepest file is a plane's chunk (``0/<index>/.../0/0``), and a folder copied byte
+    for byte is read for its deepest file and folder.
+    """
+    work = dest / WORK_FOLDER
+    lengths = {item.relative_path: _longest(root, work, item) for item in planned}
+    too_long = sorted(
+        rel
+        for rel, (file, folder) in lengths.items()
+        if file > WINDOWS_MAX_PATH or folder > WINDOWS_MAX_FOLDER
+    )
+    if not too_long:
+        return None
+    files = max(file for file, _ in lengths.values())
+    folders = max(folder for _, folder in lengths.values())
+    found = {"file": (files, WINDOWS_MAX_PATH), "folder": (folders, WINDOWS_MAX_FOLDER)}
+    over = {kind: sizes for kind, sizes in found.items() if sizes[0] > sizes[1]}
+    return path_too_long_issue(dest, too_long, over)
+
+
+def _longest(root: Path, work: Path, item: PlannedCopy) -> tuple[int, int]:
+    """Return how long a copy's deepest file path and deepest folder path are in ``work``."""
+    path = partial_path(work, item)
+    length = len(str(path))
+    if item.layout is not None and item.store == OME_ZARR:
+        chunk = ["0", *(str(size - 1) for size in item.layout.shape[:-2]), "0", "0"]
+        file = max(len(os.sep.join(chunk)), len(os.sep.join(["0", ".zarray"]))) + 1
+        return length + file, length + len(os.sep.join(chunk[:-1])) + 1
+    source = root / item.source_path
+    if item.layout is not None or not source.is_dir():
+        return length, len(str(path.parent))
+    file = folder = 0
+    for where, _, names in os.walk(source):
+        below = os.path.relpath(where, source)
+        if below != os.curdir:
+            folder = max(folder, len(below) + 1)
+        for name in names:
+            file = max(file, len(os.path.relpath(os.path.join(where, name), source)) + 1)
+    return length + file, length + folder
 
 
 class PlanOptions(TypedDict, total=False):
@@ -313,7 +421,10 @@ class ConversionPreview:
         The errors that would stop the conversion (the folder rule, then the checks of
         :func:`plan_conversion`), and the warnings.
     converted
-        Images that would be written as named-axis OME-TIFF, with their axis code, sorted.
+        Images that would be written as named-axis copies (OME-TIFF, or OME-Zarr with
+        ``store="ome-zarr"``), with their axis code, sorted.
+    projected
+        Images that would be written as projections (with ``projection``), sorted.
     copied
         Images that would be copied byte for byte, sorted (``"excluded"`` or None).
     needed_bytes
@@ -330,6 +441,7 @@ class ConversionPreview:
     issues: tuple[ValidationIssue, ...] = ()
     converted: tuple[tuple[str, str], ...] = ()
     copied: tuple[tuple[str, str | None], ...] = ()
+    projected: tuple[str, ...] = ()
     needed_bytes: int = 0
     free_bytes: int | None = None
     earlier_conversion: bool = False
@@ -353,7 +465,7 @@ def preview_conversion(
     exclude: Iterable[str] = (),
     missing_as_singleton: bool = False,
     memory_limit: int = DEFAULT_MEMORY_LIMIT,
-    masks_folder: str | os.PathLike | None = None,
+    **how: Unpack[PlanOptions],
 ) -> ConversionPreview:
     """Work out what :func:`.conversion.convert_experiment` would write; write nothing.
 
@@ -375,19 +487,36 @@ def preview_conversion(
         As :func:`.conversion.convert_experiment`.
     memory_limit
         As :func:`.conversion.convert_experiment`.
-    masks_folder
-        As :func:`.conversion.convert_experiment`.
+    **how
+        The keywords of :class:`PlanOptions`, as :func:`.conversion.convert_experiment`:
+        ``masks_folder``, ``projection`` and ``store``. The plan is the conversion's, so a
+        projection or OME-Zarr copies are counted as they will be written (their names,
+        their size, the length of their paths on Windows, issue #488).
 
     Returns
     -------
     ConversionPreview
+
+    Raises
+    ------
+    TypeError
+        For any other keyword.
+    ValueError
+        If ``store`` is unknown or ``projection`` is not a :class:`.projection.Projection`.
     """
+    unknown = sorted(set(how) - set(PlanOptions.__annotations__))
+    if unknown:
+        raise TypeError(f"preview_conversion() got unexpected keyword arguments {unknown}")
+    if how.get("store", OME_TIFF) not in STORES:
+        raise ValueError(f"store must be one of {STORES}, found {how['store']!r}")
+    if not isinstance(how.get("projection"), Projection | None):
+        raise ValueError(f"projection must be a Projection or None, found {how['projection']!r}")
     root, dest = Path(experiment_root).resolve(), Path(destination).resolve()
-    refused = copy_folder_issues(root, dest, masks_folder)
+    refused = copy_folder_issues(root, dest, how.get("masks_folder"))
     if refused:
         return ConversionPreview(dest, tuple(refused))
     planned, issues = plan_conversion(
-        root, mapping, dest, exclude, missing_as_singleton, memory_limit
+        root, mapping, dest, exclude, missing_as_singleton, memory_limit, **how
     )
     entries = [item.entry for item in planned]
     return ConversionPreview(
@@ -395,6 +524,7 @@ def preview_conversion(
         issues=tuple(sorted(issues, key=lambda issue: not issue.is_error)),
         converted=tuple((e.relative_path, e.reason) for e in entries if e.action == CONVERTED),
         copied=tuple((e.relative_path, e.reason) for e in entries if e.action == COPIED),
+        projected=tuple(e.relative_path for e in entries if e.action == PROJECTED),
         needed_bytes=sum(item.nbytes for item in planned),
         free_bytes=free_space(dest),
         earlier_conversion=(dest / RECORD_FILENAME).is_file(),

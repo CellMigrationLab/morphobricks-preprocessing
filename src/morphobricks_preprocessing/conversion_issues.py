@@ -14,6 +14,7 @@ from .validation import ValidationIssue, agree, error, plural
 
 if TYPE_CHECKING:
     from .conversion_record import ConversionRecordError
+    from .lock_file import LockHolder
     from .run.lock import OutputLockedError
 
 
@@ -48,6 +49,118 @@ def not_a_folder_issue(dest: Path) -> ValidationIssue:
         "The path given for the named-axis copies is a file, not a folder.",
         [dest.as_posix()],
         "Choose a new folder for the copies.",
+    )
+
+
+def links_issue(paths: list[str]) -> ValidationIssue:
+    """Refuse a copy tree holding links or mount points, which writes would go through."""
+    return error(
+        "copy_folder_has_links",
+        "The folder for the named-axis copies holds "
+        f"{plural(len(paths), 'link or mount point', 'links or mount points')} (links shown "
+        "as link -> target), through which the copies would be written somewhere else, "
+        "perhaps over the originals. Nothing was written.",
+        paths,
+        "Remove these links or mount points from the folder for the copies, or choose a new, "
+        "empty folder.",
+    )
+
+
+def unreadable_issue(paths: list[str]) -> ValidationIssue:
+    """Refuse a copy tree with folders that cannot be read, so not checked for links."""
+    return error(
+        "copy_folder_unreadable",
+        f"{plural(len(paths), 'folder')} in the folder for the named-axis copies cannot be "
+        "read, or disappeared while it was checked, so it cannot be checked for links or "
+        "mount points through which the copies would be written somewhere else. Nothing was "
+        "written.",
+        paths,
+        "Make these folders readable, or remove them, or choose a new, empty folder for the "
+        "copies.",
+    )
+
+
+def work_folder_issue(dest: Path, name: str, all_nul: bool = False) -> ValidationIssue:
+    """Refuse a copy tree whose conversion work folder ``name`` a conversion did not make (#448).
+
+    ``all_nul``: its owner file holds only NUL bytes, possibly left by a power loss (#488).
+    """
+    if all_nul:
+        cause = (
+            "Its owner file is unreadable: it holds only NUL bytes, possibly left by a power "
+            "loss while a conversion wrote it, so it cannot be proven that a conversion made "
+            "this folder."
+        )
+    else:
+        cause = (
+            "So it was not made by a conversion, or was changed since, and it cannot be "
+            "proven that a conversion made it."
+        )
+    return error(
+        "conversion_work_folder_unowned",
+        f"The folder for the named-axis copies holds {name}, the name of the folder a "
+        "conversion writes its copies in, but not as a conversion leaves it: the owner file a "
+        "conversion writes into it first is missing or not well formed, or it holds something "
+        f"else than that file and the folder 'files'. {cause} Nothing was removed and "
+        "nothing was written.",
+        [name],
+        f"Check {dest / name}, then move or remove it yourself if you no longer need what it "
+        "holds, or choose a new, empty folder for the copies.",
+    )
+
+
+def work_folder_in_use_issue(dest: Path, name: str, holder: LockHolder) -> ValidationIssue:
+    """Refuse a copy tree whose conversion work folder ``name`` a running process holds (#482).
+
+    Only POSIX can tell, and only for a process on this computer
+    (:func:`.run.lock.holder_running`): elsewhere this is never given.
+    """
+    return error(
+        "conversion_work_folder_in_use",
+        f"The folder for the named-axis copies holds {name}, the work folder of a "
+        f"conversion by {holder.describe()}, which is still running on this computer, so it "
+        "may still be writing there (its lock was probably removed by mistake). Nothing was "
+        "removed and nothing was written.",
+        [name],
+        "Wait for that conversion to finish, then convert again. If that process is not a "
+        f"conversion (process IDs are reused), move or remove {dest / name} yourself.",
+    )
+
+
+def work_folder_not_removed_issue(dest: Path, name: str, exc: OSError) -> ValidationIssue:
+    """Refuse a conversion whose leftover work folder ``name`` cannot be removed (#488)."""
+    return error(
+        "conversion_work_folder_not_removed",
+        f"The folder for the named-axis copies holds {name}, the work folder of a conversion "
+        f"that was stopped, and it cannot be removed ({exc}): a file in it may be open in "
+        "another program, such as an antivirus or a sync client (OneDrive, Dropbox). Part of "
+        "it may have been removed. Nothing was written.",
+        [name],
+        "Close the programs that may use it, or wait for them to finish, then convert again "
+        f"(the conversion removes it). Or remove {dest / name} yourself.",
+    )
+
+
+def path_too_long_issue(
+    dest: Path, paths: list[str], over: dict[str, tuple[int, int]]
+) -> ValidationIssue:
+    """Refuse copies whose files or folders would have paths too long for Windows (#482, #488).
+
+    ``over``: for ``"file"`` and/or ``"folder"``, the longest such path and its limit.
+    """
+    what = " or ".join(
+        f"a {kind} whose path is longer than {limit} characters (up to {longest})"
+        for kind, (longest, limit) in over.items()
+    )
+    return error(
+        "copy_path_too_long",
+        f"{plural(len(paths), 'copy', 'copies')} would have {what} while it is written in the "
+        f"conversion's work folder in {dest}, and Windows cannot handle such paths without "
+        "long paths enabled. Nothing was written.",
+        paths,
+        "Choose a folder for the copies with a shorter path (for example near the top of the "
+        "drive), or shorten the names of these images or of their folders, or ask your "
+        "administrator to enable Windows' long paths (LongPathsEnabled).",
     )
 
 
@@ -98,8 +211,25 @@ def header_changed_issue(paths: list[str]) -> ValidationIssue:
     )
 
 
-def not_empty_issue(dest: Path, paths: list[str]) -> ValidationIssue:
-    """Refuse a folder that holds files and no conversion record."""
+def not_empty_issue(dest: Path, paths: list[str], interrupted: str = "") -> ValidationIssue:
+    """Refuse a folder that holds files and no conversion record.
+
+    ``interrupted``: the name of the work folder of a conversion that is gone, also in the
+    folder, so these files may be copies it moved into place before it was killed (#482).
+    """
+    if interrupted:
+        return error(
+            "copy_folder_not_empty",
+            f"The folder for the named-axis copies already holds {plural(len(paths), 'file')} "
+            "and no conversion record. It also holds the work folder of a conversion that was "
+            f"stopped ({interrupted}), so these files may be copies that conversion had moved "
+            "into place when it was interrupted; without a record they cannot be checked, so "
+            "they are not reused. Nothing was overwritten or removed.",
+            paths,
+            "If you did not put these files there, remove them (only these: the next "
+            "conversion removes the work folder), then convert again. Otherwise choose a new "
+            f"or empty folder for the copies, or empty {dest} first.",
+        )
     return error(
         "copy_folder_not_empty",
         f"The folder for the named-axis copies already holds {plural(len(paths), 'file')} "

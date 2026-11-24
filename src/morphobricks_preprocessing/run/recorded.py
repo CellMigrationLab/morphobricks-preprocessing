@@ -7,7 +7,8 @@ intensity settings, ``missing_as_singleton`` and ``verify_content`` (the experim
 published ``morphobricks.toml`` in the folder, and the stated calibration its
 ``calibration.csv``, which a run never writes). A value given explicitly that differs from the
 recorded one is used, and an :class:`InputChange` names the change and its effect. The
-masks are dropped only on request (``masks_folder=False``, CLI ``--no-masks``).
+masks are dropped only on request (``masks_folder=False``, CLI ``--no-masks``). The mask
+axes stated for a masks folder's plain stacks are reused only with that folder (#484).
 
 A manifest of an older version is not read (:mod:`..manifest_versions`): nothing is taken
 from it.
@@ -173,9 +174,7 @@ def resolve_inputs(given: GivenInputs, previous: RunManifest | None) -> Resolved
     exclude = None if given.exclude is None else _exclusions(given.exclude)
     recorded_masks = recorded_masks_folder(before)
     masks = recorded_masks if given.masks_folder is None else (given.masks_folder or None)
-    # Dropping the masks folder drops the statements made for its masks; label images stay.
-    recorded_axes = recorded_mask_axes(before, labels_only=given.masks_folder is False)
-    mask_axes = {**recorded_axes, **dict(given.mask_axes or {})}
+    mask_axes = {**_kept_mask_axes(given, before), **dict(given.mask_axes or {})}
     resolved = ResolvedInputs(
         experiment_root=given.experiment_root or Path(before.experiment_root),
         mapping=_mapping(given, before),
@@ -342,8 +341,7 @@ def _with_changes(
             "masks_folder",
             recorded_masks_folder(before),
             _given_masks(given.masks_folder),
-            "no row is affected; the masks are recorded again and mask_relationships.json "
-            "is removed",
+            _masks_effect(given, before),
         ),
         _change("mask_axes", *_mask_axes_change(given, before), UNAFFECTED),
         _change("image_type", before.image_type, given.image_type, UNAFFECTED),
@@ -427,16 +425,52 @@ def _given_masks(folder: Path | Literal[False] | None) -> Path | str | None:
     return folder
 
 
+def _kept_mask_axes(given: GivenInputs, before: RunManifest) -> dict[str, str]:
+    """Return the recorded mask axes the run keeps for the masks folder it is given.
+
+    A statement of a masks folder's plain stacks is about that folder's files (#484): a
+    masks folder dropped or replaced by another takes its statements with it, and each
+    plain stack of the new folder is stated again (``mask_not_2d`` until then), even for a
+    mask type of the same name. The statements of OME-Zarr label images, which are the
+    experiment's, stay.
+    """
+    return recorded_mask_axes(before, labels_only=_masks_replaced(given, before))
+
+
+def _masks_replaced(given: GivenInputs, before: RunManifest) -> bool:
+    """Return True when the masks folder given drops or differs from the recorded one."""
+    if given.masks_folder is None:
+        return False
+    if given.masks_folder is False:
+        return True
+    recorded = recorded_masks_folder(before)
+    return _comparable(given.masks_folder, "masks_folder") != _comparable(recorded, "masks_folder")
+
+
+def _masks_effect(given: GivenInputs, before: RunManifest) -> str:
+    """Describe the effect of a changed masks folder, naming the statements it drops."""
+    effect = (
+        "no row is affected; the masks are recorded again and mask_relationships.json is removed"
+    )
+    dropped = sorted(set(recorded_mask_axes(before)) - set(_kept_mask_axes(given, before)))
+    if given.masks_folder is False or not dropped:
+        return effect
+    return (
+        f"{effect}; the mask axes stated for the earlier masks folder ({', '.join(dropped)}) "
+        "are not reused: state them again for the new folder's masks"
+    )
+
+
 def _mask_axes_change(
     given: GivenInputs, before: RunManifest
 ) -> tuple[dict[str, str], dict[str, str] | None]:
     """Return the recorded mask axes the run keeps, and those after the given statements.
 
-    The second is None when no statement was given. A dropped masks folder takes its
-    statements with it (:func:`resolve_inputs`); that is the ``masks_folder`` change, so
-    the statements compared are those kept.
+    The second is None when no statement was given. A masks folder dropped or replaced
+    takes its statements with it (:func:`_kept_mask_axes`); that is the ``masks_folder``
+    change, so the statements compared are those kept.
     """
-    kept = recorded_mask_axes(before, labels_only=given.masks_folder is False)
+    kept = _kept_mask_axes(given, before)
     if not given.mask_axes:
         return kept, None
     return kept, {**kept, **dict(given.mask_axes)}

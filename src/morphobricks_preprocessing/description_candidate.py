@@ -21,17 +21,19 @@ from dataclasses import dataclass
 from .description import Description, from_document
 from .description_file import sha256_hex
 from .description_read import read_description_bytes
+from .description_removal import Removal
 from .description_report import DescriptionIssue
 from .description_review import design_changes
 from .description_rules import CHANNEL_LAYOUT, Refusal
 from .description_run_text import reader_issue, reader_warning
 from .description_transition import Reconfirmation
-from .description_write import canonical_bytes
+from .description_write import DescriptionTypeError, canonical_bytes
 from .design import DesignFormatError
 from .design_derive import derive_design
 from .fast_layout import FAST_LAYOUT_CONTRADICTION
 from .physical_check import HETEROGENEOUS_LAYOUT
 from .run.description_file import transition_refusals
+from .run.description_records import folder_id_changes
 from .run.description_run import RunDescription, check_description
 from .run.preflight import Preflight
 from .validation import ValidationIssue, error
@@ -50,6 +52,11 @@ _TRANSITION_TEXT = {
         "moved is confirmed on Channels, and so is a header name that changed.",
     ),
 }
+_ID_CHANGED_TEXT = (
+    "The confirmed ID would change {old} -> {new}; no answer of yours confirms that ID change "
+    "(a folder answer never does; experiment-v1 4.6).",
+    "Undo the ID edit: put {old} back.",
+)
 
 _LAYOUT_DATE_TEXT = (
     "The date of the statement “every unit has the same channels in the same order” differs "
@@ -123,6 +130,11 @@ def transition_issue(issue: DescriptionIssue) -> ValidationIssue:
     key = str(issue.value) if base == "used_ids" else key.strip('"')
     if base == CHANNEL_LAYOUT:
         message, action = _LAYOUT_DATE_TEXT
+    elif issue.code == Refusal.R_CONFIRMED_ID_CHANGED and issue.value is not None:
+        message, action = _ID_CHANGED_TEXT
+        shown = message.format(old=key, new=issue.value)
+        todo = action.format(old=key)
+        return error(code, f"Saving would be refused: {code} at {path}. {shown} {todo}", (), todo)
     else:
         message, action = _TRANSITION_TEXT.get(
             issue.code,
@@ -138,6 +150,7 @@ def check_candidate(
     roles: Mapping | None,
     published: Description | None = None,
     confirmations: tuple[Reconfirmation, ...] = (),
+    removals: tuple[Removal, ...] = (),
 ) -> CandidateCheck:
     """Check the candidate on its exact canonical bytes, as publication and the run will.
 
@@ -156,14 +169,28 @@ def check_candidate(
         derived ``experiment_design.csv`` is the one the candidate's is compared with.
     confirmations
         The user's recorded re-confirmations that publication will be given.
+    removals
+        The user's confirmed removals that publication will be given: an entity whose folder
+        and ID change together, a dropped folder no removal confirms and a removal of a folder
+        still held are refused here, first, as publication refuses them (issue #475).
     """
-    data = canonical_bytes(candidate)
+    try:
+        data = canonical_bytes(candidate)
+    except DescriptionTypeError as refused:  # a wrong type is refused as the reader would
+        return CandidateCheck(None, tuple(reader_issue(i) for i in refused.issues))
     report = read_description_bytes(data)
     if not report.ok:
         return CandidateCheck(None, tuple(reader_issue(i) for i in report.errors))
     parsed = from_document(report.document)
     warned = tuple(reader_warning(i) for i in report.warnings)
+    changes = (
+        () if published is None else folder_id_changes(published, parsed, removals, confirmations)
+    )
     refused = tuple(
+        error(c.code, f"Saving would be refused: {c.message} {c.action}", (), c.action)
+        for c in changes
+    )
+    refused += tuple(
         transition_issue(i) for i in transition_refusals(published, parsed, confirmations)
     )
     found = RunDescription(parsed, sha256_hex(data), ())

@@ -33,7 +33,7 @@ brick**.
 - **Statistics code (from the normalization brick):** the per-plane histogram, the CSV
   reader and writer, pooling (`PooledHistogram`) and normalization parameters (`min_max`,
   `percentile_range`, `z_score`, `robust_z_score`) live in the required dependency
-  `morphobricks_normalization` (pinned to its release v0.7.1; first pinned at v0.2.0, plan §12 questions 27 and
+  `morphobricks_normalization` (pinned to its release v0.8.0; first pinned at v0.2.0, plan §12 questions 27 and
   28). This brick runs them over
   the experiment. Later bricks such as patch extraction use them to normalise any group of
   planes without rereading pixels. Import them from `morphobricks_normalization`; the
@@ -94,12 +94,16 @@ src/morphobricks_preprocessing/
                     is wrong with a malformed one (PhysicalSizes.invalid, issue #94)
   dataset.py        dataset consistency from the folders: biological repeats per condition, balance
                     table, unbalanced_images, repeat_missing_conditions, CONSISTENCY_CODES (P2)
+  type_names.py     type_name(value): a type's name in a message, short for a builtin, qualified
+                    otherwise (numpy.bool); the one helper of the writers' type refusals (#470)
   design.py         the rows of experiment_design.csv (an output only since v0.5.1): DesignTable/
                     DesignRow (read-only), the run's reconcile_design and design_issues against
-                    the folders, write_experiment_design, parse_design_bytes (the strict parser
+                    the folders, write_experiment_design (experiment_design_text: the checked
+                    text, nothing written), parse_design_bytes (the strict parser
                     of a written file; nothing reads the file to prefill a draft); no reader for other bricks (SWEEP-PP)
   design_derive.py  derive_design/write_derived_design: experiment_design.csv from a published
-                    description (Spec experiment-v1 11), written by design.write_experiment_design
+                    description (Spec experiment-v1 11), written by design.write_experiment_design;
+                    derived_design_bytes (checked, nothing written: publication, #400)
   design_values.py  the design file's header check (no column twice or unnamed, #83), booleans,
                     counts, dates and DesignFormatError (pure; re-exported by design.py)
   description_rules.py  the one table of the experiment-description rules (Stage 1, Spec
@@ -342,7 +346,8 @@ src/morphobricks_preprocessing/
                     rows, outcome), modes.py (restart/full, RunMode with verify_content), recorded.py (inputs reused from
                     the earlier run, InputChange), lock.py (the output folder's O_EXCL lock,
                     remove_stale_lock), output_guard.py (the output folder against the
-                    masks folder, given or recorded, before anything is written),
+                    masks folder, given or recorded, before anything is written; for
+                    calibrate also against the experiment, output_inside_experiment, #486),
                     check_step.py (write_check_report), mask_step.py
                     (the masks step shared by CLI `masks` and the notebook: prepare_mask_step,
                     describe_masks, recorded_masks; PP-10d), result.py (RunResult),
@@ -420,10 +425,25 @@ src/morphobricks_preprocessing/
                     its image's fingerprint (source_changed_during_check), planes checked
                     against the memory limit first, PlannedCopy per image;
                     copy_folder_issues (the folder rule) and preview_conversion (the plan,
-                    space needed and free, for the notebook card; writes nothing, PP-11b)
-  conversion_reuse.py compare: unchanged copies reused, anything else there refused
-  conversion_write.py write_all: .partial files moved into place together (any failure
-                    removes what it wrote)
+                    with the conversion's store and projection, #488; space needed and
+                    free, for the notebook card; writes nothing, PP-11b)
+  conversion_reuse.py compare: unchanged copies reused, anything else there refused; links_below:
+                    links and mount points in the copy tree (is_link, MountCheck), refused (#447);
+                    a folder it cannot read is refused too (copy_folder_unreadable, #467)
+  conversion_write.py write_all: copies written in the conversion's own work folder
+                    (.mbconv, short for Windows paths; a leftover under its name before
+                    #482, .morphobricks-conversion.partial, is recovered the same way;
+                    owner file first; a killed one's is
+                    removed only with a well-formed owner file, nothing else but files/, and
+                    a holder not known to run (run.lock.holder_running: POSIX, this
+                    computer only; the lock is the real guard); its own only
+                    while the owner file holds its token; an empty one, or one holding only
+                    an empty or cut-short owner file, is removed by rmdir; both before the
+                    space check, remove_leftover, #448, #482; a removal refused is
+                    conversion_work_folder_not_removed, #488),
+                    moved into place
+                    together (any failure removes what it wrote); nothing else is removed;
+                    each write and move checks its way again for links (_Route, #467)
   zarr_input.py     OME-Zarr input: open_ngff (OME-NGFF 0.4/0.5 metadata -> level-0 array, axis
                     letters and physical sizes from the scale and axis units),
                     ngff_label_names/open_ngff_labels (label images, for later bricks),
@@ -578,14 +598,36 @@ functions the tests use.
    *Summary* (by module), *Decisions*, *Notes for review* (limitations, what was not
    verified), *Tests* (exact counts, e.g. "455 passed, 2 skipped").
 5. **Done means:** `python tools/check.py` passes (`ruff check .`, `ruff format --check .`,
-   `pytest` and the code rules of `docs/development.md` against their baseline), (CI runs
-   lint on Ubuntu and tests on Ubuntu, Windows and macOS with Python 3.11 and 3.13), docs
+   `pytest` and the code rules of `docs/development.md` against their baseline), docs
    updated, and local changes ready for review. Open a PR only when the user requests it.
-6. **Be honest in reports.** Say what was verified and what was not (for example: "widgets
+   **CI (owner, 24 November 2026): minimal gates, the full CI only at release.** A pull
+   request and a push to `main` run `lint`, `wheel-identity` (under a minute) and one test
+   job (Ubuntu, Python 3.13). A release run runs the full matrix (Ubuntu, Windows and macOS
+   with Python 3.11 and 3.13) with `MORPHOBRICKS_RELEASE_RUN=1`: a manual run of the CI
+   workflow (*Run workflow*), a push of a `v*` tag, or a pull request labelled `release`
+   (`.github/workflows/ci.yml`). `python tools/check.py` matches the pull request gate;
+   `python tools/check.py --release` is a release run. A new push to a pull request or a
+   branch cancels the older run of the same ref; a release run is never cancelled (its own
+   concurrency group).
+6. **Notebook pins move only in the release PR (owner, 24 November 2026).** A pull request
+   never re-pins `RELEASE_REF` in `notebooks/MorphoBricks_Cellpose.ipynb` or
+   `notebooks/MorphoBricks_Preprocessing.ipynb`, even when it changes code a notebook runs.
+   The freshness test (`test_notebook_cellpose.py::
+   test_release_only_the_preprocessing_pin_is_a_commit_with_this_code`: the pinned commit
+   holds the code the notebook runs) skips outside a release run, with the reason
+   "release-only: the notebooks are pinned in the release PR" (`tests/release_run.py`). In a
+   release run it runs, and a missing Git history fails it (`history_missing`). The
+   structural pin tests (one 40-hex commit, the pin-scope refusals of an unpinned install,
+   the cells' identity, `RELEASE_CALLS`) run in every run. The release PR moves the pins
+   with two commits: commit A is the release preparation (the code); commit B only points
+   both notebooks' `RELEASE_REF` at A (and records A's call in `RELEASE_CALLS`), so the
+   notebook-run code at `HEAD` is A's. The release PR carries the `release` label, so its
+   CI is a release run.
+7. **Be honest in reports.** Say what was verified and what was not (for example: "widgets
    tested headless; not looked at in a real JupyterLab").
-7. **Scope discipline.** Do the task asked; list unrelated problems as follow-ups instead
+8. **Scope discipline.** Do the task asked; list unrelated problems as follow-ups instead
    of fixing them silently.
-8. **Keep generated or local files out of commits.** That includes test images, outputs
+9. **Keep generated or local files out of commits.** That includes test images, outputs
    (`*_MorphoBricks_Preprocessing/`), editor/agent config and launch files.
 
 ---
@@ -929,7 +971,7 @@ Technical details go to `logging` (shown in the notebook's "Technical details" p
 | Topic | Decision |
 |---|---|
 | Binning | Per-plane min–max, same bin count per experiment, pooled counts for groups (binning study) |
-| Core dependencies | `numpy` (2.0 or later: the image QC sums use `numpy.vecdot`), `tifffile`, `scipy` (the mask step's piece counts, Q32) and `morphobricks-normalization` (git dependency pinned to its release tag v0.7.1 (signed zero written as 0.0, NumPy per-bin work; v0.7.1), whose `regions` and `contracts` (Spec ADR 0005; v0.7.0) are not used here but pinned so that every consumer resolves one normalization, whose `stain` module (v0.6.0; `check_options` since v0.6.1), optical-density helpers and optional `histology` extra are used only by the opt-in H&E tissue mask helper (`he-mask` extra), whose reader takes the schema version 5 table (channels by canonical ID, ADR 0003; since v0.5.0), and whose CSV reader checks each row's stored `plane_id`, `image_file` and `bit_depth` (since v0.3.2), refuses a blank `position_id` and tables of schema versions 1 to 3 (v0.4.0), and whose `PlaneRecord` requires a keyword-only `position_id` and which refuses corrupt or ambiguous statistics and parameters (v0.3.3); `[tool.hatch.metadata] allow-direct-references`). `ipywidgets` and `matplotlib` in the `notebook` extra; `zarr` in the `zarr` extra; `pytest` and `ruff` in `dev` |
+| Core dependencies | `numpy` (2.0 or later: the image QC sums use `numpy.vecdot`), `tifffile`, `scipy` (the mask step's piece counts, Q32) and `morphobricks-normalization` (git dependency pinned to its release tag v0.8.0 (adds the `time_series` module, contract §3.7, and an equalisation underflow fix, additive; v0.8.0; signed zero written as 0.0, NumPy per-bin work; v0.7.1), whose `regions` and `contracts` (Spec ADR 0005; v0.7.0) are not used here but pinned so that every consumer resolves one normalization, whose `stain` module (v0.6.0; `check_options` since v0.6.1), optical-density helpers and optional `histology` extra are used only by the opt-in H&E tissue mask helper (`he-mask` extra), whose reader takes the schema version 5 table (channels by canonical ID, ADR 0003; since v0.5.0), and whose CSV reader checks each row's stored `plane_id`, `image_file` and `bit_depth` (since v0.3.2), refuses a blank `position_id` and tables of schema versions 1 to 3 (v0.4.0), and whose `PlaneRecord` requires a keyword-only `position_id` and which refuses corrupt or ambiguous statistics and parameters (v0.3.3); `[tool.hatch.metadata] allow-direct-references`). `ipywidgets` and `matplotlib` in the `notebook` extra; `zarr` in the `zarr` extra; `pytest` and `ruff` in `dev` |
 | OME-Zarr (Q12) | Input may be TIFF and/or OME-Zarr (folders ending in `.zarr`), mixed. OME-Zarr axes come from their metadata and are matched by role; level 0 of a single image only, several images per store is `multiple_series`. *Removed in v0.4.0 (plan Q46): TIFF images are always read directly; the following describes v0.3.* TIFF choice once per experiment (`convert_tiffs`): read directly (default) or convert to `<output>/ome_zarr` (OME-NGFF 0.4) and compute rows from the copies; switching recomputes TIFF rows and removes unused copies. Reads OME-NGFF 0.4 and 0.5 (0.5 needs zarr 3). In the notebook: its own step-3 card "(Optional) Image conversion" after Settings (Q13): radio buttons (read directly = recommended), a disk-space warning (amber, red when the estimate exceeds free space, never blocking), and conversion settings (chunk size, compression + level, pyramid levels) shown only when converting. CLI `--convert-tiff` with `--chunk-size`, `--compression`, `--compression-level`, `--pyramid-levels`. No overlap setting: chunks never overlap |
 | System files (Q5) | Ignored silently; `single` check and sibling uniqueness are case-insensitive |
 | Too-deep folders (Q7) | Error |
@@ -1028,7 +1070,8 @@ Technical details go to `logging` (shown in the notebook's "Technical details" p
 - **Notebook widgets are tested headless:** build the pages, drive them with
   `button.click()` and `.value = …`, and assert on `.value` of HTML widgets. Tests skip
   if ipywidgets/matplotlib are missing; CI installs `.[dev,notebook,zarr]`. OME-Zarr
-  tests skip without zarr; CI's Python 3.11 jobs pin zarr 2.18 and 3.13 jobs get zarr 3.
+  tests skip without zarr; the release CI's Python 3.11 jobs pin zarr 2.18 and 3.13 jobs
+  get zarr 3.
 - **The notebook file is tested too:**
   - valid nbformat 4, with no outputs;
   - code cells hidden as Colab forms (`"cellView": "form"`) and titled `# @title <N>. …` (1. Install, 2. Mount Google Drive, 3. Run preprocessing);
@@ -1090,8 +1133,8 @@ plainer version "not interactive enough". Descriptive, guided and forgiving is t
     `zarr` extra too. Colab-only code
     (cell 2's Drive mount) stays inside `if "google.colab" in sys.modules:`; no `/content` path
     outside it, and no custom widget manager is enabled. `current_version`
-    and `notebook_name` are LabConstrictor's names; at each release the pin moves
-    (plan §10, release checklist).
+    and `notebook_name` are LabConstrictor's names; at each release the pin moves, and only
+    in the release PR (plan §10, release checklist; §3 item 6).
   - Later cells are one call each, e.g. `notebook.folder_step()`.
 - **Step 0** starts the notebook and shows a green "ready" card with the package version.
 - **Runtime callouts:** Steps 0 and 1 carry "**Colab users:**" / "**JupyterLab users:**"

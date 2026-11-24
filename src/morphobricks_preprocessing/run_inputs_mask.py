@@ -14,6 +14,7 @@ a mask changed since the run or stored otherwise than recorded.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -28,7 +29,11 @@ from .masks.objects import ObjectsReadPlan, objects_read_plan
 from .masks.read import read_mask_plane
 from .masks.window import mask_window_plan, read_mask_window
 from .planes import DEFAULT_MEMORY_LIMIT
-from .run_inputs_error import RunInputsError
+from .run_inputs_error import (
+    MasksFolderNotFoundError,
+    MasksFolderUnreadableError,
+    RunInputsError,
+)
 from .run_inputs_request import (
     BINARY,
     CONNECTED_COMPONENTS,
@@ -319,3 +324,34 @@ def _objects_use(selection: FovSelection, mask_id: str) -> MaskSelection:
             f"converted by {CONNECTED_COMPONENTS!r}, as resolve_request selects them"
         )
     return mask
+
+
+def given_masks_root(masks_root: str | os.PathLike) -> Path:
+    """Return the masks folder given as ``masks_root``, refused unless it can be listed (#487).
+
+    A run without masks would otherwise read a mistyped, missing or unreadable folder as one
+    with no masks, and the caller's masks would be left out without a word.
+    """
+    # "" and Path("") (which is ".") both mean no path was given; "." and Path(".") could mean
+    # the current directory, but are indistinguishable from Path(""), so they are refused too.
+    folder = None if Path(masks_root) == Path(".") else Path(masks_root).resolve()
+    fix = (
+        "Give masks_root= the folder that holds one subfolder per mask type (its path, not "
+        '"" or "."), or leave it out to use the masks folder the run recorded.'
+    )
+    if folder is None or not folder.is_dir():
+        what = 'An empty path or "."' if folder is None else f"{folder}"
+        raise MasksFolderNotFoundError(
+            f"masks_folder_not_found: {what} was given as masks_root=, and it is not an "
+            f"existing folder, so no mask can be read from it. {fix}"
+        )
+    try:
+        with os.scandir(folder):
+            pass
+    except OSError as exc:
+        raise MasksFolderUnreadableError(
+            f"masks_folder_unreadable: the masks folder {folder} given as masks_root= cannot "
+            f"be listed ({exc.strerror or exc}), so its masks cannot be checked against the "
+            f"run. Check its permissions. {fix}"
+        ) from exc
+    return folder

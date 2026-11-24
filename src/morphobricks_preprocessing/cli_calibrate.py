@@ -11,6 +11,7 @@ sizes with their source, and names the change in its report; no row is recompute
 from __future__ import annotations
 
 import argparse
+import sys
 from functools import partial
 from pathlib import Path
 
@@ -28,6 +29,7 @@ from .report import format_issues
 from .run import OutputLockedError
 from .run.calibrate import update_calibration
 from .run.lock import lock_issue
+from .run.output_guard import output_experiment_issues, recorded_experiment_of
 
 
 def add_calibrate_parser(commands: argparse._SubParsersAction) -> argparse.ArgumentParser:
@@ -74,13 +76,27 @@ def add_calibrate_parser(commands: argparse._SubParsersAction) -> argparse.Argum
 
 def calibrate_command(args: argparse.Namespace) -> int:
     """Show the statements, or change and write them; return the exit status."""
+    experiment = Path(args.experiment).resolve() if args.experiment else None
     if args.output:
         output = Path(args.output).resolve()
-    elif args.experiment:
-        output = default_output_folder(Path(args.experiment).resolve())
+    elif experiment is not None:
+        output = default_output_folder(experiment)
     else:
         print("Give the experiment folder or --output to say whose calibration to show.")
         return 1
+    # Never inside the experiment given, else the one the run there recorded (#486).
+    inside = output_experiment_issues(output, experiment)
+    if inside:
+        print(format_issues(inside))
+        return 1
+    if experiment is None and recorded_experiment_of(output) is None:
+        # Not refused (existing users' command lines), but never silent.
+        print(
+            "Note: no experiment was given and none is recorded in "
+            f"{output}, so it was not checked that the output folder is outside the "
+            "experiment (give the experiment folder to check it).",
+            file=sys.stderr,
+        )
     path = output / CALIBRATION_FILENAME
     try:
         if not (args.size or args.pixels or args.remove):
@@ -88,7 +104,9 @@ def calibrate_command(args: argparse.Namespace) -> int:
             print(calibration_summary(shown))
             return 0
         _changed(Calibration(), args)  # refuse a wrong statement before taking the lock
-        changed, written = update_calibration(output, partial(_changed, args=args))
+        changed, written = update_calibration(
+            output, partial(_changed, args=args), experiment_root=experiment
+        )
     except OutputLockedError as exc:
         print(format_issues([lock_issue(exc)]))
         return 1

@@ -11,7 +11,6 @@ code cell, the pins) and what the cells do. The forms themselves:
 import html
 import json
 import re
-import subprocess
 from pathlib import Path
 
 import numpy as np
@@ -24,7 +23,12 @@ from morphobricks_preprocessing import segmentation_cellpose as cp
 from morphobricks_preprocessing.manifest import MANIFEST_FILENAME
 from morphobricks_preprocessing.notebook_cellpose_preview import MaskResult, channel_figure
 from morphobricks_preprocessing.segmentation_record import read_record
-from notebook_pin import code_sources, history_missing, install_setting, pin_differences
+from notebook_pin import (
+    check_pin_holds_this_code,
+    code_sources,
+    install_setting,
+    notebook_modules,
+)
 from test_segmentation_handoff import MASKS_SECTION
 
 ROOT = Path(__file__).parents[1]
@@ -132,8 +136,12 @@ def test_the_cells_stay_thin_the_logic_is_in_the_package():
         assert source(number).rstrip().endswith(f"workflow.{step}_step()")
 
 
-def test_the_pins_are_cellpose_4_2_1_1_and_a_preprocessing_commit_with_this_code():
+def test_the_pins_are_cellpose_4_2_1_1_and_one_preprocessing_commit():
+    # Every run: what the pins are, read from the file alone (no Git history).
     assert setting("CELLPOSE_VERSION") == cp.CELLPOSE_VERSION == "4.2.1.1"
+    assert re.fullmatch(r"[0-9a-f]{40}", setting("RELEASE_REF"))
+    assert setting("REPOSITORY").endswith("CellMigrationLab/morphobricks-preprocessing.git")
+    assert "DEVELOPMENT_OVERRIDE = False" in source(INSTALL)
 
 
 PINNED_NOTEBOOKS = {
@@ -146,24 +154,28 @@ PINNED_NOTEBOOKS = {
 
 
 @pytest.mark.parametrize("name", PINNED_NOTEBOOKS)
-def test_the_pin_is_a_preprocessing_commit_with_this_code(name):
+def test_the_pin_is_one_preprocessing_commit_and_the_cells_scope_is_derived(name):
+    # Every run, no Git history: the pin is one commit of this repository, the install is
+    # pinned and what the cells run is derived from them (a PinScopeError otherwise).
     path = ROOT / "notebooks" / f"{name}.ipynb"
     install_cell = code_sources(path)[INSTALL]
-    ref = install_setting(install_cell, "RELEASE_REF")
-    assert re.fullmatch(r"[0-9a-f]{40}", ref)
+    assert re.fullmatch(r"[0-9a-f]{40}", install_setting(install_cell, "RELEASE_REF"))
     repository = install_setting(install_cell, "REPOSITORY")
     assert repository.endswith("CellMigrationLab/morphobricks-preprocessing.git")
     assert "DEVELOPMENT_OVERRIDE = False" in install_cell
-    command = ["git", "-C", str(ROOT), "cat-file", "-e", f"{ref}^{{commit}}"]
-    if subprocess.run(command, capture_output=True).returncode != 0:
-        history_missing("the pinned commit is not in this checkout (shallow clone or no git)")
-    # The notebook installs the package at RELEASE_REF: that commit must hold the code the
-    # notebook's cells run (every module they import, at any depth), the build's inputs and
-    # the install-relevant pyproject.toml, exactly as HEAD has them (issue #421).
-    changed = pin_differences(
-        ROOT, ref, "HEAD", code_sources(path), checkout=PINNED_NOTEBOOKS[name]
-    )
-    assert changed == [], f"what {name} runs changed after RELEASE_REF: move the pin ({changed})"
+    assert notebook_modules(code_sources(path), checkout=PINNED_NOTEBOOKS[name])
+
+
+@pytest.mark.parametrize("name", PINNED_NOTEBOOKS)
+def test_release_only_the_preprocessing_pin_is_a_commit_with_this_code(name):
+    # Release runs only (owner, 24 November 2026; ``release_run.py``): the notebook installs
+    # the package at RELEASE_REF, so that commit must hold the code the notebook's cells run
+    # (every module they import, at any depth), the build's inputs and the install-relevant
+    # pyproject.toml, exactly as HEAD has them (issue #421). The release PR moves the pin.
+    path = ROOT / "notebooks" / f"{name}.ipynb"
+    sources = code_sources(path)
+    ref = install_setting(sources[INSTALL], "RELEASE_REF")
+    check_pin_holds_this_code(ROOT, ref, sources, checkout=PINNED_NOTEBOOKS[name])
 
 
 def test_the_version_file_names_the_notebooks_current_version():

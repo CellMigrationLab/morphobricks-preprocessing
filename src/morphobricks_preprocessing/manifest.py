@@ -367,8 +367,19 @@ def read_manifest(path: str | os.PathLike) -> RunManifest:
     ManifestFormatError
         If the file is not valid JSON or not a manifest of this version.
     """
+    return parse_manifest(Path(path).read_bytes(), path)
+
+
+def parse_manifest(raw: bytes, path: str | os.PathLike) -> RunManifest:
+    """Parse the bytes of a manifest read from ``path`` (named in a refusal).
+
+    Raises
+    ------
+    ManifestFormatError
+        If the bytes are not valid JSON or not a manifest of this version.
+    """
     try:
-        data = json.loads(Path(path).read_text(encoding="utf-8"))
+        data = json.loads(raw.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise ManifestFormatError(f"{path} is not a valid manifest: {exc}") from exc
     if not isinstance(data, dict):

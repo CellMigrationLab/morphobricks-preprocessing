@@ -212,10 +212,14 @@ def test_a_failed_append_puts_the_previous_file_back(tmp_path, monkeypatch):
     base = _published(tmp_path)
     before = _snapshot(tmp_path)
 
-    def broken(folder, records):
-        raise OSError("disk full")
+    real = publication._prepare_file
 
-    monkeypatch.setattr(publication, "_append_records", broken)
+    def broken(path, data):
+        if path.name == RECORDS_FILENAME:
+            raise OSError("disk full")
+        return real(path, data)
+
+    monkeypatch.setattr(publication, "_prepare_file", broken)
     with pytest.raises(OSError, match="disk full"):
         publish_description(
             tmp_path,
@@ -227,12 +231,14 @@ def test_a_failed_append_puts_the_previous_file_back(tmp_path, monkeypatch):
 
 
 def _fail_binary_writes(monkeypatch, *, after_full_bytes: bool) -> None:
-    """Make a binary write stream opened with ``os.fdopen`` raise once it is written to.
+    """Make the records file's write stream raise once it is written to.
 
-    The records file is the only binary write stream a publication opens (the description goes
-    through a text stream). With ``after_full_bytes`` false, only half of the bytes are written.
+    A publication with records opens two binary write streams with ``os.fdopen``: the
+    description's temporary file, then the records file's; only the second fails. With
+    ``after_full_bytes`` false, only half of the bytes are written.
     """
     real = os.fdopen
+    opened = []
 
     class Failing:
         def __init__(self, stream):
@@ -257,7 +263,10 @@ def _fail_binary_writes(monkeypatch, *, after_full_bytes: bool) -> None:
 
     def fdopen(fd, mode="r", *args, **kwargs):
         stream = real(fd, mode, *args, **kwargs)
-        return Failing(stream) if "b" in mode and ("w" in mode or "a" in mode) else stream
+        if "b" not in mode or not ("w" in mode or "a" in mode):
+            return stream
+        opened.append(fd)
+        return Failing(stream) if len(opened) > 1 else stream
 
     monkeypatch.setattr(publication.os, "fdopen", fdopen)
 
@@ -287,8 +296,13 @@ def test_a_failed_fsync_of_the_records_leaves_file_and_records_as_before(tmp_pat
     (tmp_path / RECORDS_FILENAME).write_bytes(SEEDED)
     before = _snapshot(tmp_path)
 
+    real, synced = os.fsync, []
+
     def broken(fd):
-        raise OSError("fsync failed")
+        synced.append(fd)
+        if len(synced) > 1:  # the description's temporary file is synced first
+            raise OSError("fsync failed")
+        real(fd)
 
     monkeypatch.setattr(publication.os, "fsync", broken)
     with pytest.raises(OSError, match="fsync failed"):
@@ -315,12 +329,15 @@ def test_a_record_whose_hash_is_not_the_published_file_is_history_not_an_error(t
     assert (tmp_path / RECORDS_FILENAME).read_bytes().startswith(SEEDED)
 
 
-def test_a_failed_append_removes_a_first_publication(tmp_path, monkeypatch):
-    def broken(folder, records):
-        raise OSError("disk full")
+def test_a_failed_rename_removes_a_first_publication(tmp_path, monkeypatch):
+    real = os.replace
 
-    monkeypatch.setattr(publication, "_append_records", broken)
-    with pytest.raises(OSError, match="disk full"):
+    def broken(source, target):
+        real(source, target)
+        raise OSError("failed after the rename")
+
+    monkeypatch.setattr(publication.os, "replace", broken)
+    with pytest.raises(OSError, match="after the rename"):
         publish_description(tmp_path, V01, base_sha256=ABSENT)
     assert list(tmp_path.iterdir()) == []
 

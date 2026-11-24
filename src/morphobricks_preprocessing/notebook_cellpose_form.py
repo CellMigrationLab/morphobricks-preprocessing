@@ -321,8 +321,9 @@ class CellposeNotebook(CellposeWorkflow):
                     value["download_weights"],
                     value["install_dinov3"],
                 )
-            except Exception:  # a refusal or any other error: neither model stays loaded
-                self.loaded, self._nuclei_failed = None, True
+            except BaseException:  # a refusal, any error or an interrupt: neither stays loaded
+                self.loaded = self.nuclei_loaded = None
+                self._nuclei_failed = True
                 raise
         else:
             self.same_model_for_nuclei()

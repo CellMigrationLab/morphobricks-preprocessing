@@ -507,7 +507,14 @@ editing, or the confirmed ones. An image that cannot be drawn gets a sentence sa
    it (one re-confirmation per channel, written when you save), also when a folder is removed
    or renamed in the same save: the saved file keeps no header names per folder, so **Yes,
    remove** cannot show that a name went with its folder. A change after the click is asked
-   again.
+   again. **Yes, remove** and a stated folder rename confirm only the folders they show: a
+   saved ID replaced by another ID in the same save (a channel `DNA` now `DAPI`) is never
+   confirmed by them, and the save is refused with `R_CONFIRMED_ID_CHANGED` (#402), naming
+   the change (*DNA -> DAPI*): undo the ID edit. An ID changed in the same save as a folder
+   change of the same entity (a folder renamed or removed) is never paired with it: the save
+   is refused with `folder_and_id_changed` (#475); undo the ID edit and the folder change
+   saves on its own. A saved ID cannot be changed from the notebook: only the publication API
+   takes a `Reconfirmation` that names a new ID.
 4. **Masks.** The masks the check paired with the images (and, for masks whose files do not
    name their axes, the axes to state), then for each mask type: *separate objects*,
    *regions* or *grouped labels (one value per parent, e.g. mitochondria by cell)*. Nothing is
@@ -693,10 +700,10 @@ the same bytes in every file except that time (and the manifest SHA-256 the repo
 | `--confirm-repeat-codes` | Confirm the `repeat_codes` of `--lab-links` for this run. The run prints each pair; without this option a file with repeat codes is refused (`lab_links_repeat_codes_not_confirmed`), also when a code is spelled like the ID: the lab tool's codes and the description's IDs are separate names |
 | `--no-masks` | Drop the masks folder an earlier run recorded, with the mask axes stated for its masks (those of OME-Zarr label images are kept) |
 | `--no-exclude` | Clear the exclusions an earlier run recorded, so every image is analysed again (not together with `--exclude`) |
-| `--remove-stale-lock` | Remove the lock left by a run that was stopped or whose computer restarted (`check`, `run`, `masks` and `calibrate`); give it only when no other run uses the output folder |
+| `--remove-stale-lock` | Remove the lock left by a run that was stopped or whose computer restarted (`check`, `run`, `masks` and `calibrate`); give it only when no other run uses the output folder, on any computer (only Linux and macOS can tell whether a process on this computer still runs) |
 | `--outlier-limit N`, `--saturation-limit FRACTION`, `--min-images N` | Limits of the intensity checks printed after the run (default 3, 0.01 and 5) |
 | `--log FILE` | Write technical details to a file (`run`, `masks`, `convert`). It is checked before anything is written and opened only once the other options are checked: a file inside the experiment or masks folder (given or recorded by the earlier run), inside the folder of the copies (`convert`), or named as one of the run's files in the output folder (`plane_histograms.csv`, `run_manifest.json`, the reports, `experiment_design.csv`, `calibration.csv`, `mask_relationships.json`, the lock) is refused and nothing is written; so is a file that is a hard link (it has another name). Any other name in the output folder is fine, for example `run.log` |
-| `--masks FOLDER` | The masks folder (§2). `check` lists the mask types found and checks every mask from its header; `run` stops on a mask error and records the masks in `run_manifest.json` |
+| `--masks FOLDER` | The masks folder (§2). `check` lists the mask types found and checks every mask from its header; `run` stops on a mask error and records the masks in `run_manifest.json`. A masks folder other than the one an earlier run recorded does not reuse the mask axes stated for that folder's masks (`--mask-axes`): state them again for the new folder (those of OME-Zarr label images are kept) |
 | `--mask-axes TYPE=ROLES` | The axes of a mask type, one role (Y, X, Z or T) per axis as stored, stated once per type: `Cells=TYX` for plain stacks of time points whose files do not name their axes; a 2D mask needs none, and `Cells=YX` (the removed shared 2D mask) is the error `shared_mask_not_supported` (repeatable; `check`, `run`, `masks`). Masks are never reordered. |
 
 After writing, `run` prints the intensity checks of the table, grouped by kind, each with
@@ -903,6 +910,17 @@ statement for an axis some images lack is a warning naming them
 (`calibration_axis_absent`). In Python, `write_calibration(calibration, output_folder)`
 writes the file (see §9).
 
+`calibrate` never writes inside the experiment folder: an output folder that is the experiment
+folder or inside it (also through a link) is refused with `output_inside_experiment` before
+anything is created or written, against the experiment folder you give, or, with only
+`--output`, against the experiment the run in that output folder recorded. With only `--output`
+and no run there yet, no experiment is known: give the experiment folder too
+(`calibrate /data/exp1 --output /data/exp1_out ...`) so the check can be made. The command still
+runs in that case, but says so on the error output (stderr): "Note: no experiment was given and
+none is recorded in <output folder>, so it was not checked that the output folder is outside the
+experiment (give the experiment folder to check it)." It is not an error and does not change the
+exit status; it is not printed when the experiment is given or recorded.
+
 ### Named-axis copies (`convert`)
 
 When the metadata of some images name their axes wrongly (the errors `axes_yx_swapped`,
@@ -973,9 +991,20 @@ images; when nothing is added the record is left as it was. Bricks reading the r
 copies (`RunInputs`) refuse it if the conversion record is changed or removed afterwards,
 or if a copy no longer has the SHA-256 the record gives.
 `convert` never overwrites anything else: a folder holding other files, copies of other
-images or made with other roles is refused (`copy_folder_not_empty`, `copy_differs`);
+images or made with other roles is refused (`copy_folder_not_empty`, `copy_differs`), and so
+is a folder holding a link or mount point anywhere below it (`copy_folder_has_links`), or a
+folder below it that cannot be read (`copy_folder_unreadable`);
 convert into a new folder then. If it fails (`conversion_failed`), the folder is left as it
-was. Images of 64-bit integers cannot be saved as OME-TIFF (`cannot_convert_pixel_type`).
+was. The copies are written in a hidden work folder, `.mbconv` ("MorphoBricks conversion";
+`.morphobricks-conversion.partial` in earlier versions, still recognised), and
+moved into place together. If a conversion is killed (the computer stopped, the Colab
+session ended) while it writes the copies, the next one removes that folder, since a
+conversion marks it as its own when it makes it, and converts as if nothing had happened.
+If it is killed while it moves the copies into place, the copies already moved stay where
+they are, without a conversion record: the next conversion cannot check them, so it refuses
+the folder (`copy_folder_not_empty`), names them and says they may be such copies; remove
+those files (or convert into a new folder), then convert again. A file or folder named like a copy with `.partial` added is never removed:
+it is not the conversion's. Images of 64-bit integers cannot be saved as OME-TIFF (`cannot_convert_pixel_type`).
 
 **Z-stacks: recorded 2-D projections.**
 A Z-stack is still refused by `check` and `run` (`z_stack_not_supported`). To analyse one,
@@ -1308,6 +1337,8 @@ continues.
 | `R_UNIT_NOT_FOUND`, `R_UNIT_NOT_DECLARED`, `R_UNIT_NOT_HOMOGENEOUS`, `R_CHANNEL_COUNT_MISMATCH`, `R_HEADER_CONTRADICTION`, `R_IMAGE_TYPE_CONTRADICTS_HEADER`, `R_MASK_TYPE_NOT_DECLARED` | Error | The published description and the folder or the image headers disagree (the message says where). Correct the description, publish it again and run again. |
 | `R_IMAGE_TYPE_CONTRADICTS_HEADER` for colour scanner files, `R_RGB_OVERRIDE_NOT_THREE_SAMPLES`, `E_RGB_OVERRIDE_WITHOUT_RGB` | Error | Some scanners store colour (RGB) images with a header that does not say RGB (for example TIFF photometric *minisblack* with three samples per pixel). The acquisition declared `image_type = "rgb"` is then refused, and the message says so and names `rgb_header_override`. If the three samples are red, green and blue in this order, add `rgb_header_override = true` to that acquisition in `morphobricks.toml` (beside `image_type = "rgb"`; in the notebook, tick **Read these folders as colour (RGB) although their header does not say colour** on the Image type card of the Channels step) and publish again: the run then accepts the header and records the acquisition in the manifest as declared RGB with the header overridden (`image_type_header_overridden`, `header_photometric`). Every image whose header does not say RGB must have exactly three interleaved samples per pixel, else `R_RGB_OVERRIDE_NOT_THREE_SAMPLES` names the image (reported before `R_UNIT_NOT_HOMOGENEOUS`); the key on an acquisition that is not declared `rgb` is `E_RGB_OVERRIDE_WITHOUT_RGB`. Images of the acquisition that differ only in colour interpretation (some *minisblack*, some RGB) are then one layout. Images whose header already says RGB, or whose format states no colour interpretation (OME-Zarr), do not use the key; the manifest records, per image, whether it was used (`rgb_header_override_images`). Adding, removing or changing the key reopens the "same way" confirmation of that replicate. Only headers are read, never pixels. |
 | `R_FAST_LAYOUT_CONTRADICTION` | Error | The published description is in **fast mode** (it has a `channel_layout` table: "every imaging unit has the same channels in the same order", Spec ADR 0006) and some images of the acquisitions that follow it (`channels_from = "experiment"`) contradict that list. One message lists **every** contradicting image, with its FOV key (condition, repeat and acquisition folders, then the image name) and path, and every contradiction found in it: `image_type` (the header says colour where the list is not, or the reverse), `channel_count` (another number of channels), `header_order` (header names of the list in another order) or `header_names` (a header name that is no confirmed name of any channel of the list), each with its C index and what was expected and found. It is decided from the image headers only, before any pixel is read; nothing is reordered, dropped or guessed, and nothing was processed. Tag the acquisitions of these images on their own (`channels_from = "unit"`, confirmed per acquisition), publish again and run again. An image whose header gives no channel names (or an empty name) needs no evidence and follows the list; the manifest records each image of a fast acquisition in `fast_layout_images` (`header_verified` true only when every channel was confirmed by its header name). In such acquisitions this one code replaces `R_CHANNEL_COUNT_MISMATCH`, `R_HEADER_CONTRADICTION`, `R_IMAGE_TYPE_CONTRADICTS_HEADER` and `R_UNIT_NOT_HOMOGENEOUS` (which stays for the other axes); `R_RGB_OVERRIDE_NOT_THREE_SAMPLES` keeps its priority. An acquisition tagged on its own is checked as in a description without fast mode. Experiments with extra channels in some acquisitions are refused here: tag those acquisitions on their own. |
+| `folder_and_id_changed` | Error | *Check and save* (and publication) found an ID changed in the same save as a folder change of the same entity: for example a repeat ID `Day1 -> DayX` while one of its folders was renamed or removed, a condition ID changed while its folder was renamed, or a removed folder's ID typed for the new folder. Neither change is guessed from the other, so the message names the entity, its saved ID and its folders. Undo the ID edit: put the saved ID back (the folder change then saves on its own). A removed folder's ID stays used and is not given to another folder (experiment-v1 4.9). Nothing was published. |
+| `removal_mismatch` | Error | A saved folder is no longer in the description (neither under its folder nor under its IDs) and no **Yes, remove** confirms it, or a removal names a folder the description still holds. Confirm the removal of a folder that is gone, or undo the change; withdraw the removal of a folder that is still there, or check the folder again. Nothing was published. |
 | `mode_switch_unconfirmed` | Error | The description would change between fast mode (one channel list for the experiment) and the strict per-acquisition mode, but you did not switch it: a published description keeps its mode when it is reopened. Tick or untick **Every imaging unit has the same channels in the same order** on *Tag channels* yourself, then save again. Nothing was published. |
 | `E_FAST_LAYOUT_MISMATCH`, `E_FAST_MARKER_WITHOUT_LAYOUT` | Error | The description is refused by the reader: an acquisition marked `channels_from = "experiment"` lists other channels or another image type than `channel_layout` (`E_FAST_LAYOUT_MISMATCH`), or an acquisition has `channels_from` in a description without `channel_layout` (`E_FAST_MARKER_WITHOUT_LAYOUT`). In a description with `channel_layout` every acquisition must say `channels_from` (`E_MISSING_FIELD`). |
 | `description_unreadable` | Error | `morphobricks.toml` or `morphobricks.records.jsonl` cannot be read. A description the reader refuses is reported with its own code (`E_*`, `R_FILE_SYMLINK`) and table path. |
@@ -1322,7 +1353,7 @@ continues.
 | `invalid_name` | Error | A folder or image name starts or ends with a space, or is `NA`, `nan`, `none`, `null`, `n/a` or `<NA>` (any case), which tables read as a missing value. Rename it. |
 | `duplicate_position_id` | Error | Two images in one folder have the same name apart from the extension or upper/lower case (`img_01.tif` and `img_01.ome.zarr`), so their positions cannot be told apart. Rename one, or move it out of the experiment. |
 | `folder_too_deep` | Error | Folders below the technical repeat. Move the images up, or select a lower folder as the experiment. |
-| `output_inside_experiment` | Error | The output folder is inside the experiment. Choose another. |
+| `output_inside_experiment` | Error | The output folder is inside the experiment. Choose another. `calibrate` refuses it too, before it creates the folder or writes `calibration.csv` (`OutputInsideExperimentError` from `write_calibration` and `update_calibration`). Without an experiment given or recorded in the output folder it cannot be checked: `calibrate` then prints a one-line note on stderr and goes on. |
 | `no_images` | Error | No images to analyse (or all excluded). Check the folder. |
 | `unreadable_tiff` | Error | A TIFF file cannot be opened. Export it again, or exclude it. |
 | `unreadable_ome_zarr` | Error | A `.zarr` folder is not an OME-Zarr image that can be read; the message says why. That includes an image whose metadata do not name its axes (OME-NGFF 0.3 to 0.5 require them), and every OME-NGFF 0.1 or 0.2 store (their metadata never name the axes): the axes are never guessed. Re-save an 0.1 or 0.2 store as OME-NGFF 0.4 or later. Export it again as OME-Zarr (OME-NGFF 0.4 or 0.5) with its axes, or exclude it. |
@@ -1355,8 +1386,14 @@ continues.
 | `copy_folder_overlaps_experiment` | Error | `convert`: the folder for the copies is the experiment folder, inside it, or holds it. Choose a new folder outside the experiment. |
 | `copy_folder_overlaps_masks` | Error | `convert`: the folder for the copies is the masks folder, inside it, or holds it; copies there would be read as masks. Choose a folder outside the masks folder. |
 | `copy_folder_not_a_folder` | Error | `convert`: the path given with `--to` is a file. Choose a folder. |
+| `copy_path_too_long` | Error | `convert` on Windows: a copy would have a file whose path, while it is written in the conversion's work folder, is longer than 259 characters, or a folder whose path is longer than 247, which Windows cannot handle. Nothing is written. Choose a folder for the copies with a shorter path, or shorten the names of the images or folders named. Not checked when Windows' long paths are enabled (the `LongPathsEnabled` setting). |
 | `copy_names_collide` | Error | An OME-Zarr copy: two images of one folder differ only by their extension, so their copies would have the same name. Nothing is written. Rename or exclude one of them. |
-| `copy_folder_not_empty` | Error | `convert`: the folder for the copies holds files and no conversion record. Nothing is overwritten; choose a new or empty folder. |
+| `copy_folder_has_links` | Error | `convert`: the folder for the copies holds symbolic links (directory junctions on Windows) or mount points, named `link -> target`, through which the copies would be written elsewhere, perhaps over the originals. Nothing is written; remove them or choose a new, empty folder. |
+| `copy_folder_unreadable` | Error | `convert`: a folder below the folder for the copies cannot be read, or disappeared while it was checked, so it cannot be checked for links or mount points; it is named. Nothing is written. Make it readable or remove it, or choose a new, empty folder. |
+| `conversion_work_folder_in_use` | Error | `convert`: the folder for the copies holds the work folder of a conversion whose process still runs on this computer (its lock was probably removed by mistake). Nothing is removed or written. Wait for it to finish; if that process is not a conversion, move or remove the work folder yourself. Only Linux and macOS can tell whether a process runs, and only on this computer: on Windows, or for a conversion on another computer, the work folder is taken for one left by a stopped conversion and removed. The folder's lock is what keeps two conversions apart, so remove a lock (`--remove-stale-lock`) only once you are sure no conversion into that folder is running on any computer. |
+| `conversion_work_folder_unowned` | Error | `convert`: the folder for the copies holds `.mbconv` (or `.morphobricks-conversion.partial`, its earlier name), the name of the folder a conversion writes its copies in, but not as a conversion leaves it: its owner file is missing or not well formed, or it holds something else than that file and the folder `files`. An owner file of NUL bytes only is named as unreadable, possibly left by a power loss, so ownership cannot be proven. Nothing is removed or written. Move or remove it yourself, or choose a new, empty folder. |
+| `conversion_work_folder_not_removed` | Error | `convert`: the folder for the copies holds the work folder of a conversion that was stopped, and it cannot be removed: a file in it may be open in another program (an antivirus, or a sync client such as OneDrive). Nothing is written, and the work folder is named. Close those programs or wait, then convert again; or remove the work folder yourself. |
+| `copy_folder_not_empty` | Error | `convert`: the folder for the copies holds files and no conversion record. Nothing is overwritten; choose a new or empty folder. When the folder also holds the work folder of a stopped conversion, the message says the files named may be copies it had moved into place when it was interrupted: remove them, then convert again. |
 | `copy_differs` | Error | `convert`: images in the folder of copies differ from the copies this conversion would write (an original changed, other roles, a copy changed, an image no longer in the experiment), or the folder holds copies of another experiment. Nothing is overwritten; convert into a new folder, or remove those copies first. |
 | `cannot_convert_pixel_type` | Error | `convert`: images of 64-bit integers cannot be saved as OME-TIFF, and pixel values are never changed to fit. Save them again with named axes in a 32-bit type if their values fit, or correct the roles. |
 | `nothing_to_project` | Error | `convert` with a projection: no image has a depth axis (Z) under the roles you gave. Check the roles; nothing was written. |
@@ -1420,7 +1457,8 @@ continues.
 | `mask_hierarchy_cycle` | Warning (mask step) | The direct parents of some mask types form a cycle (for example A inside B in some images, B inside C in others and C inside A), so no parent-child hierarchy can be inferred for them. The hierarchy lists them together as `[cycle: …]` with every link. Check those masks; nothing is guessed. |
 | `no_finite_pixels` | Warning | Some planes have a channel without finite pixels; those channels are left out of group statistics. |
 | `excluded_images`, `excluded_path_not_found` | Warning | Images excluded as requested, or an excluded path that matches no image. |
-| `masks_folder_not_found` | Error | The masks folder does not exist. Select the folder that holds one folder per kind of mask. |
+| `masks_folder_not_found` | Error | The masks folder does not exist. Select the folder that holds one folder per kind of mask. Later bricks opening a run (`RunInputs.open(..., masks_root=...)`) refuse a masks folder given that does not exist or is a file with the same code (`MasksFolderNotFoundError`); it is never read as a folder without masks. Give the folder that holds the masks, or leave `masks_root` out to use the one the run recorded. |
+| `masks_folder_unreadable` | Error | A masks folder given to a later brick (`RunInputs.open(..., masks_root=...)`) cannot be listed, for example for lack of permission, so its masks cannot be checked against the run (`MasksFolderUnreadableError`); the message names the folder and the reason. Check its permissions, or give another folder. |
 | `output_inside_masks` | Error | The output folder is inside the masks folder, where the run's files would be read as masks. Choose another output folder. |
 | `experiment_inside_masks` | Error | The experiment folder is inside the masks folder, where its images would be read as masks. Select the folder that holds only the masks, next to the experiment folder. |
 | `copies_inside_masks` | Error | The masks folder holds named-axis copies (a conversion record), which would be read as masks. Move the copies out of the masks folder. |

@@ -23,6 +23,16 @@ Write the date, the commit and any failure (as an issue number) next to each ite
 release PR moves `RELEASE_REF` and records the pair in `RELEASE_CALLS` of
 `tests/test_notebook_file.py`, which fails for a `RELEASE_REF` without one.
 
+**The pins move only in the release PR (owner, 24 November 2026).** Pull requests no longer
+re-pin either notebook. The release PR moves both notebooks' `RELEASE_REF` with two commits:
+commit A, the release preparation (the code), then commit B, which only points `RELEASE_REF`
+at A (and records A's call in `RELEASE_CALLS`). Label the release PR `release`: its CI is then
+a release run (the full matrix, `MORPHOBRICKS_RELEASE_RUN=1`), where the freshness test
+`test_release_only_the_preprocessing_pin_is_a_commit_with_this_code` runs and must pass, and a
+missing Git history fails it. Locally, `python tools/check.py --release` runs the same. The CI
+workflow can also be run by hand (Actions, CI, *Run workflow*), and pushing the `v*` tag runs it
+again on the tagged commit.
+
 ## A. The three cells (Colab)
 
 1. - [ ] The code of the three cells is hidden: each shows its title (a Colab form).
@@ -30,7 +40,7 @@ release PR moves `RELEASE_REF` and records the pair in `RELEASE_CALLS` of
    - [ ] One line: "… run cell 1 (Install MorphoBricks preprocessing) first …", no traceback;
      nothing is installed.
 3. Run **cell 1**.
-   - [ ] It prints **Ready** with the preprocessing (0.8.0), normalization (0.7.1) and
+   - [ ] It prints **Ready** with the preprocessing (0.8.0), normalization (0.8.0) and
      ipywidgets versions and the pinned source, then names cells 2 and 3. No restart or
      ipywidgets upgrade is asked for; Drive is not mounted.
    - [ ] Run it again: nothing is installed again, the same versions.

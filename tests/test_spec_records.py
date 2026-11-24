@@ -272,10 +272,14 @@ def test_a_failed_records_write_puts_back_the_file_and_leaves_no_records(tmp_pat
     draft, accepted, answers = removal(published, {key("DrugA", "experiment_23")})
     before = snapshot(tmp_path)
 
-    def broken(path, data):
-        raise OSError("disk full")
+    real = description_file._prepare_file
 
-    monkeypatch.setattr(description_file, "_replace_file_durably", broken)
+    def broken(path, data):
+        if path.name == RECORDS_FILENAME:
+            raise OSError("disk full")
+        return real(path, data)
+
+    monkeypatch.setattr(description_file, "_prepare_file", broken)
     with pytest.raises(OSError, match="disk full"):
         publish_description(
             tmp_path, draft, base_sha256=base, confirmations=accepted, removals=tuple(answers)
