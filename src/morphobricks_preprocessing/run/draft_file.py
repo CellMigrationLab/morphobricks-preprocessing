@@ -16,11 +16,14 @@ consumer reads it as a description.
   or repaired: it is derived again from the folders and the current file.
 - :func:`publish_draft` builds the description from the draft file
   (:func:`..draft_answers.description_from_draft`: every confirmation or nothing), publishes it
-  with the checks of :func:`.description_file.publish_locked`, and deletes the draft file, all
-  under one hold of the lock. Any refusal writes nothing: the draft and the published file stay
-  byte for byte as they were. If the draft file cannot be deleted after a successful
-  publication, the error is raised and the publication stands; the draft then records a base
-  that no longer matches, so it is refused when resumed.
+  with the checks of :func:`.description_file.publish_locked` together with its derived
+  ``experiment_design.csv``, and deletes the draft file, all under one hold of the lock. Any
+  refusal writes nothing, and a failed write of the description, its records or its design
+  puts all three back (issue #400): the draft, the published file and the design stay byte for
+  byte as they were, so the draft can be published again. If the draft file cannot be deleted
+  after a successful publication, the error is raised and the publication stands (its
+  description and design match); the draft then records a base that no longer matches, so it
+  is refused when resumed.
 
 Nothing here confirms anything or reads the clock: every date is the user's, in the answers.
 """
@@ -37,8 +40,6 @@ from ..description import DescriptionError
 from ..description_file import DESCRIPTION_FILENAME, DRAFT_FILENAME, read_file_bytes, sha256_hex
 from ..description_removal import Removal
 from ..description_transition import Reconfirmation
-from ..design import DESIGN_FILENAME
-from ..design_derive import write_derived_design
 from ..draft import Draft
 from ..draft_answers import DraftAnswers, UnitKey, apply_answers, description_from_draft
 from ..draft_format import (
@@ -215,8 +216,10 @@ def publish_draft(
     Under the output folder's lock: the draft file is resumed (:func:`load_draft`), the
     description built from it (every confirmation present or :class:`DraftIncomplete`), published
     with all the checks of :func:`.description_file.publish_description`, then the derived
-    ``experiment_design.csv`` is written (experiment-v1 section 11: it is written only here, from
-    the published file) and the draft file is deleted. Nothing is written on any refusal.
+    ``experiment_design.csv`` is written in the same publication (experiment-v1 section 11: it is
+    written only here, from the published file; if it cannot be written, the previous
+    description, records and design are put back) and the draft file is deleted. Nothing is
+    written on any refusal.
     ``removals`` and ``recorded_on`` are the user's, as :func:`.description_file.publish_locked`
     takes them (a removed folder, a changed image count).
 
@@ -249,7 +252,7 @@ def publish_draft(
             removals=removals,
             recorded_on=recorded_on,
             switch_mode=resumed.answers.switch_mode,
+            write_design=True,
         )
-        write_derived_design(candidate, folder / DESIGN_FILENAME)
         (folder / DRAFT_FILENAME).unlink()
         return publication

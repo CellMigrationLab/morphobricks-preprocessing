@@ -19,6 +19,13 @@ previous description and the previous records file are put back, so the publicat
 absent (a process killed in the instant between the two replaces can leave a published file
 without its records, and the records file is then the one that cannot be trusted to be complete).
 
+With ``write_design`` (the notebook and CLI publications), the derived ``experiment_design.csv``
+(experiment-v1 section 11) is written last, in the same publication: if that write fails, or the
+writer refuses the design, the previous description, records file and design are all put back
+byte for byte (issue #400), so a new description is never left with the previous one's design.
+This holds for an exception in the process; a process killed between the separate replaces can
+still leave them unmatched, as for the records file above.
+
 The hashes in a record are history, not a check on the file now published: later publications
 change the file without a record, so an older record rightly names a hash that is no longer the
 published one. A reader never compares them with the published file and never drops or trusts a
@@ -52,6 +59,8 @@ from ..description_transition import (
     unwaived,
 )
 from ..description_write import canonical_bytes
+from ..design import DESIGN_FILENAME
+from ..design_derive import write_derived_design
 from ..records_file import CODE as RECORDS_FILE_INVALID
 from ..records_file import RecordsIssue, check_records, encode_record
 from .description_records import (
@@ -303,6 +312,7 @@ def publish_description(
     removals: tuple[Removal, ...] = (),
     recorded_on: str | None = None,
     switch_mode: bool = False,
+    write_design: bool = False,
 ) -> Publication:
     """Publish ``candidate`` as ``morphobricks.toml``, or refuse and write nothing.
 
@@ -328,6 +338,9 @@ def publish_description(
     switch_mode
         True only for the user's recorded switch between fast and strict mode (ADR 0006); see
         :func:`check_mode_switch`.
+    write_design
+        Also write the derived ``experiment_design.csv`` (experiment-v1 section 11) in the same
+        publication: when it cannot be written, nothing of the publication stays.
 
     Returns
     -------
@@ -341,7 +354,13 @@ def publish_description(
     PublicationRefused
         With every applicable refusal: ``R_FILE_SYMLINK`` (the file or the records file),
         ``R_DRAFT_BASE_MISSING``, ``R_PUBLISHED_FILE_CHANGED``, or the changed-ID, used-ID and
-        ``confirmed_on`` refusals.
+        ``confirmed_on`` refusals; with ``write_design``, also ``R_FILE_SYMLINK`` for a
+        symbolic-link ``experiment_design.csv`` (it could not be put back as it was).
+    DesignFormatError
+        With ``write_design``, when the design writer refuses the derived design; the previous
+        files are put back.
+    OSError
+        When a write fails; the previous description, records file and design are put back.
     DescriptionError
         When the candidate's canonical bytes, or the published file, is not a valid description.
     ValueError
@@ -360,6 +379,7 @@ def publish_description(
             removals=removals,
             recorded_on=recorded_on,
             switch_mode=switch_mode,
+            write_design=write_design,
         )
 
 
@@ -372,6 +392,7 @@ def publish_locked(
     removals: tuple[Removal, ...] = (),
     recorded_on: str | None = None,
     switch_mode: bool = False,
+    write_design: bool = False,
 ) -> Publication:
     """Publish like :func:`publish_description` for a caller that already holds the lock.
 
@@ -385,6 +406,7 @@ def publish_locked(
         published = read_file_bytes(path)
         read_records(folder)  # a symbolic or torn records file refuses before anything
         records_before = read_file_bytes(folder / RECORDS_FILENAME)
+        design_before = read_file_bytes(folder / DESIGN_FILENAME) if write_design else None
     except DescriptionError as error:
         raise PublicationRefused(error.issues) from error
     base = check_base(base_sha256, published)
@@ -407,9 +429,13 @@ def publish_locked(
     write_text_atomic(path, data.decode("utf-8"))
     try:
         _append_records(folder, records)
+        if write_design:
+            write_derived_design(candidate, folder / DESIGN_FILENAME)
     except BaseException:
         _restore(path, published)
         _restore(folder / RECORDS_FILENAME, records_before)
+        if write_design:
+            _restore(folder / DESIGN_FILENAME, design_before)
         raise
     return Publication(path, new_sha, base, records)
 
