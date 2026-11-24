@@ -220,6 +220,7 @@ def build_report(
         "images": _images(pre, review),
         "calibration": _calibration(pre),
         "design": _design(design),
+        "repeat_groups": None if design is None else list(design.groups),
         "image_type": image_type,
         "masks": _masks(pre),
     }
@@ -388,15 +389,29 @@ def _masks(pre: Preflight) -> dict:
     }
 
 
+def repeats_text(repeat_groups: Sequence[str] | None) -> str:
+    """Return how many biological repeats the run has: its declared repeat groups (issue #456).
+
+    The biological repeats are the repeat groups of the design derived from the published
+    description (:attr:`.design.DesignTable.groups`), never the folder labels: the Spec pairs
+    biological repeats by ``repeat_group``, and one group can hold folders of different names.
+    Without declared groups (no design, as for ``check``, or a design without rows) it says so
+    and counts nothing.
+    """
+    if not repeat_groups:
+        return "biological repeats not counted: no repeat groups declared"
+    groups = "repeat group" if len(repeat_groups) == 1 else "repeat groups"
+    return f"{plural(len(repeat_groups), 'biological repeat')} ({groups})"
+
+
 def _folder_lines(data: Mapping) -> list[str]:
     """Describe the conditions, repeats and positions."""
     groups = data["groups"]
     conditions = {group["condition"] for group in groups}
-    repeats = {(group["condition"], group["biological_repeat"]) for group in groups}
     images = sum(group["images"] for group in groups)
     lines = [
         f"{plural(images, 'image')} in {plural(len(conditions), 'condition')}, "
-        f"{plural(len(repeats), 'biological repeat')}, {plural(len(groups), 'folder')}"
+        f"{plural(len(groups), 'folder')}; {repeats_text(data.get('repeat_groups'))}"
         + (f"; {len(data['excluded'])} excluded" if data["excluded"] else "")
     ]
     lines.extend(
