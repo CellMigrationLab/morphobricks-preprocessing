@@ -15,6 +15,12 @@ A section digest is the SHA-256 of that section's tables written as above, with 
 0006). ``used_ids`` and ``channel_layout`` are not sections. The bytes of a section are
 exactly the text the file holds for it (its table blocks, each followed by a blank line),
 nothing else; an empty section is the empty byte string.
+
+Both refuse a model holding a value of a type the strict reader refuses (issue #405): the
+values they would write are checked by the reader's own phases 2 and 3 first, and every
+``E_TYPE`` is a :class:`DescriptionTypeError` naming the field and the type found. Nothing is
+dropped, converted or sorted into another type: a mapping in a field is never taken for a child
+table, and a text is never written as the array of its characters.
 """
 
 from __future__ import annotations
@@ -23,7 +29,9 @@ import hashlib
 import re
 from collections.abc import Callable, Iterable, Mapping
 
-from .description import USED_KINDS, Description
+from .description import USED_KINDS, Description, DescriptionError
+from .description_read import STRUCTURE_PHASES
+from .description_report import DescriptionIssue
 from .description_rules import (
     CHANNEL,
     CHANNEL_LAYOUT,
@@ -34,6 +42,7 @@ from .description_rules import (
     MEMBER,
     REPEAT,
     UNIT,
+    Code,
 )
 
 BARE_KEY = re.compile(r"[A-Za-z0-9_-]+")
@@ -44,6 +53,8 @@ UNDIGESTED = DESCRIPTIVE | {CHANNELS_FROM}
 UNORDERED = frozenset({"header_names", "source_channels"})
 """Arrays whose order is not semantic: always written sorted (section 9.1)."""
 SECTIONS = ("conditions", "channels", "repeats", "masks")
+CHILD_TABLES = frozenset({"members", "technical_repeats"})
+"""Fields that are tables of their own: written as their own blocks, never as a value."""
 _ESCAPES = {
     '"': '\\"',
     "\\": "\\\\",
@@ -53,6 +64,24 @@ _ESCAPES = {
     "\f": "\\f",
     "\r": "\\r",
 }
+
+
+class DescriptionTypeError(DescriptionError, TypeError):
+    """Raised when a model holds a value the strict reader would refuse as ``E_TYPE``.
+
+    ``issues`` are the reader's ``E_TYPE`` issues of the values the writer would write (code,
+    table path, value), all of them; nothing was written.
+    """
+
+    def __init__(self, issues: tuple[DescriptionIssue, ...], phase: int) -> None:
+        super().__init__(issues, phase)
+        found = "; ".join(
+            f"{i.path} holds a value of type {type(i.value).__name__}" for i in issues
+        )
+        self.args = (
+            f"the description cannot be written: {found}, a type the strict reader refuses "
+            "(E_TYPE). Nothing was written.",
+        )
 
 
 def toml_key(key: str) -> str:
@@ -89,10 +118,7 @@ def toml_value(value: object) -> str:
 def _block(header: str, item: object, order: Iterable[str], *, descriptive: bool) -> list[str]:
     """Return one ``[header]`` block: the fields of ``item`` set (not None), in ``order``."""
     lines = [f"[{header}]"]
-    for name in order:
-        value = getattr(item, name, None)
-        if value is None or isinstance(value, Mapping):  # a table is its own block
-            continue
+    for name, value in _table(item, order).items():
         if not descriptive and name in UNDIGESTED:
             continue
         if name in UNORDERED:
@@ -100,6 +126,81 @@ def _block(header: str, item: object, order: Iterable[str], *, descriptive: bool
         lines.append(f"{name} = {toml_value(value)}")
     lines.append("")
     return lines
+
+
+def _table(item: object, order: Iterable[str]) -> dict[str, object]:
+    """Return the fields of ``item`` that are set (not None), in ``order``, as the file holds them.
+
+    A child table (:data:`CHILD_TABLES`) is left out: it is its own block. An array the model
+    holds as a tuple is the file's list; nothing else is changed, so a value of a wrong type
+    stays one for :func:`check_types`.
+    """
+    out: dict[str, object] = {}
+    for name in order:
+        value = getattr(item, name, None)
+        if value is not None and name not in CHILD_TABLES:
+            out[name] = _array(value)
+    return out
+
+
+def _array(value: object) -> object:
+    """Return a tuple as the file's list (TOML has one array type); anything else as it is."""
+    return list(value) if type(value) is tuple else value
+
+
+def _tables(items: object, build: Callable[[object], dict[str, object]]) -> object:
+    """Return an ID-keyed table of models as the document's dict; anything else as it is."""
+    if isinstance(items, Mapping):
+        return {key: build(value) for key, value in items.items()}
+    return items
+
+
+def _member_table(member: object) -> dict[str, object]:
+    units = _tables(
+        getattr(member, "technical_repeats", None), lambda unit: _table(unit, UNIT.fields)
+    )
+    return {**_table(member, MEMBER.fields), "technical_repeats": units}
+
+
+def _repeat_table(repeat: object) -> dict[str, object]:
+    members = _tables(getattr(repeat, "members", None), _member_table)
+    return {**_table(repeat, REPEAT.fields), "members": members}
+
+
+def _document(description: Description) -> dict[str, object]:
+    """Return the document the writer would write for ``description``, before any text."""
+    doc: dict[str, object] = {
+        "schema": description.schema,
+        "schema_version": description.schema_version,
+        "conditions": _tables(description.conditions, lambda c: _table(c, CONDITION.fields)),
+        "channels": _tables(description.channels, lambda c: _table(c, CHANNEL.fields)),
+        "repeats": _tables(description.repeats, _repeat_table),
+        "masks": _tables(description.masks, lambda m: _table(m, MASK.fields)),
+        "used_ids": {kind: _array(description.used_ids[kind]) for kind in USED_KINDS},
+    }
+    if description.channel_layout is not None:
+        doc[CHANNEL_LAYOUT] = _table(description.channel_layout, LAYOUT.fields)
+    return doc
+
+
+def check_types(description: Description) -> None:
+    """Refuse a model holding a value of a type the strict reader refuses (issue #405).
+
+    The values the writer would write go through the reader's own phases 2 and 3
+    (:data:`.description_read.STRUCTURE_PHASES`); only their ``E_TYPE`` issues refuse here,
+    since a wrong type is what the writer would drop or convert. Every other refusal is the
+    strict reader's, on the written bytes.
+
+    Raises
+    ------
+    DescriptionTypeError
+        With every ``E_TYPE`` issue of the first phase that has one.
+    """
+    doc = _document(description)
+    for phase, check in STRUCTURE_PHASES:
+        wrong = tuple(i for i in check(doc).items if i.code is Code.E_TYPE)
+        if wrong:
+            raise DescriptionTypeError(wrong, phase)
 
 
 def _keyed(base: str, key: str) -> str:
@@ -152,9 +253,16 @@ def canonical_bytes(description: Description) -> bytes:
     """Return the canonical bytes of ``description`` (experiment-v1 section 9.1).
 
     The writer is given a model, never a document: it writes what the model holds and nothing
-    else, so a model that the reader would refuse is written as it is (the caller reads the
-    bytes back with the strict reader before publishing).
+    else. A value of a type the reader refuses is refused here (:func:`check_types`), since
+    writing it would drop or convert it; any other model the reader would refuse is written as
+    it is (the caller reads the bytes back with the strict reader before publishing).
+
+    Raises
+    ------
+    DescriptionTypeError
+        When a value has a type the strict reader refuses (``E_TYPE``); nothing is written.
     """
+    check_types(description)
     lines = [
         f"schema = {toml_string(description.schema)}",
         f"schema_version = {description.schema_version}",
@@ -177,7 +285,13 @@ def section_digests(description: Description) -> dict[str, str]:
 
     A change to a display name, a target, a treatment key or ``used_ids`` changes none of
     them; ``source_folder`` is part of ``conditions`` and ``repeats``.
+
+    Raises
+    ------
+    DescriptionTypeError
+        As :func:`canonical_bytes` does.
     """
+    check_types(description)
     return {
         name: hashlib.sha256(_text(_section(name, description, False))).hexdigest()
         for name in SECTIONS
