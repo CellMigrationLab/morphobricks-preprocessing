@@ -337,17 +337,21 @@ run the experiment in the app of cell 3. Then:
   earlier finished run. A run whose images changed since it ran is refused. The first time,
   Cellpose 4.2.1.1 and PyTorch are installed, only when you tick **Install Cellpose 4.2.1.1
   (with PyTorch) now** and press the button; if the installation changes `numpy` or `opencv`
-  while they are loaded, restart the runtime and run cells 1, 3 and 4 again. Then the same
-  steps as the Cellpose notebook above, one under the other.
+  while they are loaded, restart the runtime, run cells 1 to 3 again (run preprocessing again
+  in cell 3: the histograms are reused), then cell 4. Then the same steps as the Cellpose
+  notebook above, one under the other; their messages name the step (for example *Press Load
+  the model first*), and **What to do next** points to cell 5.
 - **5. Register the masks** shows, for each mask type cell 4 wrote, the declaration it would
   add (`[masks.Cells]` with `source_type = "Cells"` and `representation = "instances"`). Tick
   each one and press **Register the masks**: the app of cell 3 then checks the folders again
   with the masks folder, answers the mask on **Masks**, saves the description, runs again
-  (the histograms of unchanged images are reused) and describes the masks. If its folder check
-  asks you to confirm the axes again, do it in cell 3 (step **Axes**) and press the button
-  again. It refuses, changing nothing, a mask type that collides with a mask already declared,
+  (the histograms of unchanged images are reused) and describes the masks. Masks written into
+  the masks folder the run already used are fine. If its folder check asks you to confirm the
+  axes again, do it in cell 3 (step **Axes**) and press the button again (or run cell 5
+  again). It refuses, changing nothing, a mask type that collides with a mask already declared,
   a masks folder inside the experiment, masks of another run or masks folder than the app's,
-  and images changed since the run.
+  images changed since the run, and, after that stop, axes other than those the segmented run
+  recorded or another experiment in cell 3.
 
 ## 3. Supported images
 
