@@ -128,6 +128,17 @@ def test_cell_4_refuses_a_run_whose_images_changed_and_names_cell_3(tmp_path, st
     assert RUN_REFUSED in step.notice.value and "cell 3" in RUN_REFUSED
 
 
+def test_cell_4_refuses_changed_images_even_when_the_run_has_no_masks_folder(tmp_path, stub):
+    # Before, the run was opened only with both folders known, so nothing was said here.
+    nb = ran_app(tmp_path)
+    image = tmp_path / "exp" / FOLDERS[0] / "a.tif"
+    image.write_bytes(image.read_bytes()[:-1] + b"\x07")
+    step = segmentation_step(nb)
+    assert step.masks_folder == "" and step.workflow.inputs is None
+    assert RUN_REFUSED in step.notice.value and "changed" in step.notice.value
+    assert step.notice.value.count(RUN_REFUSED) == 1
+
+
 # installing Cellpose on first use ------------------------------------------------------------
 
 

@@ -9,8 +9,9 @@ recorded; :func:`.notebook_cellpose_app.app_folders`). Nothing is guessed:
 
 - with no finished run in the app (none yet, or a run that stopped), the cell says so and names
   cell 3; the run boxes stay blank for an earlier finished run the user types in;
-- a run the component refuses to open (images changed since the run, a stopped run) is shown
-  with its refusal, unchanged, and cell 3 named as the fix;
+- a run that cannot be opened (images changed since the run, a stopped run) is refused at once,
+  with or without a masks folder: the refusal of :func:`.segmentation_cellpose_run.open_run`,
+  unchanged, and cell 3 named as the fix;
 - Cellpose (with PyTorch) is installed only on the user's tick (:mod:`.cellpose_install`),
   before the component appears; a package the kernel had loaded asks for a restart.
 
@@ -32,6 +33,8 @@ from .cellpose_install import cellpose_install_command, cellpose_ready, install_
 from .notebook_cellpose_app import SegmentationApp, app_folders, segmentation_app
 from .notebook_cellpose_form import CellposeNotebook
 from .notebook_render import blocked_line
+from .run_inputs import RunInputsError
+from .segmentation_cellpose_run import open_run
 
 APP_CELL = 3
 """The combined notebook's cell holding the Preprocessing app."""
@@ -43,10 +46,10 @@ NO_RUN = (
 )
 """What cell 4 says, in a red card, when the app holds no finished run."""
 RUN_REFUSED = (
-    "The run of cell 3 cannot be segmented as it is (the reason is under Open the run below). "
-    "Run preprocessing again in cell 3 (step Run), then run this cell again."
+    "The run of cell 3 cannot be segmented as it is. Run preprocessing again in cell 3 (step "
+    "Run), then run this cell again."
 )
-"""What cell 4 adds when the component refuses to open the app's run."""
+"""What cell 4 says, with the refusal, when the app's run cannot be opened."""
 INSTALL_TEXT = (
     "Cellpose {version} is not installed in this environment. It is installed only here, only "
     "when you tick the box: it brings PyTorch, a download of a few gigabytes. Preprocessing "
@@ -63,7 +66,10 @@ class SegmentationStep(widgets.VBox):
     run_folder, masks_folder
         The folders taken from the app (blank when it holds no finished run).
     notice
-        The card saying which run is used, or why none is.
+        The card saying which run is used, or why none is or why it cannot be segmented.
+    refused
+        Why the app's run cannot be opened (:func:`.segmentation_cellpose_run.open_run`'s
+        refusal, unchanged), or "".
     segmentation
         The mounted :class:`.SegmentationApp`, or None until Cellpose is installed.
     rechecked_run
@@ -79,6 +85,7 @@ class SegmentationStep(widgets.VBox):
         super().__init__(layout=widgets.Layout(width="99%"))
         self.app, self._on_masks_written = app, on_masks_written
         self.run_folder, self.masks_folder = app_folders(app)
+        self.refused = _refusal(self.run_folder)
         self.segmentation: SegmentationApp | None = None
         self.rechecked_run: Path | None = None
         self.notice = widgets.HTML(self._notice())
@@ -98,6 +105,10 @@ class SegmentationStep(widgets.VBox):
         """Return the card naming the run and masks folder used, or saying there is no run."""
         if not self.run_folder:
             return ui.status("error", "No finished run to segment", [NO_RUN])
+        return self._run_card() + (_refused_card(self.refused) if self.refused else "")
+
+    def _run_card(self) -> str:
+        """Return the card naming the app's run and its masks folder."""
         masks = self.masks_folder or "none yet: type one below, outside the experiment and the run"
         return ui.status(
             "info",
@@ -115,7 +126,9 @@ class SegmentationStep(widgets.VBox):
         self.install_box.children = [self.segmentation]
         opener = self.segmentation.workflow.forms["open"]
         if self.run_folder and self.masks_folder and opener.stopped is not None:
-            self.notice.value += ui.status("error", "The run cannot be segmented", [RUN_REFUSED])
+            if not self.refused:  # opened with its masks folder, the run is refused
+                self.refused = opener.refusal
+                self.notice.value += _refused_card(self.refused)
 
     def _install_card(self) -> widgets.VBox:
         """Return the card that installs Cellpose on the user's tick, then mounts the component."""
@@ -161,6 +174,22 @@ class SegmentationStep(widgets.VBox):
             return False
         self._mount()
         return True
+
+
+def _refusal(run_folder: str) -> str:
+    """Return why the run in ``run_folder`` cannot be opened, or "" (also for no run)."""
+    if not run_folder:
+        return ""
+    try:
+        open_run(run_folder)
+    except (RunInputsError, cp.SegmentationError) as exc:
+        return str(exc)
+    return ""
+
+
+def _refused_card(reason: str) -> str:
+    """Return the red card of a run that cannot be segmented: what to do, then why."""
+    return ui.status("error", "The run cannot be segmented", [RUN_REFUSED, reason])
 
 
 def segmentation_step(
