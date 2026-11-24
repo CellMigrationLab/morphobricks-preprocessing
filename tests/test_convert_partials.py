@@ -16,6 +16,7 @@ failure never removes anything through a link.
 import hashlib
 import json
 import os
+import socket
 
 import pytest
 import tifffile
@@ -148,6 +149,98 @@ def test_the_work_folder_of_a_killed_conversion_is_removed_and_the_copies_match(
     result = convert_experiment(exp, SWAPPED, copies, store=store)
     assert result.written and not (copies / WORK).exists()
     assert _digests(copies) == _digests(clean) and any(n.startswith(copy) for n in _digests(clean))
+
+
+# Issue #482 (1): the owner file must prove the folder is a conversion's --------------------
+
+KIND = "morphobricks-preprocessing conversion work folder"
+
+
+def _holder(pid=None, host=None, token="0123456789abcdef0123456789abcdef"):
+    return {
+        "host": host or socket.gethostname(),
+        "pid": pid or 999_999_999,
+        "started_at": "2026-11-24T10:00:00+00:00",
+        "token": token,
+    }
+
+
+def _leftover(copies, owner, extra=None):
+    """A work folder holding one written copy, its owner file and maybe ``extra``."""
+    work = copies / WORK
+    mine = work / "files/ctrl/r1/a.tif"
+    mine.parent.mkdir(parents=True)
+    mine.write_bytes(b"mine")
+    (work / "owner.json").write_text(json.dumps(owner) if not isinstance(owner, str) else owner)
+    if extra is not None:
+        (work / extra).write_bytes(b"notes")
+    return work
+
+
+@pytest.mark.parametrize(
+    ("owner", "extra"),
+    [
+        pytest.param({"kind": KIND}, None, id="kind_only"),
+        pytest.param({"kind": KIND, "holder": {"pid": 1}}, None, id="holder_incomplete"),
+        pytest.param({"kind": KIND, "holder": _holder(token="")}, None, id="no_token"),
+        pytest.param({"kind": KIND, "holder": _holder(pid=True)}, None, id="pid_not_a_number"),
+        pytest.param({"kind": KIND, "holder": _holder(), "x": 1}, None, id="other_key"),
+        pytest.param({"kind": KIND, "holder": _holder()}, "notes.txt", id="other_file"),
+    ],
+)
+def test_a_forged_owner_file_or_other_content_is_refused_and_nothing_is_removed(
+    tmp_path, owner, extra
+):
+    exp, copies = swapped_experiment(tmp_path / "exp"), tmp_path / "copies"
+    _leftover(copies, owner, extra)
+    before = _tree(copies)
+    result = convert_experiment(exp, SWAPPED, copies)
+    assert not result.written and codes(result.issues) == ["conversion_work_folder_unowned"]
+    assert _tree(copies) == before
+
+
+@pytest.mark.skipif(os.name != "posix", reason="only POSIX tells whether a process runs")
+def test_a_work_folder_whose_holder_still_runs_here_is_refused_and_kept(tmp_path):
+    exp, copies = swapped_experiment(tmp_path / "exp"), tmp_path / "copies"
+    _leftover(copies, {"kind": KIND, "holder": _holder(pid=os.getppid())})
+    before = _tree(copies)
+    result = convert_experiment(exp, SWAPPED, copies)
+    assert not result.written and codes(result.issues) == ["conversion_work_folder_in_use"]
+    assert f"process {os.getppid()}" in result.issues[0].message
+    assert _tree(copies) == before
+
+
+def test_a_well_formed_work_folder_of_a_process_that_is_gone_is_removed(tmp_path):
+    exp, copies = swapped_experiment(tmp_path / "exp"), tmp_path / "copies"
+    _leftover(copies, {"kind": KIND, "holder": _holder()})
+    result = convert_experiment(exp, SWAPPED, copies)
+    assert result.written and not (copies / WORK).exists()
+
+
+@pytest.mark.parametrize("fails", [False, True], ids=["success", "failure"])
+def test_a_work_folder_whose_token_changed_is_not_removed_at_the_clean_up(
+    tmp_path, monkeypatch, fails
+):
+    # The lock was removed by mistake and another conversion took the work folder over: its
+    # owner file now holds another token, so this conversion removes nothing of it.
+    exp, copies = swapped_experiment(tmp_path / "exp"), tmp_path / "copies"
+    real, calls = write_module.write_named_copy, []
+    theirs = {"kind": KIND, "holder": _holder(token="f" * 32)}
+
+    def taken_over(source, target, *args, **kwargs):
+        calls.append(target)
+        real(source, target, *args, **kwargs)
+        if len(calls) == 2:
+            (copies / WORK / "owner.json").write_text(json.dumps(theirs))
+            (copies / WORK / "files/theirs.tif").write_bytes(b"theirs")
+            if fails:
+                raise OSError("device removed")
+
+    monkeypatch.setattr(write_module, "write_named_copy", taken_over)
+    result = convert_experiment(exp, SWAPPED, copies)
+    assert result.written is not fails
+    assert json.loads((copies / WORK / "owner.json").read_text()) == theirs
+    assert (copies / WORK / "files/theirs.tif").read_bytes() == b"theirs"
 
 
 def test_a_successful_conversion_leaves_no_work_folder(tmp_path):

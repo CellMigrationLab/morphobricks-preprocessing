@@ -48,6 +48,7 @@ from .conversion_issues import (
     record_issue,
     space_issue,
     unreadable_issue,
+    work_folder_in_use_issue,
     work_folder_issue,
 )
 from .conversion_plan import copy_folder_issues, plan_conversion
@@ -62,7 +63,7 @@ from .conversion_record import (
     write_record,
 )
 from .conversion_reuse import compare, links_below
-from .conversion_write import UNOWNED, ConversionFailed, work_folder_state, write_all
+from .conversion_write import IN_USE, UNOWNED, ConversionFailed, work_folder_state, write_all
 from .lock_file import LockHolder
 from .manifest import package_versions
 from .ome_zarr_copy import OME_TIFF, STORES
@@ -280,8 +281,11 @@ def _locked_conversion(
     linked, unreadable = links_below(dest)
     refused = [links_issue(linked)] if linked else []
     refused += [unreadable_issue(unreadable)] if unreadable else []
-    if work_folder_state(dest) == UNOWNED:
+    work = work_folder_state(dest)
+    if work is not None and work.state == UNOWNED:
         refused.append(work_folder_issue(dest))
+    if work is not None and work.state == IN_USE and work.holder is not None:
+        refused.append(work_folder_in_use_issue(dest, work.holder))
     if refused:
         return ConversionResult(dest, False, (*refused, *issues))
     try:

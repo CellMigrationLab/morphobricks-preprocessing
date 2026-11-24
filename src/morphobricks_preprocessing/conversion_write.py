@@ -6,11 +6,14 @@ conversion wrote is removed, so the copy tree is left as it was.
 The work folder (issue #448): every copy is first written below
 ``<copy tree>/.morphobricks-conversion.partial/files/``, at its own relative path. The
 conversion makes that folder itself (it must not exist) and writes its owner file
-(``owner.json``: what made it, and the lock holder) into it before any copy, so whatever is
-below it was written by a conversion. A conversion killed before its clean-up leaves it;
-the next conversion removes it only when that owner file is there
-(:func:`work_folder_state`), and refuses a work folder without it
-(``conversion_work_folder_unowned``). Nothing else in the copy tree is ever removed but the
+(``owner.json``: what made it, and the lock holder with its token) into it before any copy,
+so whatever is below it was written by a conversion. A conversion killed before its clean-up
+leaves it; the next conversion removes it only when it holds nothing but a well-formed owner
+file and ``files/``, and the holder named there is not a process still running on this
+computer (:func:`work_folder_state`, issue #482). Anything else under that name is refused
+(``conversion_work_folder_unowned``, or ``conversion_work_folder_in_use`` for a live holder)
+and kept. A conversion removes its own work folder only while the owner file still holds
+its own token. Nothing else in the copy tree is ever removed but the
 copies this conversion moved into place and the folders it made: a ``<name>.partial`` file
 or folder beside a copy is not the conversion's (it was, before #448) and is never removed.
 """
@@ -20,9 +23,12 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import shutil
+import socket
+import stat
 from collections.abc import Callable
-from dataclasses import asdict, replace
+from dataclasses import asdict, dataclass, fields, replace
 from pathlib import Path
 
 from .content_hash import content_sha256
@@ -38,6 +44,7 @@ from .planes import PlaneReadError
 from .planned_copy import PlannedCopy
 from .projection import ProjectionRefused
 from .projection_issues import projection_failed_issue
+from .run.lock import holder_running
 from .source_content import source_content_sha256
 from .validation import ValidationIssue
 
@@ -50,8 +57,34 @@ OWNER_FILENAME = "owner.json"
 OWNER_KIND = "morphobricks-preprocessing conversion work folder"
 FILES_FOLDER = "files"
 """The folder below the work folder holding the copies, each at its own relative path."""
-OWNED, UNOWNED = "owned", "unowned"
+OWNED, UNOWNED, IN_USE = "owned", "unowned", "in_use"
 """What :func:`work_folder_state` finds."""
+_TOKEN = re.compile("[0-9a-f]{32}")
+"""A lock holder's token (``uuid4().hex``)."""
+_WRITING: set[str] = set()
+"""The tokens of the work folders this process is writing now (a holder in this process
+is live only while its token is here: a notebook's kernel outlives its conversions)."""
+
+
+@dataclass(frozen=True)
+class WorkFolder:
+    """A work folder found in the copy tree (:func:`work_folder_state`).
+
+    Attributes
+    ----------
+    path
+        The folder.
+    state
+        :data:`OWNED` (left by a conversion that is gone: it may be removed),
+        :data:`IN_USE` (its holder is a process still running on this computer) or
+        :data:`UNOWNED` (not proven to be a conversion's: never removed).
+    holder
+        The holder its owner file names, when it is well formed.
+    """
+
+    path: Path
+    state: str
+    holder: LockHolder | None = None
 
 
 class ConversionFailed(Exception):
@@ -86,14 +119,16 @@ def write_all(
     re-raised.
     """
     work = dest / WORK_FOLDER
-    if work_folder_state(dest) == OWNED:
-        shutil.rmtree(work)  # left by a conversion that was killed: proven by its owner file
+    found = work_folder_state(dest)
+    if found is not None and found.state == OWNED:
+        shutil.rmtree(work)  # left by a conversion that is gone: proven by its owner file
     if not to_write:
         return []
     made, route = _missing_folders(dest, to_write), _Route(dest)
     written: list[Path] = []
     contents: dict[str, str] = {}
     current, mine = to_write[0].relative_path, False
+    _WRITING.add(holder.token)
     try:
         _make_work_folder(work, holder)
         mine = True
@@ -125,7 +160,7 @@ def write_all(
             entries.append(entry)
     except BaseException as exc:
         logger.debug("Conversion of %s failed", current, exc_info=True)
-        _clean_up(route, work if mine else None, written, made)
+        _clean_up(route, (work, holder.token) if mine else None, written, made)
         if isinstance(exc, _Diverted):
             raise ConversionFailed(links_issue([exc.name])) from exc
         if isinstance(exc, ProjectionRefused):
@@ -133,31 +168,84 @@ def write_all(
         if isinstance(exc, (*_FAILURES, _SourceChanged)):
             raise ConversionFailed(failed_issue(current, exc)) from exc
         raise
-    _remove_work_folder(work)
+    finally:
+        _WRITING.discard(holder.token)
+    _remove_work_folder(work, holder.token)
     return entries
 
 
-def work_folder_state(dest: Path) -> str | None:
-    """Return whether the copy tree holds a work folder, and whether a conversion made it.
+def work_folder_state(dest: Path) -> WorkFolder | None:
+    """Return the copy tree's work folder, and whether a conversion that is gone made it.
 
     Returns
     -------
-    str or None
-        None when there is none; :data:`OWNED` when it is a folder (not a link) holding the
-        owner file a conversion writes into it before anything else; else :data:`UNOWNED`
-        (something else under that name: it is never removed).
+    WorkFolder or None
+        None when there is none. :data:`OWNED` only for a real folder (not a link) holding
+        a well-formed owner file (:func:`read_owner`) and nothing else but ``files/``, a
+        real folder, whose holder is not a process still running on this computer (the
+        lock's liveness check, :func:`.run.lock.holder_running`; in this process, a holder
+        is live while its conversion runs). :data:`IN_USE` for such a folder whose holder
+        is live. Anything else is :data:`UNOWNED`: it is never removed.
     """
     work = dest / WORK_FOLDER
     if not os.path.lexists(work):
         return None
+    holder = read_owner(work)
+    if holder is None or not _only_owner_and_files(work):
+        return WorkFolder(work, UNOWNED, holder)
+    return WorkFolder(work, IN_USE if _live(holder) else OWNED, holder)
+
+
+def read_owner(work: Path) -> LockHolder | None:
+    """Return the holder a work folder's owner file names, or None when it is not well formed.
+
+    Well formed: a regular file (not a link) in a real folder, holding exactly ``kind``
+    (:data:`OWNER_KIND`) and ``holder``, the lock holder: a host, a process ID above 0, a
+    start time and a token (32 hex digits), nothing else.
+    """
     owner = work / OWNER_FILENAME
-    if work.is_symlink() or not work.is_dir() or owner.is_symlink():
-        return UNOWNED
     try:
+        if not stat.S_ISDIR(os.lstat(work).st_mode) or not stat.S_ISREG(os.lstat(owner).st_mode):
+            return None
         found = json.loads(owner.read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return UNOWNED
-    return OWNED if isinstance(found, dict) and found.get("kind") == OWNER_KIND else UNOWNED
+        return None
+    if not isinstance(found, dict) or set(found) != {"kind", "holder"}:
+        return None
+    holder = found["holder"]
+    names = [field.name for field in fields(LockHolder)]
+    if found["kind"] != OWNER_KIND or not isinstance(holder, dict) or set(holder) != set(names):
+        return None
+    host, pid, started_at, token = (holder[name] for name in names)
+    well_formed = (
+        isinstance(host, str)
+        and host
+        and type(pid) is int
+        and pid > 0
+        and isinstance(started_at, str)
+        and isinstance(token, str)
+        and _TOKEN.fullmatch(token)
+    )
+    return LockHolder(host, pid, started_at, token) if well_formed else None
+
+
+def _only_owner_and_files(work: Path) -> bool:
+    """Return True when the work folder holds its owner file and at most a real ``files/``."""
+    try:
+        names = set(os.listdir(work))
+        files = work / FILES_FOLDER
+        return names <= {OWNER_FILENAME, FILES_FOLDER} and (
+            FILES_FOLDER not in names or stat.S_ISDIR(os.lstat(files).st_mode)
+        )
+    except OSError:
+        return False
+
+
+def _live(holder: LockHolder) -> bool:
+    """Return True when the holder may still be writing its work folder on this computer."""
+    if holder.host == socket.gethostname() and holder.pid == os.getpid():
+        return holder.token in _WRITING
+    return holder_running(holder)
 
 
 def _make_work_folder(work: Path, holder: LockHolder) -> None:
@@ -170,17 +258,20 @@ def _make_work_folder(work: Path, holder: LockHolder) -> None:
         os.fsync(file.fileno())
 
 
-def _clean_up(route: _Route, work: Path | None, written: list[Path], made: list[Path]) -> None:
+def _clean_up(
+    route: _Route, work: tuple[Path, str] | None, written: list[Path], made: list[Path]
+) -> None:
     """Remove what a failed conversion wrote: its work folder, its copies, its folders.
 
-    Nothing is removed through a link or mount point that appeared meanwhile (#467): such a
-    path is left, and logged.
+    ``work`` is the work folder this conversion made, with its token. Nothing is removed
+    through a link or mount point that appeared meanwhile (#467): such a path is left, and
+    logged.
     """
     for path in written:
         if route.clear(path):
             _remove(path)
-    if work is not None and route.clear(work):
-        _remove_work_folder(work)
+    if work is not None and route.clear(work[0]):
+        _remove_work_folder(*work)
     _remove_empty([folder for folder in made if route.clear(folder)])
 
 
@@ -237,8 +328,16 @@ class _Route:
         return True
 
 
-def _remove_work_folder(work: Path) -> None:
-    """Remove this conversion's work folder; one that cannot be removed is left for the next."""
+def _remove_work_folder(work: Path, token: str) -> None:
+    """Remove this conversion's work folder; one that cannot be removed is left for the next.
+
+    Only while its owner file still holds this conversion's token (issue #482): after a lock
+    removed by mistake, another conversion may have replaced the folder; it is then left.
+    """
+    holder = read_owner(work)
+    if holder is None or holder.token != token:
+        logger.warning("The work folder %s is not removed: it is no longer this conversion's", work)
+        return
     try:
         shutil.rmtree(work)
     except OSError:

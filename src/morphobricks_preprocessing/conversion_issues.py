@@ -14,6 +14,7 @@ from .validation import ValidationIssue, agree, error, plural
 
 if TYPE_CHECKING:
     from .conversion_record import ConversionRecordError
+    from .lock_file import LockHolder
     from .run.lock import OutputLockedError
 
 
@@ -86,12 +87,29 @@ def work_folder_issue(dest: Path) -> ValidationIssue:
     return error(
         "conversion_work_folder_unowned",
         f"The folder for the named-axis copies holds {WORK_FOLDER}, the name of the folder a "
-        "conversion writes its copies in, but without the owner file a conversion writes into "
-        "it first, so it was not made by a conversion, or was changed since. Nothing was "
-        "removed and nothing was written.",
+        "conversion writes its copies in, but not as a conversion leaves it: the owner file a "
+        "conversion writes into it first is missing or not well formed, or it holds something "
+        "else than that file and the folder 'files'. So it was not made by a conversion, or "
+        "was changed since. Nothing was removed and nothing was written.",
         [WORK_FOLDER],
         f"Move or remove {dest / WORK_FOLDER} yourself if you no longer need what it holds, "
         "or choose a new, empty folder for the copies.",
+    )
+
+
+def work_folder_in_use_issue(dest: Path, holder: LockHolder) -> ValidationIssue:
+    """Refuse a copy tree whose conversion work folder a running process holds (#482)."""
+    from .conversion_write import WORK_FOLDER
+
+    return error(
+        "conversion_work_folder_in_use",
+        f"The folder for the named-axis copies holds {WORK_FOLDER}, the work folder of a "
+        f"conversion by {holder.describe()}, which is still running on this computer, so it "
+        "may still be writing there (its lock was probably removed by mistake). Nothing was "
+        "removed and nothing was written.",
+        [WORK_FOLDER],
+        "Wait for that conversion to finish, then convert again. If that process is not a "
+        f"conversion (process IDs are reused), move or remove {dest / WORK_FOLDER} yourself.",
     )
 
 

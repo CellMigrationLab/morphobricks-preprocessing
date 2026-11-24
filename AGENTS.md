@@ -413,7 +413,9 @@ src/morphobricks_preprocessing/
                     a folder it cannot read is refused too (copy_folder_unreadable, #467)
   conversion_write.py write_all: copies written in the conversion's own work folder
                     (.morphobricks-conversion.partial, owner file first; a killed one's is
-                    removed only when its owner file is there, #448), moved into place
+                    removed only with a well-formed owner file, nothing else but files/, and
+                    a holder that no longer runs (run.lock.holder_running); its own only
+                    while the owner file holds its token, #448, #482), moved into place
                     together (any failure removes what it wrote); nothing else is removed;
                     each write and move checks its way again for links (_Route, #467)
   zarr_input.py     OME-Zarr input: open_ngff (OME-NGFF 0.4/0.5 metadata -> level-0 array, axis
