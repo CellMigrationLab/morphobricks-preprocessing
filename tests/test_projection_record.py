@@ -58,6 +58,7 @@ def projected_entry(**changes) -> CopyEntry:
         source_axes="QYX",
         roles=("Z", "Y", "X"),
         copy_axes="YX",
+        pixel_sizes=(RecordedSize("X"), RecordedSize("Y"), RecordedSize("Z"), RecordedSize("T")),
         copy_sha256=SHA,
         projection=details,
     )

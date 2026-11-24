@@ -207,16 +207,17 @@ class CopyEntry:
         if copy is None or not isinstance(data.get("copy_sha256"), str):
             raise ValueError(f"{data.get('relative_path')!r} has no copy fingerprint or SHA-256")
         _check_source_path(data)
+        action = _choice(data["action"], (CONVERTED, PROJECTED, COPIED), "action")
         return cls(
             relative_path=str(data["relative_path"]),
-            action=_choice(data["action"], (CONVERTED, PROJECTED, COPIED), "action"),
+            action=action,
             reason=None if data.get("reason") is None else str(data["reason"]),
             source=Fingerprint.recorded(data["source"]),
             copy=None if copy is None else Fingerprint.recorded(copy),
             source_axes=str(data.get("source_axes", "")),
             roles=None if roles is None else tuple(None if r is None else str(r) for r in roles),
             copy_axes=None if data.get("copy_axes") is None else str(data["copy_axes"]),
-            pixel_sizes=sizes_from_data(data["pixel_sizes"], none=True),
+            pixel_sizes=sizes_from_data(data["pixel_sizes"], none=action == COPIED),  # #389
             unknown_sizes={str(k): str(v) for k, v in (data.get("unknown_sizes") or {}).items()},
             copy_sha256=str(data["copy_sha256"]),
             channel_names=tuple(None if n is None else str(n) for n in data["channel_names"]),

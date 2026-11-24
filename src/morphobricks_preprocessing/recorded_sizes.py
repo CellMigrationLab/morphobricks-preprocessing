@@ -142,7 +142,8 @@ def sizes_from_data(data: object, *, none: bool = False) -> tuple[RecordedSize, 
     data
         The list as written by :func:`sizes_to_data`.
     none
-        Accept an empty list too (a conversion record's plain copy records no sizes).
+        Accept an empty list too: only for a conversion record's plain copy (``COPIED``), which
+        records no sizes; a converted or projected copy records one per role (#389).
 
     Raises
     ------

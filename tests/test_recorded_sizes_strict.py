@@ -114,3 +114,23 @@ def test_the_manifest_writer_refuses_what_the_reader_refuses():
     nan = (RecordedSize("X", float("nan"), "micrometer", "stated"), *good.pixel_sizes[1:])
     with pytest.raises(ValueError, match="positive, finite"):
         file_dict(replace(good, pixel_sizes=nan))
+
+
+@pytest.mark.parametrize("action", ["converted", "projected"])
+def test_only_a_plain_copy_records_no_sizes(action):
+    """A converted or projected copy always recorded one size per role (v0.6.0 to v0.8.0
+    wrote ``copy_layout``'s four): an empty list is refused for them (#389 review)."""
+
+    def emptied(data):
+        entry = data["files"][0]
+        entry["pixel_sizes"] = []
+        if action == "converted":
+            entry.update(action="converted", projection=None)
+
+    data = edited(emptied)
+    if action == "converted":
+        data["projection"] = None
+    with pytest.raises(ConversionRecordError, match="one size per role"):
+        ConversionRecord.from_dict(data)
+    good = edited(lambda d: None)
+    assert len(ConversionRecord.from_dict(good).files[0].pixel_sizes) == 4
