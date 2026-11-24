@@ -397,6 +397,24 @@ def test_a_publication_with_records_is_whole_or_absent(tmp_path, monkeypatch, fa
     assert (tmp_path / DESIGN_FILENAME).read_bytes() == _design_of(tmp_path)
 
 
+@pytest.mark.parametrize("fail", ["rename", "after_rename"])
+def test_a_failed_rename_puts_an_existing_records_file_back(tmp_path, monkeypatch, fail):
+    """The records file is renamed before the design; the design's rename then fails."""
+    v01 = description_from_bytes(FIXTURES["v01"].data)
+    base = publish_description(tmp_path, v01, base_sha256=ABSENT, write_design=True).sha256
+    (tmp_path / RECORDS_FILENAME).write_bytes(SEEDED)
+    before = snapshot(tmp_path)
+    _fail_design_write(monkeypatch, fail)
+    t01 = description_from_bytes(FIXTURES["t01"].data)
+    with pytest.raises(OSError):
+        publish_description(
+            tmp_path, t01, base_sha256=base, confirmations=RENAMES, write_design=True
+        )
+    monkeypatch.undo()
+    assert (tmp_path / RECORDS_FILENAME).read_bytes() == SEEDED  # put back, not left appended
+    assert snapshot(tmp_path) == before and not (tmp_path / LOCK_FILENAME).exists()
+
+
 def test_a_failed_first_design_write_leaves_no_description(exp, out, monkeypatch):
     save_draft(out, draft_from_discovery(exp), complete())
     before = snapshot(out)

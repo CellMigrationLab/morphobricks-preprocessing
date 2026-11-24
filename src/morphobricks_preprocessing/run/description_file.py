@@ -271,18 +271,6 @@ def _candidate_records(folder: Path, records: tuple[dict, ...]) -> bytes:
     return data
 
 
-def _append_records(folder: Path, records: tuple[dict, ...]) -> None:
-    """Add the records as lines after the existing ones, in one atomic replace of the file.
-
-    The complete new bytes are checked first (:func:`_candidate_records`); the live file is
-    replaced only once the old bytes and the new lines are all on disk in a temporary file, so a
-    refusal or a failure leaves it exactly as it was.
-    """
-    if not records:
-        return
-    _replace_file_durably(folder / RECORDS_FILENAME, _candidate_records(folder, records))
-
-
 def transition_refusals(
     old: Description | None,
     candidate: Description,
@@ -470,14 +458,19 @@ def _publish_files(files: tuple[tuple[Path, bytes, bytes | None], ...]) -> None:
         for temporary, (target, _, _) in zip(temporaries, files, strict=True):
             os.replace(temporary, target)
     except BaseException as error:
-        for temporary in temporaries:
-            Path(temporary).unlink(missing_ok=True)
+        # The put-back comes first, so a temporary file that cannot be removed never skips it;
+        # each failure here is a note on the original error, which is the one raised.
         if renaming:
             for target, new, before in reversed(files):
                 try:
                     _restore(target, new, before)
                 except OSError as failure:
                     error.add_note(f"{target.name} could not be put back: {failure}")
+        for temporary in temporaries:
+            try:
+                Path(temporary).unlink(missing_ok=True)
+            except OSError as failure:
+                error.add_note(f"{temporary} could not be removed: {failure}")
         raise
 
 

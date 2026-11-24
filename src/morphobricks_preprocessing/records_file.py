@@ -85,7 +85,7 @@ def encode_record(record: dict) -> bytes:
     """Return the canonical bytes of one record: code point key order, unescaped non-ASCII.
 
     The separators are ``, `` and ``: `` and the line ends in one LF (section 4.6, RF1); this
-    is what ``_append_records`` writes.
+    is what a publication writes (``_candidate_records``).
     """
     return (json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n").encode("utf-8")
 
