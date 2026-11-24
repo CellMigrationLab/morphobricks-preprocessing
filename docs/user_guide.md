@@ -433,6 +433,10 @@ editing, or the confirmed ones. An image that cannot be drawn gets a sentence sa
    shows the images as the check read them; the folders found, the check's
    report (formatted: a summary, then tables with the details folded) and **Exclude images**
    are collapsed below.
+   If the check itself fails (for example Google Drive stopped answering), nothing of an
+   earlier check stays shown as valid: its labels, roles and confirmations are cleared, and a
+   red message names the folder and the error (the full report is in **Technical details**).
+   Make sure Google Drive is mounted and the folder is there, then click the button again.
 2. **Axes.** What the files hold, in two parts. The roles start from the proposal of step
    1 (the header's, or what you chose on the example) and can be changed here at any time;
    once confirmed, **Change axis roles** takes the confirmation back. The instant one of these

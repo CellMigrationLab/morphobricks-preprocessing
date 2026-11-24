@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import html
+import traceback
 from collections.abc import Callable
 from pathlib import Path
 
@@ -59,6 +60,16 @@ def check_progress(wait: Wait) -> Callable[[str, int, int, str], None]:
             wait.step(done, total, path)
 
     return report
+
+
+def expected_check_failure(exc: BaseException) -> bool:
+    """Return True for a failure the folder check reports and survives (issue #101).
+
+    A storage error (``OSError``: a Google Drive that stopped answering, a folder gone) or
+    one of this package's coded refusals (an exception with a ``code``); anything else is a
+    programming error, raised after the earlier check is cleared.
+    """
+    return isinstance(exc, OSError) or isinstance(getattr(exc, "code", None), str)
 
 
 class _FolderStep:
@@ -260,6 +271,11 @@ class _FolderStep:
                 # --missing-as-singleton' does (F10); step 2 asks again before the run.
                 wait.phase("Writing the check report")
                 self._write_check(pre, self.missing_as_singleton.value)
+        except Exception as exc:  # the earlier check never stays shown as valid (#101)
+            self._check_failed(folder, exc)
+            if not expected_check_failure(exc):
+                raise
+            return None
         finally:
             self._idle(self.check_button, *getattr(self, "_check_label", CHECK_LABEL))
         self.preflight = pre
@@ -392,12 +408,38 @@ class _FolderStep:
         if self.preflight is None or ui.clean_path(self.folder.value) == self._checked_folder:
             return
         # A different folder makes every later choice stale.
+        self._clear_checked(
+            ui.status(
+                "info", "The folder changed.", ["Press Check folder to check the new folder."]
+            )
+        )
+
+    def _check_failed(self, folder: str, exc: Exception) -> None:
+        """Clear the earlier check and say why this one stopped, and what to do (#101)."""
+        self.log.lines.append(traceback.format_exc())
+        self._clear_checked(
+            ui.status(
+                "error",
+                "The folder could not be checked.",
+                [
+                    f"{type(exc).__name__}: {exc}",
+                    f"Folder: {folder}",
+                    "Nothing of the earlier check is used: the labels, axis roles and "
+                    "confirmations are cleared, and nothing was run or written.",
+                    "This can be a passing storage problem: on Google Colab, make sure Google "
+                    "Drive is mounted and the folder is there, then click Check folder again.",
+                    "Open Technical details for the full report.",
+                ],
+            )
+        )
+        self._show_log()
+
+    def _clear_checked(self, status: str) -> None:
+        """Forget the checked folder and every later choice, and show ``status``."""
         self.preflight = None
         self.mapping = self.confirmed_mapping = None
         self.result = None
-        self.folder_status.value = ui.status(
-            "info", "The folder changed.", ["Press Check folder to check the new folder."]
-        )
+        self.folder_status.value = status
         self.folder_tiles.value = ""
         self.folder_next.value = ""
         self.labels_confirmed.set(False, notify=False)
