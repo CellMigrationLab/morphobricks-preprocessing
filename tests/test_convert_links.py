@@ -83,8 +83,13 @@ def test_a_dangling_link_is_refused(linkable):
     exp, copies = swapped_experiment(linkable / "exp"), linkable / "copies"
     copies.mkdir()
     (copies / "ctrl").symlink_to(linkable / "gone", target_is_directory=True)
-    _refused(convert_experiment(exp, SWAPPED, copies), "ctrl ->")
+    issue = _refused(convert_experiment(exp, SWAPPED, copies), "ctrl ->")
     assert not (linkable / "gone").exists()
+    # Issue #467 (3): a mount point is not counted as a link.
+    assert "holds 1 link or mount point (links shown as link -> target)" in issue.message
+    (copies / "drug").symlink_to(linkable / "gone", target_is_directory=True)
+    issue = _refused(convert_experiment(exp, SWAPPED, copies), "ctrl ->", "drug ->")
+    assert "holds 2 links or mount points (links shown as link -> target)" in issue.message
 
 
 def test_a_linked_partial_is_refused_not_removed(linkable):

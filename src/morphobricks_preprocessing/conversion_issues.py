@@ -55,8 +55,9 @@ def links_issue(paths: list[str]) -> ValidationIssue:
     """Refuse a copy tree holding links or mount points, which writes would go through."""
     return error(
         "copy_folder_has_links",
-        f"The folder for the named-axis copies holds {plural(len(paths), 'link')} (link -> "
-        "target) or mount points, through which the copies would be written somewhere else, "
+        "The folder for the named-axis copies holds "
+        f"{plural(len(paths), 'link or mount point', 'links or mount points')} (links shown "
+        "as link -> target), through which the copies would be written somewhere else, "
         "perhaps over the originals. Nothing was written.",
         paths,
         "Remove these links or mount points from the folder for the copies, or choose a new, "
