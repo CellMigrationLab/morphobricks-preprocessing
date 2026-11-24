@@ -48,6 +48,7 @@ from .conversion_issues import (
     record_issue,
     space_issue,
     unreadable_issue,
+    not_empty_issue,
     work_folder_in_use_issue,
     work_folder_issue,
 )
@@ -63,7 +64,14 @@ from .conversion_record import (
     write_record,
 )
 from .conversion_reuse import compare, links_below
-from .conversion_write import IN_USE, UNOWNED, ConversionFailed, work_folder_state, write_all
+from .conversion_write import (
+    IN_USE,
+    OWNED,
+    UNOWNED,
+    ConversionFailed,
+    work_folder_state,
+    write_all,
+)
 from .lock_file import LockHolder
 from .manifest import package_versions
 from .ome_zarr_copy import OME_TIFF, STORES
@@ -297,6 +305,9 @@ def _locked_conversion(
         refusal = projection_differs_issue(
             dest, refusal.paths, earlier[0].projection, options.projection
         )
+    if refusal is not None and refusal.code == "copy_folder_not_empty" and work is not None:
+        if work.state == OWNED:  # killed while moving its copies into place (#482)
+            refusal = not_empty_issue(dest, list(refusal.paths), interrupted=True)
     refusal = refusal or _space_issue(dest, to_write)
     if refusal is not None:
         return ConversionResult(dest, False, (refusal, *issues))

@@ -160,8 +160,27 @@ def header_changed_issue(paths: list[str]) -> ValidationIssue:
     )
 
 
-def not_empty_issue(dest: Path, paths: list[str]) -> ValidationIssue:
-    """Refuse a folder that holds files and no conversion record."""
+def not_empty_issue(dest: Path, paths: list[str], interrupted: bool = False) -> ValidationIssue:
+    """Refuse a folder that holds files and no conversion record.
+
+    ``interrupted``: the folder also holds the work folder of a conversion that is gone, so
+    these files may be copies it moved into place before it was killed (#482).
+    """
+    if interrupted:
+        from .conversion_write import WORK_FOLDER
+
+        return error(
+            "copy_folder_not_empty",
+            f"The folder for the named-axis copies already holds {plural(len(paths), 'file')} "
+            "and no conversion record. It also holds the work folder of a conversion that was "
+            f"stopped ({WORK_FOLDER}), so these files may be copies that conversion had moved "
+            "into place when it was interrupted; without a record they cannot be checked, so "
+            "they are not reused. Nothing was overwritten or removed.",
+            paths,
+            "If you did not put these files there, remove them (only these: the next "
+            "conversion removes the work folder), then convert again. Otherwise choose a new "
+            f"or empty folder for the copies, or empty {dest} first.",
+        )
     return error(
         "copy_folder_not_empty",
         f"The folder for the named-axis copies already holds {plural(len(paths), 'file')} "

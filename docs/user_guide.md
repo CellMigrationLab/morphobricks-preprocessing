@@ -933,9 +933,13 @@ is a folder holding a link or mount point anywhere below it (`copy_folder_has_li
 folder below it that cannot be read (`copy_folder_unreadable`);
 convert into a new folder then. If it fails (`conversion_failed`), the folder is left as it
 was. The copies are written in a hidden work folder, `.morphobricks-conversion.partial`, and
-moved into place together; if a conversion is killed (the computer stopped, the Colab
-session ended), the next one removes that folder, since a conversion marks it as its own
-when it makes it. A file or folder named like a copy with `.partial` added is never removed:
+moved into place together. If a conversion is killed (the computer stopped, the Colab
+session ended) while it writes the copies, the next one removes that folder, since a
+conversion marks it as its own when it makes it, and converts as if nothing had happened.
+If it is killed while it moves the copies into place, the copies already moved stay where
+they are, without a conversion record: the next conversion cannot check them, so it refuses
+the folder (`copy_folder_not_empty`), names them and says they may be such copies; remove
+those files (or convert into a new folder), then convert again. A file or folder named like a copy with `.partial` added is never removed:
 it is not the conversion's. Images of 64-bit integers cannot be saved as OME-TIFF (`cannot_convert_pixel_type`).
 
 **Z-stacks: recorded 2-D projections.**
@@ -1321,7 +1325,7 @@ continues.
 | `copy_folder_unreadable` | Error | `convert`: a folder below the folder for the copies cannot be read, or disappeared while it was checked, so it cannot be checked for links or mount points; it is named. Nothing is written. Make it readable or remove it, or choose a new, empty folder. |
 | `conversion_work_folder_in_use` | Error | `convert`: the folder for the copies holds the work folder of a conversion whose process still runs on this computer (its lock was probably removed by mistake). Nothing is removed or written. Wait for it to finish; if that process is not a conversion, move or remove the work folder yourself. |
 | `conversion_work_folder_unowned` | Error | `convert`: the folder for the copies holds `.morphobricks-conversion.partial`, the name of the folder a conversion writes its copies in, but not as a conversion leaves it: its owner file is missing or not well formed, or it holds something else than that file and the folder `files`. Nothing is removed or written. Move or remove it yourself, or choose a new, empty folder. |
-| `copy_folder_not_empty` | Error | `convert`: the folder for the copies holds files and no conversion record. Nothing is overwritten; choose a new or empty folder. |
+| `copy_folder_not_empty` | Error | `convert`: the folder for the copies holds files and no conversion record. Nothing is overwritten; choose a new or empty folder. When the folder also holds the work folder of a stopped conversion, the message says the files named may be copies it had moved into place when it was interrupted: remove them, then convert again. |
 | `copy_differs` | Error | `convert`: images in the folder of copies differ from the copies this conversion would write (an original changed, other roles, a copy changed, an image no longer in the experiment), or the folder holds copies of another experiment. Nothing is overwritten; convert into a new folder, or remove those copies first. |
 | `cannot_convert_pixel_type` | Error | `convert`: images of 64-bit integers cannot be saved as OME-TIFF, and pixel values are never changed to fit. Save them again with named axes in a 32-bit type if their values fit, or correct the roles. |
 | `nothing_to_project` | Error | `convert` with a projection: no image has a depth axis (Z) under the roles you gave. Check the roles; nothing was written. |

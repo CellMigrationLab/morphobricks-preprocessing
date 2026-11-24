@@ -285,6 +285,35 @@ def test_a_work_folder_with_anything_else_is_still_refused_and_kept(tmp_path, fi
     assert _tree(copies) == before
 
 
+# Issue #482 (3): a kill while the copies are moved into place ----------------------------
+
+
+def test_copies_moved_before_a_kill_are_named_as_from_an_interrupted_move(tmp_path, monkeypatch):
+    exp, copies = swapped_experiment(tmp_path / "exp"), tmp_path / "copies"
+    real, moved = os.replace, []
+
+    def killed(source, target):
+        real(source, target)
+        moved.append(target)
+        raise KeyboardInterrupt  # killed right after the first copy was moved into place
+
+    monkeypatch.setattr(write_module.os, "replace", killed)
+    monkeypatch.setattr(write_module, "_clean_up", lambda *args: None)
+    with pytest.raises(KeyboardInterrupt):
+        convert_experiment(exp, SWAPPED, copies)
+    monkeypatch.undo()
+    first = moved[0].relative_to(copies).as_posix()
+    result = convert_experiment(exp, SWAPPED, copies)
+    assert not result.written and codes(result.issues) == ["copy_folder_not_empty"]
+    issue = result.issues[0]
+    assert issue.paths == (first,)
+    assert "interrupted" in issue.message and "remove them" in issue.action
+    assert (copies / WORK).is_dir()
+    moved[0].unlink()  # what the message says to do
+    result = convert_experiment(exp, SWAPPED, copies)
+    assert result.written and not (copies / WORK).exists()
+
+
 def test_a_successful_conversion_leaves_no_work_folder(tmp_path):
     exp, copies = swapped_experiment(tmp_path / "exp"), tmp_path / "copies"
     assert convert_experiment(exp, SWAPPED, copies).written
