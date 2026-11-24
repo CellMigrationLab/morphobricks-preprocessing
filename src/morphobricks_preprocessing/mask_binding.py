@@ -14,7 +14,10 @@ The mask step (:func:`.mask_scan.scan_masks`, issue #165) binds them too: each i
 are fingerprinted (and, with ``verify_content``, hashed) before their pixels are read and
 again after; a mask whose fingerprint is not the one its header was bound to, or that changes
 during its scan, raises :class:`MaskChangedError` (``mask_changed_during_scan``), and no
-report is written.
+report is written. A mask whose header was never bound (found without ``bind=True``) raises
+:class:`MaskUnboundError` (``mask_header_unbound``, issue #480) before any of its pixels is
+read: its header is evidence about a file version nothing identifies, so it may not choose
+the planes read.
 
 The identity is the metadata fingerprint (size, modification time, and for an OME-Zarr
 label image its inventory digest); the content SHA-256 is opt-in (``verify_content``).
@@ -28,12 +31,14 @@ from pathlib import Path
 from .fingerprint import Fingerprint
 from .masks import MaskFile, MaskInventory
 from .source_content import current_content
-from .validation import ValidationIssue, error, plural
+from .validation import ValidationIssue, agree, error, plural
 
 MASK_CHANGED_DURING_RUN = "mask_changed_during_run"
 """The code of a run refused because a mask changed after its header was read."""
 MASK_CHANGED_DURING_SCAN = "mask_changed_during_scan"
 """The code of a mask step refused because a mask changed before or while it was read."""
+MASK_HEADER_UNBOUND = "mask_header_unbound"
+"""The code of a mask scan refused because a mask's header is not bound to a fingerprint."""
 
 CHANGE_TEXTS = {
     "fingerprint": (
@@ -203,10 +208,14 @@ def scan_fingerprints(
 
     Raises
     ------
+    MaskUnboundError
+        For masks whose header was not bound to a fingerprint (issue #480), before any is
+        fingerprinted.
     MaskChangedError
         For masks gone, unreadable, or no longer with the fingerprint bound to their header.
     """
     masks = list(masks)
+    refuse_unbound(masks)
     found = {
         mask.path: (
             mask_fingerprint(mask, folder, root),
@@ -218,7 +227,7 @@ def scan_fingerprints(
         mask.path
         for mask in masks
         if found[mask.path][0] is None
-        or (mask.bound is not None and found[mask.path][0] != mask.bound)
+        or found[mask.path][0] != mask.bound
         or (verify_content and found[mask.path][1] is None)
     ]
     if changed:
@@ -226,6 +235,23 @@ def scan_fingerprints(
             changed, "fingerprint or content" if verify_content else "fingerprint"
         )
     return found
+
+
+def refuse_unbound(masks: Iterable[MaskFile]) -> None:
+    """Raise :class:`MaskUnboundError` for the masks whose header is not bound (issue #480).
+
+    A header (axes, planes, shape) describes one version of a mask file; without the
+    fingerprint taken with it (``find_masks(bind=True)``) nothing ties it to the file read
+    now, so it may never choose the planes to read.
+
+    Raises
+    ------
+    MaskUnboundError
+        For the masks found without ``bind=True`` (:attr:`.masks.MaskFile.bound` is None).
+    """
+    unbound = [mask.path for mask in masks if mask.bound is None]
+    if unbound:
+        raise MaskUnboundError(unbound)
 
 
 def check_scanned(
@@ -285,3 +311,32 @@ class MaskChangedError(ValueError):
         super().__init__(
             f"{self.issue.message} ({MASK_CHANGED_DURING_SCAN}: {', '.join(self.paths)})"
         )
+
+
+class MaskUnboundError(ValueError):
+    """Raised when the mask scan is given masks whose headers are not bound (issue #480).
+
+    A ``ValueError``, as every other mask that cannot be used in the scan.
+
+    Attributes
+    ----------
+    paths
+        The masks, sorted.
+    issue
+        The error ``mask_header_unbound``.
+    """
+
+    def __init__(self, paths: Iterable[str]) -> None:
+        self.paths = sorted(paths)
+        count = plural(len(self.paths), "mask")
+        self.issue = error(
+            MASK_HEADER_UNBOUND,
+            f"{count} {agree(self.paths, 'was', 'were')} found without a header bound to the "
+            "file's fingerprint, so nothing shows that the file read now is the one the header "
+            "(axes, depth slices, time points) describes. No mask was read and no report was "
+            "made.",
+            self.paths,
+            "Find the masks with their headers bound: find_masks(..., bind=True) or "
+            "preflight(..., bind_headers=True), as the masks command and the notebook do.",
+        )
+        super().__init__(f"{self.issue.message} ({MASK_HEADER_UNBOUND}: {', '.join(self.paths)})")

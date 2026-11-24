@@ -65,7 +65,7 @@ def write_experiment(tmp_path, masks, images=("ctrl/a.tif", "drug/a.tif")):
 
 def scan(tmp_path, masks):
     root, folder = write_experiment(tmp_path, masks)
-    inventory = preflight(root, masks_folder=folder).masks
+    inventory = preflight(root, masks_folder=folder, bind_headers=True).masks
     assert inventory.ok, inventory.issues
     return scan_masks(inventory, root)
 
@@ -252,7 +252,9 @@ def test_progress_is_reported_per_image(tmp_path):
     root, folder = write_experiment(tmp_path, {"Cells": boxes(CELLS)})
     calls = []
     scan_masks(
-        preflight(root, masks_folder=folder).masks, root, progress=lambda *a: calls.append(a)
+        preflight(root, masks_folder=folder, bind_headers=True).masks,
+        root,
+        progress=lambda *a: calls.append(a),
     )
     assert calls == [(0, 2, "ctrl/a.tif"), (1, 2, "drug/a.tif"), (2, 2, "")]
 
@@ -282,7 +284,7 @@ def test_changed_thresholds_change_the_relations_and_are_reported(tmp_path):
     region[:, :32] = 1
     dots = boxes({1: (5, 7, 5, 7), 2: (20, 22, 10, 12), 3: (5, 7, 40, 42), 4: (20, 22, 50, 52)})
     root, folder = write_experiment(tmp_path, {"Region": region, "Dots": dots})
-    inventory = preflight(root, masks_folder=folder).masks
+    inventory = preflight(root, masks_folder=folder, bind_headers=True).masks
     assert by_pair(scan_masks(inventory, root))[("Dots", "Region")].relation == "none"
     report = scan_masks(inventory, root, thresholds={"inside_object_share": 0.5})
     assert by_pair(report)[("Dots", "Region")].relation == "inside"
@@ -292,7 +294,9 @@ def test_changed_thresholds_change_the_relations_and_are_reported(tmp_path):
     assert pairs[("Nuclei", "NucleiAlt")].relation == "same_objects"
     root, folder = write_experiment(tmp_path / "iou", hierarchy_masks())
     strict = scan_masks(
-        preflight(root, masks_folder=folder).masks, root, thresholds={"same_objects_iou": 0.9}
+        preflight(root, masks_folder=folder, bind_headers=True).masks,
+        root,
+        thresholds={"same_objects_iou": 0.9},
     )
     assert by_pair(strict)[("Nuclei", "NucleiAlt")].relation != "same_objects"
 
@@ -302,7 +306,7 @@ def test_invalid_thresholds_stop_before_any_mask_is_read(tmp_path):
     calls = []
     with pytest.raises(ValueError, match="at most 1"):
         scan_masks(
-            preflight(root, masks_folder=folder).masks,
+            preflight(root, masks_folder=folder, bind_headers=True).masks,
             root,
             progress=lambda *a: calls.append(a),
             thresholds={"inside_pixel_share": 2},
@@ -319,7 +323,7 @@ def test_both_layouts_give_the_same_report(tmp_path):
         write_data(root / rel, np.zeros(SHAPE, dtype=np.uint8))
         for name, mask in masks.items():
             write_data(folder / rel.replace("a.tif", f"a_{name}.tif"), mask)
-    inventory = preflight(root, masks_folder=folder).masks
+    inventory = preflight(root, masks_folder=folder, bind_headers=True).masks
     assert inventory.ok, inventory.issues
     by_suffix = scan_masks(inventory, root)
     assert by_suffix.to_dict()["pairs"] == by_folder.to_dict()["pairs"]
@@ -341,7 +345,7 @@ def test_masks_with_time_points_are_scanned_plane_by_plane(tmp_path):
     write_data(root / "ctrl" / "a.tif", np.zeros((3, *SHAPE), dtype=np.uint8), "TYX")
     for name, data in series.items():
         write_data(folder / name / "ctrl" / "a.tif", data, "TYX")
-    inventory = preflight(root, masks_folder=folder).masks
+    inventory = preflight(root, masks_folder=folder, bind_headers=True).masks
     assert inventory.ok, inventory.issues
     report = scan_masks(inventory, root)
     # The same as three single-plane images, one per time point.
@@ -350,7 +354,9 @@ def test_masks_with_time_points_are_scanned_plane_by_plane(tmp_path):
         write_data(flat_root / "ctrl" / f"a{t}.tif", np.zeros(SHAPE, dtype=np.uint8))
         for name, data in series.items():
             write_data(flat_folder / name / "ctrl" / f"a{t}.tif", data[t])
-    flat = scan_masks(preflight(flat_root, masks_folder=flat_folder).masks, flat_root)
+    flat = scan_masks(
+        preflight(flat_root, masks_folder=flat_folder, bind_headers=True).masks, flat_root
+    )
     assert report.images == 1 and flat.images == 3
     assert report.types["Nuclei"].objects == flat.types["Nuclei"].objects == 8
     assert report.types["Cells"].images == 1
@@ -376,7 +382,7 @@ def test_negative_labels_are_refused_never_read_as_objects(tmp_path):
     labels, _ = piece_counts(np.abs(signed))
     assert labels.tolist() == [1, 3]
     root, folder = write_experiment(tmp_path, {"Cells": boxes(CELLS), "Signed": signed})
-    inventory = preflight(root, masks_folder=folder).masks
+    inventory = preflight(root, masks_folder=folder, bind_headers=True).masks
     assert inventory.ok  # headers only: an int16 mask is fine
     with pytest.raises(ValueError, match="Signed/ctrl/a.tif holds negative labels"):
         scan_masks(inventory, root)
@@ -391,7 +397,7 @@ def test_negative_labels_in_a_later_time_point_are_refused(tmp_path):
     write_data(root / "ctrl" / "a.tif", np.zeros((3, *SHAPE), dtype=np.uint8), "TYX")
     write_data(folder / "Cells" / "ctrl" / "a.tif", signed, "TYX")
     write_data(folder / "Nuclei" / "ctrl" / "a.tif", np.stack([frames["Nuclei"]] * 3), "TYX")
-    inventory = preflight(root, masks_folder=folder).masks
+    inventory = preflight(root, masks_folder=folder, bind_headers=True).masks
     assert inventory.ok, inventory.issues
     with pytest.raises(ValueError, match="Cells/ctrl/a.tif holds negative labels"):
         scan_masks(inventory, root)

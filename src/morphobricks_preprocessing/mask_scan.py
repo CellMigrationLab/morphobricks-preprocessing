@@ -60,7 +60,7 @@ from scipy import ndimage
 from ._io import write_text_atomic
 from .manifest import package_versions
 from .mask_binding import MaskChangedError as MaskChangedError  # raised by the scan
-from .mask_binding import check_scanned, scan_fingerprints
+from .mask_binding import check_scanned, refuse_unbound, scan_fingerprints
 from .mask_pairs import best_parents, match_counts
 from .mask_pairs import one_to_one_matches as one_to_one_matches  # moved there
 from .masks import MaskInventory, check_labels, read_mask
@@ -407,17 +407,15 @@ def scan_masks(
     """Read every image's masks and describe the mask types and their relationships.
 
     Each image's masks are bound to their fingerprints while they are read (issue #165):
-    every mask is fingerprinted before its first plane is read and again after its last,
-    and must have the same fingerprint both times, the one taken with its header when it
-    was found with ``bind=True`` (:attr:`.masks.MaskFile.bound`). With ``verify_content``
-    its content SHA-256 is also taken before and after and must not change. A mask that
-    changed raises :class:`.mask_binding.MaskChangedError` (``mask_changed_during_scan``):
-    no report is returned, so none is written from masks of mixed versions.
+    every mask is fingerprinted before its first plane is read and again after its last, and
+    must have the fingerprint taken with its header (``bind=True``,
+    :attr:`.masks.MaskFile.bound`) both times; with ``verify_content`` also the same content
+    SHA-256. No report is returned from masks of mixed versions.
 
     Parameters
     ----------
     inventory
-        The masks found by :func:`.masks.find_masks`; it should have no errors.
+        The masks found by :func:`.masks.find_masks` with ``bind=True``, without errors.
     experiment_root
         The experiment folder (for OME-Zarr label images).
     progress
@@ -433,18 +431,20 @@ def scan_masks(
 
     Raises
     ------
+    MaskUnboundError
+        A ``ValueError`` (``mask_header_unbound``, issue #480): unbound headers, before reads.
     MaskChangedError
-        A ``ValueError``: for masks that changed or went missing before or while their image's
-        planes were read.
+        A ``ValueError`` (``mask_changed_during_scan``): for masks that changed or went
+        missing before or while their image's planes were read.
     ValueError
         For an invalid threshold, before any mask is read; for an image whose masks have
-        different depth slices or time points; for a mask
-        that cannot be read as the planes its header gave, or holds a label outside 0 to
-        2,147,483,647 (:func:`.masks.read_mask`).
+        different depth slices or time points; for a mask that cannot be read as the planes
+        its header gave, or holds a label outside 0 to 2,147,483,647 (:func:`.masks.read_mask`).
     """
     limits = mask_thresholds(thresholds)
     root = Path(experiment_root).resolve()
     images = inventory.images
+    refuse_unbound(m for image in images for m in inventory.for_image(image).values())
     pieces: dict[str, list[np.ndarray]] = {name: [] for name in inventory.types}
     single: dict[str, list[bool]] = {name: [] for name in inventory.types}
     seen: dict[str, int] = dict.fromkeys(inventory.types, 0)

@@ -206,7 +206,7 @@ def test_masks_one_pixel_high_or_wide_are_2d_masks(tmp_path, shape):
     )
     mask = (np.arange(np.prod(shape)).reshape(shape) % 3).astype(np.uint16)
     write_data(folder / "Cells" / "ctrl" / "rep1" / "a.tif", mask)
-    found = inventory(root, folder)
+    found = inventory(root, folder, bind_headers=True)  # the scan reads bound headers only
     assert found.ok, codes(found.issues)
     assert [(f.axes, f.shape) for f in found.files] == [("YX", shape)]
     np.testing.assert_array_equal(read_mask(found.files[0], folder, root), mask)
