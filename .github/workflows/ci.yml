@@ -127,13 +127,29 @@ jobs:
         if: env.MORPHOBRICKS_RELEASE_RUN == '1'
         shell: python
         run: |
+          import json
+          import pathlib
           import xml.etree.ElementTree as ET
+          # The test is parametrized by notebook (name[notebook]): every notebook with a
+          # RELEASE_REF must have its own case, run and passed.
           RELEASE_ONLY = {"test_release_only_the_preprocessing_pin_is_a_commit_with_this_code"}
-          cases = {c.get("name"): c for c in ET.parse("tests.xml").getroot().iter("testcase")}
-          for name in sorted(RELEASE_ONLY):
-              case = cases.get(name)
-              assert case is not None, f"{name} did not run"
-              assert len(case) == 0 or all(c.tag in ("system-out", "system-err") for c in case), (
-                  f"{name} did not pass: {[c.tag for c in case]}"
+          pinned = sorted(
+              path.stem
+              for path in pathlib.Path("notebooks").glob("*.ipynb")
+              if any(
+                  "RELEASE_REF" in "".join(cell.get("source", ""))
+                  for cell in json.loads(path.read_text(encoding="utf-8"))["cells"]
+                  if cell.get("cell_type") == "code"
               )
-              print(f"{name}: passed")
+          )
+          assert pinned, "no notebook has a RELEASE_REF"
+          cases = {c.get("name"): c for c in ET.parse("tests.xml").getroot().iter("testcase")}
+          for base in sorted(RELEASE_ONLY):
+              for notebook in pinned:
+                  name = f"{base}[{notebook}]"
+                  case = cases.get(name)
+                  assert case is not None, f"{name} did not run"
+                  assert len(case) == 0 or all(
+                      c.tag in ("system-out", "system-err") for c in case
+                  ), f"{name} did not pass: {[c.tag for c in case]}"
+                  print(f"{name}: passed")
