@@ -39,7 +39,7 @@ def projected_entry(**changes) -> CopyEntry:
     details = ProjectionEntry(
         source_relative_path="c/a.tif",
         source_content_sha256=SHA,
-        source_z_axis=("Z", 0),
+        source_z_axis=("Q", 0),
         source_z_size=12,
         z_range=(2, 10),
         method="max",
@@ -95,7 +95,7 @@ def test_a_projected_record_round_trips():
     data = rec.to_dict()
     assert data["projection"] == {"method": "max", "z_range": [2, 10]}
     done = data["files"][0]["projection"]
-    assert done["source_z_axis"] == {"letter": "Z", "index": 0}
+    assert done["source_z_axis"] == {"letter": "Q", "index": 0}
     assert done["dropped_sizes"] == {"Z": {"value": 2.5, "unit": "micrometer", "source": "header"}}
     assert done["nan_policy"] == "propagate" and done["significant_bits_dropped"] is None
 
@@ -153,7 +153,6 @@ def test_a_changed_projection_field_changes_the_reuse_key():
         },
         {"z_range": (2, 9)},
         {"source_z_size": 13},
-        {"source_z_axis": ("Z", 1)},
         {"source_dtype": "uint8", "output_dtype": "uint8", "dtype_rule": "max uint8->uint8"},
         {"dropped_sizes": {"Z": replace(Z_SIZE, value=2.6)}},
         {"dropped_sizes": {"Z": None}},
@@ -162,6 +161,10 @@ def test_a_changed_projection_field_changes_the_reuse_key():
     for change in changes:
         other = replace(base, projection=replace(done, **change))
         assert not base.same_plan(other), change
+    moved = replace(done, source_z_axis=("Q", 1))  # another Z axis, with its header and roles
+    assert not base.same_plan(
+        replace(base, source_axes="YQX", roles=("Y", "Z", "X"), projection=moved)
+    )
     # The source content SHA-256 is a result of the write, not part of the plan.
     assert base.same_plan(replace(base, projection=done.with_content("b" * 64)))
     # A projected entry is never the plan of an unprojected one.

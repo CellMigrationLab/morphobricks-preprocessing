@@ -280,6 +280,26 @@ def _check_shape(entry: ProjectionEntry) -> None:
         raise ValueError(f"{name!r}: {exc}") from exc
 
 
+def check_z_axis(
+    entry: ProjectionEntry, source_axes: str, roles: tuple[str | None, ...] | None
+) -> None:
+    """Refuse a Z axis that is not the source's (#443).
+
+    It must be the header's letter at its index, the dimension the entry's roles read as Z.
+    ``source_axes`` and ``roles`` are the copy entry's (``CopyEntry``), as the projection's
+    plan takes the Z axis from them (:func:`.projection_layout.projected_layout`).
+    """
+    if entry.source_z_axis is None:
+        return
+    letter, index = entry.source_z_axis
+    in_header = 0 <= index < len(source_axes) and source_axes[index] == letter
+    if not in_header or (roles is not None and (index >= len(roles) or roles[index] != "Z")):
+        raise ValueError(
+            f"{entry.source_relative_path!r}: the source Z axis {letter!r} at {index} is not "
+            f"the Z axis of the source header {source_axes!r} read as {roles!r}"
+        )
+
+
 def _size_data(size: RecordedSize | None) -> dict | None:
     """Return a dropped size as ``{value, unit, source}``, or None for no size."""
     return None if size is None else {"value": size.value, "unit": size.unit, "source": size.source}

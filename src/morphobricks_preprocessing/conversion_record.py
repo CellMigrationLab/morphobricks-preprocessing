@@ -30,7 +30,12 @@ from .fingerprint import Fingerprint, current_fingerprint
 from .manifest import file_sha256
 from .projection import Projection
 from .projection_marker import marked_images, marker_issue
-from .projection_record import ProjectionEntry, projection_from_data, projection_to_data
+from .projection_record import (
+    ProjectionEntry,
+    check_z_axis,
+    projection_from_data,
+    projection_to_data,
+)
 from .projection_run import RunProjection, masks_issue, run_projection
 from .record_values import _bits, _choice, _flag, repeated
 from .recorded_sizes import RecordedSize, sizes_from_data, sizes_to_data
@@ -138,6 +143,8 @@ class CopyEntry:
         named = None if self.projection is None else self.projection.source_relative_path
         if named is not None and named != self.source_path:  # one checked, the other recorded
             raise ValueError(f"{self.relative_path!r}: its projection names the source {named!r}")
+        if self.projection is not None:
+            check_z_axis(self.projection, self.source_axes, self.roles)
 
     def same_plan(self, other: CopyEntry) -> bool:
         """Return True if ``other`` copies the same source the same way (copies aside).
