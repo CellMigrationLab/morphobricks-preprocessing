@@ -40,7 +40,7 @@ again on the tagged commit.
    - [ ] One line: "… run cell 1 (Install MorphoBricks preprocessing) first …", no traceback;
      nothing is installed.
 3. Run **cell 1**.
-   - [ ] It prints **Ready** with the preprocessing (0.8.0), normalization (0.7.1) and
+   - [ ] It prints **Ready** with the preprocessing (0.8.0), normalization (0.8.0) and
      ipywidgets versions and the pinned source, then names cells 2 and 3. No restart or
      ipywidgets upgrade is asked for; Drive is not mounted.
    - [ ] Run it again: nothing is installed again, the same versions.
