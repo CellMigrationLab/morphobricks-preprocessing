@@ -157,3 +157,46 @@ def test_a_missing_description_is_refused(run):
     (run.output / DESCRIPTION_FILENAME).unlink()
     with pytest.raises(RunInputsError):
         RunInputs.open(run.output)
+
+
+SHAPES = {
+    "v01": "no masks",
+    "v41": "fast mode (channel_layout)",
+    "v43": "fast mode, RGB units with the header override",
+}
+
+
+@pytest.fixture(scope="module", params=sorted(SHAPES))
+def shaped(request, tmp_path_factory):
+    """A run of a fixture of another shape than ``v08``'s, made once per fixture."""
+    name = request.param
+    made = make_described_run(tmp_path_factory.mktemp(name) / "run", VALID[name].data)
+    path = made.output / MANIFEST_FILENAME
+    original = path.read_bytes()
+    yield name, made
+    path.write_bytes(original)
+
+
+def test_runs_of_other_shapes_open_with_the_published_digests(shaped):
+    name, made = shaped
+    description = read_published_description(made.output / DESCRIPTION_FILENAME)[0]
+    assert (not description.masks, description.fast_mode) == (True, name != "v01")
+    inputs = RunInputs.open(made.output)
+    assert inputs.section_digests() == _published(made)
+    assert inputs.fovs()
+    assert all(fov.channel_ids for fov in inputs.fovs())
+    rgb = {fov.image_type == "rgb" for fov in inputs.fovs()}
+    assert rgb == {name == "v43"}
+
+
+@pytest.mark.parametrize("section", SECTIONS)
+def test_runs_of_other_shapes_refuse_a_wrong_digest(shaped, section):
+    _, made = shaped
+    path = made.output / MANIFEST_FILENAME
+    original = path.read_bytes()
+    try:
+        _edit(made, _set(section, "0" * 64))
+        with pytest.raises(SectionDigestMismatchError, match=f"{FIELD}.{section}"):
+            RunInputs.open(made.output)
+    finally:
+        path.write_bytes(original)

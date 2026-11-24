@@ -18,6 +18,7 @@ import pytest
 
 from described_tree import run_described
 from description_tree import MAPPING, build_experiment
+from morphobricks_preprocessing.channel_plan import channel_coverage
 from morphobricks_preprocessing.description import description_from_bytes
 from morphobricks_preprocessing.description_write import canonical_bytes, section_digests
 from morphobricks_preprocessing.run_inputs import RunInputs, RunInputsError
@@ -106,11 +107,13 @@ def test_a_unit_that_does_not_match_its_image_is_refused(tmp_path):
     repeats = {**description.repeats, "rep1": replace(repeat, members=members)}
     forged = replace(description, repeats=repeats)
     data = canonical_bytes(forged)
-    # Same file bytes recorded by the run: forge the manifest's SHA and section digests (#490)
-    # and the unit's recorded channels (#491) so only the units and their images differ.
+    # Same file bytes recorded by the run: forge the manifest's SHA, section digests and
+    # channel coverage (#490) and the unit's recorded channels (#491) so only the units and
+    # their images differ.
     manifest = json.loads((out / "run_manifest.json").read_text())
     manifest["experiment_description"]["sha256"] = hashlib.sha256(data).hexdigest()
     manifest["experiment_description"]["section_digests"] = section_digests(forged)
+    manifest["experiment_description"]["channel_coverage"] = channel_coverage(forged)
     for record in manifest["experiment_description"]["units"]:
         if (record["repeat"], record["condition"], record["technical_repeat"]) == (
             "rep1",

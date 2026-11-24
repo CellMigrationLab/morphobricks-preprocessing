@@ -24,7 +24,9 @@ refused with the codes the run itself uses for a masks folder (issue #487):
 
 A manifest whose recorded description section digests are not those of the published
 description the run read is refused with :class:`SectionDigestMismatchError`
-(``manifest_section_digest_mismatch``, issue #490); one whose unit records are not the
+(``manifest_section_digest_mismatch``, issue #490); one whose recorded channel coverage is not
+the published description's with :class:`ChannelCoverageMismatchError`
+(``manifest_channel_coverage_mismatch``); one whose unit records are not the
 published description's units with :class:`UnitRecordMismatchError`
 (``manifest_unit_record_mismatch``, issue #491).
 """
@@ -126,6 +128,18 @@ class SectionDigestMismatchError(RunInputsError):
     """
 
     code = "manifest_section_digest_mismatch"
+
+
+class ChannelCoverageMismatchError(RunInputsError):
+    """The recorded channel coverage is not the one of the published description (#490).
+
+    ``RunInputs.open`` recomputes ``channel_coverage`` from the published description the run
+    read (its SHA-256 already checked) and refuses a manifest recording anything else; the
+    message names the field and each biological repeat that differs. The manifest is never
+    corrected.
+    """
+
+    code = "manifest_channel_coverage_mismatch"
 
 
 class UnitRecordMismatchError(RunInputsError):

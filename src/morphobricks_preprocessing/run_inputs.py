@@ -82,6 +82,7 @@ from .run_inputs_projection import ProjectionInputs
 from .run_inputs_resolve import ResolvingInputs
 from .run_inputs_semantic import (
     SemanticInputs,
+    check_channel_coverage,
     check_description,
     check_section_digests,
     with_identity,
@@ -290,6 +291,7 @@ class RunInputs(
         _check_calibration(output / CALIBRATION_FILENAME, manifest.calibration_sha256)
         description = check_description(output, manifest)  # A_DRAFT_REFUSED, or changed
         check_section_digests(manifest, description)  # the digests a consumer keys on (#490)
+        check_channel_coverage(manifest, description)  # recorded as the description's (#490)
         root = Path(experiment_root or manifest.experiment_root).resolve()
         _check_conversion(root, manifest)
         # A masks folder given is used as given, never replaced by the recorded one (#487).
