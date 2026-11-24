@@ -15,7 +15,7 @@ from collections.abc import Mapping, Sequence
 from .channel_plan import channel_coverage
 from .description import Description
 from .description_unnamed import FIELD, checked_items, unnamed_items
-from .description_write import section_digests
+from .description_write import SECTIONS, section_digests
 from .fast_layout import HEADER, STATEMENT
 from .physical_fast import fov_key
 from .physical_unit import UnitKey
@@ -35,6 +35,8 @@ CHANNELS_FROM = "channels_from"
 FAST_IMAGES = "fast_layout_images"
 """A fast unit's per-image verification status (ADR 0006): path, FOV key, header_verified and,
 per index of the list, the channel, the header name as read and its evidence."""
+DIGESTS_MALFORMED = "manifest_section_digests_malformed"
+"""The code of a ``section_digests`` record that is not the four sections' SHA-256 (#490)."""
 _USE_KEYS = frozenset({"image", "override", "header_photometric"})
 _FIELDS = (
     "sha256",
@@ -194,6 +196,9 @@ def recorded_description(value: object) -> dict | None:
     ------
     ValueError
         When the entry is not an object with the recorded fields and types.
+    SectionDigestsError
+        ``manifest_section_digests_malformed``: ``section_digests`` does not hold exactly the
+        four sections, each a lowercase SHA-256 (#490).
     """
     if value is None:
         return None
@@ -213,6 +218,7 @@ def recorded_description(value: object) -> dict | None:
     ):
         if not isinstance(value[name], kind):
             raise ValueError(f"{KEY}.{name} is not a {kind.__name__}")
+    _checked_section_digests(value["section_digests"])
     for index, unit in enumerate(value["units"]):
         if isinstance(unit, dict) and FIELD in unit:
             checked_items(unit[FIELD], f"{KEY}.units[{index}]")
@@ -225,6 +231,37 @@ def recorded_description(value: object) -> dict | None:
         if isinstance(unit, dict) and FAST_IMAGES in unit:
             checked_fast_images(unit, f"{KEY}.units[{index}]")
     return value
+
+
+class SectionDigestsError(ValueError):
+    """A ``section_digests`` record that is not the four sections' SHA-256 (#490)."""
+
+    code = DIGESTS_MALFORMED
+
+
+def _checked_section_digests(digests: dict) -> None:
+    """Refuse a ``section_digests`` record other than the four sections' lowercase SHA-256.
+
+    A missing or extra section, or a value that is not 64 lowercase hexadecimal digits, is
+    refused, naming the field; nothing is filled in or repaired. Whether a well-formed digest is
+    the published description's is checked when a run is opened
+    (:func:`.run_inputs_semantic.check_section_digests`).
+    """
+    where = f"{KEY}.section_digests"
+    missing = [name for name in SECTIONS if name not in digests]
+    extra = sorted(str(name) for name in digests if name not in SECTIONS)
+    if missing or extra:
+        named = [f"{where}.{name} is missing" for name in missing]
+        named += [f"{where}.{name} is not a section" for name in extra]
+        raise SectionDigestsError(
+            f"{DIGESTS_MALFORMED}: {'; '.join(named)} (it holds exactly {', '.join(SECTIONS)})"
+        )
+    for name in SECTIONS:
+        digest = digests[name]
+        if not isinstance(digest, str) or not SHA256.fullmatch(digest):
+            raise SectionDigestsError(
+                f"{DIGESTS_MALFORMED}: {where}.{name} is not a lowercase hexadecimal SHA-256"
+            )
 
 
 _FAST_KEYS = frozenset({"path", "fov_key", "header_verified", "channels"})

@@ -609,7 +609,7 @@ It gives:
   `morphobricks.toml` (`description_consume.read_published_description`) or a published file
   with an unconfirmed repeat is refused with `DraftRefusedError` (`A_DRAFT_REFUSED`). `read_mask`
   of a mask file the mask step has not checked (§15; `mask_representation.json`) is refused with
-  `MaskUncheckedError` (`A_MASK_UNCHECKED`); the error classes carry the Spec code as `code`. `ChannelNotFoundError` is `A_SCOPE_INCOMPLETE` (Stage 2, owner answer 2): one rule and one code for a channel that no image has and for one that some images lack, and its message names the image. `section_digests()` returns a copy of the manifest's `experiment_description.section_digests` (SHA-256 of the `conditions`, `channels`, `repeats` and `masks` sections; the published file is not read again).
+  `MaskUncheckedError` (`A_MASK_UNCHECKED`); the error classes carry the Spec code as `code`. `ChannelNotFoundError` is `A_SCOPE_INCOMPLETE` (Stage 2, owner answer 2): one rule and one code for a channel that no image has and for one that some images lack, and its message names the image. `section_digests()` returns a copy of the manifest's `experiment_description.section_digests` (SHA-256 of the `conditions`, `channels`, `repeats` and `masks` sections; the published file is not read again). They are checked before any consumer sees them (#490): reading the manifest refuses a record that does not hold exactly those four sections, each 64 lowercase hexadecimal digits, with `ManifestSectionDigestsError` (a `ManifestFormatError`, `code = "manifest_section_digests_malformed"`), and `open` recomputes the digests of the published description whose SHA-256 it checked and refuses any section recorded otherwise with `SectionDigestMismatchError` (a `RunInputsError`, `code = "manifest_section_digest_mismatch"`); each message starts with its code and names the field. The recorded digests are never filled in, repaired or replaced by the recomputed ones.
 
 - **The request resolver (resolver contract version 3, `RESOLVER_VERSION`; MorphoBricks
   architecture decision of 10 November 2026; version 2 since parent-label masks, Spec ADR 0002
@@ -1024,7 +1024,13 @@ report is written whole, by one rename, only after every image is scanned), and 
 `mask_relationships.json` is left as it was. With `verify_content` (`prepare_mask_step(...,
 verify_content=True)`, CLI `masks --verify-content`; by default the recorded run's setting)
 each mask's content SHA-256 is also taken before and after its scan and must not change.
-Unchanged masks give the same report as before.
+Unchanged masks give the same report as before. The scan reads only masks whose headers are
+bound (issue #480): a header is evidence about one version of a file, so `scan_masks` given
+masks found without `bind=True` (`find_masks`; `preflight` without `bind_headers=True`)
+raises `MaskUnboundError` (a `ValueError`; the error `mask_header_unbound`, naming the masks)
+before any mask is read, and makes no report; it never uses such a header to choose the
+depth slices and time points read. The `masks` command and the notebook bind the headers
+(`prepare_mask_step`) and are unchanged.
 
 | Kind of mask | Rule |
 |---|---|
@@ -1350,7 +1356,13 @@ The helper refuses what the run would refuse, before writing: an ambiguous mask 
 leaving the folder, **any discovered mask type** that cannot be a `source_type` (the run's
 `_description_name_issues`: `R_MASK_TYPE_NAME_INVALID`, a decomposed name; also for a type
 other than the one asked for), a mask type spelled in two ways (`mask_names_differ_in_case`)
-and an image with two masks of the type (`duplicate_mask`). A mask is never silently replaced:
+and an image with two masks of the type (`duplicate_mask`). A mask type whose name differs only
+in case from an entry of the masks folder, even an empty folder or one holding only a record
+(`cells/` when `Cells` is asked), is refused by `images_to_segment`, `write_mask`,
+`write_record` and so `run_batch` (`check_mask_type_folder`, `mask_type_differs_in_case`,
+#459), the same on every file system, naming both: on Windows and macOS they are one folder.
+Use the existing folder's exact name or another mask type; nothing is renamed or merged, and
+the exact name stays allowed. A mask is never silently replaced:
 without `overwrite` the name is claimed exclusively, so it works on a file system without hard
 links (a Google Drive mount) too.
 

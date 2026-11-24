@@ -147,10 +147,26 @@ def test_the_pins_are_cellpose_4_2_1_1_and_one_preprocessing_commit():
 PINNED_NOTEBOOKS = {
     # name: how many leading cells are the Preprocessing notebook's (install, Drive, app),
     # whose local checkouts the pin check follows (#441); 0: every cell checked strictly
+    # ("MorphoBricks_Cellpose" is retired after the owner's Colab test and dropped from here.)
     "MorphoBricks_Cellpose": 0,
+    "MorphoBricks_Preprocessing": 3,  # its three code cells (install, Drive, app) are all its own
     "MorphoBricks_Preprocessing_Cellpose": 3,
 }
-"""The notebooks whose ``RELEASE_REF`` the pin-scope check covers (#421, #422, #441)."""
+"""The notebooks whose ``RELEASE_REF`` the pin-scope check covers (#421, #422, #441): every
+notebook of ``notebooks/`` that has one (:func:`test_the_gate_names_every_notebook_with_a_pin`)."""
+
+
+def test_the_gate_names_every_notebook_with_a_pin():
+    # Every run: a notebook with a RELEASE_REF that the release-only freshness gate does not
+    # list would let a release PR forget to move its pin (the Preprocessing notebook was
+    # missed, still installing an older normalization). A new notebook must be listed here.
+    pinned = {
+        path.stem
+        for path in (ROOT / "notebooks").glob("*.ipynb")
+        if any("RELEASE_REF" in code for code in code_sources(path))
+    }
+    assert pinned >= {"MorphoBricks_Preprocessing", "MorphoBricks_Preprocessing_Cellpose"}
+    assert set(PINNED_NOTEBOOKS) == pinned
 
 
 @pytest.mark.parametrize("name", PINNED_NOTEBOOKS)

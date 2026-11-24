@@ -371,6 +371,18 @@ def test_masks_of_another_masks_folder_than_the_runs_are_refused(tmp_path):
     assert "uses the masks folder" in text
 
 
+def test_a_folder_differing_only_in_case_from_a_written_type_is_refused(tmp_path):
+    # #459: cells/ appeared in the masks folder beside the Cells masks cell 4 wrote; on
+    # Windows and macOS they are one folder. Refused naming both, nothing declared or renamed.
+    nb = ran_app(tmp_path)
+    masks = tmp_path / "masks"
+    (masks / "cells").mkdir(parents=True)
+    text = refused(register_step(nb, segmented(tmp_path, nb, masks))).replace("&quot;", '"')
+    assert "mask_type_differs_in_case" in text and '"cells"' in text and '"Cells"' in text
+    assert sorted(p.name for p in masks.iterdir()) == ["cells"]
+    assert "[masks" not in (nb.result.output_folder / DESCRIPTION_FILENAME).read_text("utf-8")
+
+
 def test_images_changed_since_the_run_are_refused(tmp_path):
     nb = ran_app(tmp_path)
     segmentation = segmented(tmp_path, nb, tmp_path / "masks")

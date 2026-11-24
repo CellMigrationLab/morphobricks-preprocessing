@@ -110,7 +110,7 @@ def test_sparse_pairwise_evidence_from_a_scan_makes_a_named_cycle(tmp_path):
         write_data(root / image / "x.tif", np.zeros((32, 32), np.uint8))
         write_data(folder / small / image / "x.tif", box(6))
         write_data(folder / big / image / "x.tif", box(24))
-    inventory = preflight(root, masks_folder=folder).masks
+    inventory = preflight(root, masks_folder=folder, bind_headers=True).masks
     assert inventory.ok, inventory.issues
     scanned = scan_masks(inventory, root)
     assert dict(scanned.hierarchy) == {"A": ("B",), "B": ("C",), "C": ("A",)}

@@ -21,6 +21,10 @@ A masks folder given explicitly as ``masks_root`` that is not an existing, lista
 refused with the codes the run itself uses for a masks folder (issue #487):
 :class:`MasksFolderNotFoundError` (``masks_folder_not_found``) and
 :class:`MasksFolderUnreadableError` (``masks_folder_unreadable``).
+
+A manifest whose recorded description section digests are not those of the published
+description the run read is refused with :class:`SectionDigestMismatchError`
+(``manifest_section_digest_mismatch``, issue #490).
 """
 
 from __future__ import annotations
@@ -109,6 +113,17 @@ class MasksFolderUnreadableError(RunInputsError):
     """
 
     code = "masks_folder_unreadable"
+
+
+class SectionDigestMismatchError(RunInputsError):
+    """A recorded section digest is not the one of the published description (#490).
+
+    ``RunInputs.open`` recomputes the digests of the published description the run read (its
+    SHA-256 already checked) and refuses a manifest recording another one for any section; the
+    message names each such section. The manifest is never corrected.
+    """
+
+    code = "manifest_section_digest_mismatch"
 
 
 class RunStoppedError(RunInputsError):

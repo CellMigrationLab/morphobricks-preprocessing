@@ -318,6 +318,12 @@ banner then says "commit unknown" and that the override is on). Then:
   unless you tick overwrite, and `<masks>/<type>/segmentation_record.json` with the model's
   file name and SHA-256, every setting (the full normalisation and the flow iterations included), whether the weights were downloaded now and from where, the channels, the device and each image as written,
   skipped or failed. The final table lists every image, with the error of a failed one.
+- **A mask type is its exact name.** A mask type whose name differs from a folder already in
+  the masks folder only in upper/lower case (`Cells` when `cells/` is there, even empty) is
+  refused when you choose it, on every computer, naming both (`mask_type_differs_in_case`): on
+  Windows and macOS the two are one folder, so the masks of two types would be mixed. Type the
+  existing folder's exact name (`cells`) to add to its masks, or choose another mask type.
+  Nothing is renamed or merged.
 
 Afterwards declare the mask type (both mask types for **Both**) in the experiment description (for example `[masks.Cells]`
 with `source_type = "Cells"` and `representation = "instances"`), save it, run preprocessing
@@ -349,6 +355,8 @@ run the experiment in the app of cell 3. Then:
   the masks folder the run already used are fine. If its folder check asks you to confirm the
   axes again, do it in cell 3 (step **Axes**) and press the button again (or run cell 5
   again). It refuses, changing nothing, a mask type that collides with a mask already declared,
+  a mask type cell 4 wrote beside a folder of the masks folder whose name differs from it only
+  in case (`mask_type_differs_in_case`),
   a masks folder inside the experiment, masks of another run or masks folder than the app's,
   images changed since the run, a run cell 3 published again after cell 4 opened it (open the
   run again in cell 4 and segment again), and, after that stop, axes other than those the
@@ -1459,6 +1467,7 @@ continues.
 | `source_changed_during_run` | Error | An image changed or went missing while the run was checking or reading it, so its rows would not describe it. No scientific outputs are published and sources are untouched; the discovery report is written. Wait until nothing writes to the experiment (an acquisition or a copy still running), then run again: the images already read resume from their staged rows. |
 | `mask_changed_during_check` | Error | A mask changed while its header was read, so the check cannot tell which version it describes. Wait until nothing writes to the masks (a segmentation or a copy still running), then check or run again. |
 | `mask_changed_during_run` | Error | A mask changed or went missing after the run checked its header and before it published its results (its size or time, or for an OME-Zarr label image its files; with `--verify-content` also its content). Nothing is published; the discovery report is written. Wait until nothing writes to the masks, then run again: the images already read resume from their staged rows. |
+| `mask_header_unbound` | Error | `scan_masks` called directly with masks found without their headers bound to the files' fingerprints (`find_masks(..., bind=True)` or `preflight(..., bind_headers=True)`), so their headers might describe other versions of the files. No mask is read and no report is made. Find the masks with their headers bound and scan again. The `masks` command and the notebook always bind them. |
 | `mask_changed_during_scan` | Error | The `masks` command (or **Describe the masks**): a mask changed or went missing after its header was read or while its pixels were read. No report is written; an earlier `mask_relationships.json` is left as it was. Wait until nothing writes to the masks, then describe them again. |
 | `design_unreadable` | Error | The `experiment_design.csv` an earlier run wrote cannot be read. Correct it, or delete it to confirm the design again. |
 | `no_usable_planes` | Error | No plane has finite pixel values. Check the images. |
@@ -1502,6 +1511,8 @@ continues.
 | `mask_hierarchy_cycle` | Warning (mask step) | The direct parents of some mask types form a cycle (for example A inside B in some images, B inside C in others and C inside A), so no parent-child hierarchy can be inferred for them. The hierarchy lists them together as `[cycle: …]` with every link. Check those masks; nothing is guessed. |
 | `no_finite_pixels` | Warning | Some planes have a channel without finite pixels; those channels are left out of group statistics. |
 | `excluded_images`, `excluded_path_not_found` | Warning | Images excluded as requested, or an excluded path that matches no image. |
+| `manifest_section_digests_malformed` | Error (other bricks) | The run manifest's `experiment_description.section_digests` does not hold exactly the sections `conditions`, `channels`, `repeats` and `masks`, each a lowercase SHA-256 (`ManifestSectionDigestsError`, when the manifest is read). The manifest was changed after the run; the message names the field. Nothing is filled in: run preprocessing again. |
+| `manifest_section_digest_mismatch` | Error (other bricks) | `RunInputs.open` found a section digest in the run manifest that is not the digest of that section of the published `morphobricks.toml` the run read (`SectionDigestMismatchError`); the message names each such section. The manifest was changed after the run, and later bricks key their caches on these digests, so the run is refused, never corrected. Run preprocessing again. |
 | `masks_folder_not_found` | Error | The masks folder does not exist. Select the folder that holds one folder per kind of mask. Later bricks opening a run (`RunInputs.open(..., masks_root=...)`) refuse a masks folder given that does not exist or is a file with the same code (`MasksFolderNotFoundError`); it is never read as a folder without masks. Give the folder that holds the masks, or leave `masks_root` out to use the one the run recorded. |
 | `masks_folder_unreadable` | Error | A masks folder given to a later brick (`RunInputs.open(..., masks_root=...)`) cannot be listed, for example for lack of permission, so its masks cannot be checked against the run (`MasksFolderUnreadableError`); the message names the folder and the reason. Check its permissions, or give another folder. |
 | `output_inside_masks` | Error | The output folder is inside the masks folder, where the run's files would be read as masks. Choose another output folder. |
