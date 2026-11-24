@@ -19,8 +19,9 @@ consumer reads it as a description.
   with the checks of :func:`.description_file.publish_locked` together with its derived
   ``experiment_design.csv``, and deletes the draft file, all under one hold of the lock. Any
   refusal writes nothing, and a failed write of the description, its records or its design
-  puts all three back (issue #400): the draft, the published file and the design stay byte for
-  byte as they were, so the draft can be published again. If the draft file cannot be deleted
+  changes none of them (issue #400; :mod:`.description_file` says how, and its limits): the
+  draft, the published file and the design stay byte for byte as they were, so the draft can be
+  published again. If the draft file cannot be deleted
   after a successful publication, the error is raised and the publication stands (its
   description and design match); the draft then records a base that no longer matches, so it
   is refused when resumed.
@@ -217,8 +218,8 @@ def publish_draft(
     description built from it (every confirmation present or :class:`DraftIncomplete`), published
     with all the checks of :func:`.description_file.publish_description`, then the derived
     ``experiment_design.csv`` is written in the same publication (experiment-v1 section 11: it is
-    written only here, from the published file; if it cannot be written, the previous
-    description, records and design are put back) and the draft file is deleted. Nothing is
+    written only here, from the published file; if it cannot be written, the description,
+    records and design stay as they were) and the draft file is deleted. Nothing is
     written on any refusal.
     ``removals`` and ``recorded_on`` are the user's, as :func:`.description_file.publish_locked`
     takes them (a removed folder, a changed image count).

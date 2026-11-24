@@ -296,15 +296,26 @@ def design_issues(design: DesignTable) -> list[ValidationIssue]:
 
 
 def write_experiment_design(design: DesignTable, path: str | os.PathLike) -> Path:
-    """Write ``experiment_design.csv``, replacing the file only once writing succeeded.
+    """Write :func:`experiment_design_text` atomically to ``path`` and return it.
+
+    Raises
+    ------
+    DesignFormatError
+        As :func:`experiment_design_text`; nothing is written.
+    """
+    return write_text_atomic(path, experiment_design_text(design), parents=True)
+
+
+def experiment_design_text(design: DesignTable) -> str:
+    """Return the text of ``experiment_design.csv`` for ``design``, checked; write nothing.
 
     The file is UTF-8 with LF line endings; the same design always gives the
     same bytes. Every ``confirmed_on`` it writes is empty or a date in
     :data:`DATE_FORMAT`, and every repeat group a valid name. Nothing is converted
     (issue #410): ``control`` and ``confirmed`` must be booleans, the counts whole
     numbers (``int``, not ``bool``) of at least 0 and the labels text. The bytes are
-    parsed back with :func:`parse_design_bytes` and must give the same table before
-    the file is replaced, so the writer writes nothing its parser refuses.
+    parsed back with :func:`parse_design_bytes` and must give the same table, so no
+    text its parser refuses is returned (or written).
 
     Raises
     ------
@@ -312,9 +323,8 @@ def write_experiment_design(design: DesignTable, path: str | os.PathLike) -> Pat
         If a row has a value of the wrong type, a repeat-group name or confirmation
         date the parser refuses (:func:`design_issues`, ``invalid_experiment_design``),
         or the table is one :func:`parse_design_bytes` refuses (a folder twice, one
-        condition both a control and not); nothing is written.
+        condition both a control and not).
     """
-    path = Path(path)
     invalid = _design_problems(design)
     if invalid:
         raise DesignFormatError(
@@ -332,7 +342,7 @@ def write_experiment_design(design: DesignTable, path: str | os.PathLike) -> Pat
             "The experiment design cannot be written: its parser would read it back as "
             "another table."
         )
-    return write_text_atomic(path, text, parents=True)
+    return text
 
 
 def _design_text(design: DesignTable) -> str:
