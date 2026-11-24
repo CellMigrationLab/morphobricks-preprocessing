@@ -41,7 +41,17 @@ is pinned to the release in `RELEASE_TAG` (plan §12 question 58);
 
 `python tools/check.py` runs everything a pull request must pass: `ruff check`,
 `ruff format --check`, pytest and the code rules. CI runs the code rules with
-`python tools/check.py --rules`.
+`python tools/check.py --rules`. `python tools/check.py --release` is a release run
+(`MORPHOBRICKS_RELEASE_RUN=1`): it also runs the release-only test that the Cellpose
+notebook's `RELEASE_REF` holds the code it runs, which skips otherwise.
+
+**CI (owner, 24 November 2026).** A pull request and a push to `main` run the minimal
+gates: `lint`, `wheel-identity` and one test job (Ubuntu, Python 3.13). The full matrix
+(Ubuntu, Windows, macOS × Python 3.11, 3.13) runs only in a release run: a manual run of the
+CI workflow, a push of a `v*` tag, or a pull request labelled `release`. Pull requests do not
+re-pin the notebooks: `RELEASE_REF` moves only in the release PR (AGENTS.md §3 item 6).
+A new push to a pull request or a branch cancels the older run of the same ref; release runs
+are never cancelled.
 
 - **Size:** files at most 600 lines; functions at most 60 executable lines, complexity 15
   (`C901`), 8 parameters (`PLR0913`) and 50 statements (`PLR0915`).

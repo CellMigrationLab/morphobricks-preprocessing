@@ -4,7 +4,8 @@ The notebooks install this package at their ``RELEASE_REF`` commit, not this che
 Preprocessing notebook keeps the call of the code at that commit (``test_notebook_file.py``,
 ``RELEASE_CALLS``); the Cellpose notebook must run exactly the code at ``RELEASE_REF`` that it
 uses (issue #421). Both read their cells and their pins here (:func:`code_sources`,
-:func:`install_setting`).
+:func:`install_setting`). That freshness check (:func:`check_pin_holds_this_code`) runs only in
+a release run (``release_run.py``): the notebooks are pinned in the release pull request.
 
 What the Cellpose notebook uses is derived from its cells, never listed by hand
 (:func:`notebook_modules`): the package modules its cells import, then every package module
@@ -42,6 +43,8 @@ import tomllib
 from pathlib import Path
 
 import pytest
+
+from release_run import release_only, release_run
 
 PACKAGE = "morphobricks_preprocessing"
 DISTRIBUTION = "morphobricks-preprocessing"
@@ -120,10 +123,10 @@ class PinScopeError(Exception):
 
 
 def history_missing(reason: str) -> None:
-    """Skip a test that needs the Git history, or fail it in CI (``CI`` set), whose checkout
-    holds the full history so that the pin check runs there (issue #421)."""
-    if os.environ.get("CI"):
-        pytest.fail(f"{reason}: CI must check out the full history (fetch-depth: 0)")
+    """Skip a test that needs the Git history, or fail it in CI (``CI`` set) or in a release
+    run, whose checkout holds the full history so that the pin check runs there (issue #421)."""
+    if os.environ.get("CI") or release_run():
+        pytest.fail(f"{reason}: CI and release runs need the full history (fetch-depth: 0)")
     pytest.skip(reason)
 
 
@@ -573,3 +576,19 @@ def pin_differences(repo: Path, ref: str, head: str, sources: list[str]) -> list
     if _install_table_at(repo, before) != _install_table_at(repo, after):
         changed.add("pyproject.toml")
     return sorted(changed)
+
+
+def check_pin_holds_this_code(repo: Path, ref: str, sources: list[str]) -> None:
+    """Fail unless the notebook cells ``sources``, installing ``ref``, run the code ``HEAD`` holds.
+
+    Release-only (owner, 24 November 2026): skipped outside a release run, as the pin is moved
+    only in the release pull request. In a release run a missing pinned commit fails.
+    """
+    release_only()
+    command = ["git", "-C", str(repo), "cat-file", "-e", f"{ref}^{{commit}}"]
+    if subprocess.run(command, capture_output=True).returncode != 0:
+        history_missing("the pinned commit is not in this checkout (shallow clone or no git)")
+    changed = pin_differences(repo, ref, "HEAD", sources)
+    assert changed == [], (
+        f"what the notebook runs changed after RELEASE_REF: move the pin ({changed})"
+    )
