@@ -63,9 +63,7 @@ def refused_after_chdir(setup, workflow, monkeypatch):
 
 
 @pytest.mark.parametrize("output", sorted(OUTPUTS))
-def test_the_notebook_cells_refuse_after_the_working_directory_changed(
-    setup, monkeypatch, output
-):
+def test_the_notebook_cells_refuse_after_the_working_directory_changed(setup, monkeypatch, output):
     ns = {}
     run_cell(ns, OPEN, run_folder=str(setup.run.out), masks_folder="masks")
     run_cell(ns, CHANNELS, output=output)
@@ -83,9 +81,7 @@ def test_the_notebook_cells_refuse_after_the_working_directory_changed(
 
 
 @pytest.mark.parametrize("output", sorted(OUTPUTS))
-def test_segmentation_app_refuses_after_the_working_directory_changed(
-    setup, monkeypatch, output
-):
+def test_segmentation_app_refuses_after_the_working_directory_changed(setup, monkeypatch, output):
     app = segmentation_app(setup.run.out, "masks")
     workflow = app.workflow
     assert workflow.inputs is not None
@@ -93,9 +89,7 @@ def test_segmentation_app_refuses_after_the_working_directory_changed(
     refused_after_chdir(setup, workflow, monkeypatch)
 
 
-def test_a_relative_run_folder_is_refused_after_the_working_directory_changed(
-    setup, monkeypatch
-):
+def test_a_relative_run_folder_is_refused_after_the_working_directory_changed(setup, monkeypatch):
     """The run folder was already compared resolved (RunInputs holds it resolved); kept so."""
     relative = f"../{setup.run.out.relative_to(setup.a.parent).as_posix()}"
     app = segmentation_app(relative, str(setup.a / "masks"))
