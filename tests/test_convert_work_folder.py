@@ -11,11 +11,13 @@ import sys
 import pytest
 
 import morphobricks_preprocessing.conversion_plan as plan_module
+import morphobricks_preprocessing.conversion_write as write_module
 from morphobricks_preprocessing import convert_experiment
 from morphobricks_preprocessing.conversion_record import RECORD_FILENAME
 from morphobricks_preprocessing.lock_file import LockHolder
 from morphobricks_preprocessing.run.lock import holder_running
-from test_convert_partials import STORES, _holder, _store
+from test_convert_links import _tree
+from test_convert_partials import KIND, STORES, WORK, _holder, _leftover, _store
 from test_convert_run import SWAPPED, codes, swapped_experiment
 
 
@@ -150,3 +152,54 @@ def test_the_preview_plans_the_store_and_the_projection(tmp_path):
         plan_module.preview_conversion(exp, SWAPPED, tmp_path / "c3", store="zip")
     with pytest.raises(TypeError, match="unexpected keyword"):
         plan_module.preview_conversion(exp, SWAPPED, tmp_path / "c3", progress=None)
+
+
+# (4) A leftover work folder that cannot be removed ----------------------------------------
+
+
+@pytest.mark.parametrize("state", ["owned", "unfinished"])
+def test_a_leftover_that_cannot_be_removed_is_a_coded_refusal_not_a_crash(
+    tmp_path, monkeypatch, state
+):
+    # An antivirus or a sync client holds a file open (Windows refuses its removal).
+    exp, copies = swapped_experiment(tmp_path / "exp"), tmp_path / "copies"
+    if state == "owned":
+        _leftover(copies, {"kind": KIND, "holder": _holder()})
+    else:
+        (copies / WORK).mkdir(parents=True)
+    before = _tree(copies)
+    real_rmtree, real_rmdir = write_module.shutil.rmtree, write_module.Path.rmdir
+
+    def held(path, *args, **kwargs):
+        raise PermissionError(13, "The process cannot access the file", str(path))
+
+    monkeypatch.setattr(write_module.shutil, "rmtree", held)
+    monkeypatch.setattr(write_module.Path, "rmdir", held)
+    result = convert_experiment(exp, SWAPPED, copies)
+    assert not result.written and codes(result.issues) == ["conversion_work_folder_not_removed"]
+    issue = result.issues[0]
+    assert issue.paths == (WORK,) and "cannot access the file" in issue.message
+    assert str(copies / WORK) in issue.action
+    assert _tree(copies) == before and (copies / WORK).is_dir()  # nothing written
+    monkeypatch.setattr(write_module.shutil, "rmtree", real_rmtree)
+    monkeypatch.setattr(write_module.Path, "rmdir", real_rmdir)
+    result = convert_experiment(exp, SWAPPED, copies)  # once released, it is removed
+    assert result.written and not (copies / WORK).exists()
+
+
+def test_a_leftover_partly_removed_is_still_owned(tmp_path, monkeypatch):
+    # Its copies go first, its owner file last: one stopped halfway is removed next time.
+    exp, copies = swapped_experiment(tmp_path / "exp"), tmp_path / "copies"
+    work = _leftover(copies, {"kind": KIND, "holder": _holder()})
+    real_rmtree = write_module.shutil.rmtree
+
+    def halfway(path, *args, **kwargs):
+        (work / "files/ctrl/r1/a.tif").unlink()
+        raise OSError(16, "Device or resource busy", str(path))
+
+    monkeypatch.setattr(write_module.shutil, "rmtree", halfway)
+    first = convert_experiment(exp, SWAPPED, copies)
+    assert codes(first.issues) == ["conversion_work_folder_not_removed"]
+    assert (work / "owner.json").is_file()
+    monkeypatch.setattr(write_module.shutil, "rmtree", real_rmtree)
+    assert convert_experiment(exp, SWAPPED, copies).written and not work.exists()

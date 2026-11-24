@@ -113,6 +113,20 @@ def work_folder_in_use_issue(dest: Path, name: str, holder: LockHolder) -> Valid
     )
 
 
+def work_folder_not_removed_issue(dest: Path, name: str, exc: OSError) -> ValidationIssue:
+    """Refuse a conversion whose leftover work folder ``name`` cannot be removed (#488)."""
+    return error(
+        "conversion_work_folder_not_removed",
+        f"The folder for the named-axis copies holds {name}, the work folder of a conversion "
+        f"that was stopped, and it cannot be removed ({exc}): a file in it may be open in "
+        "another program, such as an antivirus or a sync client (OneDrive, Dropbox). Part of "
+        "it may have been removed. Nothing was written.",
+        [name],
+        "Close the programs that may use it, or wait for them to finish, then convert again "
+        f"(the conversion removes it). Or remove {dest / name} yourself.",
+    )
+
+
 def path_too_long_issue(
     dest: Path, paths: list[str], over: dict[str, tuple[int, int]]
 ) -> ValidationIssue:

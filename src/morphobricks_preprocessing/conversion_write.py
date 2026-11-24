@@ -39,7 +39,7 @@ from dataclasses import asdict, dataclass, fields, replace
 from pathlib import Path
 
 from .content_hash import content_sha256
-from .conversion_issues import failed_issue, links_issue
+from .conversion_issues import failed_issue, links_issue, work_folder_not_removed_issue
 from .conversion_record import CopyEntry
 from .fingerprint import Fingerprint, current_fingerprint
 from .links import is_link_stat
@@ -264,23 +264,35 @@ def read_owner(work: Path) -> LockHolder | None:
     return LockHolder(host, pid, started_at, token) if well_formed else None
 
 
-def remove_leftover(found: WorkFolder | None) -> None:
+def remove_leftover(found: WorkFolder | None) -> ValidationIssue | None:
     """Remove a work folder left by a conversion that is gone; leave anything else.
 
-    An :data:`OWNED` folder is removed whole; an :data:`UNFINISHED` one by unlinking its
-    one owner file, if any, and an ``rmdir``, which removes only an empty folder. Each is
-    checked again right before, so what changed since is left.
+    An :data:`OWNED` folder is removed whole: its ``files/`` first, then its owner file and
+    the folder (``rmdir``), so one only partly removed is still owned; an :data:`UNFINISHED`
+    one by unlinking its one owner file, if any, and an ``rmdir``, which removes only an
+    empty folder. Each is checked again right before, so what changed since is left.
+
+    Returns
+    -------
+    ValidationIssue or None
+        ``conversion_work_folder_not_removed``, naming the folder, when the file system
+        refused a removal (a file held open by an antivirus or a sync client, or a change
+        meanwhile, issue #488); None otherwise.
     """
     if found is None or found.state not in (OWNED, UNFINISHED):
-        return
+        return None
     again = work_folder_state(found.path.parent, found.path.name)
     if again is None or again.state != found.state:
-        return
-    if found.state == OWNED:
-        shutil.rmtree(found.path)
-        return
-    (found.path / OWNER_FILENAME).unlink(missing_ok=True)
-    found.path.rmdir()
+        return None
+    try:
+        if os.path.lexists(found.path / FILES_FOLDER):
+            shutil.rmtree(found.path / FILES_FOLDER)
+        (found.path / OWNER_FILENAME).unlink(missing_ok=True)
+        found.path.rmdir()
+    except OSError as exc:
+        logger.debug("Cannot remove the work folder %s", found.path, exc_info=True)
+        return work_folder_not_removed_issue(found.path.parent, found.path.name, exc)
+    return None
 
 
 def _unfinished(work: Path) -> bool:

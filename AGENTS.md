@@ -421,7 +421,8 @@ src/morphobricks_preprocessing/
                     computer only; the lock is the real guard); its own only
                     while the owner file holds its token; an empty one, or one holding only
                     an empty or cut-short owner file, is removed by rmdir; both before the
-                    space check, remove_leftover, #448, #482),
+                    space check, remove_leftover, #448, #482; a removal refused is
+                    conversion_work_folder_not_removed, #488),
                     moved into place
                     together (any failure removes what it wrote); nothing else is removed;
                     each write and move checks its way again for links (_Route, #467)
