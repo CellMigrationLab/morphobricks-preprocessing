@@ -94,6 +94,8 @@ src/morphobricks_preprocessing/
                     is wrong with a malformed one (PhysicalSizes.invalid, issue #94)
   dataset.py        dataset consistency from the folders: biological repeats per condition, balance
                     table, unbalanced_images, repeat_missing_conditions, CONSISTENCY_CODES (P2)
+  type_names.py     type_name(value): a type's name in a message, short for a builtin, qualified
+                    otherwise (numpy.bool); the one helper of the writers' type refusals (#470)
   design.py         the rows of experiment_design.csv (an output only since v0.5.1): DesignTable/
                     DesignRow (read-only), the run's reconcile_design and design_issues against
                     the folders, write_experiment_design, parse_design_bytes (the strict parser

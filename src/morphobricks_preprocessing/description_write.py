@@ -44,6 +44,7 @@ from .description_rules import (
     UNIT,
     Code,
 )
+from .type_names import type_name
 
 BARE_KEY = re.compile(r"[A-Za-z0-9_-]+")
 DESCRIPTIVE = frozenset({"display_name", "target", "treatment_key"})
@@ -75,9 +76,7 @@ class DescriptionTypeError(DescriptionError, TypeError):
 
     def __init__(self, issues: tuple[DescriptionIssue, ...], phase: int) -> None:
         super().__init__(issues, phase)
-        found = "; ".join(
-            f"{i.path} holds a value of type {type(i.value).__name__}" for i in issues
-        )
+        found = "; ".join(f"{i.path} holds a value of type {type_name(i.value)}" for i in issues)
         self.args = (
             f"the description cannot be written: {found}, a type the strict reader refuses "
             "(E_TYPE). Nothing was written.",
@@ -197,10 +196,46 @@ def check_types(description: Description) -> None:
         With every ``E_TYPE`` issue of the first phase that has one.
     """
     doc = _document(description)
+    keys = _key_issues(doc)
+    if keys:  # the reader's table paths are built from text keys
+        raise DescriptionTypeError(keys, 3)
     for phase, check in STRUCTURE_PHASES:
         wrong = tuple(i for i in check(doc).items if i.code is Code.E_TYPE)
         if wrong:
             raise DescriptionTypeError(wrong, phase)
+
+
+def _key_issues(doc: Mapping[str, object]) -> tuple[DescriptionIssue, ...]:
+    """Return an ``E_TYPE`` issue for each ID key of the document that is not text (#470).
+
+    The issue's value is the key, so the message names the key and its type. A table whose
+    key is not text is not searched below it; a value that is not a table is left to the
+    reader's own checks.
+    """
+    found: list[DescriptionIssue] = []
+
+    def walk(base: str, table: object, below: tuple[str, ...]) -> None:
+        if not isinstance(table, Mapping):
+            return
+        for key, value in table.items():
+            if not isinstance(key, str):
+                found.append(DescriptionIssue(Code.E_TYPE, f"the key {key!r} of {base}", key))
+                continue
+            if below:
+                walk(
+                    f"{base}.{toml_key(key)}.{below[0]}",
+                    value.get(below[0]) if isinstance(value, Mapping) else None,
+                    below[1:],
+                )
+
+    for name, below in (
+        ("conditions", ()),
+        ("channels", ()),
+        ("masks", ()),
+        ("repeats", ("members", "technical_repeats")),
+    ):
+        walk(name, doc.get(name), below)
+    return tuple(found)
 
 
 def _keyed(base: str, key: str) -> str:
