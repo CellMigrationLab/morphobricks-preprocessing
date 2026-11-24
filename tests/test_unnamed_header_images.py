@@ -128,6 +128,11 @@ def test_a_fully_named_run_lists_nothing_and_has_no_such_key(tmp_path):
             {"image": "b.tif", "header_names": "none", "channel_positions": [0]},
             {"image": "a.tif", "header_names": "none", "channel_positions": [0]},
         ],
+        # #506: the unit has 2 channels (C 0 and 1)
+        [{"image": "a.tif", "header_names": "partial", "channel_positions": [2]}],
+        [{"image": "a.tif", "header_names": "partial", "channel_positions": [999]}],
+        [{"image": "a.tif", "header_names": "none", "channel_positions": [1]}],
+        [{"image": "a.tif", "header_names": "partial", "channel_positions": [0, 1]}],
     ],
 )
 def test_a_malformed_list_is_refused_on_read(tmp_path, bad):
