@@ -9,7 +9,8 @@ so. Each axis is recorded with its source, ``"header"``, ``"stated"`` or ``"pixe
 (:class:`.recorded_sizes.RecordedSize`).
 
 - **Targets.** ``"."`` is the whole experiment; any other target is a folder or an image,
-  relative to the experiment folder, with ``/`` separators, compared exactly. The most
+  relative to the experiment folder, with ``/`` separators, compared exactly. A target of
+  only separators (``/``, ``//``) is refused (``calibration_target_root``, #390). The most
   specific statement that covers an image applies: an image's own over its folders', a
   deeper folder's over a higher one's, any folder's over the whole experiment's.
 - **Roles, never positions.** A statement names the role it sizes; the header's sizes are
@@ -49,11 +50,41 @@ EXPERIMENT = "."
 """The target of a statement for the whole experiment."""
 CALIBRATION_CODES = ("calibration_unreadable", "calibration_target_not_found")
 """The errors about ``calibration.csv`` itself."""
+EXPERIMENT_SPELLINGS = (EXPERIMENT, "./")
+"""The only targets read as the whole experiment (issue #390)."""
+CALIBRATION_TARGET_ROOT = "calibration_target_root"
+"""The refusal of a target such as ``/`` that would otherwise be the whole experiment."""
 
 _SHOWN = 5
 """Images described one by one in a message; every one is in its paths."""
 _DECIMAL = re.compile(r"[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?")
 """A size as text: plain ASCII decimal notation (no ``_`` separators, no other digits)."""
+
+
+class CalibrationTargetRootError(ValueError):
+    r"""A target such as ``/``, ``//`` or ``\`` that only a trailing-separator trim makes ``"."``.
+
+    Refused, never read as the whole experiment (issue #390, owner decision of 24 November
+    2026): ``"."`` (or ``"./"``) is the whole experiment's only spelling.
+
+    Attributes
+    ----------
+    code
+        ``"calibration_target_root"``.
+    target
+        The target as given.
+    """
+
+    code = CALIBRATION_TARGET_ROOT
+
+    def __init__(self, target: str) -> None:
+        self.target = target
+        super().__init__(
+            f"the target {target!r} is not a folder or image inside the experiment folder, "
+            f"and is refused rather than read as the whole experiment ({self.code}): to state "
+            "a size for the whole experiment, give no folder, only the target . (in the "
+            "notebook, Use for all images)"
+        )
 
 
 @dataclass(frozen=True)
@@ -103,13 +134,13 @@ class CalibrationEntry:
 
 
 def calibration_entry(target: str, axis: str, size: object, unit: str) -> CalibrationEntry:
-    """Build one statement from what the user wrote, refusing anything not exact.
+    r"""Build one statement from what the user wrote, refusing anything not exact.
 
     Parameters
     ----------
     target
-        ``"."`` or a relative folder or image path (backslashes are read as ``/``;
-        a leading ``./`` and a trailing ``/`` are dropped).
+        ``"."`` (or ``"./"``) or a relative folder or image path (backslashes are read as
+        ``/``; a leading ``./`` and a trailing ``/`` are dropped).
     axis
         ``"X"``, ``"Y"`` or ``"Z"`` (upper case).
     size
@@ -128,7 +159,10 @@ def calibration_entry(target: str, axis: str, size: object, unit: str) -> Calibr
     Raises
     ------
     ValueError
-        Saying what is wrong: the target, axis, size or unit.
+        Saying what is wrong: the target, axis, size or unit;
+        :class:`CalibrationTargetRootError` (``calibration_target_root``) for a target such
+        as ``/``, ``//`` or ``\`` that names no folder (only ``"."`` or ``"./"`` is the
+        whole experiment).
     """
     if axis not in CALIBRATION_AXES:
         raise ValueError(f"the axis {axis!r} is not X, Y or Z")
@@ -153,6 +187,8 @@ def _target(text: str) -> str:
         target = target[2:]
     target = target.rstrip("/") or EXPERIMENT
     if target == EXPERIMENT:
+        if text not in EXPERIMENT_SPELLINGS:  # "/", "//", "\\", ".//": never the root (#390)
+            raise CalibrationTargetRootError(text)
         return EXPERIMENT
     parts = target.split("/")
     if target.startswith("/") or ":" in parts[0] or any(p in ("", ".", "..") for p in parts):
