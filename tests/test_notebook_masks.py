@@ -236,6 +236,26 @@ def test_a_recorded_mask_axes_statement_is_not_asked_to_be_checked_again(tmp_pat
     assert again.run().input_changes == ()
 
 
+def test_another_masks_folder_asks_for_its_mask_axes_again(tmp_path):
+    """#484: a statement made for one masks folder is not offered for another one."""
+    root = experiment(tmp_path, (3, 16, 16), "TYX")
+    old, new = tmp_path / "old-segmentation", tmp_path / "new-segmentation"
+    for rel in IMAGES:  # the same mask type, unnamed headers and shape in both folders
+        write_plain(old / "Cells" / rel, labels((3, 16, 16)))
+        write_plain(new / "Cells" / rel, labels((3, 16, 16)))
+    first = notebook(root, old)
+    confirm_everything(first)
+    first._mask_choices["Cells"].value = "TYX"
+    first.masks_button.click()
+    assert first.run().written
+    for nb in (first, notebook(root, new)):  # the same session, and a new one
+        nb.masks_folder.value = str(new)
+        nb.check_button.click()
+        confirm_everything(nb)
+        assert nb._mask_choices["Cells"].value == "" and nb.run_button.disabled
+        assert still_to_do(nb) == "fix any mask errors (Masks)"
+
+
 # 5. Embedding ---------------------------------------------------------------------------
 
 
