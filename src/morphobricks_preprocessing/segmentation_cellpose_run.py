@@ -152,8 +152,13 @@ def channel_by_number(inputs: RunInputs, number: int) -> str:
     ------
     SegmentationError
         When the images' channel layouts differ (the refusal names each layout and its
-        images, and asks for a tag), or for a number beyond the channels.
+        images, and asks for a tag), or for a number below 1 or beyond the channels.
     """
+    if number < 1:  # 0 or -1 would index from the end: never a channel (review aq, FILE 2)
+        raise SegmentationError(
+            f"Channel number {number} is not a channel number: channel numbers start at 1 (the "
+            "first channel). Choose a number of 1 or more, or choose the channel by its tag."
+        )
     layouts = channel_layouts(inputs)
     if len(layouts) != 1 or None in layouts:
         raise SegmentationError(_layouts_differ(number, layouts))

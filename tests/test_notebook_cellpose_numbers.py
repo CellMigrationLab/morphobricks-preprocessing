@@ -133,3 +133,11 @@ def test_a_number_for_a_channel_not_read_is_refused():
     assert cp.channel_roles_entry(("DNA",), ("nuclear",), "nuclei", {"DNA": 1}) == [
         {"channel_id": "DNA", "role": "nuclear", "channel_number": 1}
     ]
+
+
+@pytest.mark.parametrize("number", [0, -1, -2])
+def test_the_number_helper_refuses_0_and_negative_numbers(tmp_path, number):
+    """External review aq, FILE 2: 0 returned the last channel (``ids[-1]``) instead of refusing."""
+    run = two_channel_run(tmp_path / "run")
+    with pytest.raises(SegmentationError, match="channel numbers start at 1"):
+        run_module.channel_by_number(run.inputs, number)
