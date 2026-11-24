@@ -108,8 +108,10 @@ def plan_conversion(
         name stop the plan (``copy_names_collide``). Default ``"ome-tiff"``.
 
     On Windows, a copy any of whose files would have a path longer than
-    :data:`WINDOWS_MAX_PATH` characters while it is written, in the work folder, stops the
-    plan too (``copy_path_too_long``, :func:`long_path_issue`).
+    :data:`WINDOWS_MAX_PATH` characters, or any of whose folders a path longer than
+    :data:`WINDOWS_MAX_FOLDER`, while it is written in the work folder, stops the plan too
+    (``copy_path_too_long``, :func:`long_path_issue`); not when Windows' long paths are
+    enabled (``LongPathsEnabled``).
 
     Returns
     -------
@@ -181,47 +183,82 @@ def _plan(
 WINDOWS_MAX_PATH = 259
 """The longest path Windows handles without long-path support (``MAX_PATH`` 260, with the
 terminating NUL)."""
+WINDOWS_MAX_FOLDER = 247
+"""The longest folder path Windows makes without long-path support (``MAX_PATH`` less 12,
+room for an 8.3 file name): a longer one fails at ``mkdir`` (issue #488)."""
+_FILE_SYSTEM_KEY = r"SYSTEM\CurrentControlSet\Control\FileSystem"
+"""The registry key (``HKEY_LOCAL_MACHINE``) holding Windows' ``LongPathsEnabled``."""
 
 
 def _windows() -> bool:
-    """Return True on Windows, where a path is limited to :data:`WINDOWS_MAX_PATH` characters."""
-    return os.name == "nt"
+    """Return True where Windows' path limits apply: Windows without long paths enabled."""
+    return os.name == "nt" and not _long_paths_enabled()
+
+
+def _long_paths_enabled() -> bool:
+    """Return True when Windows' ``LongPathsEnabled`` setting is 1; False if it cannot be read.
+
+    Called on Windows only (``winreg`` exists nowhere else). Python itself is long-path aware
+    since 3.6, so with the setting on, neither limit applies to what the conversion writes.
+    """
+    try:
+        import winreg  # Windows only
+    except ImportError:
+        return False
+    try:
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, _FILE_SYSTEM_KEY) as key:
+            value, _ = winreg.QueryValueEx(key, "LongPathsEnabled")
+    except OSError:
+        return False
+    return value == 1
 
 
 def long_path_issue(
     root: Path, dest: Path, planned: tuple[PlannedCopy, ...]
 ) -> ValidationIssue | None:
-    """Refuse copies with a file whose path would be too long for Windows (issue #482).
+    """Refuse copies with a path too long for Windows (issues #482 and #488).
 
     Each copy is written in the work folder (:func:`.conversion_write.partial_path`), whose
-    path is longer than its place in the copy tree; an OME-Zarr copy's deepest file is a
-    plane's chunk (``0/<index>/.../0/0``), and a folder copied byte for byte is read for its
-    deepest file.
+    path is longer than its place in the copy tree; its deepest file must fit
+    :data:`WINDOWS_MAX_PATH` and its deepest folder :data:`WINDOWS_MAX_FOLDER`. An OME-Zarr
+    copy's deepest file is a plane's chunk (``0/<index>/.../0/0``), and a folder copied byte
+    for byte is read for its deepest file and folder.
     """
     work = dest / WORK_FOLDER
-    lengths = {
-        item.relative_path: len(str(partial_path(work, item))) + _deepest(root, item)
-        for item in planned
-    }
-    too_long = sorted(rel for rel, length in lengths.items() if length > WINDOWS_MAX_PATH)
+    lengths = {item.relative_path: _longest(root, work, item) for item in planned}
+    too_long = sorted(
+        rel
+        for rel, (file, folder) in lengths.items()
+        if file > WINDOWS_MAX_PATH or folder > WINDOWS_MAX_FOLDER
+    )
     if not too_long:
         return None
-    return path_too_long_issue(dest, too_long, max(lengths.values()), WINDOWS_MAX_PATH)
+    files = max(file for file, _ in lengths.values())
+    folders = max(folder for _, folder in lengths.values())
+    found = {"file": (files, WINDOWS_MAX_PATH), "folder": (folders, WINDOWS_MAX_FOLDER)}
+    over = {kind: sizes for kind, sizes in found.items() if sizes[0] > sizes[1]}
+    return path_too_long_issue(dest, too_long, over)
 
 
-def _deepest(root: Path, item: PlannedCopy) -> int:
-    """Return how many characters a copy's deepest file adds to its path (0 for a file)."""
+def _longest(root: Path, work: Path, item: PlannedCopy) -> tuple[int, int]:
+    """Return how long a copy's deepest file path and deepest folder path are in ``work``."""
+    path = partial_path(work, item)
+    length = len(str(path))
     if item.layout is not None and item.store == OME_ZARR:
         chunk = ["0", *(str(size - 1) for size in item.layout.shape[:-2]), "0", "0"]
-        return max(len(os.sep.join(chunk)), len(os.sep.join(["0", ".zarray"]))) + 1
+        file = max(len(os.sep.join(chunk)), len(os.sep.join(["0", ".zarray"]))) + 1
+        return length + file, length + len(os.sep.join(chunk[:-1])) + 1
     source = root / item.source_path
     if item.layout is not None or not source.is_dir():
-        return 0
-    deepest = 0
-    for folder, _, names in os.walk(source):
+        return length, len(str(path.parent))
+    file = folder = 0
+    for where, _, names in os.walk(source):
+        below = os.path.relpath(where, source)
+        if below != os.curdir:
+            folder = max(folder, len(below) + 1)
         for name in names:
-            deepest = max(deepest, len(os.path.relpath(os.path.join(folder, name), source)) + 1)
-    return deepest
+            file = max(file, len(os.path.relpath(os.path.join(where, name), source)) + 1)
+    return length + file, length + folder
 
 
 class PlanOptions(TypedDict, total=False):

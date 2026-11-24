@@ -113,16 +113,26 @@ def work_folder_in_use_issue(dest: Path, name: str, holder: LockHolder) -> Valid
     )
 
 
-def path_too_long_issue(dest: Path, paths: list[str], longest: int, limit: int) -> ValidationIssue:
-    """Refuse copies whose files would have paths too long for Windows (#482)."""
+def path_too_long_issue(
+    dest: Path, paths: list[str], over: dict[str, tuple[int, int]]
+) -> ValidationIssue:
+    """Refuse copies whose files or folders would have paths too long for Windows (#482, #488).
+
+    ``over``: for ``"file"`` and/or ``"folder"``, the longest such path and its limit.
+    """
+    what = " or ".join(
+        f"a {kind} whose path is longer than {limit} characters (up to {longest})"
+        for kind, (longest, limit) in over.items()
+    )
     return error(
         "copy_path_too_long",
-        f"{plural(len(paths), 'copy', 'copies')} would have a file whose path is longer than "
-        f"{limit} characters (up to {longest}) while it is written in the conversion's work "
-        f"folder in {dest}, and Windows cannot handle such paths. Nothing was written.",
+        f"{plural(len(paths), 'copy', 'copies')} would have {what} while it is written in the "
+        f"conversion's work folder in {dest}, and Windows cannot handle such paths without "
+        "long paths enabled. Nothing was written.",
         paths,
         "Choose a folder for the copies with a shorter path (for example near the top of the "
-        "drive), or shorten the names of these images or of their folders.",
+        "drive), or shorten the names of these images or of their folders, or ask your "
+        "administrator to enable Windows' long paths (LongPathsEnabled).",
     )
 
 
