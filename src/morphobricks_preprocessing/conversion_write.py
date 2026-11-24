@@ -118,15 +118,15 @@ def write_all(
 ) -> list[CopyEntry]:
     """Write every copy in the work folder, then move them all into place.
 
-    An earlier conversion's work folder (its owner file there: :func:`work_folder_state`) is
-    removed first; the caller refused one without it. On any failure, an interruption
+    The caller removed an earlier conversion's work folder (:func:`remove_leftover`, before
+    the space check) and refused anything else under its name; one found here all the same
+    (it appeared meanwhile) makes the conversion fail, removing nothing of it. On any failure, an interruption
     included, the work folder, every copy already moved into place (each where nothing was
     before) and every folder the conversion made are removed, so the copy tree is left as it
     was; a failure to read or write raises :class:`ConversionFailed`, anything else is
     re-raised.
     """
     work = dest / WORK_FOLDER
-    remove_leftover(work_folder_state(dest))
     if not to_write:
         return []
     made, route = _missing_folders(dest, to_write), _Route(dest)

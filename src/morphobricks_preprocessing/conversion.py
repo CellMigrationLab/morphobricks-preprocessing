@@ -69,6 +69,7 @@ from .conversion_write import (
     OWNED,
     UNOWNED,
     ConversionFailed,
+    remove_leftover,
     work_folder_state,
     write_all,
 )
@@ -308,6 +309,8 @@ def _locked_conversion(
     if refusal is not None and refusal.code == "copy_folder_not_empty" and work is not None:
         if work.state == OWNED:  # killed while moving its copies into place (#482)
             refusal = not_empty_issue(dest, list(refusal.paths), interrupted=True)
+    if refusal is None:  # a killed conversion's work folder must not count against the space
+        remove_leftover(work)
     refusal = refusal or _space_issue(dest, to_write)
     if refusal is not None:
         return ConversionResult(dest, False, (refusal, *issues))

@@ -21,6 +21,7 @@ import socket
 import pytest
 import tifffile
 
+import morphobricks_preprocessing.conversion as convert_module
 import morphobricks_preprocessing.conversion_write as write_module
 from morphobricks_preprocessing import convert_experiment
 from morphobricks_preprocessing.conversion_record import RECORD_FILENAME
@@ -310,6 +311,23 @@ def test_copies_moved_before_a_kill_are_named_as_from_an_interrupted_move(tmp_pa
     assert "interrupted" in issue.message and "remove them" in issue.action
     assert (copies / WORK).is_dir()
     moved[0].unlink()  # what the message says to do
+    result = convert_experiment(exp, SWAPPED, copies)
+    assert result.written and not (copies / WORK).exists()
+
+
+# Issue #482 (4): the space is checked once a killed conversion's work folder is gone ------
+
+
+def test_a_killed_conversions_work_folder_is_removed_before_the_space_is_checked(
+    tmp_path, monkeypatch
+):
+    # The killed conversion filled the drive: only once its work folder is gone do the
+    # copies fit.
+    exp, copies = swapped_experiment(tmp_path / "exp"), tmp_path / "copies"
+    _leftover(copies, {"kind": KIND, "holder": _holder()})
+    monkeypatch.setattr(
+        convert_module, "free_space", lambda dest: 0 if (dest / WORK).exists() else 2**40
+    )
     result = convert_experiment(exp, SWAPPED, copies)
     assert result.written and not (copies / WORK).exists()
 
