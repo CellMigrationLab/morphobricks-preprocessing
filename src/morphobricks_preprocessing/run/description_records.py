@@ -18,17 +18,31 @@ whose ``image_count`` differs, whether or not the publication changes anything e
 new member, an ID correction, a reopening). Members are matched through the confirmed ID
 corrections; a member the candidate no longer holds has no new count and is covered by its
 ``removed`` records. Lines carry the published IDs and labels, in (condition ID, repeat ID) order.
+
+Folder and ID in one save (issue #475). A folder change (a removal, or a stated rename) and an ID
+change of the same entity in one candidate are never paired: no ID correction is guessed from
+folders that changed too. :func:`folder_id_changes` names them before Save and publication
+refuses them (:data:`FOLDER_AND_ID_CHANGED`), so :func:`removal_records` never meets a unit that
+no removal accounts for.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterable
+from dataclasses import dataclass
 from datetime import date
 
 from ..description import Description, Member
 from ..description_reconcile import PublishedUnit, UnitFolders, published_units
 from ..description_removal import Removal
-from ..description_transition import DATE, Reconfirmation
+from ..description_rules import Refusal
+from ..description_transition import DATE, Reconfirmation, transition_issues
+
+FOLDER_AND_ID_CHANGED = "folder_and_id_changed"
+"""Preprocessing's refusal of a candidate that changes the folder and the ID of one entity."""
+REMOVAL_MISMATCH = "removal_mismatch"
+"""Preprocessing's refusal of a dropped folder no removal confirms, or a removal of a kept one."""
+_NOUNS = {"conditions": "condition", "repeats": "repeat", "technical_repeats": "technical repeat"}
 
 _NONE = dict.fromkeys(
     (
@@ -78,6 +92,199 @@ def _removed_units(
     return gone
 
 
+@dataclass(frozen=True, order=True)
+class FolderIdChange:
+    """One entity whose folder and ID change in the same save, or a folder no answer accounts for.
+
+    ``kind`` is ``conditions``, ``repeats`` or ``technical_repeats`` and ``old_id`` the published
+    ID; both are empty when no ID of the folders changed (:data:`REMOVAL_MISMATCH`). The
+    published units concerned are split by what the candidate does with them: ``kept`` are
+    still there by their folders, now under ``new_ids`` (read from the candidate, never
+    guessed); ``lost`` are there neither by their folders nor by their IDs and no removal
+    confirms them; ``removed`` are confirmed removed while their IDs went to ``given_to``.
+    """
+
+    kind: str
+    old_id: str
+    kept: tuple[UnitFolders, ...] = ()
+    new_ids: tuple[str, ...] = ()
+    lost: tuple[UnitFolders, ...] = ()
+    removed: tuple[UnitFolders, ...] = ()
+    given_to: tuple[UnitFolders, ...] = ()
+
+    @property
+    def code(self) -> str:
+        """Return the refusal's code."""
+        return FOLDER_AND_ID_CHANGED if self.kind else REMOVAL_MISMATCH
+
+    @property
+    def message(self) -> str:
+        """Return what the candidate does, naming the entity, its IDs and its folders."""
+        if not self.kind:
+            said = []
+            if self.lost:
+                said.append(
+                    f"The folder {_labels(self.lost)} is not in the description and no removal "
+                    "confirms it."
+                )
+            if self.removed:
+                said.append(
+                    f"A removal names the folder {_labels(self.removed)}, which the description "
+                    "does not remove (it keeps it or never had it)."
+                )
+            return " ".join(said)
+        entity = f"{_NOUNS[self.kind]} {self.old_id}"
+        said = [f"This changes both the folder and the ID of {entity} in one save:"]
+        if self.kept:
+            now = " and ".join(self.new_ids)
+            said.append(
+                f"{_labels(self.kept)} is now under {now} while the folders of {self.old_id} "
+                f"changed too, so the ID change {self.old_id} -> {now} cannot be paired with "
+                "them."
+            )
+        if self.lost:
+            said.append(
+                f"{_labels(self.lost)} is in the description neither under its saved folder nor "
+                f"under its saved ID {self.old_id}, and no removal confirms it."
+            )
+        if self.removed:
+            said.append(
+                f"{_labels(self.removed)} is removed and the ID {self.old_id} is given to "
+                f"{_labels(self.given_to)}."
+            )
+        return " ".join(said)
+
+    @property
+    def action(self) -> str:
+        """Return how the user proceeds."""
+        if not self.kind:
+            return "Confirm the removal of a folder that is gone (Yes, remove), or undo the change."
+        if self.removed and not (self.kept or self.lost):
+            return (
+                "Undo the ID edit: the new folder keeps an ID of its own. A removed ID stays "
+                "used and is not given to another folder (experiment-v1 4.9)."
+            )
+        return (
+            "Save the folder change first, then change the ID: undo the ID edit for now "
+            f"(put {self.old_id} back)."
+        )
+
+
+def _labels(keys: tuple[UnitFolders, ...]) -> str:
+    return ", ".join(_label(k) for k in keys)
+
+
+def _label(key: UnitFolders) -> str:
+    return f"{key.condition}/{key.source_repeat}/{key.technical}"
+
+
+_PATH = ("repeats", "conditions", "technical_repeats")
+_ATTR = {"conditions": "condition_id", "repeats": "repeat_id", "technical_repeats": "technical_id"}
+
+
+def _parts(key: UnitFolders) -> tuple[str, str, str]:
+    """Return a unit's folder labels in :data:`_PATH` order (a member is its source repeat)."""
+    return key.source_repeat, key.condition, key.technical
+
+
+def _moved(key: UnitFolders, other: UnitFolders) -> list[str]:
+    """Return the kinds whose folder differs between two units."""
+    return [k for k, a, b in zip(_PATH, _parts(key), _parts(other), strict=True) if a != b]
+
+
+def _declared(description: Description) -> dict[str, set[str]]:
+    """Return the condition, repeat and technical repeat IDs the description declares."""
+    return {
+        "conditions": set(description.conditions),
+        "repeats": set(description.repeats),
+        "technical_repeats": {tid for *_, tid in _paths(description)},
+    }
+
+
+def _ids(unit: PublishedUnit) -> dict[str, str]:
+    return {
+        "conditions": unit.condition_id,
+        "repeats": unit.repeat_id,
+        "technical_repeats": unit.technical_id,
+    }
+
+
+def folder_id_changes(
+    old: Description,
+    new: Description,
+    removals: Iterable[Removal] = (),
+    confirmations: Iterable[Reconfirmation] = (),
+) -> tuple[FolderIdChange, ...]:
+    """Return the entities whose folder and ID change together, and folders nothing accounts for.
+
+    Three cases, each found from the two files and the user's answers only:
+
+    * an ID of a published unit the candidate still holds by its folders is gone, the unit now
+      under a new ID that the transition checks did not pair (the entity's folders changed);
+    * a unit the candidate holds neither by its folders nor by its IDs (after the confirmed
+      corrections) that no removal confirms, with an ID no longer declared;
+    * a unit a removal confirms whose IDs the candidate still holds, under other folders.
+
+    A unit dropped with no removal and no ID gone, or a removal of a unit the candidate keeps by
+    its folders, is reported with an empty ``kind``. An empty result means
+    :func:`removal_records` accepts the candidate and the removals. Pure.
+    """
+    confirmations, answered = tuple(confirmations), {k for r in removals for k in r.units}
+    fix = _renames(confirmations)
+    declared, before = _declared(new), _declared(old)
+    paired = {
+        i.change
+        for i in transition_issues(old, new)
+        if i.code == Refusal.R_CONFIRMED_ID_CHANGED and i.new_id is not None
+    }
+    paired_old = {(kind, old_id) for kind, old_id, _ in paired}
+    units, held = published_units(old), published_units(new)
+    by_path = {tuple(_ids(u)[k] for k in _PATH): key for key, u in held.items()}
+    gone = _removed_units(old, new, confirmations)
+    found: dict[tuple[str, str], dict[str, set]] = {}
+
+    def add(kind: str, key: UnitFolders, part: str, *also: tuple[str, object]) -> None:
+        """Note ``key`` as ``part`` of the entity of ``kind`` that holds it ('' for none)."""
+        old_id = getattr(units[key], _ATTR[kind]) if kind else ""
+        entry = found.setdefault((kind, old_id), {})
+        entry.setdefault(part, set()).add(key)
+        for name, value in also:
+            entry.setdefault(name, set()).add(value)
+
+    def retired(unit: PublishedUnit) -> list[str]:  # a paired ID change is refused on its own
+        return [
+            k
+            for k, i in _ids(unit).items()
+            if fix[k].get(i, i) not in declared[k] and (k, i) not in paired_old
+        ]
+
+    for key, unit in units.items():
+        ids, kinds = _ids(unit), retired(unit)
+        if key in held:  # the same folders: an ID gone and the folders now under a new ID
+            for kind in kinds:
+                new_id = _ids(held[key])[kind]
+                if new_id not in before[kind]:
+                    add(kind, key, "kept", ("new_ids", new_id))
+            if key in answered:
+                add("", key, "removed")  # a removal of a folder the candidate keeps
+        elif key in gone:
+            if key not in answered:
+                for kind in kinds or [""]:
+                    add(kind, key, "lost")
+        elif key in answered:  # removed, but its IDs are held by other folders
+            other = by_path[tuple(fix[k].get(ids[k], ids[k]) for k in _PATH)]
+            for kind in _moved(key, other):
+                add(kind, key, "removed", ("given_to", other))
+    for key in answered - set(units):
+        add("", key, "removed")  # a removal of a folder the published file does not have
+    return tuple(
+        sorted(
+            FolderIdChange(kind, old_id, **{part: tuple(sorted(v)) for part, v in entry.items()})
+            for (kind, old_id), entry in found.items()
+        )
+    )
+
+
 def removal_records(
     old: Description,
     new: Description,
@@ -91,8 +298,9 @@ def removal_records(
     Raises
     ------
     ValueError
-        When a unit is dropped that no removal confirms, or a removal names a unit the
-        candidate keeps or the published file does not have.
+        An internal assertion: when a unit is dropped that no removal confirms, or a removal
+        names a unit the candidate keeps or the published file does not have. Publication and
+        the pre-save check refuse these first, with a code (:func:`folder_id_changes`).
     """
     gone = _removed_units(old, new, confirmations)
     asked = {key for removal in removals for key in removal.units}
