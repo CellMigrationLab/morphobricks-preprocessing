@@ -323,6 +323,32 @@ Afterwards declare the mask type (both mask types for **Both**) in the experimen
 with `source_type = "Cells"` and `representation = "instances"`), save it, run preprocessing
 again with the masks folder, **Describe the masks**, then continue with MorphoFeature.
 
+### Preprocessing, Cellpose and the masks in one notebook (optional)
+
+[`notebooks/MorphoBricks_Preprocessing_Cellpose.ipynb`](../notebooks/MorphoBricks_Preprocessing_Cellpose.ipynb)
+does the whole flow. Its cells 1 to 3 are exactly those of the Preprocessing notebook (cell 1
+pins its own preprocessing commit, the one holding cells 4 and 5; it never installs Cellpose):
+run the experiment in the app of cell 3. Then:
+
+- **4. Segment with Cellpose** segments the run the app just finished, in the masks folder
+  that run uses (the masks folder the app checked, else the one the run recorded; type one
+  under **Open the run** when it has none). With no finished run in the app (none yet, or a
+  run that stopped) it says so and names cell 3; you may also type the output folder of an
+  earlier finished run. A run whose images changed since it ran is refused. The first time,
+  Cellpose 4.2.1.1 and PyTorch are installed, only when you tick **Install Cellpose 4.2.1.1
+  (with PyTorch) now** and press the button; if the installation changes `numpy` or `opencv`
+  while they are loaded, restart the runtime and run cells 1, 3 and 4 again. Then the same
+  steps as the Cellpose notebook above, one under the other.
+- **5. Register the masks** shows, for each mask type cell 4 wrote, the declaration it would
+  add (`[masks.Cells]` with `source_type = "Cells"` and `representation = "instances"`). Tick
+  each one and press **Register the masks**: the app of cell 3 then checks the folders again
+  with the masks folder, answers the mask on **Masks**, saves the description, runs again
+  (the histograms of unchanged images are reused) and describes the masks. If its folder check
+  asks you to confirm the axes again, do it in cell 3 (step **Axes**) and press the button
+  again. It refuses, changing nothing, a mask type that collides with a mask already declared,
+  a masks folder inside the experiment, masks of another run or masks folder than the app's,
+  and images changed since the run.
+
 ## 3. Supported images
 
 - **TIFF files:** `.tif` and `.tiff` (any case), including OME-TIFF and ImageJ hyperstacks.
