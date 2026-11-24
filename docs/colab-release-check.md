@@ -24,7 +24,10 @@ release PR moves `RELEASE_REF` and records the pair in `RELEASE_CALLS` of
 `tests/test_notebook_file.py`, which fails for a `RELEASE_REF` without one.
 
 **The pins move only in the release PR (owner, 24 November 2026).** Pull requests no longer
-re-pin either notebook. The release PR moves both notebooks' `RELEASE_REF` with two commits:
+re-pin a notebook. The release PR moves the `RELEASE_REF` of all three notebooks
+(`MorphoBricks_Preprocessing`, `MorphoBricks_Preprocessing_Cellpose` and `MorphoBricks_Cellpose`;
+the last is to be retired after the owner's Colab test and is then dropped from the list in
+`PINNED_NOTEBOOKS` of `tests/test_notebook_cellpose.py`) with two commits:
 commit A, the release preparation (the code), then commit B, which only points `RELEASE_REF`
 at A (and records A's call in `RELEASE_CALLS`). Label the release PR `release`: its CI is then
 a release run (the full matrix, `MORPHOBRICKS_RELEASE_RUN=1`), where the freshness test
