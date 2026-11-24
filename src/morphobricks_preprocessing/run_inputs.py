@@ -74,12 +74,10 @@ from .required_description import FIX, is_published, required_message
 from .run.generation import published_path, read_stable
 from .run_inputs_error import (
     DescriptionRequiredError,
-    MasksFolderNotFoundError,
-    MasksFolderUnreadableError,
 )
 from .run_inputs_error import RunInputsError as RunInputsError  # re-exported (moved)
 from .run_inputs_image import LazyImage as LazyImage  # re-exported (moved)
-from .run_inputs_mask import MaskInputs
+from .run_inputs_mask import MaskInputs, given_masks_root
 from .run_inputs_projection import ProjectionInputs
 from .run_inputs_resolve import ResolvingInputs
 from .run_inputs_semantic import SemanticInputs, check_description, with_identity
@@ -289,7 +287,11 @@ class RunInputs(
         root = Path(experiment_root or manifest.experiment_root).resolve()
         _check_conversion(root, manifest)
         # A masks folder given is used as given, never replaced by the recorded one (#487).
-        masks = (manifest.masks or {}).get("folder") if masks_root is None else _given(masks_root)
+        masks = (
+            (manifest.masks or {}).get("folder")
+            if masks_root is None
+            else given_masks_root(masks_root)
+        )
         refused = [] if masks is None else masks_folder_issues(masks, root, output)
         if refused:
             # A run recorded before these folder rules (audit B1) is refused as a new one is.
@@ -480,37 +482,6 @@ def _manifest(output: Path) -> tuple[RunManifest, str]:
         raise DescriptionRequiredError(f"{required_message(output)} {FIX}")
     raw = path.read_bytes()
     return parse_manifest(raw, path), hashlib.sha256(raw).hexdigest()
-
-
-def _given(masks_root: str | os.PathLike) -> Path:
-    """Return the masks folder given as ``masks_root``, refused unless it can be listed (#487).
-
-    A run without masks would otherwise read a mistyped, missing or unreadable folder as one
-    with no masks, and the caller's masks would be left out without a word.
-    """
-    # "" and Path("") (which is ".") both mean no path was given; "." and Path(".") could mean
-    # the current directory, but are indistinguishable from Path(""), so they are refused too.
-    folder = None if Path(masks_root) == Path(".") else Path(masks_root).resolve()
-    fix = (
-        "Give masks_root= the folder that holds one subfolder per mask type (its path, not "
-        '"" or "."), or leave it out to use the masks folder the run recorded.'
-    )
-    if folder is None or not folder.is_dir():
-        what = 'An empty path or "."' if folder is None else f"{folder}"
-        raise MasksFolderNotFoundError(
-            f"masks_folder_not_found: {what} was given as masks_root=, and it is not an "
-            f"existing folder, so no mask can be read from it. {fix}"
-        )
-    try:
-        with os.scandir(folder):
-            pass
-    except OSError as exc:
-        raise MasksFolderUnreadableError(
-            f"masks_folder_unreadable: the masks folder {folder} given as masks_root= cannot "
-            f"be listed ({exc.strerror or exc}), so its masks cannot be checked against the "
-            f"run. Check its permissions. {fix}"
-        ) from exc
-    return folder
 
 
 def _check_sha(path: Path, expected: str, what: str) -> None:
