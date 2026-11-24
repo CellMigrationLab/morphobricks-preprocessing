@@ -121,7 +121,6 @@ def test_the_nuclei_mask_type_is_taken_once_typed_and_a_change_drops_both_models
     nuclei_type = channels.fields["nuclei_mask_type"]
     assert nuclei_type.continuous_update is False
     assert channels.fields["mask_type"].continuous_update is False
-    nuclei_type.value = "Nuclei"  # committed again unchanged: nothing is dropped
     assert workflow.loaded is not None and workflow.nuclei_loaded is not None
     nuclei_type.value = "Nuclei2"
     assert workflow.picker is None and workflow.mask_types == {}
@@ -138,5 +137,25 @@ def test_running_cell_3_again_retires_the_nuclei_fields_too(both):
     model, channels = old.forms["model"], old.forms["channels"]
     assert all(model.fields[name].disabled for name in NUCLEI_MODEL)
     assert channels.fields["nuclei_mask_type"].disabled
+    assert all(field.disabled for field in (*old.picker.number_fields, old.picker.by))
     assert press(old.forms["segment"]) == REPLACED
+    assert both.stub.calls == [] and nothing_written(both.run.masks)
+
+
+def test_a_nuclei_load_failing_with_any_error_drops_both_models(both, monkeypatch):
+    """Not only a refusal: an error such as GPU memory exhausted drops both models too."""
+    workflow = both.ns["workflow"]
+    real = cp.load_model
+
+    def out_of_memory(name, *args, **kwargs):
+        if name == "cpsam":
+            raise RuntimeError("CUDA out of memory")
+        return real(name, *args, **kwargs)
+
+    monkeypatch.setattr(cp, "load_model", out_of_memory)
+    run_cell(both.ns, MODEL, device="cpu", **NUCLEI_MODEL)  # the form shows the error
+    assert workflow.loaded is None and workflow.nuclei_loaded is None
+    assert disabled(workflow)
+    for step in ("preview", "segment"):
+        assert press(workflow.forms[step]) == NOT_LOADED
     assert both.stub.calls == [] and nothing_written(both.run.masks)

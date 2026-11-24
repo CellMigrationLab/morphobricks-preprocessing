@@ -320,7 +320,7 @@ class CellposeNotebook(CellposeWorkflow):
                     value["download_weights"],
                     value["install_dinov3"],
                 )
-            except CellStop:
+            except Exception:  # a refusal or any other error: neither model stays loaded
                 self.loaded, self._nuclei_failed = None, True
                 raise
         else:

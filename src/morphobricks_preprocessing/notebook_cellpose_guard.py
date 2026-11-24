@@ -83,9 +83,12 @@ def retire(workflow: CellposeNotebook) -> None:
     workflow.replaced = True
     widgets = [w for form in workflow.forms.values() for w in _walk(form.widget)]
     if workflow.picker is not None:
-        widgets.extend(workflow.picker.dropdowns)
+        picker = workflow.picker
+        widgets.extend(
+            [*picker.dropdowns, *getattr(picker, "number_fields", ()), getattr(picker, "by", None)]
+        )
     for widget in widgets:
-        if widget.has_trait("disabled"):
+        if widget is not None and widget.has_trait("disabled"):
             widget.disabled = True
     for form in workflow.forms.values():
         form.notice.value = ui.status("warn", REPLACED)
