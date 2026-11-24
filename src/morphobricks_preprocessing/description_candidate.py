@@ -55,8 +55,7 @@ _TRANSITION_TEXT = {
 _ID_CHANGED_TEXT = (
     "The confirmed ID would change {old} -> {new}; no answer of yours confirms that ID change "
     "(a folder answer never does; experiment-v1 4.6).",
-    "Undo the ID edit: put {old} back. Change an ID in a save of its own, where its own "
-    "confirmation is asked.",
+    "Undo the ID edit: put {old} back.",
 )
 
 _LAYOUT_DATE_TEXT = (

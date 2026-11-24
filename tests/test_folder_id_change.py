@@ -64,7 +64,7 @@ def test_a_repeat_id_changed_with_a_member_folder_rename_is_refused_before_save(
     assert "Day1 -> DayX" in first.message
     assert "CTRL/rep1/single is now under DayX" in first.message
     assert "DrugA/experiment_23/single" in first.message
-    assert first.action.startswith("Save the folder change first, then change the ID")
+    assert first.action == "Undo the ID edit: put Day1 back."
     output, base = published_in(tmp_path, published)
     before = (output / "morphobricks.toml").read_bytes()
     with pytest.raises(ValueError, match="folder_and_id_changed") as refused:
@@ -72,7 +72,8 @@ def test_a_repeat_id_changed_with_a_member_folder_rename_is_refused_before_save(
     assert refused.value.codes == {"folder_and_id_changed"}  # coded, never a bare ValueError
     assert (output / "morphobricks.toml").read_bytes() == before
     assert not (output / RECORDS_FILENAME).exists()
-    # Two saves: the folder rename alone publishes, then the ID change alone is paired.
+    # The folder rename alone publishes. Only the publication API can then change the ID, with a
+    # Reconfirmation naming the new ID (the notebook never builds one, #402).
     draft = confirm_repeat(candidate(published, rec), "Day1", DAY)
     accepted = reconfirmations(published, draft, rec).accepted
     assert candidate_check(monkeypatch, draft, published, accepted).refusals == ()

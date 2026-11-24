@@ -164,10 +164,7 @@ class FolderIdChange:
                 "Undo the ID edit: the new folder keeps an ID of its own. A removed ID stays "
                 "used and is not given to another folder (experiment-v1 4.9)."
             )
-        return (
-            "Save the folder change first, then change the ID: undo the ID edit for now "
-            f"(put {self.old_id} back)."
-        )
+        return f"Undo the ID edit: put {self.old_id} back."
 
 
 def _labels(keys: tuple[UnitFolders, ...]) -> str:
