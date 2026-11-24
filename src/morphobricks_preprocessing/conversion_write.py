@@ -4,7 +4,10 @@ Moved from :mod:`.conversion` (PP-11c). On any failure, every file and folder th
 conversion wrote is removed, so the copy tree is left as it was.
 
 The work folder (issue #448): every copy is first written below
-``<copy tree>/.morphobricks-conversion.partial/files/``, at its own relative path. The
+``<copy tree>/.mbconv/files/``, at its own relative path (a short name, issue #482: every
+copy's path is that much longer while it is written, and Windows limits paths to 259
+characters; a work folder named ``.morphobricks-conversion.partial``, the name before #482,
+is recognised as a leftover too). The
 conversion makes that folder itself (it must not exist) and writes its owner file
 (``owner.json``: what made it, and the lock holder with its token) into it before any copy,
 so whatever is below it was written by a conversion. A conversion killed before its clean-up
@@ -50,8 +53,14 @@ from .validation import ValidationIssue
 
 logger = logging.getLogger(__name__)
 
-WORK_FOLDER = ".morphobricks-conversion.partial"
-"""The conversion's work folder in the copy tree; a hidden name, never read as an image."""
+WORK_FOLDER = ".mbconv"
+"""The conversion's work folder in the copy tree ("MorphoBricks conversion"); a hidden name,
+never read as an image, kept short as it lengthens every copy's path while it is written."""
+LEGACY_WORK_FOLDER = ".morphobricks-conversion.partial"
+"""The work folder's name before issue #482: never made, but a leftover is recovered (or
+refused) as one of :data:`WORK_FOLDER`."""
+WORK_FOLDERS = (WORK_FOLDER, LEGACY_WORK_FOLDER)
+"""Every name a conversion's work folder has had."""
 OWNER_FILENAME = "owner.json"
 """The owner file of a work folder, written before any copy: it proves the folder is one."""
 OWNER_KIND = "morphobricks-preprocessing conversion work folder"
@@ -120,11 +129,11 @@ def write_all(
 
     The caller removed an earlier conversion's work folder (:func:`remove_leftover`, before
     the space check) and refused anything else under its name; one found here all the same
-    (it appeared meanwhile) makes the conversion fail, removing nothing of it. On any failure, an interruption
-    included, the work folder, every copy already moved into place (each where nothing was
-    before) and every folder the conversion made are removed, so the copy tree is left as it
-    was; a failure to read or write raises :class:`ConversionFailed`, anything else is
-    re-raised.
+    (it appeared meanwhile) makes the conversion fail, removing nothing of it. On any
+    failure, an interruption included, the work folder, every copy already moved into place
+    (each where nothing was before) and every folder the conversion made are removed, so the
+    copy tree is left as it was; a failure to read or write raises
+    :class:`ConversionFailed`, anything else is re-raised.
     """
     work = dest / WORK_FOLDER
     if not to_write:
@@ -179,8 +188,16 @@ def write_all(
     return entries
 
 
-def work_folder_state(dest: Path) -> WorkFolder | None:
+def leftover_work_folders(dest: Path) -> list[WorkFolder]:
+    """Return the work folders in the copy tree under any of :data:`WORK_FOLDERS`."""
+    found = (work_folder_state(dest, name) for name in WORK_FOLDERS)
+    return [work for work in found if work is not None]
+
+
+def work_folder_state(dest: Path, name: str = WORK_FOLDER) -> WorkFolder | None:
     """Return the copy tree's work folder, and whether a conversion that is gone made it.
+
+    ``name`` is one of :data:`WORK_FOLDERS`.
 
     Returns
     -------
@@ -194,7 +211,7 @@ def work_folder_state(dest: Path) -> WorkFolder | None:
         or truncated owner file (a kill between making the folder and writing that file,
         issue #482). Anything else is :data:`UNOWNED`: it is never removed.
     """
-    work = dest / WORK_FOLDER
+    work = dest / name
     if not os.path.lexists(work):
         return None
     if _unfinished(work):
@@ -247,7 +264,7 @@ def remove_leftover(found: WorkFolder | None) -> None:
     """
     if found is None or found.state not in (OWNED, UNFINISHED):
         return
-    again = work_folder_state(found.path.parent)
+    again = work_folder_state(found.path.parent, found.path.name)
     if again is None or again.state != found.state:
         return
     if found.state == OWNED:

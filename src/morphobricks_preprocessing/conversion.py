@@ -45,10 +45,10 @@ from .axis_check import ConfirmedAxes, confirmation_of
 from .conversion_issues import (
     links_issue,
     lock_issue,
+    not_empty_issue,
     record_issue,
     space_issue,
     unreadable_issue,
-    not_empty_issue,
     work_folder_in_use_issue,
     work_folder_issue,
 )
@@ -69,8 +69,8 @@ from .conversion_write import (
     OWNED,
     UNOWNED,
     ConversionFailed,
+    leftover_work_folders,
     remove_leftover,
-    work_folder_state,
     write_all,
 )
 from .lock_file import LockHolder
@@ -290,11 +290,12 @@ def _locked_conversion(
     linked, unreadable = links_below(dest)
     refused = [links_issue(linked)] if linked else []
     refused += [unreadable_issue(unreadable)] if unreadable else []
-    work = work_folder_state(dest)
-    if work is not None and work.state == UNOWNED:
-        refused.append(work_folder_issue(dest))
-    if work is not None and work.state == IN_USE and work.holder is not None:
-        refused.append(work_folder_in_use_issue(dest, work.holder))
+    leftovers = leftover_work_folders(dest)
+    for work in leftovers:
+        if work.state == UNOWNED:
+            refused.append(work_folder_issue(dest, work.path.name))
+        if work.state == IN_USE and work.holder is not None:
+            refused.append(work_folder_in_use_issue(dest, work.path.name, work.holder))
     if refused:
         return ConversionResult(dest, False, (*refused, *issues))
     try:
@@ -306,11 +307,13 @@ def _locked_conversion(
         refusal = projection_differs_issue(
             dest, refusal.paths, earlier[0].projection, options.projection
         )
-    if refusal is not None and refusal.code == "copy_folder_not_empty" and work is not None:
-        if work.state == OWNED:  # killed while moving its copies into place (#482)
-            refusal = not_empty_issue(dest, list(refusal.paths), interrupted=True)
+    owned = [work.path.name for work in leftovers if work.state == OWNED]
+    if refusal is not None and refusal.code == "copy_folder_not_empty" and owned:
+        # killed while moving its copies into place (#482)
+        refusal = not_empty_issue(dest, list(refusal.paths), interrupted=owned[0])
     if refusal is None:  # a killed conversion's work folder must not count against the space
-        remove_leftover(work)
+        for work in leftovers:
+            remove_leftover(work)
     refusal = refusal or _space_issue(dest, to_write)
     if refusal is not None:
         return ConversionResult(dest, False, (refusal, *issues))

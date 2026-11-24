@@ -2,11 +2,11 @@
 
 Issue #448: a ``<name>.partial`` file or folder at the path of a planned copy was taken for
 one left by an interrupted conversion and removed (``shutil.rmtree`` for a folder), whoever
-had put it there. A conversion now writes its copies in its own work folder
-(``.morphobricks-conversion.partial``), which it makes itself and marks with an owner file
-before it writes any copy; a later conversion removes a work folder only when that owner
-file is there. A ``.partial`` elsewhere is never removed: without a record it is refused as
-any other file, with a record it is left alone.
+had put it there. A conversion now writes its copies in its own work folder (``.mbconv``
+since #482, ``.morphobricks-conversion.partial`` before), which it makes itself and marks
+with an owner file before it writes any copy; a later conversion removes a work folder only
+when that owner file is there. A ``.partial`` elsewhere is never removed: without a record
+it is refused as any other file, with a record it is left alone.
 
 Issue #467 (5): a link swapped into the copy tree while the copies are written is caught
 by a second check right before each copy is moved into place, and the clean-up after a
@@ -22,6 +22,7 @@ import pytest
 import tifffile
 
 import morphobricks_preprocessing.conversion as convert_module
+import morphobricks_preprocessing.conversion_plan as plan_module
 import morphobricks_preprocessing.conversion_write as write_module
 from morphobricks_preprocessing import convert_experiment
 from morphobricks_preprocessing.conversion_record import RECORD_FILENAME
@@ -29,7 +30,8 @@ from test_convert_links import _tree
 from test_convert_run import SWAPPED, codes, swapped_experiment
 from test_links import _can_link
 
-WORK = ".morphobricks-conversion.partial"
+WORK = ".mbconv"
+LEGACY = ".morphobricks-conversion.partial"  # the work folder's name before #482
 STORES = [
     pytest.param("ome-tiff", "ctrl/r1/a.tif", id="ome-tiff"),
     pytest.param("ome-zarr", "ctrl/r1/a.ome.zarr", id="ome-zarr"),
@@ -166,9 +168,9 @@ def _holder(pid=None, host=None, token="0123456789abcdef0123456789abcdef"):
     }
 
 
-def _leftover(copies, owner, extra=None):
+def _leftover(copies, owner, extra=None, name=WORK):
     """A work folder holding one written copy, its owner file and maybe ``extra``."""
-    work = copies / WORK
+    work = copies / name
     mine = work / "files/ctrl/r1/a.tif"
     mine.parent.mkdir(parents=True)
     mine.write_bytes(b"mine")
@@ -330,6 +332,61 @@ def test_a_killed_conversions_work_folder_is_removed_before_the_space_is_checked
     )
     result = convert_experiment(exp, SWAPPED, copies)
     assert result.written and not (copies / WORK).exists()
+
+
+# Issue #482 (5): a short work folder name; paths too long for Windows refused ------------
+
+
+def test_the_copies_are_written_in_the_short_work_folder(tmp_path, monkeypatch):
+    exp, copies = swapped_experiment(tmp_path / "exp"), tmp_path / "copies"
+    seen = []
+
+    def written(source, target, *args, **kwargs):
+        seen.append(target.relative_to(copies).as_posix())
+        raise OSError("stop")
+
+    monkeypatch.setattr(write_module, "write_named_copy", written)
+    assert not convert_experiment(exp, SWAPPED, copies).written
+    assert seen == [".mbconv/files/ctrl/r1/a.tif"]
+
+
+def test_a_work_folder_of_a_conversion_before_482_is_recovered(tmp_path):
+    exp, copies = swapped_experiment(tmp_path / "exp"), tmp_path / "copies"
+    _leftover(copies, {"kind": KIND, "holder": _holder()}, name=LEGACY)
+    result = convert_experiment(exp, SWAPPED, copies)
+    assert result.written and not (copies / LEGACY).exists() and not (copies / WORK).exists()
+
+
+def test_a_forged_work_folder_under_the_name_before_482_is_refused_and_kept(tmp_path):
+    exp, copies = swapped_experiment(tmp_path / "exp"), tmp_path / "copies"
+    _leftover(copies, {"kind": KIND}, name=LEGACY)
+    before = _tree(copies)
+    result = convert_experiment(exp, SWAPPED, copies)
+    assert not result.written and codes(result.issues) == ["conversion_work_folder_unowned"]
+    assert result.issues[0].paths == (LEGACY,)
+    assert _tree(copies) == before
+
+
+@pytest.mark.parametrize(("store", "copy"), STORES)
+def test_a_copy_path_too_long_for_windows_is_refused_when_planned(
+    tmp_path, monkeypatch, store, copy
+):
+    _store(store)
+    exp = swapped_experiment(tmp_path / "exp")
+    copies = tmp_path / ("c" * (259 - len(str(tmp_path)) - len("/.mbconv/files/ctrl/r1/a.") + 1))
+    monkeypatch.setattr(plan_module, "_windows", lambda: True)
+    result = convert_experiment(exp, SWAPPED, copies, store=store)
+    assert not result.written and codes(result.issues) == ["copy_path_too_long"]
+    assert copy in result.issues[0].paths and "259 characters" in result.issues[0].message
+    assert not copies.exists()
+    monkeypatch.setattr(plan_module, "_windows", lambda: False)  # elsewhere: no such limit
+    assert convert_experiment(exp, SWAPPED, copies, store=store).written
+
+
+def test_a_copy_path_that_fits_windows_is_written(tmp_path, monkeypatch):
+    exp, copies = swapped_experiment(tmp_path / "exp"), tmp_path / "copies"
+    monkeypatch.setattr(plan_module, "_windows", lambda: True)
+    assert convert_experiment(exp, SWAPPED, copies).written
 
 
 def test_a_successful_conversion_leaves_no_work_folder(tmp_path):

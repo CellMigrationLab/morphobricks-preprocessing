@@ -412,7 +412,9 @@ src/morphobricks_preprocessing/
                     links and mount points in the copy tree (is_link, MountCheck), refused (#447);
                     a folder it cannot read is refused too (copy_folder_unreadable, #467)
   conversion_write.py write_all: copies written in the conversion's own work folder
-                    (.morphobricks-conversion.partial, owner file first; a killed one's is
+                    (.mbconv, short for Windows paths; a leftover under its name before
+                    #482, .morphobricks-conversion.partial, is recovered the same way;
+                    owner file first; a killed one's is
                     removed only with a well-formed owner file, nothing else but files/, and
                     a holder that no longer runs (run.lock.holder_running); its own only
                     while the owner file holds its token; an empty one, or one holding only
