@@ -214,7 +214,8 @@ src/morphobricks_preprocessing/
   mask_binding.py   masks bound to their fingerprints (issues #160, #165): changed_masks,
                     mask_contents/content_changed_masks (verify_content),
                     mask_changed_issue (mask_changed_during_run, mask_changed_during_scan),
-                    scan_fingerprints/check_scanned and MaskChangedError (scan_masks)
+                    scan_fingerprints/check_scanned and MaskChangedError (scan_masks);
+                    refuse_unbound and MaskUnboundError (mask_header_unbound, issue #480)
   axis_check.py     the axis check (contract §2): header_axis_issue, axis_disagreements,
                     likely_axis_cause, check_header_axes, ConfirmedAxes (a confirmation covers
                     only its files as fingerprinted, plain_stack_not_confirmed); AXIS_ERROR_CODES, AXIS_CHECK_CODES

@@ -197,7 +197,7 @@ def test_grouped_labels_are_offered_in_plain_words_and_never_preselected(tmp_pat
 
     root, masks = experiment(tmp_path)
     write_grouped(masks, root)
-    report = scan_masks(preflight(root, masks_folder=masks).masks, root)
+    report = scan_masks(preflight(root, masks_folder=masks, bind_headers=True).masks, root)
     assert report.types["mito"].kind == "grouped"
     nb = open_masks(root, masks, out)
     mito = nb.mask_card.questions["mito"]
