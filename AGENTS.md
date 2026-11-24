@@ -136,7 +136,9 @@ src/morphobricks_preprocessing/
                     Reconfirmation (the user's recorded acceptance of a changed ID)
   description_file.py   read_description(path): symlink refusal (R_FILE_SYMLINK), bytes -> Description
   run/description_file.py publish_description: lock, base SHA-256, strict re-read, transitions,
-                    atomic write, append-only morphobricks.records.jsonl (Spec experiment-v1 4.6, 10)
+                    atomic write, append-only morphobricks.records.jsonl (Spec experiment-v1 4.6, 10);
+                    refuses while morphobricks.draft.json exists (R_DRAFT_EXISTS, DraftExists, ay):
+                    only run/draft_file.py publish_draft publishes a saved draft (publish_locked)
   records_file.py   pure checker of morphobricks.records.jsonl (Spec experiment-v1 4.6): check_records
                     (bytes -> records + E_RECORDS_* issues), encode_record, RECORD_KEYS; read_records
                     in run/description_file.py refuses with R_RECORDS_FILE_INVALID

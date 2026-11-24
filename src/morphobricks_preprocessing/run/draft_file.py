@@ -66,6 +66,13 @@ NO_DRAFT = "no draft"
 UNREAD = "unread"
 """A generation no file has: a writer that cannot tell which draft it holds writes nothing."""
 
+UNUSED_PREFIX = "morphobricks.draft.unused-"
+"""The name of a copy of a draft that could not be used, before ``N.json`` (:func:`save_draft`)."""
+
+
+class UnusedDraftNotKept(OSError):
+    """The draft to be replaced could not be copied aside; nothing was written."""
+
 
 class DraftChanged(DraftFileError):
     """The draft file is no longer the generation the writer read or wrote; nothing written.
@@ -164,6 +171,7 @@ def save_draft(
     answers: DraftAnswers,
     *,
     expected: str | None = None,
+    keep_previous: bool = False,
 ) -> Path:
     """Save the answers as ``morphobricks.draft.json``, holding the output folder's lock.
 
@@ -185,6 +193,12 @@ def save_draft(
     expected
         The generation the writer holds (:data:`NO_DRAFT`: no file); None checks nothing (a
         writer that read no draft before, as the tests set one up).
+    keep_previous
+        Copy the draft file being replaced (one the notebook could not use) to the first free
+        ``morphobricks.draft.unused-N.json`` first, never over an existing copy. The copy is made
+        under the same hold of the lock, after the ``expected`` check: a refused save copies
+        nothing (external re-check ay, 24 November 2026: the copy was made before the check, so
+        a stale notebook copied another notebook's newer draft and then was refused).
 
     Returns
     -------
@@ -204,6 +218,8 @@ def save_draft(
         carry a ``spec_commit`` other than the pinned one (``spec_commit_mismatch``).
     DraftChanged
         ``R_DRAFT_CHANGED``: the file is not the ``expected`` generation.
+    UnusedDraftNotKept
+        With ``keep_previous``, when the copy cannot be written; the draft is not replaced.
     """
     folder = Path(output_folder).resolve()
     refuse_output_inside_masks(folder)
@@ -213,8 +229,34 @@ def save_draft(
     folder.mkdir(parents=True, exist_ok=True)
     with output_lock(folder):
         # a symbolic link is refused, never replaced; another generation is never replaced
-        _require_generation(folder, _read_draft_bytes(folder), expected)
+        current = _read_draft_bytes(folder)
+        _require_generation(folder, current, expected)
+        if keep_previous and current is not None:
+            _keep_aside(folder, current)
         return write_text_atomic(folder / DRAFT_FILENAME, data.decode("utf-8"))
+
+
+def _keep_aside(folder: Path, data: bytes) -> Path:
+    """Write ``data`` to the first free ``morphobricks.draft.unused-N.json``; never overwrite."""
+    number = 1
+    while True:
+        copy = folder / f"{UNUSED_PREFIX}{number}.json"
+        try:
+            stream = copy.open("xb")  # exclusive: an existing copy is never replaced
+        except FileExistsError:
+            number += 1
+            continue
+        except OSError as error:
+            raise UnusedDraftNotKept(f"{copy} could not be written: {error}") from error
+        try:
+            with stream:
+                stream.write(data)
+        except BaseException as error:
+            copy.unlink(missing_ok=True)  # never a partial copy
+            if isinstance(error, OSError):
+                raise UnusedDraftNotKept(f"{copy} could not be written: {error}") from error
+            raise
+        return copy
 
 
 def _read_answers(folder: Path) -> DraftAnswers:

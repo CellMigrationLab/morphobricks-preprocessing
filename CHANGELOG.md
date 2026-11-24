@@ -460,6 +460,24 @@ old pin are refused with `spec_commit_mismatch`, as at every re-pin.
   them; when it holds neither them nor the draft before (another writer in between), every
   later save is refused until the folder is checked again. `draft_holds` is replaced by
   `draft_generation` and `answers_generation`. The command line writes no draft.
+- **`describe --publish` never publishes over the notebook's saved draft** (external re-check
+  ay, 24 November, blocker). The command built a new fast-mode description from its flags and
+  published it with `run.description_file.publish_description` without reading
+  `morphobricks.draft.json`: a strict-mode tag review's refused units (or a draft another
+  notebook held stale) were published without the action on each unit that alone releases
+  them. `publish_description` now refuses, under the output folder's lock, while a draft file
+  exists (a symbolic link too), with `R_DRAFT_EXISTS` (`DraftExists`, a `ValueError`) naming
+  the draft and saying to finish and publish it in the notebook, or to remove or archive it
+  deliberately; nothing is written. `publish_draft`, which publishes that draft itself
+  (generation-checked), still calls `publish_locked` directly and is unchanged; the command is
+  the only other caller. An output folder with no draft is published as before.
+- **An unusable draft is copied aside only by a save that passes its generation check**
+  (external re-check ay, file item). The notebook copied it to
+  `morphobricks.draft.unused-N.json` before the locked check of `save_draft(expected=...)`, so
+  a stale save that was then refused had copied another notebook's newer draft. The copy is now
+  made by `save_draft(..., keep_previous=True)` after the check, under the same hold of the
+  lock, never over an existing copy; a copy that cannot be written (`UnusedDraftNotKept`)
+  replaces nothing. `UNUSED_PREFIX` moved to `run.draft_file`.
 
 - **Notebook installer: the installed commit, not only the version (#371).** Cell 1 of the
   Preprocessing notebook reused any installed package reporting version 0.8.0, so a 0.8.0 built

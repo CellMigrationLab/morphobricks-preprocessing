@@ -51,6 +51,7 @@ from .run.draft_file import (
     NO_DRAFT,
     UNREAD,
     DraftChanged,
+    UnusedDraftNotKept,
     answers_generation,
     draft_generation,
     save_draft,
@@ -235,8 +236,9 @@ class _DescriptionCard(_NameRows, _SavedDraft, _StrictDraft):
         if output is None:
             return
         now = self._generation_now(output)
-        if now == answers_generation(answers):
+        if now == answers_generation(answers):  # written, so any unused draft was copied first
             self._draft_saved, self._draft_pin = True, (output.resolve(), now)
+            self._keep_old_draft = False
             return
         self.draft, self.draft_answers = before
         if now != self._expected_generation(output):
@@ -274,13 +276,18 @@ class _DescriptionCard(_NameRows, _SavedDraft, _StrictDraft):
         self._draft_saved, self._save_problem = False, ""
         if output is None:
             return True
-        if self._keep_old_draft and not self._keep_unused_draft(output):
-            self._save_problem = "the unused draft could not be kept"
-            return False
         with self.log.attached():
             try:
                 expected = self._expected_generation(output)
-                save_draft(output, self._draft_base, self.draft_answers, expected=expected)
+                # an unusable draft is copied aside by the save itself, after its generation
+                # check under the lock (ay): a refused save copies nothing
+                save_draft(
+                    output,
+                    self._draft_base,
+                    self.draft_answers,
+                    expected=expected,
+                    keep_previous=self._keep_old_draft,
+                )
             except OutputLockedError:
                 self.folder_lock.show(output)
                 self._save_problem = "another run holds the lock of the output folder"
@@ -300,6 +307,12 @@ class _DescriptionCard(_NameRows, _SavedDraft, _StrictDraft):
                 self._save_problem = str(exc)
                 self._names_refusal = ui.status("error", "Not saved.", [str(exc)])
                 return False
+            except UnusedDraftNotKept as exc:
+                self._save_problem = "the unused draft could not be kept"
+                self._names_refusal = ui.status(
+                    "error", "Not saved: the unused draft could not be kept.", [str(exc)]
+                )
+                return False
             except OSError as exc:
                 logging.getLogger(__name__).warning("Cannot save the draft", exc_info=True)
                 self._save_problem = f"the draft could not be written: {exc}"
@@ -307,7 +320,7 @@ class _DescriptionCard(_NameRows, _SavedDraft, _StrictDraft):
                 return False
             finally:
                 self._show_log()
-        self._draft_saved = True
+        self._draft_saved, self._keep_old_draft = True, False
         self._draft_pin = (output.resolve(), answers_generation(self.draft_answers))
         return True
 
