@@ -51,6 +51,50 @@ def not_a_folder_issue(dest: Path) -> ValidationIssue:
     )
 
 
+def links_issue(paths: list[str]) -> ValidationIssue:
+    """Refuse a copy tree holding links or mount points, which writes would go through."""
+    return error(
+        "copy_folder_has_links",
+        "The folder for the named-axis copies holds "
+        f"{plural(len(paths), 'link or mount point', 'links or mount points')} (links shown "
+        "as link -> target), through which the copies would be written somewhere else, "
+        "perhaps over the originals. Nothing was written.",
+        paths,
+        "Remove these links or mount points from the folder for the copies, or choose a new, "
+        "empty folder.",
+    )
+
+
+def unreadable_issue(paths: list[str]) -> ValidationIssue:
+    """Refuse a copy tree with folders that cannot be read, so not checked for links."""
+    return error(
+        "copy_folder_unreadable",
+        f"{plural(len(paths), 'folder')} in the folder for the named-axis copies cannot be "
+        "read, or disappeared while it was checked, so it cannot be checked for links or "
+        "mount points through which the copies would be written somewhere else. Nothing was "
+        "written.",
+        paths,
+        "Make these folders readable, or remove them, or choose a new, empty folder for the "
+        "copies.",
+    )
+
+
+def work_folder_issue(dest: Path) -> ValidationIssue:
+    """Refuse a copy tree whose conversion work folder a conversion did not make (#448)."""
+    from .conversion_write import WORK_FOLDER
+
+    return error(
+        "conversion_work_folder_unowned",
+        f"The folder for the named-axis copies holds {WORK_FOLDER}, the name of the folder a "
+        "conversion writes its copies in, but without the owner file a conversion writes into "
+        "it first, so it was not made by a conversion, or was changed since. Nothing was "
+        "removed and nothing was written.",
+        [WORK_FOLDER],
+        f"Move or remove {dest / WORK_FOLDER} yourself if you no longer need what it holds, "
+        "or choose a new, empty folder for the copies.",
+    )
+
+
 def names_collide_issue(paths: list[str]) -> ValidationIssue:
     """Refuse OME-Zarr copies of images that differ only by their extension."""
     return error(

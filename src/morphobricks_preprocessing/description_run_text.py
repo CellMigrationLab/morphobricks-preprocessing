@@ -126,6 +126,8 @@ def reader_issue(issue: DescriptionIssue) -> ValidationIssue:
     """Return one reader (or file) refusal as an error with its code, table path and value."""
     code = issue.code.value
     shown = "" if issue.value is None else f" (value {issue.value!r})"
+    if issue.code is Code.E_TYPE:  # the type found, which the code alone does not say
+        shown = f" (value {issue.value!r}, of type {type(issue.value).__name__})"
     message = (
         f"The experiment description morphobricks.toml cannot be used: {code} at "
         f"{issue.path}{shown}."

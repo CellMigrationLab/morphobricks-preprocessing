@@ -477,7 +477,9 @@ editing, or the confirmed ones. An image that cannot be drawn gets a sentence sa
    it (one re-confirmation per channel, written when you save), also when a folder is removed
    or renamed in the same save: the saved file keeps no header names per folder, so **Yes,
    remove** cannot show that a name went with its folder. A change after the click is asked
-   again.
+   again. **Yes, remove** and a stated folder rename confirm only the folders they show: a
+   saved ID replaced by another ID in the same save (a channel `DNA` now `DAPI`) is never
+   confirmed by them, and the save is refused with `R_CONFIRMED_ID_CHANGED` (#402).
 4. **Masks.** The masks the check paired with the images (and, for masks whose files do not
    name their axes, the axes to state), then for each mask type: *separate objects*,
    *regions* or *grouped labels (one value per parent, e.g. mitochondria by cell)*. Nothing is
@@ -943,9 +945,15 @@ images; when nothing is added the record is left as it was. Bricks reading the r
 copies (`RunInputs`) refuse it if the conversion record is changed or removed afterwards,
 or if a copy no longer has the SHA-256 the record gives.
 `convert` never overwrites anything else: a folder holding other files, copies of other
-images or made with other roles is refused (`copy_folder_not_empty`, `copy_differs`);
+images or made with other roles is refused (`copy_folder_not_empty`, `copy_differs`), and so
+is a folder holding a link or mount point anywhere below it (`copy_folder_has_links`), or a
+folder below it that cannot be read (`copy_folder_unreadable`);
 convert into a new folder then. If it fails (`conversion_failed`), the folder is left as it
-was. Images of 64-bit integers cannot be saved as OME-TIFF (`cannot_convert_pixel_type`).
+was. The copies are written in a hidden work folder, `.morphobricks-conversion.partial`, and
+moved into place together; if a conversion is killed (the computer stopped, the Colab
+session ended), the next one removes that folder, since a conversion marks it as its own
+when it makes it. A file or folder named like a copy with `.partial` added is never removed:
+it is not the conversion's. Images of 64-bit integers cannot be saved as OME-TIFF (`cannot_convert_pixel_type`).
 
 **Z-stacks: recorded 2-D projections.**
 A Z-stack is still refused by `check` and `run` (`z_stack_not_supported`). To analyse one,
@@ -1326,6 +1334,9 @@ continues.
 | `copy_folder_overlaps_masks` | Error | `convert`: the folder for the copies is the masks folder, inside it, or holds it; copies there would be read as masks. Choose a folder outside the masks folder. |
 | `copy_folder_not_a_folder` | Error | `convert`: the path given with `--to` is a file. Choose a folder. |
 | `copy_names_collide` | Error | An OME-Zarr copy: two images of one folder differ only by their extension, so their copies would have the same name. Nothing is written. Rename or exclude one of them. |
+| `copy_folder_has_links` | Error | `convert`: the folder for the copies holds symbolic links (directory junctions on Windows) or mount points, named `link -> target`, through which the copies would be written elsewhere, perhaps over the originals. Nothing is written; remove them or choose a new, empty folder. |
+| `copy_folder_unreadable` | Error | `convert`: a folder below the folder for the copies cannot be read, or disappeared while it was checked, so it cannot be checked for links or mount points; it is named. Nothing is written. Make it readable or remove it, or choose a new, empty folder. |
+| `conversion_work_folder_unowned` | Error | `convert`: the folder for the copies holds `.morphobricks-conversion.partial`, the name of the folder a conversion writes its copies in, but without the owner file a conversion writes into it first. Nothing is removed or written. Move or remove it yourself, or choose a new, empty folder. |
 | `copy_folder_not_empty` | Error | `convert`: the folder for the copies holds files and no conversion record. Nothing is overwritten; choose a new or empty folder. |
 | `copy_differs` | Error | `convert`: images in the folder of copies differ from the copies this conversion would write (an original changed, other roles, a copy changed, an image no longer in the experiment), or the folder holds copies of another experiment. Nothing is overwritten; convert into a new folder, or remove those copies first. |
 | `cannot_convert_pixel_type` | Error | `convert`: images of 64-bit integers cannot be saved as OME-TIFF, and pixel values are never changed to fit. Save them again with named axes in a 32-bit type if their values fit, or correct the roles. |

@@ -4,7 +4,8 @@ The notebooks install this package at their ``RELEASE_REF`` commit, not this che
 Preprocessing notebook keeps the call of the code at that commit (``test_notebook_file.py``,
 ``RELEASE_CALLS``); the Cellpose notebook must run exactly the code at ``RELEASE_REF`` that it
 uses (issue #421). Both read their cells and their pins here (:func:`code_sources`,
-:func:`install_setting`).
+:func:`install_setting`). That freshness check (:func:`check_pin_holds_this_code`) runs only in
+a release run (``release_run.py``): the notebooks are pinned in the release pull request.
 
 What the Cellpose notebook uses is derived from its cells, never listed by hand
 (:func:`notebook_modules`): the package modules its cells import, then every package module
@@ -12,19 +13,23 @@ those import, at any depth and inside functions too, at ``RELEASE_REF`` and at `
 (:func:`module_closure`). :func:`pin_differences` names every file of that code, every
 non-Python file of the package, the build's own inputs and the install-relevant part of
 ``pyproject.toml`` that differ between the two commits. A use the derivation cannot follow
-is refused with :class:`PinScopeError`, never assumed unchanged: in a cell, code loaded by a
-name or from text or a file, a command other than ``python -m pip`` (or one reached by an
-alias, a ``from`` import or IPython), an install other than at ``@{RELEASE_REF}`` (a forced
-reinstall included, and the bare distribution name a cell function passes on to ``pip``),
-an IPython ``!``/``%`` line; in package code, a module loaded by a computed name or a file or
-text run; in the build, a second wheel package, an unknown backend or ``[tool.hatch]``
-setting, or a ``hatch.toml``. Package code that names a package module in a string runs it
-as an import.
+is refused with :class:`PinScopeError`, never assumed unchanged: in cells and package code,
+a loader reached by an ``as`` alias or ``getattr``; in a cell, code loaded by a name or from
+text or a file, a command other than ``python -m pip`` (or one reached by an alias, a ``from``
+import or IPython), an install other than at ``@{RELEASE_REF}`` (a forced reinstall included,
+and the bare distribution name a cell function passes on to ``pip``), an IPython ``!``/``%``
+line; in package code, a module loaded by a computed name or a file or text run; in the
+build, a second wheel package, an unknown backend or ``[tool.hatch]`` setting, or a
+``hatch.toml``. Package code that names a package module in a string (``"pkg.mod"`` or
+``"pkg.mod:attr"``) runs it as an import.
+
+The check is a drift detector, not a security boundary: it catches a legitimate edit that
+changes what the notebook runs without a new pin. Deliberate obfuscation is out of scope
+and not seen: ``getattr(__builtins__, ...)``, ``ctypes``, or a module or package name
+assembled from strings at runtime.
 
 Known gaps: package code that assembles a module name at runtime and passes it to
 something other than a loader (``[sys.executable, "-m", f"{PACKAGE}.{name}"]``) is not seen.
-Likewise a cell function that copies the bare distribution name into another variable before
-giving it to ``pip`` is not seen: only the parameter itself is followed.
 """
 
 from __future__ import annotations
@@ -39,6 +44,8 @@ from pathlib import Path
 
 import pytest
 
+from release_run import release_only, release_run
+
 PACKAGE = "morphobricks_preprocessing"
 DISTRIBUTION = "morphobricks-preprocessing"
 SOURCE_ROOT = "src"
@@ -46,10 +53,18 @@ BUILD_FILES = (".gitignore",)
 """The files the build reads besides the package and ``pyproject.toml``: hatchling leaves out
 what ``.gitignore`` names, so it can change the installed files. A ``hatch.toml`` is refused
 (:data:`HATCH_KEYS`)."""
-HATCH_KEYS = frozenset({"metadata.allow-direct-references", "build.targets.wheel.packages"})
-"""The ``[tool.hatch]`` settings the check knows to add no file outside the package. Any other
-setting (``force-include``, ``sources``, build hooks, a version source) or a ``hatch.toml``
-can put other files in the wheel and is refused."""
+HATCH_KEYS = frozenset(
+    {"metadata.allow-direct-references", "build.targets.wheel.packages", "build.exclude"}
+)
+"""The ``[tool.hatch]`` settings the check knows to add no file outside the package. They are
+compared, so a change of one is reported as ``pyproject.toml``: ``build.exclude`` applies to
+every target, the wheel included, but only leaves files out. Any other setting
+(``force-include``, ``sources``, build hooks, a version source) or a ``hatch.toml`` can put
+other files in the wheel and is refused."""
+HATCH_IGNORED = frozenset({"build.targets.sdist", "envs"})
+"""The ``[tool.hatch]`` tables that do not change the wheel pip builds from Git, left out of
+the comparison: pip builds the wheel from the source tree, not from an sdist, and ``envs``
+are Hatch's development environments."""
 BACKEND_REQUIRES = {"hatchling.build": "hatchling"}
 """The one requirement of each known backend. A further one (a hatch plugin) may read any
 ``[tool]`` table, so then the whole ``pyproject.toml`` is compared."""
@@ -64,12 +79,17 @@ NAME_LOADERS = frozenset({"import_module", "__import__"})
 """Calls that import a module by a name given as a value, not in an import statement."""
 FILE_LOADERS = frozenset({"spec_from_file_location", "SourceFileLoader", "run_path", "run_module"})
 """Calls that run a file or a module without an import statement (``importlib``, ``runpy``)."""
+LOADER_MODULES = frozenset({"importlib", "runpy"})
+"""The modules the :data:`NAME_LOADERS` and :data:`FILE_LOADERS` come from. Loaders are matched
+by their own name, so one bound to another name (``import ... as``) or looked up on these
+modules by ``getattr`` is refused (:func:`_hidden_loader`)."""
 TEXT_LOADERS = frozenset({"exec", "eval", "compile"})
 """Builtins that run code from text. Matched only as bare names (or on ``builtins``): a method
 of the same name, such as a model's ``eval()``, runs no text."""
 SHELLS = frozenset({"subprocess", "os"})
 """The modules whose :data:`COMMANDS` start a program. A cell uses them only by their own name
-(no ``as``, no ``from ... import``, no other binding), so every command call is seen."""
+(no ``as``, no other binding) and imports none of their commands by ``from ... import``, so
+every command call is seen."""
 COMMANDS = frozenset(
     {"run", "Popen", "call", "check_call", "check_output", "getoutput", "getstatusoutput"}
     | {"system", "popen", "startfile", "posix_spawn", "posix_spawnp"}
@@ -78,8 +98,9 @@ COMMANDS = frozenset(
 )
 """``subprocess`` and ``os`` calls that start a program."""
 PIP_WORDS = frozenset({"install", "--disable-pip-version-check", "--force-reinstall", "--no-deps"})
-"""The literal words a cell's ``pip`` command may hold after ``-m pip``. The requirements
-come from variables, whose text :func:`_refuse_unpinned_install` checks where it is written.
+"""The literal words a cell's ``pip`` command may get after ``-m pip``, in the call or through
+variables (:func:`_pip_words`). The requirements are f-strings, whose text
+:func:`_refuse_unpinned_install` checks where it is written.
 ``--force-reinstall --no-deps`` replaces an installed preprocessing of the same version from
 another commit (pip keeps it otherwise, #371); it installs the same pinned requirement."""
 INSTALL_SPEC = re.compile(r"morphobricks[-_.]preprocessing|git\+", re.I)
@@ -90,8 +111,11 @@ HIDDEN_RUNNERS = frozenset({"get_ipython"})
 """Names that run commands or code the cell's syntax does not show (IPython's ``system``)."""
 
 
-DOTTED_NAME = re.compile(rf"{PACKAGE}(\.[A-Za-z_][A-Za-z0-9_]*)*")
-"""A string that names a module of the package (``morphobricks_preprocessing.cli``)."""
+DOTTED_NAME = re.compile(rf"{PACKAGE}(\.[A-Za-z_]\w*)*(:[A-Za-z_]\w*(\.[A-Za-z_]\w*)*)?")
+"""A string that names a module of the package (``morphobricks_preprocessing.cli``), or an
+object in one by the ``module:attribute`` form of entry points and ``pkgutil.resolve_name``
+(``morphobricks_preprocessing.cli:main``). The string is followed whatever code it is given
+to, as an import of the module (and of the attribute, should it be a submodule)."""
 
 
 class PinScopeError(Exception):
@@ -99,10 +123,10 @@ class PinScopeError(Exception):
 
 
 def history_missing(reason: str) -> None:
-    """Skip a test that needs the Git history, or fail it in CI (``CI`` set), whose checkout
-    holds the full history so that the pin check runs there (issue #421)."""
-    if os.environ.get("CI"):
-        pytest.fail(f"{reason}: CI must check out the full history (fetch-depth: 0)")
+    """Skip a test that needs the Git history, or fail it in CI (``CI`` set) or in a release
+    run, whose checkout holds the full history so that the pin check runs there (issue #421)."""
+    if os.environ.get("CI") or release_run():
+        pytest.fail(f"{reason}: CI and release runs need the full history (fetch-depth: 0)")
     pytest.skip(reason)
 
 
@@ -140,6 +164,26 @@ def _loader(node: ast.Call) -> str | None:
     return name if name in TEXT_LOADERS and builtin else None
 
 
+def _hidden_loader(node: ast.AST) -> str | None:
+    """Return the code of a loader reached by a name :func:`_loader` cannot match, or None.
+
+    That is an ``as`` alias of a :data:`NAME_LOADERS` or :data:`FILE_LOADERS` name (``from
+    importlib import import_module as load``) or ``getattr`` on a :data:`LOADER_MODULES`
+    module (``getattr(importlib, "import_module")``).
+    """
+    if isinstance(node, ast.Import | ast.ImportFrom):
+        loaders = NAME_LOADERS | FILE_LOADERS
+        aliased = any(a.asname and a.name.split(".")[-1] in loaders for a in node.names)
+        return ast.unparse(node) if aliased else None
+    if isinstance(node, ast.Call) and _call_name(node) == "getattr" and node.args:
+        owner = node.args[0]
+        while isinstance(owner, ast.Attribute):
+            owner = owner.value
+        if isinstance(owner, ast.Name) and owner.id in LOADER_MODULES:
+            return ast.unparse(node)
+    return None
+
+
 def _starts_pip(node: ast.Call) -> bool:
     """Return whether a command call runs ``sys.executable -m pip``."""
     if not node.args or not isinstance(node.args[0], ast.List):
@@ -151,17 +195,19 @@ def _starts_pip(node: ast.Call) -> bool:
 def _refuse_hidden_commands(tree: ast.AST, where: str) -> None:
     """Raise ``PinScopeError`` for a cell command the :data:`COMMANDS` check could miss.
 
-    A command module bound to another name (``import subprocess as sp``, ``from os import
-    system``, ``runner = subprocess``, ``getattr(os, ...)``), a command kept to call later
-    (``start = subprocess.run``) and IPython's runners are refused.
+    A command module bound to another name (``import subprocess as sp``, ``runner =
+    subprocess``, ``getattr(os, ...)``), a command imported by name (``from os import
+    system``) or kept to call later (``start = subprocess.run``) and IPython's runners are
+    refused. Other names from these modules (``from os import environ``, ``from subprocess
+    import CalledProcessError``) start nothing and are allowed.
     """
     owners = {id(n.value) for n in ast.walk(tree) if isinstance(n, ast.Attribute)}
     called = {id(n.func) for n in ast.walk(tree) if isinstance(n, ast.Call)}
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             bad = [a.name for a in node.names if a.name in SHELLS and a.asname]
-        elif isinstance(node, ast.ImportFrom):
-            bad = [node.module] if node.module in SHELLS else []
+        elif isinstance(node, ast.ImportFrom) and node.module in SHELLS:
+            bad = [a.name for a in node.names if a.name in COMMANDS | {"*"}]
         elif isinstance(node, ast.Name):
             shell = node.id in SHELLS and id(node) not in owners
             bad = [node.id] if shell or node.id in HIDDEN_RUNNERS else []
@@ -180,6 +226,8 @@ def _refuse_unseen_use(tree: ast.AST, where: str) -> None:
     """Raise ``PinScopeError`` for a notebook use of code no import statement shows."""
     _refuse_hidden_commands(tree, where)
     for node in ast.walk(tree):
+        if hidden := _hidden_loader(node):
+            raise PinScopeError(f"{where} reaches a loader the check cannot follow: {hidden}")
         if isinstance(node, ast.Constant) and isinstance(node.value, str):
             if PACKAGE in node.value:
                 raise PinScopeError(f"{where} names {PACKAGE} outside an import: {node.value!r}")
@@ -225,34 +273,70 @@ def _f_string_text(node: ast.JoinedStr) -> str:
     return "".join(v.value if isinstance(v, ast.Constant) else "{}" for v in node.values)
 
 
-def _refuse_name_to_pip(call: ast.Call, nodes: list[ast.AST]) -> None:
-    """Raise ``PinScopeError`` when a cell function given the bare distribution name passes it
-    to ``pip``: that would install the package unpinned (the name may only be read back from
-    the installed metadata). Only the parameter itself is followed, not a copy of it."""
-    functions = [n for n in nodes if isinstance(n, ast.FunctionDef) and n.name == _call_name(call)]
-    for function in functions:
-        params = [a.arg for a in function.args.args]
-        named = {
-            params[i]
-            for i, a in enumerate(call.args[: len(params)])
-            if getattr(a, "value", None) == DISTRIBUTION
-        }
-        for inner in ast.walk(function):
-            if isinstance(inner, ast.Call) and _starts_pip(inner):
-                used = {n.id for n in ast.walk(inner.args[0]) if isinstance(n, ast.Name)}
-                if used & named:
-                    raise PinScopeError(
-                        f"pip is given the bare {DISTRIBUTION}: {ast.unparse(inner)}"
-                    )
+def _values_of(name: str, nodes: list[ast.AST]) -> list[ast.expr]:
+    """Return every value the cells give the variable ``name``.
+
+    That is what is assigned to it, appended, inserted or extended onto it
+    (``wanted.append(...)``) and, for a parameter of a function the cells define, every
+    argument a call of that function gives it. Names are not told apart by scope.
+    """
+    values: list[ast.expr] = []
+    for node in nodes:
+        if isinstance(node, ast.Assign | ast.AnnAssign | ast.AugAssign) and node.value:
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            if any(isinstance(t, ast.Name) and t.id == name for t in targets):
+                values.append(node.value)
+        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+            grows = node.func.attr in ("append", "extend", "insert")
+            if grows and isinstance(node.func.value, ast.Name) and node.func.value.id == name:
+                values.extend(node.args[1:] if node.func.attr == "insert" else node.args)
+        elif isinstance(node, ast.FunctionDef):
+            params = [a.arg for a in node.args.args]
+            if name in params:
+                at = params.index(name)
+                calls = [n for n in nodes if isinstance(n, ast.Call) and _call_name(n) == node.name]
+                values.extend(c.args[at] for c in calls if len(c.args) > at)
+                values.extend(k.value for c in calls for k in c.keywords if k.arg == name)
+    return values
+
+
+def _pip_words(command: ast.Call, nodes: list[ast.AST]) -> list[str]:
+    """Return every literal word a cell's ``pip`` command gets after ``-m pip``.
+
+    Words written in the call and words that reach it through variables are both returned:
+    a name (or ``*name``) is followed to its :func:`_values_of`, through lists and further
+    names, so a word added to a list elsewhere, or the bare distribution name a cell function
+    is given and passes on in a copy or a list, is seen like one written in the call. An
+    f-string is not opened: :func:`_refuse_unpinned_install` checks its text where it is
+    written.
+    """
+    words, pending, seen = [], list(command.args[0].elts[3:]), set()
+    while pending:
+        item = pending.pop()
+        if isinstance(item, ast.Starred):
+            pending.append(item.value)
+        elif isinstance(item, ast.List | ast.Tuple):
+            pending.extend(item.elts)
+        elif isinstance(item, ast.IfExp):
+            pending.extend([item.body, item.orelse])
+        elif isinstance(item, ast.Name) and item.id not in seen:
+            seen.add(item.id)
+            pending.extend(_values_of(item.id, nodes))
+        elif isinstance(item, ast.Constant) and isinstance(item.value, str):
+            words.append(item.value)
+    return words
 
 
 def _refuse_unpinned_install(trees: list[ast.AST]) -> None:
     """Raise ``PinScopeError`` unless every install of the package in the cells is pinned.
 
     ``RELEASE_REF`` and ``REPOSITORY`` are each set once (and named in no string); a ``pip``
-    command holds only :data:`PIP_WORDS` and variables; and every string that can name the
-    package for ``pip`` is the f-string ending ``@{RELEASE_REF}``, the ``REPOSITORY`` value,
-    or the bare distribution name passed to a metadata call or a function the cells define.
+    command is given no literal word but :data:`PIP_WORDS`, written in it or reaching it
+    through variables (:func:`_pip_words`); and every string that can name the package for
+    ``pip`` is the f-string ending ``@{RELEASE_REF}``, the ``REPOSITORY`` value, or the bare
+    distribution name passed to a metadata call or a function the cells define. Such a
+    function may read the installed package by that name, never install it: the name
+    reaching ``pip`` is a word :data:`PIP_WORDS` does not hold.
     """
     nodes = [node for tree in trees for node in ast.walk(tree)]
     for setting in ("RELEASE_REF", "REPOSITORY"):
@@ -271,13 +355,12 @@ def _refuse_unpinned_install(trees: list[ast.AST]) -> None:
             allowed |= {id(v) for v in node.values} | ({id(node)} if _pinned(node) else set())
         elif isinstance(node, ast.Call) and _call_name(node) in METADATA_CALLS | defined:
             allowed |= {id(a) for a in node.args if getattr(a, "value", None) == DISTRIBUTION}
-            _refuse_name_to_pip(node, nodes)
         elif isinstance(node, ast.Assign) and getattr(node.targets[0], "id", "") == "REPOSITORY":
             allowed.add(id(node.value))
         if isinstance(node, ast.Call) and _starts_pip(node):
-            words = node.args[0].elts[3:]
-            if any(isinstance(w, ast.Constant) and w.value not in PIP_WORDS for w in words):
-                raise PinScopeError(f"a pip command the check does not know: {ast.unparse(node)}")
+            unknown = sorted(set(_pip_words(node, nodes)) - PIP_WORDS)
+            if unknown:
+                raise PinScopeError(f"a pip command the check does not know: {unknown}")
     for node in nodes:
         text = _f_string_text(node) if isinstance(node, ast.JoinedStr) else None
         if isinstance(node, ast.Constant) and isinstance(node.value, str):
@@ -351,13 +434,16 @@ def _imported(text: str, module: str, path: str) -> list[str]:
     """
     names = []
     for node in ast.walk(ast.parse(text)):
+        if hidden := _hidden_loader(node):
+            raise PinScopeError(f"{path} reaches a loader the check cannot follow: {hidden}")
         if isinstance(node, ast.Import):
             names.extend(alias.name for alias in node.names)
         elif isinstance(node, ast.ImportFrom):
             base = _absolute(node, module, path)
             names.extend([base, *(f"{base}.{alias.name}" for alias in node.names)])
         elif isinstance(node, ast.Constant) and isinstance(node.value, str):
-            names.extend([node.value] if DOTTED_NAME.fullmatch(node.value) else [])
+            named = DOTTED_NAME.fullmatch(node.value)
+            names.extend([node.value.replace(":", ".")] if named else [])
         elif isinstance(node, ast.Call) and _loader(node) in NAME_LOADERS:
             _refuse_computed_name(node, path)
         elif isinstance(node, ast.Call) and _loader(node):
@@ -417,15 +503,16 @@ def install_table(text: str) -> dict:
     """Return ``pyproject.toml`` without the ``[tool]`` tables no build reads.
 
     ``[project]`` (dependencies, extras, version, scripts) and ``[build-system]`` are kept
-    whole; of ``[tool]`` only the build backend's own table is kept. Raises
-    ``PinScopeError`` for a backend not in :data:`BACKEND_TABLES` or a wheel whose packages
-    are not :data:`WHEEL_PACKAGES`.
+    whole; of ``[tool]`` only the build backend's own table is kept, without
+    :data:`HATCH_IGNORED` (all of it with a build plugin). Raises ``PinScopeError`` for a
+    backend not in :data:`BACKEND_TABLES` or a wheel whose packages are not
+    :data:`WHEEL_PACKAGES`.
     """
     data = tomllib.loads(text)
     backend = data.get("build-system", {}).get("build-backend")
     if backend not in BACKEND_TABLES:
         raise PinScopeError(f"pyproject.toml has an unknown build backend: {backend!r}")
-    own = data.get("tool", {}).get(BACKEND_TABLES[backend], {})
+    own = _without(data.get("tool", {}).get(BACKEND_TABLES[backend], {}), HATCH_IGNORED)
     unknown = _leaf_keys(own) - HATCH_KEYS
     if unknown:
         raise PinScopeError(f"[tool.hatch] has settings the check does not know: {unknown}")
@@ -437,6 +524,15 @@ def install_table(text: str) -> dict:
     if names == {BACKEND_REQUIRES[backend]}:
         data["tool"] = {BACKEND_TABLES[backend]: own}
     return data
+
+
+def _without(table: dict, dropped: frozenset[str], prefix: str = "") -> dict:
+    """Return a copy of ``table`` without the subtables whose dotted key is in ``dropped``."""
+    return {
+        key: _without(value, dropped, f"{prefix}{key}.") if isinstance(value, dict) else value
+        for key, value in table.items()
+        if f"{prefix}{key}" not in dropped
+    }
 
 
 def _leaf_keys(table: dict, prefix: str = "") -> set[str]:
@@ -480,3 +576,19 @@ def pin_differences(repo: Path, ref: str, head: str, sources: list[str]) -> list
     if _install_table_at(repo, before) != _install_table_at(repo, after):
         changed.add("pyproject.toml")
     return sorted(changed)
+
+
+def check_pin_holds_this_code(repo: Path, ref: str, sources: list[str]) -> None:
+    """Fail unless the notebook cells ``sources``, installing ``ref``, run the code ``HEAD`` holds.
+
+    Release-only (owner, 24 November 2026): skipped outside a release run, as the pin is moved
+    only in the release pull request. In a release run a missing pinned commit fails.
+    """
+    release_only()
+    command = ["git", "-C", str(repo), "cat-file", "-e", f"{ref}^{{commit}}"]
+    if subprocess.run(command, capture_output=True).returncode != 0:
+        history_missing("the pinned commit is not in this checkout (shallow clone or no git)")
+    changed = pin_differences(repo, ref, "HEAD", sources)
+    assert changed == [], (
+        f"what the notebook runs changed after RELEASE_REF: move the pin ({changed})"
+    )

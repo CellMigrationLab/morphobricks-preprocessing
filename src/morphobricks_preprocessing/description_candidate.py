@@ -26,7 +26,7 @@ from .description_review import design_changes
 from .description_rules import CHANNEL_LAYOUT, Refusal
 from .description_run_text import reader_issue, reader_warning
 from .description_transition import Reconfirmation
-from .description_write import canonical_bytes
+from .description_write import DescriptionTypeError, canonical_bytes
 from .design import DesignFormatError
 from .design_derive import derive_design
 from .fast_layout import FAST_LAYOUT_CONTRADICTION
@@ -157,7 +157,10 @@ def check_candidate(
     confirmations
         The user's recorded re-confirmations that publication will be given.
     """
-    data = canonical_bytes(candidate)
+    try:
+        data = canonical_bytes(candidate)
+    except DescriptionTypeError as refused:  # a wrong type is refused as the reader would
+        return CandidateCheck(None, tuple(reader_issue(i) for i in refused.issues))
     report = read_description_bytes(data)
     if not report.ok:
         return CandidateCheck(None, tuple(reader_issue(i) for i in report.errors))

@@ -10,6 +10,7 @@ import pytest
 
 from draft_file_support import COUNTS, DAY, PATHS, complete
 from morphobricks_preprocessing import discover_experiment, preflight
+from morphobricks_preprocessing.description import description_from_bytes
 from morphobricks_preprocessing.description_candidate import check_candidate
 from morphobricks_preprocessing.description_reconcile import CHANNELS_CHANGED, reconcile
 from morphobricks_preprocessing.description_reopen import published_state
@@ -36,7 +37,7 @@ from morphobricks_preprocessing.published_answers import (
 )
 from morphobricks_preprocessing.reconcile_observe import observe_folders
 from morphobricks_preprocessing.run.description_file import publish_description
-from morphobricks_preprocessing.run.draft_file import publish_draft, save_draft
+from morphobricks_preprocessing.run.draft_file import load_draft, publish_draft, save_draft
 from tiff_tree import make_tree
 
 SHA = "0" * 64
@@ -216,3 +217,67 @@ def test_publish_draft_writes_the_derived_csv_only_with_the_description(exp, tmp
     assert not (out / "experiment_design.csv").exists()  # saving answers writes no CSV
     publish_draft(out, draft, channel_counts=COUNTS)
     assert (out / "experiment_design.csv").read_bytes().startswith(b"condition,")
+
+
+def published(publication):
+    """Return the description a publication wrote, read back from its file."""
+    return description_from_bytes(publication.path.read_bytes())
+
+
+def no_comparison_for_drug_a(answers):
+    """Return ``answers`` with DrugA's explicit choice "no comparison" (``""``)."""
+    drug = replace(answers.conditions["DrugA"], reference="")
+    return replace(answers, conditions={**answers.conditions, "DrugA": drug})
+
+
+def test_no_comparison_on_a_reopened_description_clears_the_reference_after_a_reopen(exp, tmp_path):
+    # Issue #408, the user's route: published DrugA -> CTRL, reopened, DrugA answered "no
+    # comparison", the draft saved and reopened, then published. The draft is derived from the
+    # folders (no references of its own), so the explicit "" clears the reference everywhere.
+    draft = draft_from_discovery(discover_experiment(exp))
+    out = tmp_path / "out"
+    save_draft(out, draft, complete())
+    first = publish_draft(out, draft, channel_counts=COUNTS)
+    assert b'reference = "CTRL"' in (out / "morphobricks.toml").read_bytes()
+    assert {r.control for r in derive_design(published(first)).rows if r.condition == "CTRL"} == {
+        True
+    }
+    cleared = no_comparison_for_drug_a(published_answers(published(first), first.sha256))
+    save_draft(out, draft, cleared)
+    resumed = load_draft(out, draft)  # the notebook reopened after the save
+    assert resumed.answers.conditions["DrugA"].reference == ""  # persisted as the choice
+    assert dict(resumed.draft.references) == {}
+    assert "DrugA is compared against nothing." in comparisons(resumed.draft, resumed.answers)
+    second = publish_draft(out, draft, channel_counts=COUNTS)
+    assert published(second).conditions["DrugA"].reference is None
+    assert b"reference" not in (out / "morphobricks.toml").read_bytes()
+    assert not any(r.control for r in derive_design(published(second)).rows)
+    header, *rows = (out / "experiment_design.csv").read_text().splitlines()
+    column = header.split(",").index("control")
+    assert [row.split(",")[column] for row in rows] == ["false"] * 4
+    again = published_answers(published(second), second.sha256)
+    assert again.conditions["DrugA"].reference == ""  # and reopens as "no comparison"
+
+
+def test_no_comparison_clears_a_reference_the_draft_already_holds(exp):
+    # Issue #408: apply_answers on a draft that already carries a reference (an applied draft)
+    # kept it under the explicit "no comparison". None keeps it, "" removes it, a folder
+    # replaces it.
+    draft = draft_from_discovery(discover_experiment(exp))
+    published = description_from_draft(draft, complete())
+    saved = published_answers(published, SHA)
+    applied = apply_answers(draft, saved)
+    assert dict(applied.references) == {"DrugA": "CTRL"}
+    cleared = no_comparison_for_drug_a(saved)
+    again = apply_answers(applied, cleared)
+    assert dict(again.references) == {}
+    assert comparisons(again, cleared)[1] == "DrugA is compared against nothing."
+    assert description_from_draft(applied, cleared).conditions["DrugA"].reference is None
+    unanswered = replace(cleared, conditions={"DrugA": ConditionAnswer(id="DrugA")})
+    assert dict(apply_answers(applied, unanswered).references) == {"DrugA": "CTRL"}
+    swapped = {
+        "CTRL": replace(saved.conditions["CTRL"], reference="DrugA"),
+        "DrugA": cleared.conditions["DrugA"],
+    }
+    turned = replace(saved, conditions=swapped)
+    assert dict(apply_answers(applied, turned).references) == {"CTRL": "DrugA"}

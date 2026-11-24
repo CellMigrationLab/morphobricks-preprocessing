@@ -37,6 +37,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+import stat
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -120,6 +121,28 @@ class MountCheck:
             return os.stat(entry.path).st_dev != self.device
         except OSError:  # cannot be read: its reader reports it
             return False
+
+    def is_mounted_folder(self, real: Path, found: os.stat_result) -> bool:
+        """Return True when a path below the folder is a mount point: :meth:`is_mount` by path.
+
+        For a check without a walk entry (a conversion's check before each move, #467).
+
+        Parameters
+        ----------
+        real
+            The path, real, below the selected folder.
+        found
+            Its :func:`os.lstat`; a link is told apart before (:func:`.links.is_link_stat`).
+
+        Returns
+        -------
+        bool
+        """
+        if real in self.below:
+            return True
+        return (
+            self.device is not None and stat.S_ISDIR(found.st_mode) and found.st_dev != self.device
+        )
 
     def on_other_device(self, found: os.stat_result) -> bool:
         """Return True when a file's ``stat`` (taken by its walk) is on another device.
