@@ -80,15 +80,24 @@ def unreadable_issue(paths: list[str]) -> ValidationIssue:
     )
 
 
-def work_folder_issue(dest: Path, name: str) -> ValidationIssue:
-    """Refuse a copy tree whose conversion work folder ``name`` a conversion did not make (#448)."""
+def work_folder_issue(dest: Path, name: str, all_nul: bool = False) -> ValidationIssue:
+    """Refuse a copy tree whose conversion work folder ``name`` a conversion did not make (#448).
+
+    ``all_nul``: its owner file holds only NUL bytes, possibly left by a power loss (#488).
+    """
+    power_loss = (
+        " Its owner file holds only NUL bytes, possibly left by a power loss while a "
+        "conversion wrote it."
+        if all_nul
+        else ""
+    )
     return error(
         "conversion_work_folder_unowned",
         f"The folder for the named-axis copies holds {name}, the name of the folder a "
         "conversion writes its copies in, but not as a conversion leaves it: the owner file a "
         "conversion writes into it first is missing or not well formed, or it holds something "
         "else than that file and the folder 'files'. So it was not made by a conversion, or "
-        "was changed since. Nothing was removed and nothing was written.",
+        f"was changed since.{power_loss} Nothing was removed and nothing was written.",
         [name],
         f"Move or remove {dest / name} yourself if you no longer need what it holds, "
         "or choose a new, empty folder for the copies.",

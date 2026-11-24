@@ -70,6 +70,7 @@ from .conversion_write import (
     UNOWNED,
     ConversionFailed,
     leftover_work_folders,
+    owner_all_nul,
     remove_leftover,
     write_all,
 )
@@ -293,7 +294,7 @@ def _locked_conversion(
     leftovers = leftover_work_folders(dest)
     for work in leftovers:
         if work.state == UNOWNED:
-            refused.append(work_folder_issue(dest, work.path.name))
+            refused.append(work_folder_issue(dest, work.path.name, owner_all_nul(work.path)))
         if work.state == IN_USE and work.holder is not None:
             refused.append(work_folder_in_use_issue(dest, work.path.name, work.holder))
     if refused:

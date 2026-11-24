@@ -203,3 +203,26 @@ def test_a_leftover_partly_removed_is_still_owned(tmp_path, monkeypatch):
     assert (work / "owner.json").is_file()
     monkeypatch.setattr(write_module.shutil, "rmtree", real_rmtree)
     assert convert_experiment(exp, SWAPPED, copies).written and not work.exists()
+
+
+# (5) An owner file of NUL bytes -----------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("owner", "named"),
+    [
+        pytest.param("\0" * 150, True, id="all_nul"),
+        pytest.param("\0" * 149 + "x", False, id="not_all_nul"),
+        pytest.param({"kind": KIND}, False, id="forged"),
+    ],
+)
+def test_an_owner_file_of_nul_bytes_is_refused_as_possibly_from_a_power_loss(
+    tmp_path, owner, named
+):
+    exp, copies = swapped_experiment(tmp_path / "exp"), tmp_path / "copies"
+    _leftover(copies, owner)
+    before = _tree(copies)
+    result = convert_experiment(exp, SWAPPED, copies)
+    assert not result.written and codes(result.issues) == ["conversion_work_folder_unowned"]
+    assert ("possibly left by a power loss" in result.issues[0].message) is named
+    assert _tree(copies) == before

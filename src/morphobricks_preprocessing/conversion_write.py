@@ -295,6 +295,23 @@ def remove_leftover(found: WorkFolder | None) -> ValidationIssue | None:
     return None
 
 
+def owner_all_nul(work: Path) -> bool:
+    """Return True when a work folder's owner file is a regular file of NUL bytes only.
+
+    A power loss after the file got its length but before its data reached the disk can
+    leave it so (issue #488); it is still refused, only named as such.
+    """
+    owner = work / OWNER_FILENAME
+    try:
+        found = os.lstat(owner)
+        if not stat.S_ISREG(found.st_mode) or not 0 < found.st_size <= _OWNER_MAX:
+            return False
+        data = owner.read_bytes()
+    except OSError:
+        return False
+    return bool(data) and not data.strip(b"\0")
+
+
 def _unfinished(work: Path) -> bool:
     """Return True for a real folder that is empty or holds only an empty or cut-short owner."""
     try:
