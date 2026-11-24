@@ -190,14 +190,20 @@ def check_types(description: Description) -> None:
     since a wrong type is what the writer would drop or convert. Every other refusal is the
     strict reader's, on the written bytes.
 
+    The ID keys of the tables are checked before either phase, since both build their table
+    paths from text keys (:func:`_key_issues`). A key that is not text is a fault of the
+    structure, so it is reported as phase 3 (the structure phase) although it is found before
+    phase 2 runs; the number is the phase whose table it is, not the order of the checks.
+
     Raises
     ------
     DescriptionTypeError
-        With every ``E_TYPE`` issue of the first phase that has one.
+        With every non-text ID key (``phase`` 3), else every ``E_TYPE`` issue of the first
+        phase that has one.
     """
     doc = _document(description)
     keys = _key_issues(doc)
-    if keys:  # the reader's table paths are built from text keys
+    if keys:
         raise DescriptionTypeError(keys, 3)
     for phase, check in STRUCTURE_PHASES:
         wrong = tuple(i for i in check(doc).items if i.code is Code.E_TYPE)
