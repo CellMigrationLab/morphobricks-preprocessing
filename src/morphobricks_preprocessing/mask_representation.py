@@ -44,7 +44,7 @@ import numpy as np
 from ._io import write_text_atomic
 from .description import Description
 from .fingerprint import Fingerprint
-from .mask_binding import check_scanned, scan_fingerprints
+from .mask_binding import check_scanned, refuse_unbound, scan_fingerprints
 from .mask_rules import (
     MaskContradictsRepresentationError,
     binary_dtype,
@@ -113,7 +113,9 @@ def binary_refusals(
     Each file of a mask declared ``binary`` is read between two fingerprints
     (:mod:`.mask_binding`) and checked **file-wide** by :func:`.mask_rules.check_binary_values`
     on the union of its planes' values. The error's code and message are recorded as they are,
-    with no action added.
+    with no action added. Every file of the inventory must have its header bound to a
+    fingerprint (``find_masks(bind=True)``): that is checked for the whole inventory before any
+    file is read (issue #480).
 
     Returns
     -------
@@ -123,11 +125,15 @@ def binary_refusals(
 
     Raises
     ------
+    MaskUnboundError
+        ``mask_header_unbound``, naming every file of the inventory found without its header
+        bound to a fingerprint; nothing is read then.
     MaskChangedError
         A mask changed before or while it was read.
     ValueError
         For a mask whose pixels cannot be read as the 2-D planes its header gave.
     """
+    refuse_unbound(inventory.files)
     root = Path(experiment_root).resolve()
     refused: dict[str, ValidationIssue] = {}
     for mask in description.masks.values():
