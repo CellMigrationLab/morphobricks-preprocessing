@@ -566,7 +566,11 @@ editing, or the confirmed ones. An image that cannot be drawn gets a sentence sa
    change of the same entity (a folder renamed or removed) is never paired with it: the save
    is refused with `folder_and_id_changed` (#475); undo the ID edit and the folder change
    saves on its own. A saved ID cannot be changed from the notebook: only the publication API
-   takes a `Reconfirmation` that names a new ID.
+   takes a `Reconfirmation` that names a new ID. A whole biological repeat or condition can
+   be removed (every one of its folders gone from disk, or a condition folder renamed on disk,
+   which is a removed folder plus a new one): answer **Yes, remove** for each condition listed
+   and save. Its ID stays in `used_ids` as retired (experiment-v1 §4.9): it is never given to
+   another repeat or condition, and a folder of that name that comes back gets a new ID.
 4. **Masks.** The masks the check paired with the images (and, for masks whose files do not
    name their axes, the axes to state), then for each mask type: *separate objects*,
    *regions* or *grouped labels (one value per parent, e.g. mitochondria by cell)*. Nothing is
