@@ -60,7 +60,7 @@ from .notebook_replicates import _ReplicateBoxes
 from .published_answers import kept_date
 from .run import OutputLockedError
 from .run.description_file import PublicationRefused
-from .run.draft_file import publish_draft
+from .run.draft_file import NO_DRAFT, publish_draft
 from .validation import plural
 
 INTRO = (
@@ -224,6 +224,9 @@ class _CheckSaveScreen(_ReplicateBoxes):
             and self._check.can_publish
             and not self._moves_open()
             and not rows
+            and not self.channel_grid.by_repeat.other_draft()  # its refusals are not read yet
+            and not self.channel_grid.by_repeat.unsaved  # the draft does not hold the review
+            and self.channel_grid.by_repeat.saved()  # memory is the draft's saved review
         )
         self.save_button.disabled = not ready or self._saved_current()
         self.save_note.value = (
@@ -239,6 +242,9 @@ class _CheckSaveScreen(_ReplicateBoxes):
         """Return what stops the save button now (shown beside it), or nothing when saved."""
         if not self.save_button.disabled or self._saved_current():
             return []  # saved already (the green line says so): nothing is blocked
+        review = self.channel_grid.by_repeat
+        if review.other_draft() and review.draft is not None:  # a review was read: another's
+            return ["the tag review is another draft's: open Channels again for this draft"]
         missing = len(todo[0]) + len(todo[1])
         if missing:  # and the Channels questions waiting, so none is found only afterwards
             line = f"{plural(missing, 'answer')} still missing (listed above the button)"
@@ -252,6 +258,21 @@ class _CheckSaveScreen(_ReplicateBoxes):
             or (
                 [f"{len(rows)} imaging unit(s) a repeat folder's row did not fill: see Channels"]
                 if rows
+                else []
+            )
+            or (
+                ["the tag review is not saved in the draft: change a tag on Channels to retry"]
+                if review.unsaved
+                else []
+            )
+            or (
+                ["this draft's tag review is not read yet: open Channels"]
+                if review.other_draft()
+                else []
+            )
+            or (
+                ["this session's tag review differs from the draft's: run the notebook again"]
+                if not review.saved()
                 else []
             )
             or ["these answers are refused: see the red message above the button"]
@@ -506,14 +527,18 @@ class _CheckSaveScreen(_ReplicateBoxes):
             )
             removals, confirmations = self._publication_terms(state, candidate)
             recorded = today if state.reconciliation.counts else None
-        return publish_draft(
-            self._design_folder(),
+        output = self._design_folder()
+        publication = publish_draft(
+            output,
             self._draft_base,
             channel_counts=self._channel_counts(),
             confirmations=confirmations,
             removals=removals,
             recorded_on=recorded,
+            expected=self._expected_generation(output),  # the draft checked, never a newer one
         )
+        self._draft_pin = (output.resolve(), NO_DRAFT)  # published: the draft file is deleted
+        return publication
 
 
 __all__ = ["INTRO", "_CheckSaveScreen"]

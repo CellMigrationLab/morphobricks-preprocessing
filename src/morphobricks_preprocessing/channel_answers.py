@@ -188,6 +188,7 @@ def tagged(
     layouts: Sequence[UnitLayout],
     tags: Mapping[UnitKey, Sequence[str | None]],
     cells: Collection[tuple[UnitKey, int]],
+    then: Callable[[DraftAnswers], DraftAnswers] | None = None,
 ) -> Callable[[DraftAnswers], DraftAnswers]:
     """Return the user's click that saves ``tags`` (unit key -> whole tags) as a change.
 
@@ -198,7 +199,7 @@ def tagged(
     are also the cells the click made the user's: a click on a unit makes its whole tags the
     user's (a hand tag is never taken back). A click that tags no cell (every unit of a row of
     tags refused, untagged as it was) confirms nothing and resyncs nothing: on the strict page
-    there is no such click.
+    there is no such click. ``then`` is applied after it, in the same change (one save).
     """
     by_key = {layout.key: layout for layout in layouts}
     clicked = set(cells)
@@ -211,7 +212,8 @@ def tagged(
             pairs = enumerate(zip(old, new, strict=True))
             confirmed.update((key, i) for i, (a, b) in pairs if a != b)
             answers = with_tags(answers, layout, new)
-        return synced(answers, layouts, confirmed) if confirmed else answers
+        answers = synced(answers, layouts, confirmed) if confirmed else answers
+        return answers if then is None else then(answers)
 
     return change
 

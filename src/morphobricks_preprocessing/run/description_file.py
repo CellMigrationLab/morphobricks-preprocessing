@@ -5,7 +5,9 @@
 base the draft was derived from (the SHA-256 of its exact bytes, or ``absent``), writes the
 candidate with the canonical writer, reads those exact bytes back with the strict reader,
 compares the candidate with the published file (:mod:`..description_transition`), and only then
-replaces the file atomically. Every refusal is reported as a set and writes nothing.
+replaces the file atomically. Every refusal is reported as a set and writes nothing. While a
+``morphobricks.draft.json`` is saved in the folder it publishes nothing (:class:`DraftExists`):
+the notebook's saved answers are published only by :func:`.draft_file.publish_draft`.
 
 The user's re-confirmations that the candidate needed, a ``removed`` record for every removal
 the user confirmed and an ``image_count_changed`` record for a changed image count
@@ -48,6 +50,7 @@ from .._io import give_output_mode
 from ..description import Description, DescriptionError, description_from_bytes
 from ..description_file import (
     DESCRIPTION_FILENAME,
+    DRAFT_FILENAME,
     RECORDS_FILENAME,
     read_file_bytes,
     sha256_hex,
@@ -120,6 +123,28 @@ class FolderIdRefused(ValueError):
         self.codes = frozenset(c.code for c in changes)
         shown = " ".join(f"{c.code}: {c.message} {c.action}" for c in changes)
         super().__init__(f"the description was not published: {shown}")
+
+
+class DraftExists(ValueError):
+    """Raised when :func:`publish_description` finds a saved draft; nothing is written.
+
+    External re-check ay (24 November 2026): ``describe --publish`` built a new description
+    from the command's flags and published it while the notebook's ``morphobricks.draft.json``
+    held answers it never read, among them a tag review whose refused units only an action on
+    each unit may release. Only :func:`.draft_file.publish_draft` publishes over a saved draft
+    (it publishes that draft, checked under the same lock); every other publication is refused
+    while one exists, a symbolic link included. ``code`` is ``R_DRAFT_EXISTS``.
+    """
+
+    code = "R_DRAFT_EXISTS"
+
+    def __init__(self, folder: Path) -> None:
+        super().__init__(
+            f"{folder / DRAFT_FILENAME} holds answers saved in the notebook (R_DRAFT_EXISTS); "
+            "they were not read here, so nothing was published or written. Finish them and "
+            "publish them in the notebook (step 1, Check folder; then Check and save), or, "
+            "if they are not wanted, remove or archive that file deliberately and publish again"
+        )
 
 
 def check_mode_switch(old: Description | None, new: Description, switch_mode: bool) -> None:
@@ -357,6 +382,10 @@ def publish_description(
     ------
     OutputLockedError
         When a run holds the lock.
+    DraftExists
+        ``R_DRAFT_EXISTS``: ``morphobricks.draft.json`` exists in the folder (even as a symbolic
+        link). The notebook's saved answers are published only by
+        :func:`.draft_file.publish_draft`; nothing is written.
     PublicationRefused
         With every applicable refusal: ``R_FILE_SYMLINK`` (the file or the records file),
         ``R_DRAFT_BASE_MISSING``, ``R_PUBLISHED_FILE_CHANGED``, or the changed-ID, used-ID and
@@ -379,6 +408,10 @@ def publish_description(
     """
     folder = Path(output_folder)
     with output_lock(folder):
+        # a saved draft is published only as itself (publish_draft), never over: checked under
+        # the lock, so a draft saved while this waited for it is seen too
+        if os.path.lexists(folder / DRAFT_FILENAME):
+            raise DraftExists(folder)
         return publish_locked(
             folder,
             candidate,
@@ -407,7 +440,9 @@ def publish_locked(
     The caller holds :func:`.lock.output_lock` on ``folder`` for the whole call (the lock is not
     re-entrant), so it can do more under the same lock, such as deleting the draft that was
     published (:mod:`.draft_file`). The refusals and effects are those of
-    :func:`publish_description`.
+    :func:`publish_description`, except :class:`DraftExists`: a saved draft is not refused here,
+    since :func:`.draft_file.publish_draft` publishes that very draft (checked under this hold of
+    the lock). Any other caller checks for one first, as :func:`publish_description` does.
     """
     path = folder / DESCRIPTION_FILENAME
     try:

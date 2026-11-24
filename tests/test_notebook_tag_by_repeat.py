@@ -225,7 +225,7 @@ def test_2_a_refused_save_moves_no_unit_under_tagged_on_their_own(tmp_path, monk
     nb = opened(root, masks, out)
     set_labels(nb, list(EXTRA))
     grid = nb.channel_grid
-    monkeypatch.setattr(type(grid), "commit", lambda self, tags, cells: False)
+    monkeypatch.setattr(type(grid), "commit", lambda self, tags, cells, then=None: False)
     _set_row(nb, ("rep2", 4), EXTRA)
     assert not grid.matrix.own  # nothing saved, nothing switched
 
@@ -320,7 +320,7 @@ def test_5_a_change_of_the_image_type_alone_keeps_the_unit_listed(tmp_path, stat
     assert list(rows.listed()) == [odd]  # its tags did not change: still not answered
 
 
-def test_5_a_unit_tagged_to_its_header_before_the_click_is_not_listed_after_change_and_restore(
+def test_5_a_unit_tagged_to_its_header_before_the_click_is_listed_until_a_hand_edit_of_it(
     tmp_path, statement_off
 ):
     root, masks, out = _experiment(tmp_path, names=_contradicting)
@@ -330,7 +330,8 @@ def test_5_a_unit_tagged_to_its_header_before_the_click_is_not_listed_after_chan
     _tag(nb, odd, ("ACTIN", "DNA", "PHASE"))  # the header's own order, before any click
     _set_row(nb, ("rep2", 3), TAGS)  # the row contradicts the header, but the unit fits it
     rows = nb.channel_grid.by_repeat
-    assert not rows.listed()
+    # refused by the click: a tag saved before it is no action on the refusal (review am)
+    assert list(rows.listed()) == [odd] and odd in rows.standing()
     _tag(nb, odd, ("EXTRA", "DNA", "PHASE"))
     assert list(rows.listed()) == [odd]
     _tag(nb, odd, ("ACTIN", "DNA", "PHASE"))
@@ -510,7 +511,7 @@ def test_b5_a_failed_corrective_save_keeps_the_unit_listed_and_check_save_refusi
     for drop, tag in zip(rows.drops[("rep2", 3)], ("ACTIN", "DNA", "PHASE"), strict=True):
         drop.value = tag  # a corrective row that fits the header
 
-    def failing(self, tags, cells):
+    def failing(self, tags, cells, then=None):
         raise RuntimeError("the save failed")
 
     monkeypatch.setattr(type(grid), "commit", failing)
@@ -544,7 +545,7 @@ def test_b5_a_corrective_save_the_grid_refuses_keeps_the_unit_listed(
     group = rows._offered()[("rep2", 3)]
     for drop, tag in zip(rows.drops[("rep2", 3)], ("ACTIN", "DNA", "PHASE"), strict=True):
         drop.value = tag
-    monkeypatch.setattr(type(grid), "commit", lambda self, tags, cells: False)
+    monkeypatch.setattr(type(grid), "commit", lambda self, tags, cells, then=None: False)
     assert not rows.apply(("rep2", 3), group)
     assert list(rows.listed()) == [odd]
 

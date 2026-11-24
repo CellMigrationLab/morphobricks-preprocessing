@@ -21,6 +21,7 @@ from __future__ import annotations
 import html
 import logging
 from dataclasses import replace
+from pathlib import Path
 
 import ipywidgets as widgets
 
@@ -46,7 +47,15 @@ from .notebook_description_view import (
 from .notebook_names import _NameRows, _updated
 from .notebook_strict_draft import _StrictDraft
 from .run import OutputLockedError
-from .run.draft_file import save_draft
+from .run.draft_file import (
+    NO_DRAFT,
+    UNREAD,
+    DraftChanged,
+    UnusedDraftNotKept,
+    answers_generation,
+    draft_generation,
+    save_draft,
+)
 from .run.output_guard import OutputInsideMasksError
 
 IDS_QUESTION = "Are these IDs right?"
@@ -78,6 +87,7 @@ class _DescriptionCard(_NameRows, _SavedDraft, _StrictDraft):
         self._names_refusal = ""
         self._references_refusal = ""
         self._draft_saved = False
+        self._draft_pin: tuple[Path, str] | None = None
         self._keep_old_draft = False
         self._refreshing = False
         self._refusal: DraftError | None = None
@@ -151,7 +161,11 @@ class _DescriptionCard(_NameRows, _SavedDraft, _StrictDraft):
         self._keep_old_draft = False
         output = self._design_output
         answers, note, read = None, "", None
+        self._draft_pin = None
         if output is not None:
+            # pinned before the read: a file changed in between is another generation, and the
+            # first write refuses (:meth:`_save_description`), never overwrites it
+            self._draft_pin = (output.resolve(), self._generation_now(output))
             answers, note, read = self._read_saved_draft(output)
         self._carried_strict(read if answers is not None else None)
         self._draft_saved = answers is not None
@@ -178,7 +192,8 @@ class _DescriptionCard(_NameRows, _SavedDraft, _StrictDraft):
         that cannot be saved (the output folder's lock, the draft file, a write error) is
         refused too: the answers before it are kept, so nothing is shown as answered that is
         not on disk. With ``rebuild`` False the boxes are left as they are (a name being typed
-        keeps its focus).
+        keeps its focus). A save stopped by an interruption leaves the answers as the file holds
+        them (:meth:`_stopped`).
         """
         try:
             draft = apply_answers(self._draft_base, answers)
@@ -187,7 +202,11 @@ class _DescriptionCard(_NameRows, _SavedDraft, _StrictDraft):
             return False
         before = self.draft, self.draft_answers
         self.draft, self.draft_answers = draft, answers
-        saved = self._save_description()
+        try:
+            saved = self._save_description()
+        except BaseException:
+            self._stopped(before, answers)
+            raise
         if not saved:
             self.draft, self.draft_answers = before
             self._refusal = AnswerNotSaved(self._save_problem)
@@ -198,6 +217,50 @@ class _DescriptionCard(_NameRows, _SavedDraft, _StrictDraft):
         else:
             self._show_names_status()
         return saved
+
+    def _stopped(self, before: tuple, answers: DraftAnswers) -> None:
+        """Keep the answers as the draft file holds them after a save stopped by an interruption.
+
+        External re-check as (24 November 2026): the answers were in memory before the save, and
+        a ``KeyboardInterrupt`` is no refusal, so they stayed there although the file may never
+        have got them; a later save then wrote them with a stale tag review. The file is
+        replaced in one step: it holds ``answers`` or the ones before. Memory keeps ``answers``
+        only when the file holds them (or no output folder is set: memory is the only copy).
+
+        External re-check av: another notebook may have saved in between, so the file can be
+        neither. Memory then goes back to the answers before, and the pinned generation is
+        :data:`.run.draft_file.UNREAD`: every later write is refused until the folder is checked
+        again and the draft read (:meth:`_load_description`).
+        """
+        output = self._design_folder()
+        if output is None:
+            return
+        now = self._generation_now(output)
+        if now == answers_generation(answers):  # written, so any unused draft was copied first
+            self._draft_saved, self._draft_pin = True, (output.resolve(), now)
+            self._keep_old_draft = False
+            return
+        self.draft, self.draft_answers = before
+        if now != self._expected_generation(output):
+            self._draft_pin = (output.resolve(), UNREAD)
+
+    @staticmethod
+    def _generation_now(output: Path) -> str:
+        """Return the draft file's generation now; UNREAD when it cannot be read."""
+        try:
+            return draft_generation(output)
+        except (DraftFileError, OSError):
+            return UNREAD
+
+    def _expected_generation(self, output: Path) -> str:
+        """Return the generation of the draft this notebook holds in ``output``.
+
+        The one it read on opening or last wrote (:attr:`_draft_pin`); in another folder, one
+        with no draft file (:data:`.run.draft_file.NO_DRAFT`): a draft this notebook never read
+        is never written over.
+        """
+        pin = self._draft_pin
+        return pin[1] if pin is not None and pin[0] == output.resolve() else NO_DRAFT
 
     def _save_description(self) -> bool:
         """Save the answers to ``morphobricks.draft.json`` under the output folder's lock.
@@ -213,12 +276,18 @@ class _DescriptionCard(_NameRows, _SavedDraft, _StrictDraft):
         self._draft_saved, self._save_problem = False, ""
         if output is None:
             return True
-        if self._keep_old_draft and not self._keep_unused_draft(output):
-            self._save_problem = "the unused draft could not be kept"
-            return False
         with self.log.attached():
             try:
-                save_draft(output, self._draft_base, self.draft_answers)
+                expected = self._expected_generation(output)
+                # an unusable draft is copied aside by the save itself, after its generation
+                # check under the lock (ay): a refused save copies nothing
+                save_draft(
+                    output,
+                    self._draft_base,
+                    self.draft_answers,
+                    expected=expected,
+                    keep_previous=self._keep_old_draft,
+                )
             except OutputLockedError:
                 self.folder_lock.show(output)
                 self._save_problem = "another run holds the lock of the output folder"
@@ -228,9 +297,21 @@ class _DescriptionCard(_NameRows, _SavedDraft, _StrictDraft):
                     ["Answer again once it is free."],
                 )
                 return False
+            except DraftChanged as exc:
+                self._save_problem = str(exc)
+                self._names_refusal = ui.status(
+                    "error", "Not saved: the draft changed.", [str(exc)]
+                )
+                return False
             except (OutputInsideMasksError, DraftFileError, DraftError) as exc:
                 self._save_problem = str(exc)
                 self._names_refusal = ui.status("error", "Not saved.", [str(exc)])
+                return False
+            except UnusedDraftNotKept as exc:
+                self._save_problem = "the unused draft could not be kept"
+                self._names_refusal = ui.status(
+                    "error", "Not saved: the unused draft could not be kept.", [str(exc)]
+                )
                 return False
             except OSError as exc:
                 logging.getLogger(__name__).warning("Cannot save the draft", exc_info=True)
@@ -239,7 +320,8 @@ class _DescriptionCard(_NameRows, _SavedDraft, _StrictDraft):
                 return False
             finally:
                 self._show_log()
-        self._draft_saved = True
+        self._draft_saved, self._keep_old_draft = True, False
+        self._draft_pin = (output.resolve(), answers_generation(self.draft_answers))
         return True
 
     # The names card ----------------------------------------------------------------------

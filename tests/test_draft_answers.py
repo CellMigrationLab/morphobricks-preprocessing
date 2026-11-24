@@ -150,3 +150,23 @@ def test_retired_ids_stay_in_used_ids(exp):
     description = description_from_draft(base, complete())
     assert description.used_ids["repeats"] == ("old", "rep1", "rep2")
     assert description.used_ids["channels"] == ("ACTIN", "DNA", "GFP")
+
+
+def test_the_published_registry_stays_listed_and_its_ids_in_use_are_not_reuse(exp):
+    # Issue #283: rep3 and DrugB were declared in the published file and are removed now (no
+    # folder holds them): they stay listed. rep1 and CTRL are listed and still in use: the
+    # draft takes them as they are, never as a reuse of a retired ID.
+    listed = {
+        "conditions": ["CTRL", "DrugA", "DrugB"],
+        "channels": ["ACTIN", "DNA"],
+        "repeats": ["rep1", "rep2", "rep3"],
+        "technical_repeats": ["single"],
+    }
+    base = draft_from_discovery(exp, used_ids={"repeats": ["old"]}, listed_ids=listed)
+    description = description_from_draft(base, complete())
+    assert description.used_ids["repeats"] == ("old", "rep1", "rep2", "rep3")
+    assert description.used_ids["conditions"] == ("CTRL", "DrugA", "DrugB")
+    assert description_from_draft(draft_from_discovery(exp), complete()).used_ids["repeats"] == (
+        "rep1",
+        "rep2",
+    )

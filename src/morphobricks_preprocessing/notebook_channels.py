@@ -14,6 +14,8 @@ through them, nothing is guessed from the shape of an image) and the checked fol
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import ipywidgets as widgets
 
 from . import notebook_style as ui
@@ -21,6 +23,8 @@ from .axis_review import review_axes
 from .channel_answers import all_colour
 from .channel_labels import UnitLayout
 from .channel_units import header_names, slot_count, unit_channel_counts, unit_layouts
+from .description_file import DRAFT_FILENAME
+from .discovery import default_output_folder
 from .draft_answers import DraftAnswers
 from .notebook_channel_thumbs import Thumbnails
 from .notebook_channels_grid import TagGrid
@@ -65,6 +69,19 @@ class _NotebookStore:
     def refusal(self) -> str:
         """Return the reason the last answer was refused."""
         return str(self._nb._refusal or "the answers were refused")
+
+    def draft_id(self) -> tuple[str, str] | None:
+        """Return which draft the answers are: the experiment folder and its draft file.
+
+        ``None`` with no experiment folder (the answers are then only in memory). The tag
+        review kept beside the grid (:mod:`.notebook_channels_repeat`) belongs to one draft and
+        is dropped when this changes.
+        """
+        folder = ui.clean_path(self._nb.folder.value)
+        if not folder:
+            return None
+        output = self._nb._output_folder() or default_output_folder(folder)
+        return str(Path(folder).resolve()), str((Path(output) / DRAFT_FILENAME).resolve())
 
     def used_channels(self) -> tuple[str, ...]:
         """Return the channel IDs the lineage retired."""
@@ -152,7 +169,19 @@ class _ChannelsStep:
         bound = tuple(
             sorted((u.image, pre.header_fingerprints.get(u.image)) for u in layouts if u.image)
         )
-        key = (str(pre.discovery.root), self.confirmed_mapping, layouts, slots, tuple(names), bound)
+        # The draft is part of the key: the grid reopens on another draft of the same experiment
+        # (only the output folder changed) and restores that draft's tag review, never keeps the
+        # memory of the one before.
+        draft = self.channel_grid.by_repeat.draft_id()
+        key = (
+            str(pre.discovery.root),
+            self.confirmed_mapping,
+            layouts,
+            slots,
+            tuple(names),
+            bound,
+            draft,
+        )
         if key == self._channels_key:
             self._refresh_masks_screen()
             return
