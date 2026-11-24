@@ -304,7 +304,8 @@ class SegmentationJob:
     loaded, settings
         The verified model and the inference settings.
     mask_type, masks_root
-        The mask type and the masks folder.
+        The mask type and the masks folder, fixed resolved when the job is made (a relative
+        folder never follows a later change of the working directory; review ar, B1).
     overwrite
         Replace masks that are already there (default: skip them).
     channel_roles, output
@@ -331,7 +332,8 @@ class SegmentationJob:
     run_manifest_sha256: str | None = None
 
     def __post_init__(self) -> None:
-        """Refuse a job without resolved channels or with roles that do not fit them."""
+        """Fix the masks folder; refuse a job without resolved channels or with unfit roles."""
+        object.__setattr__(self, "masks_root", Path(self.masks_root).expanduser().resolve())
         if self.run_manifest_sha256 is None:
             object.__setattr__(self, "run_manifest_sha256", manifest_sha256(self.inputs))
         if self.plan is None:
