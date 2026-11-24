@@ -9,8 +9,10 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from .channel_identity_model import (
+    AMBIGUOUS_CHANNEL_SWAP,
     CHANNEL_IDENTITY_CODES,
     CHANNEL_UNLIKE_OTHERS,
+    PAIR_TOLERANCE,
     POSSIBLE_CHANNEL_SWAP,
     ChannelFinding,
     ChannelIdentityReport,
@@ -25,6 +27,12 @@ ACTIONS = {
         "acquired. If they are swapped, correct the unit's channels in the experiment "
         "description and run again. Nothing was changed or blocked."
     ),
+    AMBIGUOUS_CHANNEL_SWAP: (
+        "Check the channel tags of every channel named for this unit against how its images "
+        "were acquired: they look swapped in more than one way the check cannot tell apart, so "
+        "it names no pair. Correct the unit's channels in the experiment description only once "
+        "the acquisition shows which are swapped, and run again. Nothing was changed or blocked."
+    ),
     CHANNEL_UNLIKE_OTHERS: (
         "Look at this unit's images in this channel: check its channel tag and how the images "
         "were exported, and whether the stain, exposure or acquisition differed from the other "
@@ -33,6 +41,7 @@ ACTIONS = {
 }
 TITLES = {
     POSSIBLE_CHANNEL_SWAP: "Channels that look swapped with another channel of their unit",
+    AMBIGUOUS_CHANNEL_SWAP: "Channels that look swapped in more than one way",
     CHANNEL_UNLIKE_OTHERS: "Channels unlike the same channel of the other units",
 }
 
@@ -40,20 +49,66 @@ TITLES = {
 def finding_issues(
     findings: Sequence[ChannelFinding], settings: ChannelIdentitySettings
 ) -> list[ValidationIssue]:
-    """Return the findings as warnings; a mutual swap is one warning, naming its unit once."""
+    """Return the findings as warnings, naming the unit once per warning.
+
+    A mutual swap is one warning, and so is each ambiguous group (every channel of it).
+    """
     by_place = {(f.unit, f.channel): f for f in findings}
     issues, done = [], set()
     for found in findings:
         if (found.unit, found.channel) in done:
             continue
         partner = by_place.get((found.unit, found.nearest)) if found.mutual else None
-        if partner is not None:
+        if found.code == AMBIGUOUS_CHANNEL_SWAP:
+            group = _group(found, by_place)
+            done.update((f.unit, f.channel) for f in group)
+            message = _ambiguous_message(group)
+        elif partner is not None:
             done.add((partner.unit, partner.channel))
             message = _swap_message(found, partner)
         else:
             message = _message(found, settings)
         issues.append(warning(found.code, message, (found.unit.label,), ACTIONS[found.code]))
     return issues
+
+
+def _group(found: ChannelFinding, by_place: dict[tuple, ChannelFinding]) -> list[ChannelFinding]:
+    """Return the ambiguous findings of ``found``'s unit linked to it, sorted by channel."""
+    group, todo = {}, [found]
+    while todo:
+        item = todo.pop()
+        if item.channel in group:
+            continue
+        group[item.channel] = item
+        for channel, _ in item.alternatives:
+            other = by_place.get((item.unit, channel))
+            if other is not None and other.code == AMBIGUOUS_CHANNEL_SWAP:
+                todo.append(other)
+    return [group[channel] for channel in sorted(group)]
+
+
+def _names(channels: Sequence[str]) -> str:
+    """Return the channels as words: ``A``, ``A and B`` or ``A, B and C``."""
+    return channels[0] if len(channels) == 1 else f"{', '.join(channels[:-1])} and {channels[-1]}"
+
+
+def _ambiguous_message(group: Sequence[ChannelFinding]) -> str:
+    """Word an ambiguous swap: every channel, its own distance and those to its alternatives."""
+    first = group[0]
+    others = _others(any(f.across_conditions for f in group))
+    parts = []
+    for found in group:
+        near = ", ".join(f"{d:.1f} to {c}" for c, d in found.alternatives)
+        alike = " or ".join(c for c, _ in found.alternatives)
+        parts.append(
+            f"its {found.channel} looks like {alike} (distance {found.distance:.1f} to "
+            f"{found.channel}, {near})"
+        )
+    return (
+        f"In unit {first.unit.label}, channels {_names([f.channel for f in group])} look "
+        f"swapped in more than one way: compared with {others}, {'; '.join(parts)}. The "
+        f"possible pairs are within {PAIR_TOLERANCE:g} of each other, so no pair is named."
+    )
 
 
 def _others(across: bool) -> str:

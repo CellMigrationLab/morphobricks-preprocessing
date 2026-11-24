@@ -30,7 +30,9 @@ A swap present in every unit of a condition is not found: it is what that condit
 mean square of the robust z-scores) to its own reference is over ``outlier_limit`` and one
 component differs by at least ``min_log_difference``. ``possible_channel_swap`` when it clearly
 looks like another channel of the same unit (within ``swap_limit`` and ``swap_ratio`` times
-closer than to its own reference) or the two channels look like each other (one warning);
+closer than to its own reference) or the two channels look like each other (one warning;
+mutual pairs are chosen by strength, a channel in one pair at most, and pairs sharing a channel
+that cannot be told apart are one ``ambiguous_channel_swap`` naming every channel);
 otherwise ``channel_unlike_others``, naming the nearest channel, or saying that it looks like a
 channel the unit does not have. Units of different pixel types are never compared, and nothing
 is guessed or filled in.
@@ -47,10 +49,12 @@ from morphobricks_normalization.normalization import NORMAL_CONSISTENCY
 from morphobricks_normalization.summaries import ImageSummary
 
 from .channel_identity_model import (
+    AMBIGUOUS_CHANNEL_SWAP,
     CHANNEL_IDENTITY_CODES,
     CHANNEL_UNLIKE_OTHERS,
     COMPONENTS,
     KEY,
+    PAIR_TOLERANCE,
     POSSIBLE_CHANNEL_SWAP,
     ChannelFinding,
     ChannelIdentityReport,
@@ -377,56 +381,151 @@ def _leans(place: _Place, channel: str, limit: float, ratio: float) -> bool:
     return found is not None and found[0] * ratio < place.distance and found[0] <= limit
 
 
+class _Pair(NamedTuple):
+    """A candidate mutual swap of two channels of one unit, and how strongly it is supported."""
+
+    strength: float
+    """The larger of the two cross distances ``d(u, a -> b)`` and ``d(u, b -> a)``."""
+    unit: Unit
+    channels: tuple[str, str]
+    """Sorted, so the pair is the same whichever channel found it."""
+
+
+def _pairs(
+    places: Mapping[tuple[Unit, str], _Place],
+    findings: Mapping[tuple[Unit, str], ChannelFinding],
+    settings: ChannelIdentitySettings,
+) -> list[_Pair]:
+    """Return every candidate mutual pair, strongest first.
+
+    A reported channel whose nearest channel ``c'`` is one of its unit's (and checked) is a
+    candidate with ``c'`` when each leans on the other (:func:`_leans`, ``partner_ratio``,
+    within ``outlier_limit``). The order (strength, then unit and channels) only makes the
+    iteration repeatable: :func:`_choose` gives the same answer for any order of equal ones.
+    """
+    limit, ratio = settings.outlier_limit, settings.partner_ratio
+    pairs = set()
+    for key, found in findings.items():
+        other = (found.unit, found.nearest)
+        partner = places.get(other)
+        if found.nearest_absent or partner is None:
+            continue
+        if _leans(places[key], found.nearest, limit, ratio) and _leans(
+            partner, found.channel, limit, ratio
+        ):
+            there = places[key].others[found.nearest][0]
+            back = partner.others[found.channel][0]
+            channels = tuple(sorted((found.channel, found.nearest)))
+            pairs.add(_Pair(max(there, back), found.unit, channels))
+    return sorted(pairs)
+
+
+def _choose(pairs: list[_Pair]) -> tuple[list[_Pair], list[list[_Pair]]]:
+    """Choose the mutual pairs by strength; return the pairs kept and the ambiguous groups.
+
+    Greedy from the strongest pair (smallest strength): a channel is in one pair at most. When
+    a remaining pair sharing a channel with the strongest one (directly or through each other)
+    is within :data:`PAIR_TOLERANCE` of its strength, none of them is chosen: they form one
+    ambiguous group, and its channels are not paired with anything else. Channel names and
+    input order never decide (#395).
+    """
+    kept, groups, used = [], [], set()
+    remaining = list(pairs)
+    while remaining:
+        remaining = [p for p in remaining if not used & {(p.unit, c) for c in p.channels}]
+        if not remaining:
+            break
+        first = remaining[0]
+        close = [
+            p
+            for p in remaining
+            if p.unit == first.unit and p.strength <= first.strength + PAIR_TOLERANCE
+        ]
+        group, channels = [first], set(first.channels)
+        grown = True
+        while grown:
+            grown = False
+            for pair in close:
+                if pair not in group and channels & set(pair.channels):
+                    group.append(pair)
+                    channels.update(pair.channels)
+                    grown = True
+        if len(group) == 1:
+            kept.append(first)
+        else:
+            groups.append(sorted(group, key=lambda p: p.channels))
+        used.update((first.unit, c) for c in channels)
+    return kept, groups
+
+
 def _findings(
     places: Mapping[tuple[Unit, str], _Place], settings: ChannelIdentitySettings
 ) -> list[ChannelFinding]:
     """Return the findings, with the swaps made, sorted by unit and channel.
 
-    A reported channel whose nearest channel ``c'`` is one of its unit's makes a mutual swap
-    when it is ``partner_ratio`` times nearer ``c'`` than its own reference and the unit's
-    ``c'`` is ``partner_ratio`` times nearer this channel than its own (both within
-    ``outlier_limit``), the unit's ``c'`` reported or not;
-    otherwise a channel that clearly looks like another channel of its unit is a swap.
+    A reported channel whose nearest channel ``c'`` is one of its unit's makes a candidate
+    mutual swap when it is ``partner_ratio`` times nearer ``c'`` than its own reference and the
+    unit's ``c'`` is ``partner_ratio`` times nearer this channel than its own (both within
+    ``outlier_limit``), the unit's ``c'`` reported or not. The pairs are chosen by strength
+    (:func:`_choose`): each channel is in one pair at most, and pairs that share a channel and
+    cannot be told apart are one ``ambiguous_channel_swap`` naming all their channels.
+    Otherwise a channel that clearly looks like another channel of its unit is a swap.
     """
-    limit = settings.outlier_limit
     findings = {key: f for key, place in places.items() if (f := _finding(place, settings))}
-    for key in list(findings):
-        found = findings[key]
-        other = (found.unit, found.nearest)
-        partner = places.get(other)
-        if found.mutual or found.nearest_absent or partner is None:
-            continue
-        if (taken := findings.get(other)) is not None and taken.mutual:
-            # A channel has one swap partner: the first pair (sorted order) keeps it, and this
-            # channel stays a plain swap finding (#395).
-            continue
-        ratio = settings.partner_ratio
-        if not _leans(places[key], found.nearest, limit, ratio):
-            continue
-        if not _leans(partner, found.channel, limit, ratio):
-            continue
-        pair = findings.get(other) or _finding(partner, settings, force=True)
-        distance, across = partner.others[found.channel]
-        pair = replace(pair, nearest=found.channel, nearest_distance=distance, nearest_absent=False)
-        across = across or pair.across_conditions or found.across_conditions
-        across = across or places[key].others[found.nearest][1]
-        for place, item in ((key, found), (other, pair)):
-            findings[place] = replace(
-                item, code=POSSIBLE_CHANNEL_SWAP, clear=True, mutual=True, across_conditions=across
+    kept, groups = _choose(_pairs(places, findings, settings))
+    for pair in kept:
+        a, b = ((pair.unit, c) for c in pair.channels)
+        items = {
+            key: findings.get(key) or _finding(places[key], settings, force=True) for key in (a, b)
+        }
+        across = any(items[key].across_conditions for key in (a, b))
+        across = across or any(places[key].others[other[1]][1] for key, other in ((a, b), (b, a)))
+        for key, other in ((a, b), (b, a)):
+            findings[key] = replace(
+                items[key],
+                code=POSSIBLE_CHANNEL_SWAP,
+                nearest=other[1],
+                nearest_distance=places[key].others[other[1]][0],
+                nearest_absent=False,
+                clear=True,
+                mutual=True,
+                across_conditions=across,
+            )
+    for group in groups:
+        unit = group[0].unit
+        partners: dict[str, set[str]] = {}
+        for pair in group:
+            a, b = pair.channels
+            partners.setdefault(a, set()).add(b)
+            partners.setdefault(b, set()).add(a)
+        for channel, others in partners.items():
+            key = (unit, channel)
+            item = findings.get(key) or _finding(places[key], settings, force=True)
+            alternatives = tuple((c, places[key].others[c][0]) for c in sorted(others))
+            across = item.across_conditions or any(places[key].others[c][1] for c in others)
+            findings[key] = replace(
+                item,
+                code=AMBIGUOUS_CHANNEL_SWAP,
+                alternatives=alternatives,
+                across_conditions=across,
             )
     for key, found in findings.items():
-        if found.clear and not found.nearest_absent and not found.mutual:
+        if found.code != CHANNEL_UNLIKE_OTHERS or found.mutual:
+            continue
+        if found.clear and not found.nearest_absent:
             findings[key] = replace(found, code=POSSIBLE_CHANNEL_SWAP)
     return [findings[key] for key in sorted(findings)]
 
 
 __all__ = [
+    "AMBIGUOUS_CHANNEL_SWAP",
     "CHANNEL_IDENTITY_CODES",
     "CHANNEL_UNLIKE_OTHERS",
     "COMPONENTS",
     "KEY",
     "MAD_SCALE",
     "OFFSET_FRACTION",
+    "PAIR_TOLERANCE",
     "POSSIBLE_CHANNEL_SWAP",
     "ChannelFinding",
     "ChannelIdentityReport",

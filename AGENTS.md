@@ -161,8 +161,9 @@ src/morphobricks_preprocessing/
                     the notebook's plots, intensity_text for the CLI
   channel_identity.py channel-identity check (contract §14.1): per unit and channel a
                     scale-free log signature from the same summaries, within-condition robust
-                    reference, channel_unlike_others / possible_channel_swap (warnings, never
-                    blocking); channel_identity_model.py ChannelIdentitySettings (manifest key
+                    reference, channel_unlike_others / possible_channel_swap /
+                    ambiguous_channel_swap (warnings, never blocking; mutual pairs chosen by
+                    strength, never by name, #395); channel_identity_model.py ChannelIdentitySettings (manifest key
                     channel_identity) and the results; channel_identity_text.py their words;
                     notebook_channel_identity.py its notebook view and plot
   validation.py     ValidationIssue (severity, code, message, paths, action), error()/warning() builders

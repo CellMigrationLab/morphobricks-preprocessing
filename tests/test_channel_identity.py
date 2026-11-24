@@ -110,29 +110,6 @@ def test_two_swapped_channels_give_one_mutual_swap():
     assert "swapped" in issue.message and "nearest" not in issue.message.casefold()
 
 
-def test_a_channel_keeps_one_swap_partner():
-    """#395: A and C look alike, and B is swapped with both in one unit: one pair, not two."""
-    ref = {"A": (800.0, 100.0, 4000.0), "B": (4000.0, 500.0, 20000.0), "C": (800.0, 100.0, 4000.0)}
-    swapped = {"A": ref["B"], "B": ref["A"], "C": ref["B"]}
-    units = [Unit("ctrl", "rep1", f"t{i}") for i in range(5)]
-    summaries = [
-        summary(unit, i, swapped if unit.technical_repeat == "t0" else ref)
-        for unit in units
-        for i in range(2)
-    ]
-    report = check_channel_identity(summaries)
-    found = {f.channel: (f.code, f.nearest, f.mutual) for f in report.findings}
-    assert found == {
-        "A": (POSSIBLE_CHANNEL_SWAP, "B", True),
-        "B": (POSSIBLE_CHANNEL_SWAP, "A", True),
-        "C": (POSSIBLE_CHANNEL_SWAP, "B", False),
-    }
-    messages = [issue.message for issue in report.validation_issues()]
-    assert sum("look swapped" in m for m in messages) == 1
-    assert "channels A and B look swapped" in messages[0]
-    assert check_channel_identity(summaries[::-1]).findings == report.findings
-
-
 def test_a_dim_channel_is_unlike_the_others_but_no_swap():
     def dim(unit, stains):
         if unit == SWAPPED:

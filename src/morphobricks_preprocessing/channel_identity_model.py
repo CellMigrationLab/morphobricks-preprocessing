@@ -18,7 +18,13 @@ from .validation import ValidationIssue
 
 CHANNEL_UNLIKE_OTHERS = "channel_unlike_others"
 POSSIBLE_CHANNEL_SWAP = "possible_channel_swap"
-CHANNEL_IDENTITY_CODES = (POSSIBLE_CHANNEL_SWAP, CHANNEL_UNLIKE_OTHERS)
+AMBIGUOUS_CHANNEL_SWAP = "ambiguous_channel_swap"
+CHANNEL_IDENTITY_CODES = (POSSIBLE_CHANNEL_SWAP, AMBIGUOUS_CHANNEL_SWAP, CHANNEL_UNLIKE_OTHERS)
+PAIR_TOLERANCE = 0.5
+"""Two mutual pairs sharing a channel whose strengths (the larger of a pair's two cross
+distances) differ by at most this much cannot be told apart: the channels are an ambiguous
+swap, never one pair picked (#395). Half a robust deviation (root mean square), below the
+spread of the references themselves (``mad_floor``, ``swap_limit``)."""
 KEY = "channel_identity"
 """The manifest key of the limits, beside ``intensity_checks``."""
 COMPONENTS = ("level", "bright", "spread")
@@ -180,7 +186,7 @@ class ChannelFinding:
     Attributes
     ----------
     code
-        ``possible_channel_swap`` or ``channel_unlike_others``.
+        ``possible_channel_swap``, ``ambiguous_channel_swap`` or ``channel_unlike_others``.
     unit, channel
         Where.
     distance
@@ -201,6 +207,10 @@ class ChannelFinding:
     across_conditions
         True when a reference used was taken across conditions (too few units in the
         condition).
+    alternatives
+        For an ``ambiguous_channel_swap``: ``(channel, distance)`` for each other channel of
+        the unit it could be swapped with, the distance being to that channel's reference,
+        sorted by channel; empty otherwise.
     """
 
     code: str
@@ -215,6 +225,7 @@ class ChannelFinding:
     clear: bool = False
     mutual: bool = False
     across_conditions: bool = False
+    alternatives: tuple[tuple[str, float], ...] = ()
 
     @property
     def resembles(self) -> str | None:
