@@ -31,7 +31,7 @@ from collections.abc import Callable, Iterable, Mapping
 
 from .description import USED_KINDS, Description, DescriptionError
 from .description_read import STRUCTURE_PHASES
-from .description_report import DescriptionIssue
+from .description_report import DescriptionIssue, toml_string
 from .description_rules import (
     CHANNEL,
     CHANNEL_LAYOUT,
@@ -56,15 +56,6 @@ UNORDERED = frozenset({"header_names", "source_channels"})
 SECTIONS = ("conditions", "channels", "repeats", "masks")
 CHILD_TABLES = frozenset({"members", "technical_repeats"})
 """Fields that are tables of their own: written as their own blocks, never as a value."""
-_ESCAPES = {
-    '"': '\\"',
-    "\\": "\\\\",
-    "\b": "\\b",
-    "\t": "\\t",
-    "\n": "\\n",
-    "\f": "\\f",
-    "\r": "\\r",
-}
 
 
 class DescriptionTypeError(DescriptionError, TypeError):
@@ -86,19 +77,6 @@ class DescriptionTypeError(DescriptionError, TypeError):
 def toml_key(key: str) -> str:
     """Return a table or dotted key as the canonical writer spells it."""
     return key if BARE_KEY.fullmatch(key) else toml_string(key)
-
-
-def toml_string(text: str) -> str:
-    """Return a TOML basic string, escaping only what must be (control characters by number)."""
-    out = []
-    for char in text:
-        if char in _ESCAPES:
-            out.append(_ESCAPES[char])
-        elif ord(char) < 0x20 or ord(char) == 0x7F:
-            out.append(f"\\u{ord(char):04X}")
-        else:
-            out.append(char)
-    return '"' + "".join(out) + '"'
 
 
 def toml_value(value: object) -> str:
