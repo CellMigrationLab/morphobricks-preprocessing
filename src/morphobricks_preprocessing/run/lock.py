@@ -116,8 +116,10 @@ def folder_lock(folder: str | os.PathLike) -> Iterator[LockHolder]:
 def remove_stale_lock(output_folder: str | os.PathLike) -> LockHolder | None:
     """Remove a lock the user confirmed is stale (its run was killed or the computer restarted).
 
-    Call it only after the user confirmed that no other run uses the output folder. A
-    lock held by a process that is still running on this computer is never removed.
+    Call it only after the user confirmed that no other run or conversion uses the folder,
+    on any computer: that confirmation is the guard. A lock held by a process known to be
+    running on this computer is never removed, but only POSIX can tell (on Windows, and for
+    a holder on another computer, the lock is removed).
 
     Parameters
     ----------
@@ -132,7 +134,7 @@ def remove_stale_lock(output_folder: str | os.PathLike) -> LockHolder | None:
     Raises
     ------
     OutputLockedError
-        When the holder is a process still running on this computer.
+        When the holder is a process known to be running on this computer (POSIX only).
     """
     holder = read_lock(output_folder)
     if holder is None:
@@ -203,7 +205,9 @@ def holder_running(holder: LockHolder) -> bool:
 
     The liveness check of :func:`remove_stale_lock`, also used for the owner of a
     conversion's work folder (:mod:`.conversion_write`, issue #482). Only POSIX can tell
-    (:func:`_running`); elsewhere, and for a holder on another computer, the answer is False.
+    (:func:`_running`); elsewhere, and for a holder on another computer, the answer is False,
+    so such a holder counts as gone. The lock itself is the real guard: removing it means the
+    user confirms that no run or conversion is using the folder, on any computer.
     """
     return holder.host == socket.gethostname() and _running(holder.pid)
 
