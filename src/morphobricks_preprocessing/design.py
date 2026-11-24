@@ -296,13 +296,7 @@ def design_issues(design: DesignTable) -> list[ValidationIssue]:
 
 
 def write_experiment_design(design: DesignTable, path: str | os.PathLike) -> Path:
-    """Write :func:`experiment_design_text` atomically to ``path`` and return it.
-
-    Raises
-    ------
-    DesignFormatError
-        As :func:`experiment_design_text`; nothing is written.
-    """
+    """Write :func:`experiment_design_text` atomically to ``path``; nothing when it raises."""
     return write_text_atomic(path, experiment_design_text(design), parents=True)
 
 
