@@ -8,8 +8,9 @@ Cellpose notebook's cells mount one per cell: there is no second implementation.
 For a notebook that runs preprocessing first (the combined notebook, #441), a cell after the
 Preprocessing app's cell can call ``segmentation_app(app=app)``: the run's output folder is
 taken from the app's finished run (``app.result.output_folder`` when ``app.result.written``)
-and the masks folder from its masks box (``app.masks_folder``), read as they are when the cell
-runs. Nothing of the Preprocessing app is imported here.
+and the masks folder by the app's own rule (``app._runs_masks_folder()``: the masks folder
+checked, else the one the run recorded; never the raw text of its masks box), read as they are
+when the cell runs. Nothing of the Preprocessing app is imported here.
 """
 
 from __future__ import annotations
@@ -19,7 +20,6 @@ from collections.abc import Callable
 
 import ipywidgets as widgets
 
-from . import notebook_style as ui
 from . import segmentation_cellpose as cp
 from .notebook_cellpose_form import CellposeNotebook
 from .run_inputs import RunInputs
@@ -40,14 +40,16 @@ class SegmentationApp(widgets.VBox):
 def app_folders(app: object) -> tuple[str, str]:
     """Return the run folder and the masks folder a Preprocessing app holds, or blanks.
 
-    The run folder is that of the app's last run, only if it was written; the masks folder
-    is what its masks box says (tidied as the app tidies it). Nothing is guessed.
+    Both are blank unless the app's last run was written. The run folder is that run's output
+    folder; the masks folder is the app's own rule, ``_runs_masks_folder()`` (the masks folder
+    the app checked, else the one the run recorded; blank for none), never what its masks box
+    says now. Nothing is guessed.
     """
     result = getattr(app, "result", None)
-    written = result is not None and getattr(result, "written", False)
-    run = os.fspath(result.output_folder) if written else ""
-    box = getattr(app, "masks_folder", None)
-    return run, ui.clean_path(box.value) if box is not None else ""
+    if result is None or not getattr(result, "written", False):
+        return "", ""
+    masks = app._runs_masks_folder()
+    return os.fspath(result.output_folder), "" if masks is None else os.fspath(masks)
 
 
 def segmentation_app(
