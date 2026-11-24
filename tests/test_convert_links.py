@@ -9,10 +9,12 @@ were followed, or a recorded copy replaced by a link to the same bytes was reuse
 
 import os
 import shutil
+from pathlib import Path
 
 import pytest
 import tifffile
 
+import morphobricks_preprocessing.conversion_reuse as reuse_module
 import morphobricks_preprocessing.mounts as mounts_module
 from morphobricks_preprocessing import convert_experiment
 from test_convert_run import SWAPPED, codes, swapped_experiment
@@ -168,3 +170,29 @@ def test_a_publication_folder_in_the_copy_tree_is_neither_finished_nor_removed(t
     assert not result.written and codes(result.issues) == ["copy_folder_not_empty"]
     assert result.issues[0].paths == (".publish/notes.txt",)
     assert notes.read_bytes() == b"mine"
+
+
+@pytest.mark.parametrize(
+    "error", [PermissionError(13, "Permission denied"), FileNotFoundError(2, "No such file")]
+)
+def test_an_unreadable_or_vanished_folder_is_refused_and_named(tmp_path, monkeypatch, error):
+    # Issue #467 (2): ``os.scandir`` raised out of the walk, a traceback for the user.
+    exp, copies = swapped_experiment(tmp_path / "exp"), tmp_path / "copies"
+    (copies / "ctrl/r1").mkdir(parents=True)
+    blocked, real = (copies / "ctrl").resolve(), os.scandir
+
+    def scandir(path="."):
+        if isinstance(path, (str, os.PathLike)) and Path(path) == blocked:
+            raise error
+        return real(path)
+
+    monkeypatch.setattr(reuse_module.os, "scandir", scandir)
+    result = convert_experiment(exp, SWAPPED, copies)
+    monkeypatch.undo()
+    assert not result.written and codes(result.issues) == ["copy_folder_unreadable"]
+    assert result.issues[0].paths == ("ctrl",)
+    assert "Nothing was written" in result.issues[0].message
+    assert sorted(p.relative_to(copies).as_posix() for p in copies.rglob("*")) == [
+        "ctrl",
+        "ctrl/r1",
+    ]

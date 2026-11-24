@@ -46,6 +46,7 @@ from .conversion_issues import (
     lock_issue,
     record_issue,
     space_issue,
+    unreadable_issue,
 )
 from .conversion_plan import copy_folder_issues, plan_conversion
 from .conversion_record import (
@@ -272,9 +273,11 @@ def _locked_conversion(
     progress: Callable[[int, int, str], None] | None,
 ) -> ConversionResult:
     """Compare with what the copy tree holds, write the new copies and the record."""
-    linked = links_below(dest)
-    if linked:
-        return ConversionResult(dest, False, (links_issue(linked), *issues))
+    linked, unreadable = links_below(dest)
+    refused = [links_issue(linked)] if linked else []
+    refused += [unreadable_issue(unreadable)] if unreadable else []
+    if refused:
+        return ConversionResult(dest, False, (*refused, *issues))
     try:
         earlier = read_record(dest)
     except ConversionRecordError as exc:

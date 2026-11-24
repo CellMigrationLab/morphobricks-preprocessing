@@ -409,7 +409,8 @@ src/morphobricks_preprocessing/
                     copy_folder_issues (the folder rule) and preview_conversion (the plan,
                     space needed and free, for the notebook card; writes nothing, PP-11b)
   conversion_reuse.py compare: unchanged copies reused, anything else there refused; links_below:
-                    links and mount points in the copy tree (is_link, MountCheck), refused (#447)
+                    links and mount points in the copy tree (is_link, MountCheck), refused (#447);
+                    a folder it cannot read is refused too (copy_folder_unreadable, #467)
   conversion_write.py write_all: .partial files moved into place together (any failure
                     removes what it wrote)
   zarr_input.py     OME-Zarr input: open_ngff (OME-NGFF 0.4/0.5 metadata -> level-0 array, axis

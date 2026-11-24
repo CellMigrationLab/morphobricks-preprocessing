@@ -64,6 +64,20 @@ def links_issue(paths: list[str]) -> ValidationIssue:
     )
 
 
+def unreadable_issue(paths: list[str]) -> ValidationIssue:
+    """Refuse a copy tree with folders that cannot be read, so not checked for links."""
+    return error(
+        "copy_folder_unreadable",
+        f"{plural(len(paths), 'folder')} in the folder for the named-axis copies cannot be "
+        "read, or disappeared while it was checked, so it cannot be checked for links or "
+        "mount points through which the copies would be written somewhere else. Nothing was "
+        "written.",
+        paths,
+        "Make these folders readable, or remove them, or choose a new, empty folder for the "
+        "copies.",
+    )
+
+
 def names_collide_issue(paths: list[str]) -> ValidationIssue:
     """Refuse OME-Zarr copies of images that differ only by their extension."""
     return error(

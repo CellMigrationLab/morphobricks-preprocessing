@@ -9,6 +9,7 @@ through it would land outside the folder chosen for the copies.
 
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 
@@ -22,6 +23,8 @@ from .mounts import MountCheck
 from .planned_copy import PlannedCopy
 from .run.lock import LOCK_FILENAME
 from .validation import ValidationIssue
+
+logger = logging.getLogger(__name__)
 
 
 def compare(
@@ -80,7 +83,7 @@ def unknown_content(dest: Path, planned: tuple[PlannedCopy, ...]) -> list[str]:
     return sorted(found)
 
 
-def links_below(dest: Path) -> list[str]:
+def links_below(dest: Path) -> tuple[list[str], list[str]]:
     """Return every link and mount point below the copy tree ``dest`` (resolved), sorted.
 
     A conversion writes only real files in real folders, so anything that sends a path
@@ -89,18 +92,40 @@ def links_below(dest: Path) -> list[str]:
     and directory junctions are told by :func:`.links.is_link`, mount points by
     :class:`.mounts.MountCheck`, the rules of the experiment's walk (#81); neither is
     entered. Links are named ``link -> target``, relative to ``dest``.
+
+    Returns
+    -------
+    tuple of list of str
+        The links and mount points, and the folders that cannot be read (relative to
+        ``dest``, ``"."`` for ``dest`` itself): a folder that cannot be listed, or that
+        disappears during the walk, may hold a link, so it is refused too (issue #467).
     """
-    mounts, found, pending = MountCheck(dest), [], [dest]
+    mounts, found, unreadable, pending = MountCheck(dest), [], [], [dest]
     while pending:
         folder = pending.pop()
-        with os.scandir(folder) as entries:
-            for entry in entries:
-                path = Path(entry.path)
-                name = path.relative_to(dest).as_posix()
-                if is_link(entry):
-                    found.append(f"{name} -> {os.readlink(path)}")
-                elif mounts.is_mount(path, entry):
-                    found.append(name)
-                elif entry.is_dir(follow_symlinks=False):
-                    pending.append(path)
-    return sorted(found)
+        try:
+            found += _links_in(dest, folder, mounts, pending)
+        except OSError:
+            logger.debug("Cannot read %s in the copy tree", folder, exc_info=True)
+            unreadable.append(folder.relative_to(dest).as_posix())
+    return sorted(found), sorted(unreadable)
+
+
+def _links_in(dest: Path, folder: Path, mounts: MountCheck, pending: list[Path]) -> list[str]:
+    """Return the links and mount points of one folder; add its other folders to ``pending``.
+
+    Raises :class:`OSError` when the folder cannot be read; nothing is added then.
+    """
+    found, below = [], []
+    with os.scandir(folder) as entries:
+        for entry in entries:
+            path = Path(entry.path)
+            name = path.relative_to(dest).as_posix()
+            if is_link(entry):
+                found.append(f"{name} -> {os.readlink(path)}")
+            elif mounts.is_mount(path, entry):
+                found.append(name)
+            elif entry.is_dir(follow_symlinks=False):
+                below.append(path)
+    pending += below
+    return found
