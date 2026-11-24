@@ -43,6 +43,10 @@ RECORD_FILENAME = "segmentation_record.json"
 """The record's name, directly inside the mask type's folder."""
 RECORD_LOCK_FILENAME = ".segmentation_record.lock"
 """The lock a writer holds beside the record while it reads, changes and rewrites it."""
+WRITE_LOCK_FILENAME = ".segmentation_write.lock"
+"""The lock a writer holds in a type folder from the twin check to the published mask (the
+Cellpose writer, and a mask conversion from its collision check to its lineage line, #382). A
+dot-file, so the run's masks discovery skips it like the record's lock."""
 DEVICES = ("cuda", "cpu", "mps")
 """The device the tool ran on, always stated (no silent fallback)."""
 STATUSES = ("written", "skipped", "failed")
