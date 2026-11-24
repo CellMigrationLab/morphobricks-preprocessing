@@ -14,12 +14,14 @@ from morphobricks_preprocessing import description_candidate
 from morphobricks_preprocessing.description_file import RECORDS_FILENAME
 from morphobricks_preprocessing.description_reconcile import FolderRename, confirm_repeat, reconcile
 from morphobricks_preprocessing.description_removal import (
+    Removal,
     candidate,
     reconfirmations,
     removal_questions,
 )
 from morphobricks_preprocessing.description_transition import Reconfirmation, transition_issues
 from morphobricks_preprocessing.run.description_file import publish_description
+from morphobricks_preprocessing.run.description_records import FolderIdChange
 from test_spec_reconcile import (
     DAY,
     folder,
@@ -165,3 +167,37 @@ def test_a_confirmed_id_change_says_old_to_new_and_to_undo_the_id_edit(monkeypat
     assert refusal.code == "R_CONFIRMED_ID_CHANGED"
     assert "DNA -> DAPI" in refusal.message
     assert refusal.action.startswith("Undo the ID edit: put DNA back.")
+
+
+def test_a_list_of_folders_takes_a_plural_verb():
+    one = FolderIdChange("repeats", "Day1", kept=(key("CTRL", "rep1"),), new_ids=("DayX",))
+    assert "CTRL/rep1/single is now under DayX" in one.message
+    both = (key("CTRL", "rep1"), key("DrugA", "rep1"))
+    two = FolderIdChange("repeats", "Day1", kept=both, new_ids=("DayX",))
+    assert "CTRL/rep1/single, DrugA/rep1/single are now under DayX" in two.message
+    lost = FolderIdChange("repeats", "Day1", lost=both)
+    assert "DrugA/rep1/single are in the description neither under their saved folders" in (
+        lost.message
+    )
+    assert FolderIdChange("", "", lost=both).message.startswith(
+        "The folders CTRL/rep1/single, DrugA/rep1/single are not in the description"
+    )
+
+
+def test_a_removal_of_a_folder_still_there_says_to_withdraw_it(tmp_path, monkeypatch):
+    # The folder DrugA/experiment_23 is still there and a removal names it: confirming the
+    # removal is not the way on; the removal is withdrawn or the folder checked again.
+    published = model("v03")
+    answer = (Removal((key("DrugA", "experiment_23"),), DAY),)
+    check = candidate_check(monkeypatch, published, published, (), answer)
+    (refusal,) = check.refusals
+    assert refusal.code == "removal_mismatch"
+    assert "A removal names the folder DrugA/experiment_23/single" in refusal.message
+    assert refusal.action == (
+        "Withdraw the removal of a folder that is still there, or check the folder again."
+    )
+    output, base = published_in(tmp_path, published)
+    with pytest.raises(ValueError, match="removal_mismatch") as refused:
+        publish_description(output, published, base_sha256=base, removals=answer)
+    assert refused.value.codes == {"removal_mismatch"}
+    assert not (output / RECORDS_FILENAME).exists()

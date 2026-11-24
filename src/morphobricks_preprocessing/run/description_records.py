@@ -155,14 +155,18 @@ class FolderIdChange:
         if not self.kind:
             said = []
             if self.lost:
+                one = len(self.lost) == 1
                 said.append(
-                    f"The folder {_labels(self.lost)} is not in the description and no removal "
-                    "confirms it."
+                    f"The folder{'' if one else 's'} {_labels(self.lost)} "
+                    f"{_is(self.lost)} not in the description and no removal confirms "
+                    f"{'it' if one else 'them'}."
                 )
             if self.removed:
+                one = len(self.removed) == 1
                 said.append(
-                    f"A removal names the folder {_labels(self.removed)}, which the description "
-                    "does not remove (it keeps it or never had it)."
+                    f"A removal names the folder{'' if one else 's'} {_labels(self.removed)}, "
+                    "which the description does not remove (it keeps "
+                    f"{'it' if one else 'them'} or never had {'it' if one else 'them'})."
                 )
             return " ".join(said)
         entity = f"{_NOUNS[self.kind]} {self.old_id}"
@@ -170,19 +174,22 @@ class FolderIdChange:
         if self.kept:
             now = " and ".join(self.new_ids)
             said.append(
-                f"{_labels(self.kept)} is now under {now} while the folders of {self.old_id} "
-                f"changed too, so the ID change {self.old_id} -> {now} cannot be paired with "
-                "them."
+                f"{_labels(self.kept)} {_is(self.kept)} now under {now} while the folders of "
+                f"{self.old_id} changed too, so the ID change {self.old_id} -> {now} cannot be "
+                "paired with them."
             )
         if self.lost:
+            one = len(self.lost) == 1
             said.append(
-                f"{_labels(self.lost)} is in the description neither under its saved folder nor "
-                f"under its saved ID {self.old_id}, and no removal confirms it."
+                f"{_labels(self.lost)} {_is(self.lost)} in the description neither under "
+                f"{'its saved folder' if one else 'their saved folders'} nor under "
+                f"{'its' if one else 'their'} saved ID {self.old_id}, and no removal confirms "
+                f"{'it' if one else 'them'}."
             )
         if self.removed:
             said.append(
-                f"{_labels(self.removed)} is removed and the ID {self.old_id} is given to "
-                f"{_labels(self.given_to)}."
+                f"{_labels(self.removed)} {_is(self.removed)} removed and the ID {self.old_id} "
+                f"is given to {_labels(self.given_to)}."
             )
         return " ".join(said)
 
@@ -190,13 +197,29 @@ class FolderIdChange:
     def action(self) -> str:
         """Return how the user proceeds."""
         if not self.kind:
-            return "Confirm the removal of a folder that is gone (Yes, remove), or undo the change."
+            todo = []
+            if self.lost:
+                todo.append(
+                    "Confirm the removal of a folder that is gone (Yes, remove), or undo the "
+                    "change."
+                )
+            if self.removed:
+                todo.append(
+                    "Withdraw the removal of a folder that is still there, or check the folder "
+                    "again."
+                )
+            return " ".join(todo)
         if self.removed and not (self.kept or self.lost):
             return (
                 "Undo the ID edit: the new folder keeps an ID of its own. A removed ID stays "
                 "used and is not given to another folder (experiment-v1 4.9)."
             )
         return f"Undo the ID edit: put {self.old_id} back."
+
+
+def _is(keys: tuple[UnitFolders, ...]) -> str:
+    """Return the verb that agrees with a list of ``keys``."""
+    return "is" if len(keys) == 1 else "are"
 
 
 def _labels(keys: Iterable[UnitFolders]) -> str:
