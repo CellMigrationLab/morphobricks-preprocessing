@@ -1,9 +1,42 @@
 name: CI
 
+# Owner decision (24 November 2026): the full CI runs only at release; otherwise minimal gates.
+#
+# - A pull request and a push to main run lint, wheel-identity and one test job (ubuntu-latest,
+#   Python 3.13). The notebooks' RELEASE_REF freshness test skips ("release-only").
+# - A release run runs the full matrix (ubuntu, windows, macos x Python 3.11, 3.13) with
+#   MORPHOBRICKS_RELEASE_RUN=1, so the freshness test runs and a missing history fails it. A
+#   release run is: a manual run (Actions > CI > Run workflow), a push of a v* tag, or a pull
+#   request labelled "release" (every push to it while the label is on; the release PR moves
+#   the notebooks' RELEASE_REF).
+#
+# The release condition is written five times below (env, the concurrency group and its
+# cancel-in-progress, and the two matrix lists: none of these but env can read env); keep the
+# five copies identical.
 on:
   push:
     branches: [main]
+    tags: ["v*"]
   pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+  workflow_dispatch:
+
+env:
+  MORPHOBRICKS_RELEASE_RUN: >-
+    ${{ (github.event_name == 'workflow_dispatch' || github.ref_type == 'tag'
+    || contains(github.event.pull_request.labels.*.name, 'release')) && '1' || '0' }}
+
+# A new push to a pull request or a branch (main included) cancels the older run of the same
+# ref, so stale runs do not queue ahead of real work. A release run is never cancelled: each
+# one gets its own group (its run ID), and cancel-in-progress is off for it.
+concurrency:
+  group: >-
+    ${{ github.workflow }}-${{ (github.event_name == 'workflow_dispatch' || github.ref_type == 'tag'
+    || contains(github.event.pull_request.labels.*.name, 'release'))
+    && format('release-{0}', github.run_id) || github.ref }}
+  cancel-in-progress: >-
+    ${{ !(github.event_name == 'workflow_dispatch' || github.ref_type == 'tag'
+    || contains(github.event.pull_request.labels.*.name, 'release')) }}
 
 jobs:
   lint:
@@ -19,6 +52,8 @@ jobs:
       # The code standards (spec §9) against their shrink-only baseline.
       - run: python tools/check.py --rules
 
+  # Runs on every pull request: it takes under a minute and is the only job where the
+  # code-identity tests check an installed (non-editable) package; they skip in the test job.
   # BM15's verified code identity on a real install: the package and the he-mask extra are
   # installed from a wheel (not editable), so the tissue-mask code-identity tests check the
   # installed preprocessing and normalization for real instead of skipping (the run route and
@@ -59,15 +94,23 @@ jobs:
           PY
 
   test:
+    name: test (${{ matrix.os }}, ${{ matrix.python-version }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-        python-version: ["3.11", "3.13"]
+        os: >-
+          ${{ fromJSON((github.event_name == 'workflow_dispatch' || github.ref_type == 'tag'
+          || contains(github.event.pull_request.labels.*.name, 'release'))
+          && '["ubuntu-latest", "windows-latest", "macos-latest"]' || '["ubuntu-latest"]') }}
+        python-version: >-
+          ${{ fromJSON((github.event_name == 'workflow_dispatch' || github.ref_type == 'tag'
+          || contains(github.event.pull_request.labels.*.name, 'release'))
+          && '["3.11", "3.13"]' || '["3.13"]') }}
     steps:
-      # Full history: the Cellpose notebook's pin check compares its RELEASE_REF commit with
-      # HEAD and fails in CI when that commit is missing (issue #421). The history is ~9 MB.
+      # Full history: in a release run the Cellpose notebook's pin check compares its
+      # RELEASE_REF commit with HEAD and fails when that commit is missing (issue #421). The
+      # structural pin tests of every run read HEAD only. The history is ~9 MB.
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -78,4 +121,19 @@ jobs:
       # zarr 3 needs Python 3.11 too, so pin 2.18 on 3.11 to keep both majors tested.
       - if: matrix.python-version == '3.11'
         run: python -m pip install "zarr>=2.18,<3"
-      - run: python -m pytest
+      - run: python -m pytest -ra --junitxml=tests.xml
+      # A release run must have run the release-only tests, never skipped them.
+      - name: The release-only tests ran (release runs)
+        if: env.MORPHOBRICKS_RELEASE_RUN == '1'
+        shell: python
+        run: |
+          import xml.etree.ElementTree as ET
+          RELEASE_ONLY = {"test_release_only_the_preprocessing_pin_is_a_commit_with_this_code"}
+          cases = {c.get("name"): c for c in ET.parse("tests.xml").getroot().iter("testcase")}
+          for name in sorted(RELEASE_ONLY):
+              case = cases.get(name)
+              assert case is not None, f"{name} did not run"
+              assert len(case) == 0 or all(c.tag in ("system-out", "system-err") for c in case), (
+                  f"{name} did not pass: {[c.tag for c in case]}"
+              )
+              print(f"{name}: passed")

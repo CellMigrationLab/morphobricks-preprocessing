@@ -2,8 +2,13 @@
 
 Usage:
 
-- ``python tools/check.py``: everything; exits non-zero when any check fails, after
-  running all of them so one run lists every problem;
+- ``python tools/check.py``: everything a pull request must pass; exits non-zero when any
+  check fails, after running all of them so one run lists every problem. As in the pull
+  request CI, the release-only test (the Cellpose notebook's ``RELEASE_REF`` holds the code
+  it runs) skips: the notebooks are pinned in the release pull request (owner, 24 November
+  2026);
+- ``python tools/check.py --release``: the same with ``MORPHOBRICKS_RELEASE_RUN=1``, as the
+  release CI: the release-only test runs, and a missing Git history fails it;
 - ``python tools/check.py --rules``: only the code rules against their baseline (CI);
 - ``python tools/check.py --update-baseline``: lower the baseline to the current code. It
   never adds or raises an entry: new violations must be fixed.
@@ -19,6 +24,7 @@ under ``[tool.morphobricks.code-rules]`` (owner, package, layers, baseline file)
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import tomllib
@@ -38,6 +44,8 @@ from code_rules import (
 )
 
 ROOT = Path(__file__).resolve().parents[1]
+RELEASE_SWITCH = "MORPHOBRICKS_RELEASE_RUN"
+"""Set to ``1`` for pytest by ``--release`` (``tests/release_run.py``)."""
 LINTED = ("src", "tests", "tools")
 TESTS = "tests/"
 """Tests are exempt from the annotation and docstring rules (owner decision, 1 November
@@ -122,6 +130,14 @@ def rename_baseline(renames: list[str]) -> Path:
     return path
 
 
+def pytest_environment(argv: list[str]) -> dict[str, str]:
+    """Return the environment for pytest: with ``--release``, a release run."""
+    environment = dict(os.environ)
+    if "--release" in argv:
+        environment[RELEASE_SWITCH] = "1"
+    return environment
+
+
 def main(argv: list[str]) -> int:
     """Run the checks and return the process exit code."""
     if "--rename" in argv:
@@ -138,9 +154,13 @@ def main(argv: list[str]) -> int:
             [sys.executable, "-m", "ruff", "format", "--check", "."],
             [sys.executable, "-m", "pytest", "-q"],
         )
+        environment = pytest_environment(argv)
+        if RELEASE_SWITCH in environment:
+            print(f"{RELEASE_SWITCH}={environment[RELEASE_SWITCH]}", flush=True)
         for command in commands:
             print("$", " ".join(command[2:]), flush=True)
-            failed |= subprocess.run(command, cwd=ROOT, check=False).returncode != 0
+            run = subprocess.run(command, cwd=ROOT, env=environment, check=False)
+            failed |= run.returncode != 0
     print("$ code rules", flush=True)
     problems = baseline_problems()
     for problem in problems:

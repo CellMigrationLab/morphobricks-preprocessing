@@ -313,7 +313,9 @@ def reconfirmations(
     that also lost a position in a folder still there is open as well, with those folders in
     ``unseen``: the record cannot say "this ID, only in that folder" (4.6). A channel that lost
     a saved header name is open unless it is in ``names``, the channels whose header-name change
-    the user confirmed as shown (issue #281).
+    the user confirmed as shown (issue #281). An ID replaced by another ID (``new_id``) is always
+    open: a removal or rename answer shows folders, never an ID correction, so it cannot accept
+    one even in the units it touches (issue #402); that change needs its own re-confirmation.
     """
     units = published_units(published)
     answers = [(set(r.units), r.confirmed_on) for r in removals]
@@ -325,7 +327,7 @@ def reconfirmations(
         now = after
     accepted, left, unseen = set(), [], set()
     for issue in _changes(published, built):
-        reached = _affected(issue, units)
+        reached = _affected(issue, units) if issue.new_id is None else set()
         dates = [day for held, day in answers if held & reached]
         others = _unanswered(issue, published, built, removed, now) if dates else set()
         unconfirmed = _names_lost(issue, published, built) and issue.old_id not in names

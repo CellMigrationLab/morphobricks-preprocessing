@@ -33,7 +33,7 @@ from morphobricks_preprocessing.description_removal import (
     removal_questions,
 )
 from morphobricks_preprocessing.description_rules import Refusal
-from morphobricks_preprocessing.description_transition import transition_issues
+from morphobricks_preprocessing.description_transition import Reconfirmation, transition_issues
 from morphobricks_preprocessing.description_write import canonical_bytes
 from morphobricks_preprocessing.run.description_file import (
     ABSENT,
@@ -372,6 +372,96 @@ def test_p33_b_the_statement_keeps_the_id_moves_the_folder_and_reopens_the_repea
     publish_description(output, confirmed, base_sha256=base, confirmations=found.accepted)
     assert [r["old_id"] for r in read_records(output)] == ["ctrl"]
     assert 'source_folder = "ctl"' in (output / "morphobricks.toml").read_text()
+
+
+def with_channel_id(description, old, new):
+    """Return ``description`` with the channel ID ``old`` corrected to ``new`` (same positions)."""
+    repeats = {
+        rid: replace(
+            repeat,
+            members={
+                cond: replace(
+                    member,
+                    technical_repeats={
+                        tid: replace(
+                            unit, channels=tuple(new if c == old else c for c in unit.channels)
+                        )
+                        for tid, unit in member.technical_repeats.items()
+                    },
+                )
+                for cond, member in repeat.members.items()
+            },
+        )
+        for rid, repeat in description.repeats.items()
+    }
+    channels = {new if k == old else k: v for k, v in description.channels.items()}
+    used = {
+        **description.used_ids,
+        "channels": tuple(sorted({*description.used_ids["channels"], new})),
+    }
+    return replace(description, repeats=repeats, channels=channels, used_ids=used)
+
+
+def test_a_condition_folder_rename_does_not_confirm_a_channel_id_correction(tmp_path):
+    # Issue #402: the rename answer shows "control -> ctl" only. A channel ID corrected
+    # DNA -> DAPI in the same units (same C positions, same header names) is a separate
+    # change the user never saw: it stays open and publication refuses it.
+    published = model("v33")
+    statement = FolderRename("condition", "control", "ctl", DAY)
+    rec = reconcile(published, on_disk_as_ctl(published), [statement])
+    draft = confirm_repeat(confirm_repeat(candidate(published, rec), "rep1", DAY), "rep2", DAY)
+    renamed = with_channel_id(draft, "DNA", "DAPI")
+    assert "DNA" in renamed.used_ids["channels"]  # the retired ID stays used
+    change = ("channels", "DNA", "DAPI")
+    assert change in {i.change for i in transition_issues(published, renamed)}
+    found = reconfirmations(published, renamed, rec)
+    assert [(c.kind, c.old_id, c.new_id) for c in found.accepted] == [("conditions", "ctrl", None)]
+    assert [i.change for i in found.open] == [change]
+    output, base = published_in(tmp_path, published)
+    with pytest.raises(PublicationRefused) as refused:
+        publish_description(output, renamed, base_sha256=base, confirmations=found.accepted)
+    assert refused.value.codes == {Refusal.R_CONFIRMED_ID_CHANGED}
+    assert not (output / RECORDS_FILENAME).exists()
+    # Its own confirmation, stated explicitly, accepts it and is recorded as shown.
+    own = Reconfirmation(*change, DAY)
+    publish_description(output, renamed, base_sha256=base, confirmations=(*found.accepted, own))
+    assert [(r["id_kind"], r["old_id"], r["new_id"]) for r in read_records(output)] == [
+        ("channels", "DNA", "DAPI"),
+        ("conditions", "ctrl", None),
+    ]
+    # The pure folder rename keeps its output.
+    assert reconfirmations(published, draft, rec) == reconfirmations(
+        published, candidate(published, rec), rec
+    )
+
+
+def test_a_removal_answer_does_not_confirm_an_id_correction_in_its_units():
+    # Issue #402, another kind: the removal answer for DrugA/rep1 does not accept the
+    # technical repeat ID corrected single -> one, which its question never listed.
+    published = model("v01")
+    gone = {k: v for k, v in folder(published).items() if k != key("DrugA", "rep1")}
+    rec = reconcile(published, gone)
+    (question,) = removal_questions(published, rec)
+    answer = question.answer(DAY)
+    draft = candidate(published, rec, [answer])
+    assert all(new is None for _, _, new in question.needs)
+    repeats = {
+        rid: replace(
+            repeat,
+            members={
+                cond: replace(member, technical_repeats={"one": member.technical_repeats["single"]})
+                for cond, member in repeat.members.items()
+            },
+        )
+        for rid, repeat in draft.repeats.items()
+    }
+    used = {**draft.used_ids, "technical_repeats": ("one", "single")}
+    edited = replace(draft, repeats=repeats, used_ids=used)
+    change = ("technical_repeats", "single", "one")
+    assert change in {i.change for i in transition_issues(published, edited)}
+    found = reconfirmations(published, edited, rec, [answer])
+    assert change not in {(c.kind, c.old_id, c.new_id) for c in found.accepted}
+    assert change in {i.change for i in found.open}
 
 
 def test_p33_c_the_old_folder_removal_needs_its_confirmation_and_the_id_stays_used():
