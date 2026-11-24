@@ -120,6 +120,7 @@ src/morphobricks_preprocessing/
                     (read_description_bytes in description_read.py runs phases 1-5 and warnings)
   description.py        the model (Description, Condition, Channel, Repeat, Member, Unit, Mask)
                     built from a reader-accepted document; description_from_bytes -> DescriptionError
+                    (immutable all the way down: read-only tables, tuples; pickles via dicts, #489)
   description_write.py  the canonical writer (Spec experiment-v1 9.1) and section digests (9.3)
   channel_plan.py   Stage 3 (S3.3): each image's canonical channel IDs from its unit's confirmed
                     list (file_channel_ids), the declared IDs (the table header), the per-repeat
