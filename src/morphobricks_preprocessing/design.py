@@ -250,8 +250,9 @@ def design_issues(design: DesignTable) -> list[ValidationIssue]:
                 "invalid_experiment_design",
                 "The experiment design lists no folder, so there is nothing to confirm or process.",
                 [],
-                "Check that the experiment folder holds condition folders with images, then "
-                "save the experiment description again (Check and save).",
+                "Check that the experiment folder holds condition folders with images and that "
+                "they are not all excluded. If you changed the folders, save the experiment "
+                "description again (Check and save).",
             )
         ]
     issues = []
