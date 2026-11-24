@@ -28,6 +28,7 @@ from .report import format_issues
 from .run import OutputLockedError
 from .run.calibrate import update_calibration
 from .run.lock import lock_issue
+from .run.output_guard import output_experiment_issues
 
 
 def add_calibrate_parser(commands: argparse._SubParsersAction) -> argparse.ArgumentParser:
@@ -74,12 +75,18 @@ def add_calibrate_parser(commands: argparse._SubParsersAction) -> argparse.Argum
 
 def calibrate_command(args: argparse.Namespace) -> int:
     """Show the statements, or change and write them; return the exit status."""
+    experiment = Path(args.experiment).resolve() if args.experiment else None
     if args.output:
         output = Path(args.output).resolve()
-    elif args.experiment:
-        output = default_output_folder(Path(args.experiment).resolve())
+    elif experiment is not None:
+        output = default_output_folder(experiment)
     else:
         print("Give the experiment folder or --output to say whose calibration to show.")
+        return 1
+    # Never inside the experiment given, else the one the run there recorded (#486).
+    inside = output_experiment_issues(output, experiment)
+    if inside:
+        print(format_issues(inside))
         return 1
     path = output / CALIBRATION_FILENAME
     try:
@@ -88,7 +95,9 @@ def calibrate_command(args: argparse.Namespace) -> int:
             print(calibration_summary(shown))
             return 0
         _changed(Calibration(), args)  # refuse a wrong statement before taking the lock
-        changed, written = update_calibration(output, partial(_changed, args=args))
+        changed, written = update_calibration(
+            output, partial(_changed, args=args), experiment_root=experiment
+        )
     except OutputLockedError as exc:
         print(format_issues([lock_issue(exc)]))
         return 1
