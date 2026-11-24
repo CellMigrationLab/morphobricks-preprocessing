@@ -100,6 +100,11 @@ def middle_slice(length: int) -> int:
 class ViewRequest:
     """Which plane of an image to draw, and how.
 
+    Raises
+    ------
+    ValueError
+        When ``shown`` is not a whole number of at least 1.
+
     Attributes
     ----------
     z, t
@@ -124,6 +129,14 @@ class ViewRequest:
     colour: bool = False
     memory_limit: int = DEFAULT_MEMORY_LIMIT
     expected: Fingerprint | None = None
+
+    def __post_init__(self) -> None:
+        # Refused before any read: no channel to draw is not a picture (#433).
+        if isinstance(self.shown, bool) or not isinstance(self.shown, int) or self.shown < 1:
+            raise ValueError(
+                f"The number of channels to draw must be a whole number of at least 1, "
+                f"not {self.shown!r}."
+            )
 
 
 def read_view(

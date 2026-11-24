@@ -265,8 +265,13 @@ def header_channels(
     PreviewUnavailable
         Without a named channel axis, or over the caps.
     PlaneReadError, OSError, ValueError, IndexError, MemoryError
-        When the file cannot be read.
+        When the file cannot be read; ValueError also when ``shown`` is not a whole number of
+        at least 1.
     """
+    if isinstance(shown, bool) or not isinstance(shown, int) or shown < 1:
+        raise ValueError(  # before any read (#433)
+            f"The number of channels to draw must be a whole number of at least 1, not {shown!r}."
+        )
     if not meta.readable:
         raise PreviewUnavailable(f"the header cannot be read: {meta.error or 'unknown reason'}")
     mapping, projected, c_axis = _channel_layout(meta)
