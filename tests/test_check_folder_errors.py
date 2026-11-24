@@ -116,3 +116,45 @@ def test_a_programming_error_is_raised_after_clearing_the_checked_state(
         nb.check_folder()
     assert_cleared(nb)
     assert "KeyError" in nb.folder_status.value
+
+
+@pytest.mark.parametrize(
+    "exc",
+    [SystemExit("x"), SystemExit(2), GeneratorExit()],
+    ids=["exit-str", "exit-int", "generator-exit"],
+)
+def test_an_exit_is_cleared_then_raised_not_swallowed(experiment, tmp_path, monkeypatch, exc):
+    """``SystemExit("msg")`` has a str ``code`` but is not a coded refusal: it propagates."""
+    nb = ready(experiment, tmp_path / "out")
+    monkeypatch.setattr(notebook_folder, "preflight", failing_preflight(exc))
+    with pytest.raises(type(exc)):
+        nb.check_folder()
+    assert_cleared(nb)
+
+
+def test_a_clearing_error_does_not_hide_a_programming_error(experiment, tmp_path, monkeypatch):
+    nb = ready(experiment, tmp_path / "out")
+    monkeypatch.setattr(notebook_folder, "preflight", failing_preflight(KeyError("bug")))
+
+    def broken(self, status):
+        raise RuntimeError("clearing failed")
+
+    monkeypatch.setattr(type(nb), "_clear_checked", broken)
+    with pytest.raises(KeyError, match="bug"):  # the original, not the clearing error
+        nb.check_folder()
+
+
+def test_a_clearing_error_after_an_expected_failure_is_raised_from_it(
+    experiment, tmp_path, monkeypatch
+):
+    nb = ready(experiment, tmp_path / "out")
+    original = OSError(5, "I/O")
+    monkeypatch.setattr(notebook_folder, "preflight", failing_preflight(original))
+
+    def broken(self, status):
+        raise RuntimeError("clearing failed")
+
+    monkeypatch.setattr(type(nb), "_clear_checked", broken)
+    with pytest.raises(RuntimeError, match="clearing failed") as info:
+        nb.check_folder()
+    assert info.value.__cause__ is original

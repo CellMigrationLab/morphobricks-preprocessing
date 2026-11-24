@@ -906,10 +906,11 @@ the whole experiment before and are no longer accepted. `calibrate` and the note
 nothing; a line of `calibration.csv` edited by hand to such a target (for example `/`, read
 as the whole experiment before) now stops the run with `calibration_unreadable`, naming the
 line (`calibrate` and the notebook always write `.`). The most specific statement applies:
-an image's own over its folder's, a folder's over the whole experiment's. Each axis is stated on its own (`XY` states both with the same size), so Y
-and X never trade sizes. Units are pm, Å, nm, µm (um, micron), mm, cm or m. You may also
-edit the file in a spreadsheet; its columns are `target,axis,size,unit`, with an empty size
-and the unit `pixels` for a pixel statement:
+an image's own over its folder's, a folder's over the whole experiment's. Each axis is
+stated on its own (`XY` states both with the same size), so Y and X never trade sizes. Units
+are pm, Å, nm, µm (um, micron), mm, cm or m. You may also edit the file in a spreadsheet;
+its columns are `target,axis,size,unit`, with an empty size and the unit `pixels` for a
+pixel statement:
 
 ```text
 target,axis,size,unit

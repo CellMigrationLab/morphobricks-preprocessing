@@ -66,10 +66,14 @@ def expected_check_failure(exc: BaseException) -> bool:
     """Return True for a failure the folder check reports and survives (issue #101).
 
     A storage error (``OSError``: a Google Drive that stopped answering, a folder gone) or
-    one of this package's coded refusals (an exception with a ``code``); anything else is a
-    programming error, raised after the earlier check is cleared.
+    one of this package's coded refusals (an ``Exception`` with a ``code``); anything else is
+    a programming error or an interrupt, raised after the earlier check is cleared.
+    ``SystemExit("message")`` has a str ``code`` too, but it is not an ``Exception``: it
+    propagates.
     """
-    return isinstance(exc, OSError) or isinstance(getattr(exc, "code", None), str)
+    return isinstance(exc, OSError) or (
+        isinstance(exc, Exception) and isinstance(getattr(exc, "code", None), str)
+    )
 
 
 class _FolderStep:
@@ -278,9 +282,7 @@ class _FolderStep:
                 self._idle(self.check_button, *getattr(self, "_check_label", CHECK_LABEL))
             self._show_check(folder, pre)
         except BaseException as exc:  # an interrupt too: cleared first, then raised
-            self._check_failed(folder, exc, "The folder could not be checked.")
-            if not expected_check_failure(exc):
-                raise
+            self._fail_check(folder, exc, "The folder could not be checked.")
             return None
         return pre
 
@@ -415,9 +417,7 @@ class _FolderStep:
             self._prefill_from_output()  # the default output folder follows the experiment
         except BaseException as exc:  # nothing of the earlier check is left half-updated (#101)
             folder = ui.clean_path(self.folder.value)
-            self._check_failed(folder, exc, "The folder changed, and could not be read.")
-            if not expected_check_failure(exc):
-                raise
+            self._fail_check(folder, exc, "The folder changed, and could not be read.")
             return
         if self.preflight is None or ui.clean_path(self.folder.value) == self._checked_folder:
             return
@@ -427,6 +427,22 @@ class _FolderStep:
                 "info", "The folder changed.", ["Press Check folder to check the new folder."]
             )
         )
+
+    def _fail_check(self, folder: str, exc: BaseException, heading: str) -> None:
+        """Clear the earlier check for ``exc``; return only if it is an expected failure.
+
+        Call it inside the ``except`` block. A failure that is not expected is always
+        re-raised, even if the clearing itself raised; for an expected one a clearing error is
+        raised, chained from the original.
+        """
+        expected = expected_check_failure(exc)
+        try:
+            self._check_failed(folder, exc, heading)
+        except Exception as clearing:
+            if expected:
+                raise clearing from exc
+        if not expected:
+            raise exc
 
     def _check_failed(self, folder: str, exc: BaseException, heading: str) -> None:
         """Clear the earlier check and say why ``heading`` happened, and what to do (#101)."""

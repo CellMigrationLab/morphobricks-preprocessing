@@ -152,3 +152,31 @@ def test_a_storage_error_while_the_folder_changes_leaves_no_check(
     assert_nothing_of_the_check(nb)
     status = _text(nb.folder_status.value)
     assert "The folder changed" in status and "OSError" in status
+
+
+@pytest.mark.parametrize(
+    "exc",
+    [SystemExit("x"), SystemExit(2), GeneratorExit()],
+    ids=["exit-str", "exit-int", "generator-exit"],
+)
+def test_an_exit_is_cleared_then_raised_not_swallowed(copies, monkeypatch, exc):
+    """``SystemExit("msg")`` has a str ``code`` but is not a coded refusal: it propagates."""
+    nb = copies
+    monkeypatch.setattr(notebook_folder, "preflight", failing_preflight(exc))
+    with pytest.raises(type(exc)):
+        nb.check_folder()
+    monkeypatch.undo()
+    assert_nothing_of_the_check(nb)
+
+
+def test_a_clearing_error_does_not_hide_the_original_on_the_steps(copies, monkeypatch):
+    nb = copies
+    monkeypatch.setattr(notebook_folder, "preflight", failing_preflight(KeyError("bug")))
+
+    def broken(self, status):
+        raise RuntimeError("clearing failed")
+
+    monkeypatch.setattr(type(nb), "_clear_checked", broken)
+    with pytest.raises(KeyError, match="bug"):
+        nb.check_folder()
+    monkeypatch.undo()
