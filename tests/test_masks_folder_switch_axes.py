@@ -52,6 +52,18 @@ def test_another_masks_folder_does_not_inherit_the_stated_mask_axes(tmp_path):
     assert refused and all("--mask-axes Cells=TYX" in issue.action for issue in refused)
 
 
+def test_the_effect_names_only_the_types_not_stated_again_in_the_same_call(tmp_path):
+    _, output, _, new = stated_run(tmp_path)
+    previous = read_previous(output)[0]
+
+    def effect(**more):
+        resolved = resolve_inputs(GivenInputs(masks_folder=new.resolve(), **more), previous)
+        return next(c for c in resolved.changes if c.name == "masks_folder").effect
+
+    assert "state them again" not in effect(mask_axes={"Cells": "TYX"})
+    assert "(Cells)" in effect(mask_axes={"Other": "TYX"})
+
+
 def test_the_same_masks_folder_keeps_its_stated_mask_axes(tmp_path):
     root, output, old, _ = stated_run(tmp_path)
     previous = read_previous(output)[0]
