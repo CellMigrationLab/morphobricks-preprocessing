@@ -20,7 +20,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from .projection import METHODS
+from .projection import METHODS, projection_dtype
 from .validation import ValidationIssue, plural, warning
 
 if TYPE_CHECKING:  # the record module imports this one
@@ -193,6 +193,8 @@ class RunProjection:
         if not isinstance(data["images"], list):
             raise ValueError(f"{KEY}.images is not a list")
         images = tuple(ProjectedImage.from_dict(i) for i in data["images"])
+        for image in images:
+            _check_types(data["method"], image)
         return cls(
             method=data["method"],
             z_range=_checked_range(bounds, images),
@@ -234,6 +236,32 @@ def _checked_range(bounds: object, images: tuple[ProjectedImage, ...]) -> tuple[
                 f"{KEY}.z_range {bounds!r} is not the slices {image.relative_path!r} used ({used})"
             )
     return wanted
+
+
+def _check_types(method: str, image: ProjectedImage) -> None:
+    """Refuse an image whose types, rule, rounding or bits reason are not the table's (#445).
+
+    The dtype table (:func:`.projection.projection_dtype`) decides them from the source type,
+    the method and the slices used; the reason the significant bits are dropped is the table's,
+    or None for a source that recorded none.
+    """
+    slices = image.z_range[1] - image.z_range[0]
+    try:
+        rule = projection_dtype(image.source_dtype, method, slices)
+    except (TypeError, ValueError) as exc:  # not a type, or a type or sum the table refuses
+        raise ValueError(
+            f"{KEY}.images: {image.relative_path!r} has no dtype table entry for a {method} of "
+            f"{slices} {image.source_dtype!r} slices: {exc}"
+        ) from exc
+    found = (image.source_dtype, image.output_dtype, image.rounding, image.dtype_rule)
+    table = (rule.source_dtype, rule.output_dtype.name, rule.rounding, rule.dtype_rule)
+    dropped = image.significant_bits_dropped
+    if found != table or dropped not in (None, rule.significant_bits_dropped):
+        raise ValueError(
+            f"{KEY}.images: {image.relative_path!r} records {found} (significant bits dropped: "
+            f"{dropped!r}); the dtype table gives {table} for a {method} of {slices} slices "
+            f"(significant bits dropped: None or {rule.significant_bits_dropped!r})"
+        )
 
 
 def recorded_projection(value: object) -> dict | None:
