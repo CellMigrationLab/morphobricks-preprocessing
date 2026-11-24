@@ -46,7 +46,7 @@ from .notebook_description_view import (
 from .notebook_names import _NameRows, _updated
 from .notebook_strict_draft import _StrictDraft
 from .run import OutputLockedError
-from .run.draft_file import save_draft
+from .run.draft_file import draft_holds, save_draft
 from .run.output_guard import OutputInsideMasksError
 
 IDS_QUESTION = "Are these IDs right?"
@@ -178,7 +178,8 @@ class _DescriptionCard(_NameRows, _SavedDraft, _StrictDraft):
         that cannot be saved (the output folder's lock, the draft file, a write error) is
         refused too: the answers before it are kept, so nothing is shown as answered that is
         not on disk. With ``rebuild`` False the boxes are left as they are (a name being typed
-        keeps its focus).
+        keeps its focus). A save stopped by an interruption leaves the answers as the file holds
+        them (:meth:`_stopped`).
         """
         try:
             draft = apply_answers(self._draft_base, answers)
@@ -187,7 +188,11 @@ class _DescriptionCard(_NameRows, _SavedDraft, _StrictDraft):
             return False
         before = self.draft, self.draft_answers
         self.draft, self.draft_answers = draft, answers
-        saved = self._save_description()
+        try:
+            saved = self._save_description()
+        except BaseException:
+            self._stopped(before, answers)
+            raise
         if not saved:
             self.draft, self.draft_answers = before
             self._refusal = AnswerNotSaved(self._save_problem)
@@ -198,6 +203,21 @@ class _DescriptionCard(_NameRows, _SavedDraft, _StrictDraft):
         else:
             self._show_names_status()
         return saved
+
+    def _stopped(self, before: tuple, answers: DraftAnswers) -> None:
+        """Keep the answers as the draft file holds them after a save stopped by an interruption.
+
+        External re-check as (24 November 2026): the answers were in memory before the save, and
+        a ``KeyboardInterrupt`` is no refusal, so they stayed there although the file may never
+        have got them; a later save then wrote them with a stale tag review. The file is
+        replaced in one step: it holds ``answers`` or the ones before. Memory keeps ``answers``
+        only when the file holds them (or no output folder is set: memory is the only copy).
+        """
+        output = self._design_folder()
+        if output is None or draft_holds(output, answers):
+            self._draft_saved = output is not None
+            return
+        self.draft, self.draft_answers = before
 
     def _save_description(self) -> bool:
         """Save the answers to ``morphobricks.draft.json`` under the output folder's lock.

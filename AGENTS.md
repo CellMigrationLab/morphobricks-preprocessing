@@ -509,6 +509,10 @@ src/morphobricks_preprocessing/
                             unchanged; one-click Confirm the same tags / Confirm all N like it for
                             listed units with a confirmed unit's headers; a refusal keeps the
                             aliases of its time)
+  notebook_channels_memory.py the rows' memory of the draft's tag review (ReviewMemory: restore,
+                            adopt, persist; Refusal); memory remembers the review it last took or
+                            wrote (seen) and takes the draft's again when it holds another (sync,
+                            review as), so stale memory never writes over a saved refusal
   repeat_review.py          the refusals and confirmations kept in the draft file (pure: Override,
                             RefusedUnit, TagReview; draft_format's optional tag_review, restored
                             on opening by RepeatRows.restore before headers are trusted)

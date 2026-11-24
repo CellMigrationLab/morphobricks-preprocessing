@@ -465,6 +465,9 @@ editing, or the confirmed ones. An image that cannot be drawn gets a sentence sa
    override opens with that channel left blank: choose a label that still exists. What is
    listed and what you confirmed is saved with your answers: after you close and reopen the
    notebook, a listed acquisition is still listed, and still not counted, until you confirm it.
+   This holds also when you stop the kernel (Interrupt) during a tag save: what is listed and
+   confirmed is then read again from the saved answers, in the same session too, so an
+   interrupted save never drops a listed acquisition or a confirmation.
    In fast mode this holds also when you correct the acquisition's image header so that it fits
    its row: it is not tagged from its header but stays listed ("a refused unit is never tagged
    from its header, even one that fits now; confirm its tags") until you confirm it. In fast

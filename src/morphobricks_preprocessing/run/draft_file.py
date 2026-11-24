@@ -8,7 +8,8 @@ consumer reads it as a description.
 - :func:`save_draft` writes it atomically under :func:`.lock.output_lock`, as the design CSV is
   saved (:func:`.design_file.write_design`), once the answers pass the rules: an answer the draft
   refuses is never saved, so the file on disk is always one that :func:`load_draft` accepts
-  (against the same folder).
+  (against the same folder). :func:`draft_holds` says whether the file holds exactly given
+  answers (a save stopped by an interruption replaced the file, or not).
 - :func:`load_draft` resumes: the file is read strictly and refused when anything is wrong, and
   refused with ``spec_commit_mismatch`` when it was written under another pinned Spec commit
   (its confirmations were given under other rules) and with ``R_PUBLISHED_FILE_CHANGED`` when
@@ -140,6 +141,20 @@ def save_draft(output_folder: str | os.PathLike, draft: Draft, answers: DraftAns
     with output_lock(folder):
         _read_draft_bytes(folder)  # a symbolic link is refused, never replaced
         return write_text_atomic(folder / DRAFT_FILENAME, data.decode("utf-8"))
+
+
+def draft_holds(output_folder: str | os.PathLike, answers: DraftAnswers) -> bool:
+    """Return True when the draft file holds exactly the bytes :func:`save_draft` writes for these.
+
+    The file is replaced in one step, so after a save stopped by an interruption (external
+    re-check as, 24 November 2026) it holds the new answers or the ones before. False when the
+    file is missing, a symbolic link, unreadable or other answers.
+    """
+    try:
+        data = _read_draft_bytes(Path(output_folder).resolve())
+        return data is not None and data == answers_to_bytes(answers)
+    except (OSError, DraftFileError):
+        return False
 
 
 def _read_answers(folder: Path) -> DraftAnswers:

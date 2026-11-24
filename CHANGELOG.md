@@ -387,6 +387,21 @@ old pin are refused with `spec_commit_mismatch`, as at every re-pin.
   refused in the draft but not in the session, whose save gate reads memory. `TagGrid.commit`
   now adopts right after the save, and *Check and save* stays disabled while the session's tag
   review differs from the draft's (`RepeatRows.saved`).
+- **Tag by repeat: memory behind the draft never overwrites its saved tag review** (external
+  re-check as, 24 November). After a write that set the tag review succeeded (a row click's
+  tags and refusals, an editor's or a hand-tag's tags and confirmation), an interruption before
+  memory took it left this session's refusals and confirmations behind the draft's; reopening
+  *Tag channels* in the same session then reconciled and persisted that stale memory over the
+  saved review, erasing a refusal (the unit no longer listed, and the save possible) or a
+  confirmation. A preexisting refusal in memory also kept `restore` from reading the draft.
+  Memory now remembers the review it last took or wrote (`RepeatRows.seen`, in the new
+  `notebook_channels_memory.ReviewMemory`) and takes the draft's again whenever it holds
+  another (`sync`), before anything lists, holds out, reconciles or writes; a review is written
+  only over the one memory saw. A save of the answers stopped by an interruption no longer
+  leaves memory holding answers the draft file never got: `_save_answers` keeps them only when
+  the file holds exactly their bytes (`run.draft_file.draft_holds`), else goes back to the
+  answers before, and fast mode's strict page's draft follows a save the file took
+  (unticking no longer writes back a draft without it). Uninterrupted saves are unchanged.
 
 - **Notebook installer: the installed commit, not only the version (#371).** Cell 1 of the
   Preprocessing notebook reused any installed package reporting version 0.8.0, so a 0.8.0 built

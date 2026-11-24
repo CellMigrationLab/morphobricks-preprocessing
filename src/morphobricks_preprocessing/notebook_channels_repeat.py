@@ -31,17 +31,18 @@ from __future__ import annotations
 import html
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import replace
-from typing import TYPE_CHECKING, NamedTuple
+from typing import TYPE_CHECKING
 
 import ipywidgets as widgets
 
 from . import notebook_style as ui
 from .channel_labels import tags_of
 from .channel_matrix import REFUSED, difference_text, differences
-from .draft_answers import ChannelAnswer, DraftAnswers
+from .draft_answers import DraftAnswers
+from .notebook_channels_memory import Refusal, ReviewMemory
 from .notebook_channels_override import OTHER_DRAFT, OverrideEditor
 from .notebook_channels_view import CHOOSE, columns, unit_name
-from .repeat_review import Override, RefusedUnit, TagReview
+from .repeat_review import Override, TagReview
 from .repeat_tags import (
     GroupKey,
     header_names,
@@ -65,25 +66,7 @@ if TYPE_CHECKING:
 ACTION = "Tag this repeat folder (all conditions)"
 
 
-class Refusal(NamedTuple):
-    """A unit a row did not fill: the contradiction, the unit, the row's reference and tags."""
-
-    text: str
-    layout: UnitLayout
-    lead: UnitLayout | None
-    """The row's reference unit; None for a unit whose images disagree (:func:`repeat_apart`)."""
-    tags: tuple[str, ...]
-    """The row's tags at the click (what the header was compared with)."""
-    channels: Mapping[str, ChannelAnswer]
-    """The labels and aliases when the unit was first refused: what its header is read against.
-
-    Aliases saved afterwards, by confirming or tagging other units, are not evidence for this
-    unit, and neither is a changed image header: only an action on this unit releases the
-    refusal (:meth:`RepeatRows._released`).
-    """
-
-
-class RepeatRows:
+class RepeatRows(ReviewMemory):
     """The rows of tags per repeat folder, drawn under the tag grid."""
 
     def __init__(self, grid: TagGrid) -> None:
@@ -109,6 +92,8 @@ class RepeatRows:
         """True while the last save of the review was refused (retried at the next change)."""
         self.staged: dict[UnitKey, Refusal] | None = None
         """A row click's refusals while its one write is made; memory only once it succeeded."""
+        self.seen: TagReview | None = None
+        """The draft's review as memory last took or wrote it (:meth:`sync`, review as)."""
         self.notice = ""
         """A one-shot message of the last click (shown once, then cleared)."""
         self.message = ""
@@ -127,10 +112,12 @@ class RepeatRows:
         so: there are no channel tags to confirm, and its refusal is kept (:meth:`reconcile`) to
         list it again once it is back in a row. A unit whose images disagree stays listed while
         they do: no tags make it one header. Nothing is listed from the memory of another draft
-        (the notebook was pointed elsewhere and the grid is not open on it yet).
+        (the notebook was pointed elsewhere and the grid is not open on it yet). Read from the
+        draft's review (:meth:`sync`), never from memory behind it.
         """
         if self.other_draft():
             return {}
+        self.sync()
         answers = self.grid.store.answers()
         out = {}
         current = {u.key: u for g in self._rows().values() for u in g}
@@ -169,6 +156,7 @@ class RepeatRows:
         A fast-mode block of several units confirms nothing. None when no refused unit is
         tagged (the click is then a plain tag change).
         """
+        self.sync()
         keys = {u.key for u in units} & set(self.refused)
         if not keys or self.other_draft() or (len(units) > 1 and self.grid.same_channels.value):
             return None
@@ -203,7 +191,9 @@ class RepeatRows:
         where its header contradicts the row's tags at the click or its own tags
         (:func:`.channel_matrix.differences`), or that its tags are incomplete or unconfirmed.
         The reference is taken from the whole row, not only from the units a mode offers.
+        Memory behind the draft takes the draft's review first (:meth:`sync`, review as).
         """
+        self.sync()
         grid, kept = self.grid, {}
         rows = self._rows()  # the whole row: its reference never depends on the mode
         answers = grid.store.answers()
@@ -246,108 +236,6 @@ class RepeatRows:
         group = next((g for g in rows.values() if any(u.key == key for u in g)), ())
         return group, next((u for u in group if u.key == key), None)
 
-    def persist(self) -> bool:
-        """Keep the refusals and confirmations in the draft file, when they changed.
-
-        A new notebook on the draft restores them (:meth:`restore`): a refused unit counts only
-        once that unit is confirmed, whatever the session. A refused save is not silent (the
-        names card says "Not saved." and the grid shows a line, :attr:`unsaved`) and is retried
-        at the next persist, because the file still differs from memory; the record stays in
-        memory meanwhile, which is what this session reads. The record is only ever written into
-        the draft it came from: with another draft open nothing is written. Returns False when
-        the review could not be saved.
-        """
-        ok = self._write(self._review())
-        self.unsaved = not ok
-        return ok
-
-    def _write(self, review: TagReview) -> bool:
-        """Write the whole tag review into the draft when it differs; False when refused."""
-        if self.other_draft():
-            return False  # memory is another draft's: never written into this one
-        answers = self.grid.store.answers()
-        return self.saved(review) or self.grid.store.update(replace(answers, tag_review=review))
-
-    def saved(self, review: TagReview | None = None) -> bool:
-        """Return True when the draft holds ``review`` (memory's by default): else no publish."""
-        return (self.grid.store.answers().tag_review or TagReview()) == (review or self._review())
-
-    def adopt(self) -> None:
-        """Take the confirmations a successful tag write just saved, as the draft now holds them.
-
-        Called by :meth:`.TagGrid.commit` right after a write that set the whole tag review,
-        before any other write, redraw or *Check and save* refresh: the check reads the very
-        write's confirmations, never the ones before it. That write held the whole review
-        (:attr:`unsaved`); after a row click it also held the click's refusals (:attr:`staged`),
-        taken here.
-        """
-        if self.staged is not None:  # a row click's refusals, saved by this very write
-            self.refused, self.staged = self.staged, None
-        review = self.grid.store.answers().tag_review or TagReview()
-        self.override.confirmed = {k: v for k, v in review.confirmed.items() if k in self.refused}
-        self.unsaved = False
-
-    def other_draft(self) -> bool:
-        """Return True when the draft open now is not the one the record in memory belongs to."""
-        return self.draft_id() != self.draft
-
-    def draft_id(self) -> object:
-        """Return which draft the store holds (None for a store that cannot tell)."""
-        which = getattr(self.grid.store, "draft_id", None)
-        return which() if which is not None else None
-
-    def _forget(self) -> None:
-        """Drop every refusal, confirmation and editor state: they belong to another draft."""
-        self.refused, self.pending, self.notice, self.unsaved = {}, {}, "", False
-        self.override.confirmed = {}
-        self.override.editing, self.override.drafts = None, {}
-
-    def _review(
-        self,
-        confirmed: Mapping[UnitKey, Override] | None = None,
-        refusals: Mapping[UnitKey, Refusal] | None = None,
-    ) -> TagReview:
-        """Return what is refused and confirmed now, as the draft file keeps it.
-
-        ``confirmed`` and ``refusals`` replace the memory (the record a click is about to save
-        together with its tags, :meth:`.OverrideEditor._confirm` and :meth:`apply`).
-        """
-        refused = {
-            key: RefusedUnit(
-                old.tags,
-                None if old.lead is None else old.lead.key,
-                {k: tuple(a.header_names) for k, a in old.channels.items() if a.header_names},
-            )
-            for key, old in (self.refused if refusals is None else refusals).items()
-        }
-        return TagReview(refused, dict(self.override.confirmed if confirmed is None else confirmed))
-
-    def restore(self, layouts: Sequence[UnitLayout]) -> None:
-        """Take the refusals and confirmations of the draft file (a notebook opened on it).
-
-        Run before the headers are trusted and the refusals reconciled (:meth:`reconcile`
-        brings each up to date with the layouts, as after any re-check). The memory of the same
-        draft is not replaced: this session's record is the draft's. Another draft (the notebook
-        pointed at another folder or output) forgets the memory first and is restored from its
-        own file, empty when it has no review. A unit that is gone is not restored; a reference
-        that is gone is replaced by the current one at the next :meth:`reconcile`.
-        """
-        if self.other_draft():
-            self._forget()
-            self.draft = self.draft_id()
-        review = self.grid.store.answers().tag_review
-        if review is None or self.refused:
-            return
-        current = {u.key: u for u in layouts}
-        for key, saved in review.refused.items():
-            if (layout := current.get(key)) is not None:
-                lead = layout if saved.reference is None else current.get(saved.reference, layout)
-                aliases = {k: ChannelAnswer(None, v) for k, v in saved.aliases.items()}
-                self.refused[key] = Refusal(
-                    "", layout, None if saved.reference is None else lead, saved.tags, aliases
-                )
-        self.override.confirmed = {k: v for k, v in review.confirmed.items() if k in self.refused}
-
     def contradictions(self, layout: UnitLayout, refusal: Refusal, lead: UnitLayout) -> tuple:
         """Return where the unit's header contradicts the row's tags at the click.
 
@@ -375,6 +263,7 @@ class RepeatRows:
         """
         if self.other_draft():
             return set()
+        self.sync()  # memory behind the draft never empties this set (review as)
         answers = self.grid.store.answers()
         current = {u.key: u for u in self.grid.layouts}
         return {
@@ -510,6 +399,7 @@ class RepeatRows:
         review-only write when it fills nothing. Memory takes it once saved (:meth:`adopt`): a
         failed write leaves the draft and memory as before, never tags without a refusal.
         """
+        self.sync()  # the click's review is built from the draft's, never from stale memory
         tags = self.pending.get(key, [])
         named = [t for t in tags if t]
         answers = self.grid.store.answers()

@@ -309,6 +309,7 @@ class OverrideEditor:
             rows.notice = OTHER_DRAFT
             grid.refresh()
             return False
+        rows.sync()  # the confirmations are added to the draft's, never to stale memory
         for key, draft in drafts.items():
             why = rows._row_error(draft)
             if not counted(draft, layouts[key]):  # never cut or padded to the unit's count

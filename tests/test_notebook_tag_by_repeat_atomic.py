@@ -42,12 +42,13 @@ def _draft(out):
     return answers_from_bytes((out / DRAFT_FILENAME).read_bytes())
 
 
-def _before_the_click(tmp_path, fast, b_tagged=False):
+def _before_the_click(tmp_path, fast, b_tagged=False, types=True):
     """The row of rep2 set but not clicked yet; A (LEAD) untagged, nothing refused.
 
     Every image type is answered, so that in fast mode the click also saves the statement (the
     units it fills are marked as tagged on their own): a second write. With ``b_tagged`` B holds
-    complete tags from before the click (DNA and ACTIN swapped: the row refuses them).
+    complete tags from before the click (DNA and ACTIN swapped: the row refuses them). With
+    ``types`` False no image type is answered.
     """
     root, masks, out = _experiment(tmp_path, extra=fast, names=_like(REFUSED, fast))
     nb = opened(root, masks, out)
@@ -55,7 +56,7 @@ def _before_the_click(tmp_path, fast, b_tagged=False):
     set_labels(nb, list(tags))
     grid = nb.channel_grid
     assert grid.same_channels.value == fast
-    for layout in grid.layouts:
+    for layout in grid.layouts if types else ():
         nb.channel_types.radios[layout.key].value = "channels"
     if fast:
         for index, tag in enumerate(TAGS):
@@ -180,25 +181,40 @@ def test_b_tagged_before_the_click_stays_refused_after_an_interrupted_statement_
     _blocked_by_b(opened(*exp), exp[2])  # and after a restart
 
 
-def test_the_save_waits_while_memory_differs_from_the_saved_review(tmp_path, monkeypatch):
-    nb, exp, row, tags = _before_the_click(tmp_path, True, b_tagged=True)
-    rows = nb.channel_grid.by_repeat
+def stop_before_adopt(rows, monkeypatch):
+    """The kernel stops right after the next tag write succeeded, before memory takes it."""
     adopt = rows.adopt
 
-    def stopped():  # the kernel stops right after the write, before memory takes it
+    def stopped():
         monkeypatch.setattr(rows, "adopt", adopt)
         raise Interrupted
 
     monkeypatch.setattr(rows, "adopt", stopped)
+
+
+def test_the_save_waits_while_memory_differs_from_the_saved_review(tmp_path, monkeypatch):
+    nb, exp, row, tags = _before_the_click(tmp_path, True, b_tagged=True)
+    rows = nb.channel_grid.by_repeat
+    stop_before_adopt(rows, monkeypatch)
     with pytest.raises(Interrupted):
         rows.buttons[row].click()
     assert set(REFUSED) <= set(_draft(exp[2]).tag_review.refused) and not rows.refused
-    assert not rows.listed()  # memory alone would let B count
+    # review as: the same session goes on. Channels reopening reconciles and persists; at cd1fd15
+    # both wrote the stale memory over the saved review, erasing B's refusal from the draft
+    rows.reconcile()
+    rows.persist()
+    assert set(REFUSED) <= set(_draft(exp[2]).tag_review.refused)
+    assert all(k in rows.listed() and k in rows.standing() for k in REFUSED)
+    assert rows._review() == _draft(exp[2]).tag_review and rows.saved()
     _publishable_but_for_b(nb, tags)
-    assert nb.save_button.disabled and not nb.save_experiment()
-    assert "differs from the draft" in nb.save_blocker.value
-    assert not rows.saved()
-    _blocked_by_b(opened(*exp), exp[2])  # a restart reads the draft's review
+    _blocked_by_b(nb, exp[2])  # at cd1fd15 the save went through, B no longer listed
+    for key in REFUSED:  # the explicit action on each unit of B
+        rows.override.buttons[key].click()
+        rows.override.confirm_button.click()
+        assert key not in rows.listed()
+    assert set(REFUSED) <= set(_draft(exp[2]).tag_review.confirmed)
+    answer_all(nb)  # the design questions the new tags asked again
+    assert nb.save_experiment()  # only now
 
 
 # After the one write: no second statement save or redraw (review an, FILE) ----------------------
