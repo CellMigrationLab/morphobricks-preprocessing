@@ -1,7 +1,9 @@
 """What the Cellpose batch asks of the record while a mask is being committed.
 
-Both functions read the record under the type's write lock (called from ``write_mask``'s
+The checks read the record under the type's write lock (called from ``write_mask``'s
 ``on_published``), with preprocessing's own reader; nothing here segments or writes.
+:func:`after_commit` (moved from :mod:`.segmentation_cellpose` to keep it small) says how a
+batch stops after a failure that came once a mask was kept with its record entry.
 """
 
 from __future__ import annotations
@@ -12,6 +14,7 @@ from .segmentation_handoff import stray_backups
 from .segmentation_record import (
     SegmentationBatch,
     SegmentationError,
+    SegmentedImage,
     read_record,
     record_path,
 )
@@ -78,3 +81,17 @@ def replaced_earlier_mask(masks_root: str | Path, mask_type: str, before: frozen
     Read under the write lock, so it is exact; ``before`` is the strays seen before the write.
     """
     return bool(set(stray_backups(masks_root, mask_type)) - before)
+
+
+def after_commit(
+    entries: list[SegmentedImage], entry: SegmentedImage, exc: BaseException
+) -> tuple[SegmentedImage, str]:
+    """Stop the batch after a failure that came once ``entry`` was recorded and its mask kept.
+
+    An error is reported in the table and stops the batch. An interrupt (``KeyboardInterrupt``)
+    is raised again, with the image in ``entries`` first so the final record keeps its entry.
+    """
+    if isinstance(exc, Exception):
+        return entry, f"{type(exc).__name__}: {exc}"
+    entries.append(entry)
+    raise exc

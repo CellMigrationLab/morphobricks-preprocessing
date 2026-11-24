@@ -34,7 +34,12 @@ from .notebook_progress import progress_html
 from .notebook_stop import CellStop
 from .notebook_style import STYLE_CSS, table, tiles
 from .run_inputs import Fov, RunInputs
-from .segmentation_cellpose_run import channel_layouts, numbered_layout
+from .segmentation_cellpose_run import (
+    channel_layouts,
+    check_manifest,
+    numbered_layout,
+    open_pinned,
+)
 from .segmentation_handoff import images_to_segment, stray_backups
 from .segmentation_record import SegmentationError, check_mask_type
 
@@ -92,6 +97,7 @@ class CellposeWorkflow:
         """Start with nothing chosen."""
         self.inputs: RunInputs | None = None
         self.masks_root: Path | None = None
+        self.run_manifest_sha256: str | None = None  # of the manifest opened (review aq, B2)
         self.mask_type = ""
         self.mask_types: dict[str, str] = {}
         self.picker: ChannelPicker | None = None
@@ -148,15 +154,16 @@ class CellposeWorkflow:
         What an earlier open chose is dropped first: a refused open leaves no run, channels or
         model to segment with, so nothing is written to the folders of the run before.
         """
-        self.inputs = self.masks_root = self.result = None
+        self.inputs = self.masks_root = self.result = self.run_manifest_sha256 = None
         self.results = {}
         self.drop_choice()
         if not masks_folder.strip():
             raise SegmentationError("Give the masks folder (outside the experiment and the run).")
-        inputs = cp.open_run(run_folder)
+        inputs, pinned = open_pinned(run_folder)
         # The physical folder, fixed now: a relative path never follows a later change of the
         # kernel's working directory (review aq, B1).
         self.inputs, self.masks_root = inputs, Path(masks_folder.strip()).expanduser().resolve()
+        self.run_manifest_sha256 = pinned
         coverage = cp.channel_coverage(inputs)
         lines = [
             f"{c}: in {have} of {total} images" + ("" if have == total else " (partial)")
@@ -354,6 +361,7 @@ class CellposeWorkflow:
                 f"such as {fovs[0].relative_path}."
             )
         fov = by_path[image.strip()] if image.strip() else (self.first_without_mask() or fovs[0])
+        check_manifest(self.inputs, self.run_manifest_sha256)  # the run opened, still
         results, lines = [], []
         for target in targets:
             loaded, settings = self.model_for(target.output)
@@ -400,6 +408,7 @@ class CellposeWorkflow:
         """
         self._need("model", 5)
         jobs = [self._job(target, overwrite) for target in self.picker.current_targets()]
+        check_manifest(self.inputs, self.run_manifest_sha256)  # each batch checks it again
         self.results, error = {}, None
         for job in jobs:
             try:
@@ -429,6 +438,7 @@ class CellposeWorkflow:
             target.roles,
             target.output,
             target.numbers,
+            run_manifest_sha256=self.run_manifest_sha256,
         )
 
     def _run_job(self, job: cp.SegmentationJob, *, titled: bool) -> cp.BatchResult:

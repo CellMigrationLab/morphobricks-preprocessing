@@ -9,6 +9,8 @@ import os
 from collections.abc import Sequence
 from pathlib import Path
 
+from ._io import file_sha256
+from .manifest import MANIFEST_FILENAME
 from .run_inputs import RunInputs
 from .segmentation_cellpose_model import CELLPOSE_VERSION
 from .segmentation_record import SegmentationError, check_mask_type
@@ -17,6 +19,12 @@ MAX_CHANNELS = 3
 """Cellpose 4.2.1.1 reads at most three channels and drops the rest silently."""
 NAMED_IMAGES = 5
 """How many images of a channel layout a refusal names before it counts the rest."""
+REPUBLISHED = (
+    "The run was published again since it was opened (its run_manifest.json changed): press "
+    "Open the run again. Nothing is segmented or recorded against a run other than the one "
+    "opened."
+)
+"""The refusal of a preview, a batch or a record whose run manifest is no longer the opened one."""
 
 
 def open_run(run_folder: str) -> RunInputs:
@@ -32,6 +40,48 @@ def open_run(run_folder: str) -> RunInputs:
     if not run_folder.strip():
         raise SegmentationError("Give the run's output folder (the one holding run_manifest.json).")
     return RunInputs.open(Path(run_folder.strip()))
+
+
+def open_pinned(run_folder: str) -> tuple[RunInputs, str]:
+    """Open the run (:func:`open_run`) and return it with the SHA-256 of its manifest.
+
+    The manifest is hashed before and after the run is read: the snapshot and the SHA-256 are
+    of the same manifest, or the open is refused (:data:`REPUBLISHED`). Every preview, batch
+    and record then checks the manifest against that SHA-256 (:func:`check_manifest`), and the
+    record names it; the file is never hashed again for the record (review aq, B2).
+
+    Raises
+    ------
+    SegmentationError
+        As :func:`open_run`, or :data:`REPUBLISHED` when a run was published meanwhile.
+    RunInputsError
+        For a run that cannot be opened.
+    """
+    before = manifest_sha256(Path(run_folder.strip()).resolve()) if run_folder.strip() else None
+    inputs = open_run(run_folder)
+    check_manifest(inputs, before)
+    return inputs, before
+
+
+def manifest_sha256(run: RunInputs | Path) -> str | None:
+    """Return the SHA-256 of the run's manifest as it is on disk now, or None when unreadable."""
+    folder = run.output_folder if isinstance(run, RunInputs) else run
+    try:
+        return file_sha256(folder / MANIFEST_FILENAME)
+    except OSError:
+        return None
+
+
+def check_manifest(inputs: RunInputs, pinned: str | None) -> None:
+    """Refuse when the run's manifest on disk is not the one ``pinned`` when it was opened.
+
+    Raises
+    ------
+    SegmentationError
+        :data:`REPUBLISHED`.
+    """
+    if pinned is None or manifest_sha256(inputs) != pinned:
+        raise SegmentationError(REPUBLISHED)
 
 
 def channel_coverage(inputs: RunInputs) -> dict[str, tuple[int, int]]:
