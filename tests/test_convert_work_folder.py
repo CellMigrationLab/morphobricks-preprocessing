@@ -191,18 +191,47 @@ def test_a_leftover_partly_removed_is_still_owned(tmp_path, monkeypatch):
     # Its copies go first, its owner file last: one stopped halfway is removed next time.
     exp, copies = swapped_experiment(tmp_path / "exp"), tmp_path / "copies"
     work = _leftover(copies, {"kind": KIND, "holder": _holder()})
-    real_rmtree = write_module.shutil.rmtree
+    real_rmtree, called = write_module.shutil.rmtree, []
 
     def halfway(path, *args, **kwargs):
-        (work / "files/ctrl/r1/a.tif").unlink()
+        called.append(path)
+        assert (work / "owner.json").is_file()  # the owner file is still there
+        (work / "files/ctrl/r1/a.tif").unlink()  # part of the copies is gone
         raise OSError(16, "Device or resource busy", str(path))
 
     monkeypatch.setattr(write_module.shutil, "rmtree", halfway)
     first = convert_experiment(exp, SWAPPED, copies)
     assert codes(first.issues) == ["conversion_work_folder_not_removed"]
+    assert called == [work / "files"]  # only the copies, never the whole folder
     assert (work / "owner.json").is_file()
+    assert not (work / "files/ctrl/r1/a.tif").exists()
     monkeypatch.setattr(write_module.shutil, "rmtree", real_rmtree)
     assert convert_experiment(exp, SWAPPED, copies).written and not work.exists()
+
+
+def test_an_unfinished_folder_is_never_removed_with_rmtree(tmp_path, monkeypatch):
+    # A folder is empty at the check, then something makes 'files' in it: only an empty
+    # folder may go, so nothing is deleted and the rmdir refuses it.
+    work = tmp_path / "copies" / WORK
+    work.mkdir(parents=True)
+    found = write_module.work_folder_state(work.parent)
+    assert found.state == write_module.UNFINISHED
+    real_state = write_module.work_folder_state
+
+    def raced(*args, **kwargs):
+        again = real_state(*args, **kwargs)
+        (work / "files").mkdir()
+        (work / "files" / "keep.tif").write_bytes(b"x")
+        return again
+
+    def never(path, *args, **kwargs):
+        raise AssertionError(f"rmtree called on {path}")
+
+    monkeypatch.setattr(write_module, "work_folder_state", raced)
+    monkeypatch.setattr(write_module.shutil, "rmtree", never)
+    issue = write_module.remove_leftover(found)
+    assert issue is not None and issue.code == "conversion_work_folder_not_removed"
+    assert (work / "files" / "keep.tif").read_bytes() == b"x"
 
 
 # (5) An owner file of NUL bytes -----------------------------------------------------------
@@ -224,5 +253,8 @@ def test_an_owner_file_of_nul_bytes_is_refused_as_possibly_from_a_power_loss(
     before = _tree(copies)
     result = convert_experiment(exp, SWAPPED, copies)
     assert not result.written and codes(result.issues) == ["conversion_work_folder_unowned"]
-    assert ("possibly left by a power loss" in result.issues[0].message) is named
+    message = result.issues[0].message
+    assert ("possibly left by a power loss" in message) is named
+    assert ("is unreadable" in message) is named
+    assert ("So it was not made by a conversion" in message) is not named
     assert _tree(copies) == before

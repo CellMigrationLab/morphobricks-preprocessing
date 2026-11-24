@@ -268,9 +268,9 @@ def remove_leftover(found: WorkFolder | None) -> ValidationIssue | None:
     """Remove a work folder left by a conversion that is gone; leave anything else.
 
     An :data:`OWNED` folder is removed whole: its ``files/`` first, then its owner file and
-    the folder (``rmdir``), so one only partly removed is still owned; an :data:`UNFINISHED`
-    one by unlinking its one owner file, if any, and an ``rmdir``, which removes only an
-    empty folder. Each is checked again right before, so what changed since is left.
+    the folder (``rmdir``), so one is still owned while its files are being removed; an
+    :data:`UNFINISHED` one by unlinking its one owner file, if any, and an ``rmdir``, which
+    removes only an empty folder, never with ``rmtree``. Each is checked again right before, so what changed since is left.
 
     Returns
     -------
@@ -285,7 +285,7 @@ def remove_leftover(found: WorkFolder | None) -> ValidationIssue | None:
     if again is None or again.state != found.state:
         return None
     try:
-        if os.path.lexists(found.path / FILES_FOLDER):
+        if found.state == OWNED and os.path.lexists(found.path / FILES_FOLDER):
             shutil.rmtree(found.path / FILES_FOLDER)
         (found.path / OWNER_FILENAME).unlink(missing_ok=True)
         found.path.rmdir()
