@@ -154,7 +154,9 @@ class CellposeWorkflow:
         if not masks_folder.strip():
             raise SegmentationError("Give the masks folder (outside the experiment and the run).")
         inputs = cp.open_run(run_folder)
-        self.inputs, self.masks_root = inputs, Path(masks_folder.strip())
+        # The physical folder, fixed now: a relative path never follows a later change of the
+        # kernel's working directory (review aq, B1).
+        self.inputs, self.masks_root = inputs, Path(masks_folder.strip()).expanduser().resolve()
         coverage = cp.channel_coverage(inputs)
         lines = [
             f"{c}: in {have} of {total} images" + ("" if have == total else " (partial)")

@@ -39,8 +39,10 @@ _current: weakref.ReferenceType[CellposeNotebook] | None = None
 def check_folders(workflow: CellposeNotebook) -> None:
     """Refuse when cell 3's form shows other folders than those the run was opened with.
 
-    The fields are tidied as **Open the run** tidies them (``clean_path``); the run folder is
-    compared resolved, as :class:`.RunInputs` holds it.
+    The fields are tidied as **Open the run** tidies them (``clean_path``) and both are compared
+    resolved now, with the folders fixed when the run was opened (:class:`.RunInputs` holds the
+    run folder resolved, the workflow the masks folder): a relative path that the kernel's
+    working directory, changed since, sends elsewhere is refused (review aq, B1).
 
     Raises
     ------
@@ -53,7 +55,8 @@ def check_folders(workflow: CellposeNotebook) -> None:
     run = ui.clean_path(form.fields["run_folder"].value)
     masks = ui.clean_path(form.fields["masks_folder"].value)
     same_run = bool(run) and Path(run).resolve() == workflow.inputs.output_folder
-    if not (same_run and bool(masks) and Path(masks) == workflow.masks_root):
+    same_masks = bool(masks) and Path(masks).expanduser().resolve() == workflow.masks_root
+    if not (same_run and same_masks):
         raise CellStop(RUN_CHANGED)
 
 
