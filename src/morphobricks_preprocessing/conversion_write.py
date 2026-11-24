@@ -57,8 +57,13 @@ OWNER_FILENAME = "owner.json"
 OWNER_KIND = "morphobricks-preprocessing conversion work folder"
 FILES_FOLDER = "files"
 """The folder below the work folder holding the copies, each at its own relative path."""
-OWNED, UNOWNED, IN_USE = "owned", "unowned", "in_use"
+OWNED, UNOWNED, IN_USE, UNFINISHED = "owned", "unowned", "in_use", "unfinished"
 """What :func:`work_folder_state` finds."""
+_OWNER_START = b'{"holder": {"host": "'
+"""How every owner file a conversion writes begins (``sort_keys``): a file cut short of
+its end, by a kill before its ``fsync``, still begins with (part of) this."""
+_OWNER_MAX = 4096
+"""An owner file is far shorter; a longer one is never taken for a truncated one."""
 _TOKEN = re.compile("[0-9a-f]{32}")
 """A lock holder's token (``uuid4().hex``)."""
 _WRITING: set[str] = set()
@@ -76,6 +81,8 @@ class WorkFolder:
         The folder.
     state
         :data:`OWNED` (left by a conversion that is gone: it may be removed),
+        :data:`UNFINISHED` (empty, or holding only an empty or truncated owner file: a
+        conversion was killed while making it; it is removed by an ``rmdir``),
         :data:`IN_USE` (its holder is a process still running on this computer) or
         :data:`UNOWNED` (not proven to be a conversion's: never removed).
     holder
@@ -119,9 +126,7 @@ def write_all(
     re-raised.
     """
     work = dest / WORK_FOLDER
-    found = work_folder_state(dest)
-    if found is not None and found.state == OWNED:
-        shutil.rmtree(work)  # left by a conversion that is gone: proven by its owner file
+    remove_leftover(work_folder_state(dest))
     if not to_write:
         return []
     made, route = _missing_folders(dest, to_write), _Route(dest)
@@ -185,11 +190,15 @@ def work_folder_state(dest: Path) -> WorkFolder | None:
         real folder, whose holder is not a process still running on this computer (the
         lock's liveness check, :func:`.run.lock.holder_running`; in this process, a holder
         is live while its conversion runs). :data:`IN_USE` for such a folder whose holder
-        is live. Anything else is :data:`UNOWNED`: it is never removed.
+        is live. :data:`UNFINISHED` for a real folder that is empty or holds only an empty
+        or truncated owner file (a kill between making the folder and writing that file,
+        issue #482). Anything else is :data:`UNOWNED`: it is never removed.
     """
     work = dest / WORK_FOLDER
     if not os.path.lexists(work):
         return None
+    if _unfinished(work):
+        return WorkFolder(work, UNFINISHED)
     holder = read_owner(work)
     if holder is None or not _only_owner_and_files(work):
         return WorkFolder(work, UNOWNED, holder)
@@ -227,6 +236,51 @@ def read_owner(work: Path) -> LockHolder | None:
         and _TOKEN.fullmatch(token)
     )
     return LockHolder(host, pid, started_at, token) if well_formed else None
+
+
+def remove_leftover(found: WorkFolder | None) -> None:
+    """Remove a work folder left by a conversion that is gone; leave anything else.
+
+    An :data:`OWNED` folder is removed whole; an :data:`UNFINISHED` one by unlinking its
+    one owner file, if any, and an ``rmdir``, which removes only an empty folder. Each is
+    checked again right before, so what changed since is left.
+    """
+    if found is None or found.state not in (OWNED, UNFINISHED):
+        return
+    again = work_folder_state(found.path.parent)
+    if again is None or again.state != found.state:
+        return
+    if found.state == OWNED:
+        shutil.rmtree(found.path)
+        return
+    (found.path / OWNER_FILENAME).unlink(missing_ok=True)
+    found.path.rmdir()
+
+
+def _unfinished(work: Path) -> bool:
+    """Return True for a real folder that is empty or holds only an empty or cut-short owner."""
+    try:
+        if not stat.S_ISDIR(os.lstat(work).st_mode):
+            return False
+        names = os.listdir(work)
+        if not names:
+            return True
+        owner = work / OWNER_FILENAME
+        found = os.lstat(owner)
+        if names != [OWNER_FILENAME] or not stat.S_ISREG(found.st_mode):
+            return False
+        if found.st_size > _OWNER_MAX:
+            return False
+        data = owner.read_bytes()
+    except OSError:
+        return False
+    if not _OWNER_START.startswith(data) and not data.startswith(_OWNER_START):
+        return False
+    try:
+        json.loads(data)
+    except ValueError:
+        return True  # cut short: what a conversion writes, but not all of it
+    return False
 
 
 def _only_owner_and_files(work: Path) -> bool:

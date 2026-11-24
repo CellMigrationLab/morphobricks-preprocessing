@@ -243,6 +243,48 @@ def test_a_work_folder_whose_token_changed_is_not_removed_at_the_clean_up(
     assert (copies / WORK / "files/theirs.tif").read_bytes() == b"theirs"
 
 
+# Issue #482 (2): a kill between making the work folder and writing its owner file --------
+
+_WRITTEN = json.dumps({"kind": KIND, "holder": _holder()}, sort_keys=True).encode()
+
+
+@pytest.mark.parametrize(
+    "owner",
+    [
+        pytest.param(None, id="empty_folder"),
+        pytest.param(b"", id="empty_owner_file"),
+        pytest.param(_WRITTEN[:7], id="owner_file_cut_short_early"),
+        pytest.param(_WRITTEN[:-1], id="owner_file_cut_short_late"),
+    ],
+)
+def test_an_empty_or_unfinished_work_folder_is_removed(tmp_path, owner):
+    exp, copies = swapped_experiment(tmp_path / "exp"), tmp_path / "copies"
+    (copies / WORK).mkdir(parents=True)
+    if owner is not None:
+        (copies / WORK / "owner.json").write_bytes(owner)
+    result = convert_experiment(exp, SWAPPED, copies)
+    assert result.written and not (copies / WORK).exists()
+
+
+@pytest.mark.parametrize(
+    "files",
+    [
+        pytest.param({"owner.json": b"my notes"}, id="other_text"),
+        pytest.param({"owner.json": b"", "notes.txt": b"x"}, id="empty_owner_and_a_file"),
+        pytest.param({"notes.txt": b""}, id="other_empty_file"),
+    ],
+)
+def test_a_work_folder_with_anything_else_is_still_refused_and_kept(tmp_path, files):
+    exp, copies = swapped_experiment(tmp_path / "exp"), tmp_path / "copies"
+    (copies / WORK).mkdir(parents=True)
+    for name, data in files.items():
+        (copies / WORK / name).write_bytes(data)
+    before = _tree(copies)
+    result = convert_experiment(exp, SWAPPED, copies)
+    assert not result.written and codes(result.issues) == ["conversion_work_folder_unowned"]
+    assert _tree(copies) == before
+
+
 def test_a_successful_conversion_leaves_no_work_folder(tmp_path):
     exp, copies = swapped_experiment(tmp_path / "exp"), tmp_path / "copies"
     assert convert_experiment(exp, SWAPPED, copies).written

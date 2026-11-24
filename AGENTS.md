@@ -415,7 +415,9 @@ src/morphobricks_preprocessing/
                     (.morphobricks-conversion.partial, owner file first; a killed one's is
                     removed only with a well-formed owner file, nothing else but files/, and
                     a holder that no longer runs (run.lock.holder_running); its own only
-                    while the owner file holds its token, #448, #482), moved into place
+                    while the owner file holds its token; an empty one, or one holding only
+                    an empty or cut-short owner file, is removed by rmdir, #448, #482),
+                    moved into place
                     together (any failure removes what it wrote); nothing else is removed;
                     each write and move checks its way again for links (_Route, #467)
   zarr_input.py     OME-Zarr input: open_ngff (OME-NGFF 0.4/0.5 metadata -> level-0 array, axis
