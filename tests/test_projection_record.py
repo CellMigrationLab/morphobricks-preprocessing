@@ -146,15 +146,18 @@ def test_a_changed_projection_field_changes_the_reuse_key():
     assert base.same_plan(projected_entry())
     done = base.projection
     changes = [
-        {"method": "sum", "output_dtype": "uint32", "dtype_rule": "sum uint16->uint32 exact"},
+        {
+            "method": "sum",
+            "output_dtype": "uint32",
+            "dtype_rule": "sum uint16->uint32 exact, bound Z<=65537",
+        },
         {"z_range": (2, 9)},
         {"source_z_size": 13},
         {"source_z_axis": ("Z", 1)},
-        {"source_dtype": "uint8", "output_dtype": "uint8"},
+        {"source_dtype": "uint8", "output_dtype": "uint8", "dtype_rule": "max uint8->uint8"},
         {"dropped_sizes": {"Z": replace(Z_SIZE, value=2.6)}},
         {"dropped_sizes": {"Z": None}},
         {"significant_bits_dropped": "a sum can exceed the range"},
-        {"dtype_rule": "max uint16->uint16 (edited)"},
     ]
     for change in changes:
         other = replace(base, projection=replace(done, **change))
@@ -217,7 +220,12 @@ def test_all_slices_means_the_whole_stack_is_recorded():
 
 def test_a_record_of_a_sum_that_could_not_be_exact_is_refused():
     done = projected_entry().projection
-    kwargs = {"source_dtype": "uint32", "method": "sum", "output_dtype": "float64"}
+    kwargs = {
+        "source_dtype": "uint32",
+        "method": "sum",
+        "output_dtype": "float64",
+        "dtype_rule": "sum uint32->float64 exact integer within 2**53, bound Z<=2097152",
+    }
     fits = replace(done, source_z_size=2**21, z_range=(0, 2**21), **kwargs)
     assert fits.output_dtype == "float64"
     with pytest.raises(ValueError, match="exact"):

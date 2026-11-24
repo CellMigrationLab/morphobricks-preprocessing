@@ -10,6 +10,7 @@ record edited by hand is never trusted.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 
@@ -17,6 +18,8 @@ import numpy as np
 
 from .projection import METHODS, Projection, projection_dtype
 from .recorded_sizes import SOURCES, RecordedSize
+
+_SHA256 = re.compile(r"[0-9a-f]{64}")
 
 NAN_POLICY = "propagate"
 """The only NaN rule: a NaN in a slice makes that pixel NaN (no ``nan*`` function)."""
@@ -118,8 +121,18 @@ class ProjectionEntry:
     significant_bits_dropped: str | None = None
 
     def __post_init__(self) -> None:
-        """Refuse an entry that contradicts itself or the dtype table."""
+        """Refuse an entry that contradicts itself or the dtype table.
+
+        The dtype rule must be the table's text, and the source SHA-256 64 lowercase
+        hexadecimal digits or None (a plan, before the copy is written; #443).
+        """
         _check_shape(self)
+        sha = self.source_content_sha256
+        if sha is not None and not (isinstance(sha, str) and _SHA256.fullmatch(sha)):
+            raise ValueError(
+                f"{self.source_relative_path!r}: the source SHA-256 {sha!r} is not 64 lowercase "
+                "hexadecimal digits"
+            )
         slices = self.z_range[1] - self.z_range[0]
         rule = projection_dtype(self.source_dtype, self.method, slices)
         if self.output_dtype != rule.output_dtype.name or self.rounding != rule.rounding:
@@ -127,6 +140,11 @@ class ProjectionEntry:
                 f"{self.source_relative_path!r}: a {self.method} of {slices} {self.source_dtype} "
                 f"slices is {rule.output_dtype.name} with rounding {rule.rounding!r}, not "
                 f"{self.output_dtype} with {self.rounding!r}"
+            )
+        if self.dtype_rule != rule.dtype_rule:
+            raise ValueError(
+                f"{self.source_relative_path!r}: the dtype rule of a {self.method} of "
+                f"{self.source_dtype} slices is {rule.dtype_rule!r}, not {self.dtype_rule!r}"
             )
 
     def with_content(self, sha256: str) -> ProjectionEntry:
