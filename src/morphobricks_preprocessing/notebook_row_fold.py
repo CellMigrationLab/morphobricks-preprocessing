@@ -118,6 +118,9 @@ class RowFold:
         folded = [row for row, status in rows if status == UNCHANGED]
         self.count = len(folded)
         if not folded:
+            # Drop the last fold's rows: they are no longer this card's (#514).
+            self.folded.children = ()
+            self.line.value = ""
             return shown
         self.folded.children = folded
         self.line.value = (
