@@ -460,7 +460,9 @@ editing, or the confirmed ones. An image that cannot be drawn gets a sentence sa
    it (one re-confirmation per channel, written when you save), also when a folder is removed
    or renamed in the same save: the saved file keeps no header names per folder, so **Yes,
    remove** cannot show that a name went with its folder. A change after the click is asked
-   again.
+   again. **Yes, remove** and a stated folder rename confirm only the folders they show: a
+   saved ID replaced by another ID in the same save (a channel `DNA` now `DAPI`) is never
+   confirmed by them, and the save is refused with `R_CONFIRMED_ID_CHANGED` (#402).
 4. **Masks.** The masks the check paired with the images (and, for masks whose files do not
    name their axes, the axes to state), then for each mask type: *separate objects*,
    *regions* or *grouped labels (one value per parent, e.g. mitochondria by cell)*. Nothing is
