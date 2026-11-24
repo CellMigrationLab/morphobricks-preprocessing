@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 
+import numpy as np
 import pytest
 
 from morphobricks_preprocessing import (
@@ -120,3 +121,23 @@ def test_valid_values_are_written_unchanged_and_read_back_equal(tmp_path):
     unconfirmed = DesignTable((replace(CTRL, confirmed=False, confirmed_on=""), DRUG))
     again = write_experiment_design(unconfirmed, tmp_path / "unconfirmed.csv")
     assert parse_design_bytes(again.read_bytes()) == unconfirmed  # still writable
+
+
+@pytest.mark.parametrize(
+    ("changes", "message"),
+    [
+        ({"control": np.True_}, "control must be True or False, not np.True_ (of type numpy.bool)"),
+        (
+            {"image_count": np.int64(2)},
+            "image_count must be a whole number of at least 0, not np.int64(2) "
+            "(of type numpy.int64)",
+        ),
+    ],
+)
+def test_a_numpy_value_is_named_with_its_module(tmp_path, changes, message):
+    """A numpy bool's short name is ``bool``, which would read as the builtin (#470)."""
+    bad = _with(**changes)
+    with pytest.raises(DesignFormatError) as caught:
+        write_experiment_design(bad, tmp_path / DESIGN_FILENAME)
+    assert message in str(caught.value)
+    assert message in design_issues(bad)[0].message

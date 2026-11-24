@@ -39,6 +39,7 @@ from .design_values import (
     parse_count,
 )
 from .discovery import IdentityError, check_identity_case, check_identity_text
+from .type_names import type_name
 from .validation import ValidationIssue, error, plural
 
 DESIGN_FILENAME = "experiment_design.csv"
@@ -577,7 +578,7 @@ def _type_problems(row: DesignRow) -> list[str]:
 
 def _found(value: object) -> str:
     """Return a value and its type for a message, e.g. ``'false' (of type str)``."""
-    return f"{value!r} (of type {type(value).__name__})"
+    return f"{value!r} (of type {type_name(value)})"
 
 
 def _bool_text(value: bool) -> str:

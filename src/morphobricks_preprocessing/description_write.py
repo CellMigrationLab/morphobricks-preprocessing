@@ -44,6 +44,7 @@ from .description_rules import (
     UNIT,
     Code,
 )
+from .type_names import type_name
 
 BARE_KEY = re.compile(r"[A-Za-z0-9_-]+")
 DESCRIPTIVE = frozenset({"display_name", "target", "treatment_key"})
@@ -75,9 +76,7 @@ class DescriptionTypeError(DescriptionError, TypeError):
 
     def __init__(self, issues: tuple[DescriptionIssue, ...], phase: int) -> None:
         super().__init__(issues, phase)
-        found = "; ".join(
-            f"{i.path} holds a value of type {type(i.value).__name__}" for i in issues
-        )
+        found = "; ".join(f"{i.path} holds a value of type {type_name(i.value)}" for i in issues)
         self.args = (
             f"the description cannot be written: {found}, a type the strict reader refuses "
             "(E_TYPE). Nothing was written.",

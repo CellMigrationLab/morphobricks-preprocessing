@@ -14,6 +14,7 @@ from __future__ import annotations
 import tomllib
 from dataclasses import replace
 
+import numpy as np
 import pytest
 
 from description_tree import build_experiment
@@ -170,3 +171,22 @@ def test_lists_and_tuples_write_the_same_array():
     assert canonical_bytes(as_list) == canonical_bytes(base)
     text = canonical_bytes(_condition(base, "DrugA", reference="CTRL")).decode("utf-8")
     assert tomllib.loads(text)["conditions"]["DrugA"]["reference"] == "CTRL"
+
+
+@pytest.mark.parametrize(
+    ("value", "found"), [(np.True_, "numpy.bool"), (np.int64(3), "numpy.int64")]
+)
+def test_a_numpy_value_is_named_with_its_module_everywhere_the_type_is_shown(
+    tmp_path, value, found
+):
+    """``np.bool_.__name__`` is ``bool``: the message must not read as the builtin (#470)."""
+    model = _repeat(_v01(), confirmed=value)
+    path = "repeats.rep1.confirmed"
+    with pytest.raises(DescriptionTypeError) as caught:
+        canonical_bytes(model)
+    assert f"{path} holds a value of type {found}," in str(caught.value)
+    root, out = tmp_path / "exp", tmp_path / "out"
+    out.mkdir()
+    build_experiment(root, _v01(), images=1)
+    check = check_candidate(model, preflight(root, out), None)
+    assert f"of type {found})" in check.refusals[0].message
