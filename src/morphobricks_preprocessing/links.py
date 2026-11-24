@@ -49,7 +49,9 @@ LINK_LOOP = "link_loop"
 LINKED_TWICE = "linked_twice"
 MOUNTED = "mounted_folder"
 HARD_LINKED = "hard_linked_file"
-LINK_CODES = frozenset({LINK_OUTSIDE, LINK_LOOP, LINKED_TWICE, MOUNTED})
+STORE_UNREADABLE = "store_unreadable"
+"""A folder inside an OME-Zarr store that cannot be listed, so its links are not known (#392)."""
+LINK_CODES = frozenset({LINK_OUTSIDE, LINK_LOOP, LINKED_TWICE, MOUNTED, STORE_UNREADABLE})
 """The codes of the errors about links and mount points (all errors; the warning
 ``hard_linked_file`` is not one of them)."""
 
@@ -182,6 +184,7 @@ class LinkGuard:
         self.twice: list[str] = []
         self.mounted: list[str] = []
         self.hard_linked: list[str] = []
+        self.unlisted: list[str] = []
 
     def relative(self, path: Path) -> str:
         """Return a path of the walk relative to the root, with ``/`` separators."""
@@ -267,15 +270,17 @@ class LinkGuard:
 
         A store can hold millions of chunk files: only its folders and its links are
         followed up, so a file costs no more than its listing (its files are looked up
-        among the mount points only when one is below the root).
+        among the mount points only when one is below the root). A folder of the store that
+        cannot be listed is recorded for the error ``store_unreadable``.
         """
         pending = [store]
         while pending:
             folder = pending.pop()
             try:
                 entries = list(os.scandir(folder))
-            except OSError:
+            except OSError:  # its links are not known: an error, never a skipped folder (#392)
                 logger.debug("Cannot list %s", folder, exc_info=True)
+                self.unlisted.append(self.relative(folder))
                 continue
             for entry in entries:
                 if not (self._mounts.below or is_link(entry) or entry.is_dir()):
@@ -319,6 +324,19 @@ class LinkGuard:
                     self.twice,
                     "Keep one path to each file: remove the link (or the hard link), or "
                     "replace it with a copy if both are really meant.",
+                )
+            )
+        if self.unlisted:
+            issues.append(
+                error(
+                    STORE_UNREADABLE,
+                    f"{plural(len(self.unlisted), 'folder')} inside OME-Zarr images in the "
+                    f"{self.what} could not be listed, so whether "
+                    f"{agree(self.unlisted, 'it holds', 'they hold')} links or mount points "
+                    "leading outside it is not known.",
+                    self.unlisted,
+                    "Check the permissions of these folders (and that the drive is connected), "
+                    "then check again.",
                 )
             )
         return issues + self._mount_issues()
