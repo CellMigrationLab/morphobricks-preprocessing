@@ -137,9 +137,10 @@ def test_the_pins_are_cellpose_4_2_1_1_and_a_preprocessing_commit_with_this_code
 
 
 PINNED_NOTEBOOKS = {
-    # name: whether its cells include the Preprocessing install cell (local checkouts, #441)
-    "MorphoBricks_Cellpose": False,
-    "MorphoBricks_Preprocessing_Cellpose": True,
+    # name: how many leading cells are the Preprocessing notebook's (install, Drive, app),
+    # whose local checkouts the pin check follows (#441); 0: every cell checked strictly
+    "MorphoBricks_Cellpose": 0,
+    "MorphoBricks_Preprocessing_Cellpose": 3,
 }
 """The notebooks whose ``RELEASE_REF`` the pin-scope check covers (#421, #422, #441)."""
 

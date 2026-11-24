@@ -24,9 +24,10 @@ build, a second wheel package, an unknown backend or ``[tool.hatch]`` setting, o
 
 The combined notebook (``MorphoBricks_Preprocessing_Cellpose.ipynb``, #441) shares the
 Preprocessing notebook's install and app cells, which may use a local checkout they verify
-with Git: it is checked with ``checkout=True`` (:func:`notebook_modules`), which follows that
-cell's read-only ``git`` questions, its editable install and its package modules named in
-strings instead of refusing them. The Cellpose notebook keeps the strict default.
+with Git: it is checked with ``checkout=3`` (:func:`notebook_modules`), which follows those
+three cells' read-only ``git`` questions (literal words only), their editable install and
+their package modules named in strings instead of refusing them; its cells 4 and 5 stay
+checked strictly. The Cellpose notebook keeps the strict default (``checkout=0``).
 
 The check is a drift detector, not a security boundary: it catches a legitimate edit that
 changes what the notebook runs without a new pin. Deliberate obfuscation is out of scope
@@ -94,19 +95,29 @@ variables (:func:`_pip_words`). The requirements are f-strings, whose text
 ``--force-reinstall --no-deps`` replaces an installed preprocessing of the same version from
 another commit (pip keeps it otherwise, #371); it installs the same pinned requirement."""
 CHECKOUT_PIP_WORDS = frozenset({"-e"})
-"""Further ``pip`` words with ``checkout=True`` only (:func:`notebook_modules`): the editable
+"""Further ``pip`` words in the ``checkout`` cells only (:func:`notebook_modules`): the editable
 install of a local checkout by the Preprocessing install cell, which the combined notebook
 shares. That cell installs a checkout only when Git says it is the clean ``RELEASE_REF``
 commit (``_require_release_checkout``, tested in ``test_notebook_setup.py``)."""
 GIT_WORDS = frozenset({"-C", "rev-parse", "--show-toplevel", "HEAD", "status", "--porcelain"})
-"""The literal words a ``git`` command may get with ``checkout=True``: the read-only questions
-that cell asks a checkout (its top folder, its commit, whether its tree has changes)."""
+"""The literal words a ``git`` command may get in the ``checkout`` cells: the read-only questions
+that cell asks a checkout (its top folder, its commit, whether its tree has changes). Every
+word is a literal, but the folder written right after ``-C`` (:func:`_refuse_git_words`)."""
 CHECKOUT_MARKER = f"{SOURCE_ROOT}/{PACKAGE}/__init__.py"
-"""The file by which that cell recognises a nearby checkout (``checkout=True`` only); the
+"""The file by which that cell recognises a nearby checkout (``checkout`` cells only); the
 checkout is then used only as described under :data:`CHECKOUT_PIP_WORDS`."""
 NAMED_ONCE = frozenset({"REPOSITORY", "notebook_name"})
 """The settings whose literal value may name the package: the repository, and LabConstrictor's
-``notebook_name`` (``MorphoBricks_Preprocessing...``). Neither may reach ``pip`` as a word."""
+``notebook_name`` (``MorphoBricks_Preprocessing...``). Neither may reach ``pip`` as a word.
+Each is set at most once, as ``RELEASE_REF`` is (:data:`SET_ONCE`)."""
+SET_ONCE = ("RELEASE_REF", "REPOSITORY", "notebook_name")
+"""The settings set at most once and named in no string."""
+NOTEBOOK_NAME = re.compile(r"[A-Za-z0-9_]+")
+"""What ``notebook_name`` may be (the notebook's file stem): a literal plain name, never a
+text an install could use."""
+PINNED_ONLY = re.compile(r"git\+|@")
+"""Text an f-string may hold only as the pinned install ``...@{RELEASE_REF}`` (:func:`_pinned`),
+in every cell: a Git source, or a source or ref after ``@``."""
 INSTALL_SPEC = re.compile(r"morphobricks[-_.]preprocessing|git\+", re.I)
 """Text that can name this package (or any Git source) for ``pip``."""
 METADATA_CALLS = frozenset({"version", "distribution"})
@@ -156,7 +167,7 @@ def _literal_module(node: ast.AST) -> str | None:
     """Return the package module a string or a loader call names literally, or None.
 
     A string that is a dotted name of the package, or ``import_module``/``__import__`` given
-    one: with ``checkout=True`` both are followed as imports, as in package code.
+    one: in the ``checkout`` cells both are followed as imports, as in package code.
     """
     if isinstance(node, ast.Call) and _loader(node) in NAME_LOADERS and node.args:
         node = node.args[0]
@@ -290,10 +301,8 @@ def _values_of(name: str, nodes: list[ast.AST]) -> list[ast.expr]:
     return values
 
 
-def _pip_words(command: ast.Call, nodes: list[ast.AST], start: int = 3) -> list[str]:
+def _pip_words(command: ast.Call, nodes: list[ast.AST]) -> list[str]:
     """Return every literal word a cell's ``pip`` command gets after ``-m pip``.
-
-    ``start``: the words of the command list skipped (1 for the words after ``git``).
 
     Words written in the call and words that reach it through variables are both returned:
     a name (or ``*name``) is followed to its :func:`_values_of`, through lists and further
@@ -302,14 +311,19 @@ def _pip_words(command: ast.Call, nodes: list[ast.AST], start: int = 3) -> list[
     f-string is not opened: :func:`_refuse_unpinned_install` checks its text where it is
     written.
     """
-    leaves = _command_values(command, nodes, start)
+    leaves = _command_values(command, nodes)
     return [n.value for n in leaves if isinstance(n, ast.Constant) and isinstance(n.value, str)]
 
 
-def _command_values(command: ast.Call, nodes: list[ast.AST], start: int = 3) -> list[ast.expr]:
-    """Return the values a command list gets after ``start`` words, followed as in
+def _command_values(command: ast.Call, nodes: list[ast.AST]) -> list[ast.expr]:
+    """Return the values a ``pip`` command list gets after ``-m pip``, followed as in
     :func:`_pip_words` (an f-string or a call is a value, not opened)."""
-    leaves, pending, seen = [], list(command.args[0].elts[start:]), set()
+    return _followed(command.args[0].elts[3:], nodes)
+
+
+def _followed(items: list[ast.expr], nodes: list[ast.AST]) -> list[ast.expr]:
+    """Return the values ``items`` hold, through lists, ``*`` and names (:func:`_values_of`)."""
+    leaves, pending, seen = [], list(items), set()
     while pending:
         item = pending.pop()
         if isinstance(item, ast.Starred):
@@ -327,44 +341,53 @@ def _command_values(command: ast.Call, nodes: list[ast.AST], start: int = 3) -> 
     return leaves
 
 
-def _checkout_allowed(nodes: list[ast.AST]) -> set[int]:
-    """Return the strings ``checkout=True`` allows; refuse a ``git`` word not in :data:`GIT_WORDS`.
+def _refuse_git_words(command: ast.Call, nodes: list[ast.AST]) -> None:
+    """Raise ``PinScopeError`` unless a ``git`` command's words are all literal :data:`GIT_WORDS`.
 
-    Allowed: a literal package module name, :data:`CHECKOUT_MARKER`, and an f-string that
-    reaches no ``pip`` command (a message).
+    The words are followed through variables as ``pip``'s are (:func:`_followed`); the one
+    value written right after a literal ``-C`` in the command list is the folder Git is asked
+    about, any value. A computed word (``'re' + 'set'``, a call) is refused, never passed.
+    """
+    items = list(command.args[0].elts[1:])
+    for at, item in enumerate(items[:-1]):
+        if isinstance(item, ast.Constant) and item.value == "-C":
+            del items[at + 1]
+            break
+    words, computed = [], []
+    for leaf in _followed(items, nodes):
+        literal = isinstance(leaf, ast.Constant) and isinstance(leaf.value, str)
+        (words if literal else computed).append(leaf.value if literal else ast.unparse(leaf))
+    unknown = sorted(set(words) - GIT_WORDS) + computed
+    if unknown:
+        raise PinScopeError(f"a git command the check does not know: {unknown}")
+
+
+def _checkout_allowed(shared: list[ast.AST], nodes: list[ast.AST]) -> set[int]:
+    """Return the strings the ``checkout`` cells (their nodes: ``shared``) may hold.
+
+    Allowed there: a literal package module name, :data:`CHECKOUT_MARKER`, and an f-string
+    that reaches no ``pip`` command (a message) and holds no :data:`PINNED_ONLY` text. Their
+    ``git`` commands are checked (:func:`_refuse_git_words`).
     """
     commands = [n for n in nodes if isinstance(n, ast.Call) and _starts_pip(n)]
     to_pip = {id(v) for c in commands for v in _command_values(c, nodes)}
     allowed = set()
-    for node in nodes:
+    for node in shared:
         if isinstance(node, ast.Call) and _starts_git(node):
-            unknown = sorted(set(_pip_words(node, nodes, start=1)) - GIT_WORDS)
-            if unknown:
-                raise PinScopeError(f"a git command the check does not know: {unknown}")
+            _refuse_git_words(node, nodes)
         named = isinstance(node, ast.Constant) and (
             _literal_module(node) or node.value == CHECKOUT_MARKER
         )
-        if named or (isinstance(node, ast.JoinedStr) and id(node) not in to_pip):
+        message = isinstance(node, ast.JoinedStr) and id(node) not in to_pip
+        if named or (message and not PINNED_ONLY.search(_f_string_text(node))):
             allowed.add(id(node))
     return allowed
 
 
-def _refuse_unpinned_install(trees: list[ast.AST], checkout: bool = False) -> None:
-    """Raise ``PinScopeError`` unless every install of the package in the cells is pinned.
-
-    ``RELEASE_REF`` and ``REPOSITORY`` are each set once (and named in no string); a ``pip``
-    command is given no literal word but :data:`PIP_WORDS`, written in it or reaching it
-    through variables (:func:`_pip_words`); and every string that can name the package for
-    ``pip`` is the f-string ending ``@{RELEASE_REF}``, a :data:`NAMED_ONCE` value, or the bare
-    distribution name passed to a metadata call or a function the cells define. Such a
-    function may read the installed package by that name, never install it: the name
-    reaching ``pip`` is a word :data:`PIP_WORDS` does not hold. With ``checkout``,
-    :data:`CHECKOUT_PIP_WORDS` are allowed too, a ``git`` command gets no literal word but
-    :data:`GIT_WORDS`, and a literal package module name is allowed (it names no install), as
-    is a text that reaches no ``pip`` command (a message, such as the requirement it lists).
-    """
-    nodes = [node for tree in trees for node in ast.walk(tree)]
-    for setting in ("RELEASE_REF", "REPOSITORY"):
+def _refuse_settings(nodes: list[ast.AST]) -> None:
+    """Raise ``PinScopeError`` for a :data:`SET_ONCE` setting set twice or named in a string,
+    or a ``notebook_name`` that is not one literal :data:`NOTEBOOK_NAME`."""
+    for setting in SET_ONCE:
         stores = [
             n
             for n in nodes
@@ -373,9 +396,45 @@ def _refuse_unpinned_install(trees: list[ast.AST], checkout: bool = False) -> No
         named = [n for n in nodes if isinstance(n, ast.Constant) and n.value == setting]
         if len(stores) > 1 or named:
             raise PinScopeError(f"{setting} is set more than once: the installed commit is unclear")
+    stores = sum(isinstance(n, ast.Name) and n.id == "notebook_name" for n in nodes)
+    values = [
+        n.value
+        for n in nodes
+        if isinstance(n, ast.Assign) and getattr(n.targets[0], "id", "") == "notebook_name"
+    ]
+    plain = all(
+        isinstance(v, ast.Constant)
+        and isinstance(v.value, str)
+        and NOTEBOOK_NAME.fullmatch(v.value)
+        for v in values
+    )
+    if len(values) != stores or not plain:
+        raise PinScopeError("notebook_name must be set once, to a plain name ([A-Za-z0-9_]+)")
+
+
+def _refuse_unpinned_install(trees: list[ast.AST], checkout: int = 0) -> None:
+    """Raise ``PinScopeError`` unless every install of the package in the cells is pinned.
+
+    ``RELEASE_REF``, ``REPOSITORY`` and ``notebook_name`` are each set once (and named in no
+    string), ``notebook_name`` to a plain name (:func:`_refuse_settings`); a ``pip``
+    command is given no literal word but :data:`PIP_WORDS`, written in it or reaching it
+    through variables (:func:`_pip_words`); and every string that can name the package for
+    ``pip`` is the f-string ending ``@{RELEASE_REF}``, a :data:`NAMED_ONCE` value, or the bare
+    distribution name passed to a metadata call or a function the cells define. Such a
+    function may read the installed package by that name, never install it: the name
+    reaching ``pip`` is a word :data:`PIP_WORDS` does not hold. An f-string holding
+    :data:`PINNED_ONLY` text is the pinned one, wherever it goes. In the first ``checkout``
+    cells only, :data:`CHECKOUT_PIP_WORDS` are allowed too, a ``git`` command gets no word but
+    literal :data:`GIT_WORDS`, and a literal package module name is allowed (it names no
+    install), as is a text that reaches no ``pip`` command (a message, such as the requirement
+    it lists).
+    """
+    nodes = [node for tree in trees for node in ast.walk(tree)]
+    shared = [node for tree in trees[:checkout] for node in ast.walk(tree)]
+    _refuse_settings(nodes)
     defined = {n.name for n in nodes if isinstance(n, ast.FunctionDef)}
-    allowed = _checkout_allowed(nodes) if checkout else set()
-    pip_words = PIP_WORDS | (CHECKOUT_PIP_WORDS if checkout else frozenset())
+    allowed = _checkout_allowed(shared, nodes)
+    in_shared = {id(n) for n in shared}
     for node in nodes:
         if isinstance(node, ast.JoinedStr):
             allowed |= {id(v) for v in node.values} | ({id(node)} if _pinned(node) else set())
@@ -384,6 +443,7 @@ def _refuse_unpinned_install(trees: list[ast.AST], checkout: bool = False) -> No
         elif isinstance(node, ast.Assign) and getattr(node.targets[0], "id", "") in NAMED_ONCE:
             allowed.add(id(node.value))
         if isinstance(node, ast.Call) and _starts_pip(node):
+            pip_words = PIP_WORDS | (CHECKOUT_PIP_WORDS if id(node) in in_shared else frozenset())
             unknown = sorted(set(_pip_words(node, nodes)) - pip_words)
             if unknown:
                 raise PinScopeError(f"a pip command the check does not know: {unknown}")
@@ -393,19 +453,25 @@ def _refuse_unpinned_install(trees: list[ast.AST], checkout: bool = False) -> No
             text = node.value
         if text is not None and INSTALL_SPEC.search(text) and id(node) not in allowed:
             raise PinScopeError(f"an install source other than @{{RELEASE_REF}}: {text!r}")
+        if isinstance(node, ast.JoinedStr) and PINNED_ONLY.search(text) and not _pinned(node):
+            raise PinScopeError(f"an f-string source other than @{{RELEASE_REF}}: {text!r}")
 
 
-def notebook_modules(sources: list[str], *, checkout: bool = False) -> set[str]:
+def notebook_modules(sources: list[str], *, checkout: int = 0) -> set[str]:
     """Return the package modules and names the notebook cells ``sources`` import.
 
-    ``checkout``: the cells include the Preprocessing install cell, which may use a local
-    checkout it verifies with Git (the combined notebook, #441): its read-only ``git``
-    questions (:data:`GIT_WORDS`), its editable install (:data:`CHECKOUT_PIP_WORDS`) and its
-    package modules named in strings (:func:`_literal_module`) are followed, not refused.
+    ``checkout``: how many leading cells are the Preprocessing notebook's (its install cell,
+    which may use a local checkout it verifies with Git, then its Drive and app cells: 3 in
+    the combined notebook, #441). In those cells only, the read-only ``git`` questions
+    (:data:`GIT_WORDS`), the editable install (:data:`CHECKOUT_PIP_WORDS`) and the package
+    modules named in strings (:func:`_literal_module`) are followed, not refused; 0 (the
+    default) checks every cell strictly. A bool is refused (``True`` would mean one cell).
 
     Raises ``PinScopeError`` when a cell reaches code another way (see the module docstring)
     or when no cell imports the package at all.
     """
+    if isinstance(checkout, bool) or not isinstance(checkout, int) or checkout < 0:
+        raise TypeError(f"checkout is a number of leading cells, not {checkout!r}")
     names, trees = set(), []
     for number, source in enumerate(sources, start=1):
         try:
@@ -414,8 +480,9 @@ def notebook_modules(sources: list[str], *, checkout: bool = False) -> set[str]:
             magic = [line for line in source.splitlines() if line.lstrip()[:1] in ("!", "%")]
             what = f"an IPython line {magic[0].strip()!r}" if magic else "code that is not Python"
             raise PinScopeError(f"cell {number} has {what}: the check cannot follow it") from exc
-        _refuse_unseen_use(tree, f"cell {number}", checkout)
-        names |= _package_imports(tree, f"cell {number}", checkout)
+        shared = number <= checkout
+        _refuse_unseen_use(tree, f"cell {number}", shared)
+        names |= _package_imports(tree, f"cell {number}", shared)
         trees.append(tree)
     _refuse_unpinned_install(trees, checkout)
     if not names:
@@ -424,7 +491,7 @@ def notebook_modules(sources: list[str], *, checkout: bool = False) -> set[str]:
 
 
 def pin_differences(
-    repo: Path, ref: str, head: str, sources: list[str], *, checkout: bool = False
+    repo: Path, ref: str, head: str, sources: list[str], *, checkout: int = 0
 ) -> list[str]:
     """Return what the notebook cells ``sources`` use that differs between ``ref`` and ``head``.
 
