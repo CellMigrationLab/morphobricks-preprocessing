@@ -339,8 +339,8 @@ class _CheckSaveScreen(_ReplicateBoxes):
         roles = None if self.confirmed_mapping is None else self._review().file_mappings
         state = self._published()
         published = state.description if state is not None else None
-        _, confirmations = self._publication_terms(state, candidate)
-        return check_candidate(candidate, self.preflight, roles, published, confirmations)
+        removals, confirmations = self._publication_terms(state, candidate)
+        return check_candidate(candidate, self.preflight, roles, published, confirmations, removals)
 
     def _folder_cell(self, key: tuple[str, str], text: str) -> widgets.Widget:
         """Return a folder of the pairing card, with its picture."""

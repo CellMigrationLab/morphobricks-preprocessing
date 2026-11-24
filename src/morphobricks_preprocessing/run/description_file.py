@@ -54,7 +54,12 @@ from ..description_transition import (
 from ..description_write import canonical_bytes
 from ..records_file import CODE as RECORDS_FILE_INVALID
 from ..records_file import RecordsIssue, check_records, encode_record
-from .description_records import image_count_records, removal_records
+from .description_records import (
+    FolderIdChange,
+    folder_id_changes,
+    image_count_records,
+    removal_records,
+)
 from .lock import output_lock
 
 ABSENT = "absent"
@@ -87,6 +92,21 @@ class ModeSwitchRefused(ValueError):
     """
 
     code = MODE_SWITCH_UNCONFIRMED
+
+
+class FolderIdRefused(ValueError):
+    """Raised when a candidate changes the folder and the ID of one entity in one save (#475).
+
+    Neither is guessed from the other: ``changes`` names each entity, its folders and the IDs
+    the candidate holds (:func:`.description_records.folder_id_changes`), and ``codes`` their
+    codes (``folder_and_id_changed``, ``removal_mismatch``). Nothing is written.
+    """
+
+    def __init__(self, changes: tuple[FolderIdChange, ...]) -> None:
+        self.changes = changes
+        self.codes = frozenset(c.code for c in changes)
+        shown = " ".join(f"{c.code}: {c.message} {c.action}" for c in changes)
+        super().__init__(f"the description was not published: {shown}")
 
 
 def check_mode_switch(old: Description | None, new: Description, switch_mode: bool) -> None:
@@ -325,8 +345,9 @@ def publish_description(
     DescriptionError
         When the candidate's canonical bytes, or the published file, is not a valid description.
     ValueError
-        When a re-confirmation is not needed by the candidate, a dropped unit has no removal, a
-        removal names a unit the candidate keeps, or ``recorded_on`` is missing when needed;
+        When a re-confirmation is not needed by the candidate or ``recorded_on`` is missing when
+        needed; :class:`FolderIdRefused` (coded) when the folder and the ID of one entity change
+        together, a dropped unit has no removal or a removal names a unit the candidate keeps;
         :class:`ModeSwitchRefused` for a switch of mode that is not the user's.
     """
     folder = Path(output_folder)
@@ -374,6 +395,9 @@ def publish_locked(
     new_sha = sha256_hex(data)
     records = tuple(_record(c, base, new_sha) for c in sorted(confirmations, key=_order))
     if old is not None:
+        changes = folder_id_changes(old, candidate, removals, confirmations)
+        if changes:
+            raise FolderIdRefused(changes)
         records += removal_records(old, candidate, removals, confirmations)
         records += image_count_records(old, candidate, recorded_on, confirmations)
     elif removals:
