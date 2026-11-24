@@ -94,6 +94,8 @@ src/morphobricks_preprocessing/
                     is wrong with a malformed one (PhysicalSizes.invalid, issue #94)
   dataset.py        dataset consistency from the folders: biological repeats per condition, balance
                     table, unbalanced_images, repeat_missing_conditions, CONSISTENCY_CODES (P2)
+  type_names.py     type_name(value): a type's name in a message, short for a builtin, qualified
+                    otherwise (numpy.bool); the one helper of the writers' type refusals (#470)
   design.py         the rows of experiment_design.csv (an output only since v0.5.1): DesignTable/
                     DesignRow (read-only), the run's reconcile_design and design_issues against
                     the folders, write_experiment_design, parse_design_bytes (the strict parser
@@ -408,7 +410,8 @@ src/morphobricks_preprocessing/
                     its image's fingerprint (source_changed_during_check), planes checked
                     against the memory limit first, PlannedCopy per image;
                     copy_folder_issues (the folder rule) and preview_conversion (the plan,
-                    space needed and free, for the notebook card; writes nothing, PP-11b)
+                    with the conversion's store and projection, #488; space needed and
+                    free, for the notebook card; writes nothing, PP-11b)
   conversion_reuse.py compare: unchanged copies reused, anything else there refused; links_below:
                     links and mount points in the copy tree (is_link, MountCheck), refused (#447);
                     a folder it cannot read is refused too (copy_folder_unreadable, #467)
@@ -417,10 +420,12 @@ src/morphobricks_preprocessing/
                     #482, .morphobricks-conversion.partial, is recovered the same way;
                     owner file first; a killed one's is
                     removed only with a well-formed owner file, nothing else but files/, and
-                    a holder that no longer runs (run.lock.holder_running); its own only
+                    a holder not known to run (run.lock.holder_running: POSIX, this
+                    computer only; the lock is the real guard); its own only
                     while the owner file holds its token; an empty one, or one holding only
                     an empty or cut-short owner file, is removed by rmdir; both before the
-                    space check, remove_leftover, #448, #482),
+                    space check, remove_leftover, #448, #482; a removal refused is
+                    conversion_work_folder_not_removed, #488),
                     moved into place
                     together (any failure removes what it wrote); nothing else is removed;
                     each write and move checks its way again for links (_Route, #467)

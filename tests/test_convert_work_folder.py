@@ -1,0 +1,260 @@
+"""The follow-ups of #483's review (issue #488): the conversion work folder, on Windows too.
+
+Each item's tests are under its number; see the issue.
+"""
+
+import contextlib
+import os
+import socket
+import sys
+
+import pytest
+
+import morphobricks_preprocessing.conversion_plan as plan_module
+import morphobricks_preprocessing.conversion_write as write_module
+from morphobricks_preprocessing import convert_experiment
+from morphobricks_preprocessing.conversion_record import RECORD_FILENAME
+from morphobricks_preprocessing.lock_file import LockHolder
+from morphobricks_preprocessing.run.lock import holder_running
+from test_convert_links import _tree
+from test_convert_partials import KIND, STORES, WORK, _holder, _leftover, _store
+from test_convert_run import SWAPPED, codes, swapped_experiment
+
+
+def test_a_holder_counts_as_gone_on_windows_and_on_another_computer(monkeypatch):
+    # (1) What the docs now say: only POSIX tells whether a process runs, and only one on
+    # this computer; the lock is the real guard. (Coverage: this held on main too.)
+    here = LockHolder(**_holder(pid=os.getpid()))
+    elsewhere = LockHolder(**_holder(pid=os.getpid(), host=socket.gethostname() + "-other"))
+    assert not holder_running(elsewhere)
+    monkeypatch.setattr(os, "name", "nt")
+    assert not holder_running(here)
+
+
+def _deepest(folder):
+    """The longest folder path and file path below ``folder``, relative, in characters."""
+    found = [p for p in folder.rglob("*") if p.name != RECORD_FILENAME]
+    folders = [len(str(p.relative_to(folder))) for p in found if p.is_dir()]
+    files = [len(str(p.relative_to(folder))) for p in found if not p.is_dir()]
+    return max(folders), max(files)
+
+
+@pytest.mark.parametrize(("store", "copy"), STORES)
+def test_a_copy_folder_path_too_long_for_windows_is_refused_when_planned(
+    tmp_path, monkeypatch, store, copy
+):
+    # (2) Every file fits in 259 characters, but a folder is longer than 247: Windows
+    # cannot make it without long paths, so it is refused when planned, not at mkdir.
+    _store(store)
+    exp = swapped_experiment(tmp_path / "exp")
+    assert convert_experiment(exp, SWAPPED, tmp_path / "probe", store=store).written
+    folder, file = _deepest(tmp_path / "probe")
+    work = len("/.mbconv/files/")
+    copies = tmp_path / ("c" * (250 - work - folder - len(str(tmp_path)) - 1))
+    assert len(str(copies)) + work + file <= 259, "the files must fit"
+    monkeypatch.setattr(plan_module, "_windows", lambda: True)
+    result = convert_experiment(exp, SWAPPED, copies, store=store)
+    assert not result.written and codes(result.issues) == ["copy_path_too_long"]
+    message = result.issues[0].message
+    assert copy in result.issues[0].paths and "a folder whose path is longer than 247" in message
+    assert "259" not in message and not copies.exists()
+    monkeypatch.setattr(plan_module, "_windows", lambda: False)  # long paths enabled
+    assert convert_experiment(exp, SWAPPED, copies, store=store).written
+
+
+@pytest.mark.parametrize(
+    ("name", "enabled", "applies"),
+    [("nt", False, True), ("nt", True, False), ("posix", None, False)],
+    ids=["windows", "windows_long_paths", "posix"],
+)
+def test_the_windows_limits_apply_only_without_long_paths(monkeypatch, name, enabled, applies):
+    def setting():
+        assert enabled is not None, "the Windows setting is read on Windows only"
+        return enabled
+
+    monkeypatch.setattr(plan_module, "_long_paths_enabled", setting)
+    monkeypatch.setattr(os, "name", name)
+    assert plan_module._windows() is applies
+
+
+class _Registry:
+    """A stand-in for ``winreg`` answering ``LongPathsEnabled`` with ``value``."""
+
+    HKEY_LOCAL_MACHINE = "HKLM"
+
+    def __init__(self, value):
+        self.value, self.asked = value, []
+
+    def OpenKey(self, root, key):  # noqa: N802 (winreg's name)
+        self.asked.append((root, key))
+        if self.value is None:
+            raise FileNotFoundError(key)
+        return contextlib.nullcontext("key")
+
+    def QueryValueEx(self, key, name):  # noqa: N802 (winreg's name)
+        self.asked.append(name)
+        return self.value, 4
+
+
+@pytest.mark.parametrize(("value", "enabled"), [(1, True), (0, False), (None, False)])
+def test_the_long_paths_setting_is_read_from_the_registry(monkeypatch, value, enabled):
+    registry = _Registry(value)
+    monkeypatch.setitem(sys.modules, "winreg", registry)
+    assert plan_module._long_paths_enabled() is enabled
+    assert registry.asked[0] == ("HKLM", r"SYSTEM\CurrentControlSet\Control\FileSystem")
+    if value is not None:
+        assert registry.asked[1] == "LongPathsEnabled"
+
+
+def test_without_winreg_long_paths_count_as_disabled(monkeypatch):
+    monkeypatch.setitem(sys.modules, "winreg", None)  # import winreg raises ImportError
+    assert plan_module._long_paths_enabled() is False
+
+
+def test_the_preview_counts_ome_zarr_paths_as_the_conversion_does(tmp_path, monkeypatch):
+    # (3) The OME-TIFF copies fit Windows' limits, the OME-Zarr copies do not: the preview
+    # plans the store it is given, so it refuses what the conversion refuses.
+    _store("ome-zarr")
+    exp = swapped_experiment(tmp_path / "exp")
+    assert convert_experiment(exp, SWAPPED, tmp_path / "tiff").written
+    assert convert_experiment(exp, SWAPPED, tmp_path / "zarr", store="ome-zarr").written
+    tiff_folder, tiff_file = _deepest(tmp_path / "tiff")
+    zarr_file = _deepest(tmp_path / "zarr")[1]
+    work = len("/.mbconv/files/")
+    room = min(259 - tiff_file, 247 - tiff_folder) - work  # the OME-TIFF copies just fit
+    copies = tmp_path / ("c" * (room - len(str(tmp_path)) - 1))
+    assert len(str(copies)) + work + zarr_file > 259, "the OME-Zarr copies must not fit"
+    monkeypatch.setattr(plan_module, "_windows", lambda: True)
+    assert plan_module.preview_conversion(exp, SWAPPED, copies).ok
+    preview = plan_module.preview_conversion(exp, SWAPPED, copies, store="ome-zarr")
+    result = convert_experiment(exp, SWAPPED, copies, store="ome-zarr")
+    assert codes(preview.issues) == codes(result.issues) == ["copy_path_too_long"]
+    assert preview.issues[0].paths == result.issues[0].paths
+    assert "ctrl/r1/a.ome.zarr" in preview.issues[0].paths
+
+
+def test_the_preview_plans_the_store_and_the_projection(tmp_path):
+    # (3) The preview names what the conversion writes: OME-Zarr copies, projections.
+    _store("ome-zarr")
+    from morphobricks_preprocessing import Projection
+    from test_projection_convert import NAMES, ZCYX, stack_experiment
+
+    exp = swapped_experiment(tmp_path / "exp")
+    preview = plan_module.preview_conversion(exp, SWAPPED, tmp_path / "c1", store="ome-zarr")
+    names = [name for name, _ in preview.converted]
+    assert preview.ok and "ctrl/r1/a.ome.zarr" in names
+    stacks = tmp_path / "stacks"
+    stack_experiment(stacks)
+    projected = Projection("max")
+    preview = plan_module.preview_conversion(stacks, ZCYX, tmp_path / "c2", projection=projected)
+    assert preview.ok and preview.projected == NAMES
+    with pytest.raises(ValueError, match="store must be one of"):
+        plan_module.preview_conversion(exp, SWAPPED, tmp_path / "c3", store="zip")
+    with pytest.raises(TypeError, match="unexpected keyword"):
+        plan_module.preview_conversion(exp, SWAPPED, tmp_path / "c3", progress=None)
+
+
+# (4) A leftover work folder that cannot be removed ----------------------------------------
+
+
+@pytest.mark.parametrize("state", ["owned", "unfinished"])
+def test_a_leftover_that_cannot_be_removed_is_a_coded_refusal_not_a_crash(
+    tmp_path, monkeypatch, state
+):
+    # An antivirus or a sync client holds a file open (Windows refuses its removal).
+    exp, copies = swapped_experiment(tmp_path / "exp"), tmp_path / "copies"
+    if state == "owned":
+        _leftover(copies, {"kind": KIND, "holder": _holder()})
+    else:
+        (copies / WORK).mkdir(parents=True)
+    before = _tree(copies)
+    real_rmtree, real_rmdir = write_module.shutil.rmtree, write_module.Path.rmdir
+
+    def held(path, *args, **kwargs):
+        raise PermissionError(13, "The process cannot access the file", str(path))
+
+    monkeypatch.setattr(write_module.shutil, "rmtree", held)
+    monkeypatch.setattr(write_module.Path, "rmdir", held)
+    result = convert_experiment(exp, SWAPPED, copies)
+    assert not result.written and codes(result.issues) == ["conversion_work_folder_not_removed"]
+    issue = result.issues[0]
+    assert issue.paths == (WORK,) and "cannot access the file" in issue.message
+    assert str(copies / WORK) in issue.action
+    assert _tree(copies) == before and (copies / WORK).is_dir()  # nothing written
+    monkeypatch.setattr(write_module.shutil, "rmtree", real_rmtree)
+    monkeypatch.setattr(write_module.Path, "rmdir", real_rmdir)
+    result = convert_experiment(exp, SWAPPED, copies)  # once released, it is removed
+    assert result.written and not (copies / WORK).exists()
+
+
+def test_a_leftover_partly_removed_is_still_owned(tmp_path, monkeypatch):
+    # Its copies go first, its owner file last: one stopped halfway is removed next time.
+    exp, copies = swapped_experiment(tmp_path / "exp"), tmp_path / "copies"
+    work = _leftover(copies, {"kind": KIND, "holder": _holder()})
+    real_rmtree, called = write_module.shutil.rmtree, []
+
+    def halfway(path, *args, **kwargs):
+        called.append(path)
+        assert (work / "owner.json").is_file()  # the owner file is still there
+        (work / "files/ctrl/r1/a.tif").unlink()  # part of the copies is gone
+        raise OSError(16, "Device or resource busy", str(path))
+
+    monkeypatch.setattr(write_module.shutil, "rmtree", halfway)
+    first = convert_experiment(exp, SWAPPED, copies)
+    assert codes(first.issues) == ["conversion_work_folder_not_removed"]
+    assert called == [work / "files"]  # only the copies, never the whole folder
+    assert (work / "owner.json").is_file()
+    assert not (work / "files/ctrl/r1/a.tif").exists()
+    monkeypatch.setattr(write_module.shutil, "rmtree", real_rmtree)
+    assert convert_experiment(exp, SWAPPED, copies).written and not work.exists()
+
+
+def test_an_unfinished_folder_is_never_removed_with_rmtree(tmp_path, monkeypatch):
+    # A folder is empty at the check, then something makes 'files' in it: only an empty
+    # folder may go, so nothing is deleted and the rmdir refuses it.
+    work = tmp_path / "copies" / WORK
+    work.mkdir(parents=True)
+    found = write_module.work_folder_state(work.parent)
+    assert found.state == write_module.UNFINISHED
+    real_state = write_module.work_folder_state
+
+    def raced(*args, **kwargs):
+        again = real_state(*args, **kwargs)
+        (work / "files").mkdir()
+        (work / "files" / "keep.tif").write_bytes(b"x")
+        return again
+
+    def never(path, *args, **kwargs):
+        raise AssertionError(f"rmtree called on {path}")
+
+    monkeypatch.setattr(write_module, "work_folder_state", raced)
+    monkeypatch.setattr(write_module.shutil, "rmtree", never)
+    issue = write_module.remove_leftover(found)
+    assert issue is not None and issue.code == "conversion_work_folder_not_removed"
+    assert (work / "files" / "keep.tif").read_bytes() == b"x"
+
+
+# (5) An owner file of NUL bytes -----------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("owner", "named"),
+    [
+        pytest.param("\0" * 150, True, id="all_nul"),
+        pytest.param("\0" * 149 + "x", False, id="not_all_nul"),
+        pytest.param({"kind": KIND}, False, id="forged"),
+    ],
+)
+def test_an_owner_file_of_nul_bytes_is_refused_as_possibly_from_a_power_loss(
+    tmp_path, owner, named
+):
+    exp, copies = swapped_experiment(tmp_path / "exp"), tmp_path / "copies"
+    _leftover(copies, owner)
+    before = _tree(copies)
+    result = convert_experiment(exp, SWAPPED, copies)
+    assert not result.written and codes(result.issues) == ["conversion_work_folder_unowned"]
+    message = result.issues[0].message
+    assert ("possibly left by a power loss" in message) is named
+    assert ("is unreadable" in message) is named
+    assert ("So it was not made by a conversion" in message) is not named
+    assert _tree(copies) == before

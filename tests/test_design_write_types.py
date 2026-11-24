@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 
+import numpy as np
 import pytest
 
 from morphobricks_preprocessing import (
@@ -120,3 +121,51 @@ def test_valid_values_are_written_unchanged_and_read_back_equal(tmp_path):
     unconfirmed = DesignTable((replace(CTRL, confirmed=False, confirmed_on=""), DRUG))
     again = write_experiment_design(unconfirmed, tmp_path / "unconfirmed.csv")
     assert parse_design_bytes(again.read_bytes()) == unconfirmed  # still writable
+
+
+@pytest.mark.parametrize(
+    ("changes", "message"),
+    [
+        ({"control": np.True_}, "control must be True or False, not np.True_ (of type numpy.bool)"),
+        (
+            {"image_count": np.int64(2)},
+            "image_count must be a whole number of at least 0, not np.int64(2) "
+            "(of type numpy.int64)",
+        ),
+    ],
+)
+def test_a_numpy_value_is_named_with_its_module(tmp_path, changes, message):
+    """A numpy bool's short name is ``bool``, which would read as the builtin (#470)."""
+    bad = _with(**changes)
+    with pytest.raises(DesignFormatError) as caught:
+        write_experiment_design(bad, tmp_path / DESIGN_FILENAME)
+    assert message in str(caught.value)
+    assert message in design_issues(bad)[0].message
+
+
+def test_a_type_error_gets_a_type_action_not_the_repeat_group_one():
+    """#470: the action said to name repeat groups and dates for a wrong ``control``."""
+    bad = DesignTable((replace(CTRL, control="false", image_count=2.0, confirmed_on=None), DRUG))
+    (issue,) = design_issues(bad)
+    assert issue.action == (
+        "Give confirmed_on as text; control as True or False; "
+        "image_count as a whole number of at least 0."
+    )
+    assert "repeat group" not in issue.action
+
+
+def test_a_type_error_and_a_name_error_each_keep_their_own_action():
+    bad = DesignTable((replace(CTRL, control="false"), replace(DRUG, repeat_group=" rep1")))
+    (issue,) = design_issues(bad)
+    assert issue.action.startswith("Give control as True or False. Give every repeat group a name")
+
+
+def test_design_issues_and_the_writer_agree_that_an_empty_design_is_refused(tmp_path):
+    """#470: ``design_issues`` returned ``[]`` for a table the writer refuses."""
+    path = tmp_path / DESIGN_FILENAME
+    with pytest.raises(DesignFormatError, match="lists no folder"):
+        write_experiment_design(DesignTable(()), path)
+    assert not path.exists()
+    (issue,) = design_issues(DesignTable(()))
+    assert issue.code == "invalid_experiment_design" and "lists no folder" in issue.message
+    assert issue.action

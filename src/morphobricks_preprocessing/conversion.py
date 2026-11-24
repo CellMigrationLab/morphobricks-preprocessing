@@ -70,6 +70,7 @@ from .conversion_write import (
     UNOWNED,
     ConversionFailed,
     leftover_work_folders,
+    owner_all_nul,
     remove_leftover,
     write_all,
 )
@@ -293,7 +294,7 @@ def _locked_conversion(
     leftovers = leftover_work_folders(dest)
     for work in leftovers:
         if work.state == UNOWNED:
-            refused.append(work_folder_issue(dest, work.path.name))
+            refused.append(work_folder_issue(dest, work.path.name, owner_all_nul(work.path)))
         if work.state == IN_USE and work.holder is not None:
             refused.append(work_folder_in_use_issue(dest, work.path.name, work.holder))
     if refused:
@@ -312,8 +313,8 @@ def _locked_conversion(
         # killed while moving its copies into place (#482)
         refusal = not_empty_issue(dest, list(refusal.paths), interrupted=owned[0])
     if refusal is None:  # a killed conversion's work folder must not count against the space
-        for work in leftovers:
-            remove_leftover(work)
+        removed = [remove_leftover(work) for work in leftovers]
+        refusal = next((issue for issue in removed if issue is not None), None)
     refusal = refusal or _space_issue(dest, to_write)
     if refusal is not None:
         return ConversionResult(dest, False, (refusal, *issues))

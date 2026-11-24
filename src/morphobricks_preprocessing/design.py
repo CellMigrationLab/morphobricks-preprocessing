@@ -37,6 +37,8 @@ from .design_values import (
     is_date,
     parse_bool,
     parse_count,
+    type_faults,
+    wrong_types,
 )
 from .discovery import IdentityError, check_identity_case, check_identity_text
 from .validation import ValidationIssue, error, plural
@@ -239,8 +241,19 @@ def design_issues(design: DesignTable) -> list[ValidationIssue]:
         group with two folders of one condition; ``design_not_confirmed`` for groups not
         confirmed yet. All are errors. A value of the wrong type (a ``control`` that is not a
         bool, a count that is not an int; #410) is ``invalid_experiment_design`` and the
-        group checks are not run.
+        group checks are not run. A design without a row is ``invalid_experiment_design`` too
+        (#470): the writer refuses it, as its parser does a file that lists no folder.
     """
+    if not design.rows:
+        return [
+            error(
+                "invalid_experiment_design",
+                "The experiment design lists no folder, so there is nothing to confirm or process.",
+                [],
+                "Check that the experiment folder holds condition folders with images, then "
+                "save the experiment description again (Check and save).",
+            )
+        ]
     issues = []
     invalid = _design_problems(design)
     if invalid:
@@ -251,9 +264,7 @@ def design_issues(design: DesignTable) -> list[ValidationIssue]:
                 + "; ".join(f"{_folder(row)}: {problem}" for row, problem in invalid)
                 + ".",
                 sorted({_folder(row) for row, _ in invalid}),
-                "Give every repeat group a name (not NA, nan, none, null, n/a or empty, "
-                "without spaces around it, spelled the same way in every row) and every "
-                f"confirmation date as {DATE_FORMAT}.",
+                _invalid_action(design, invalid),
             )
         )
     if any(_type_problems(row) for row in design.rows):
@@ -293,6 +304,21 @@ def design_issues(design: DesignTable) -> list[ValidationIssue]:
             )
         )
     return issues
+
+
+def _invalid_action(design: DesignTable, invalid: list[tuple[DesignRow, str]]) -> str:
+    """Return the action for ``invalid_experiment_design``: types and identities each their own."""
+    wrong = {column: expected for row in design.rows for column, expected in wrong_types(row)}
+    parts = []
+    if wrong:
+        parts.append("Give " + "; ".join(f"{c} as {e}" for c, e in wrong.items()) + ".")
+    if any(not type_faults(row) for row, _ in invalid):
+        parts.append(
+            "Give every repeat group a name (not NA, nan, none, null, n/a or empty, "
+            "without spaces around it, spelled the same way in every row) and every "
+            f"confirmation date as {DATE_FORMAT}."
+        )
+    return " ".join(parts)
 
 
 def write_experiment_design(design: DesignTable, path: str | os.PathLike) -> Path:
@@ -552,32 +578,8 @@ def _row_problems(row: DesignRow) -> list[str]:
 
 
 def _type_problems(row: DesignRow) -> list[str]:
-    """Return each value of ``row`` that has not its exact type, or a count below 0 (#410).
-
-    Exact types (``type(x) is ...``): a ``bool`` is not a count and ``1`` or ``"false"`` is
-    not a ``control``; nothing is converted by truthiness or by ``str``.
-    """
-    problems = []
-    for column in ("condition", "biological_repeat", "repeat_group", "confirmed_on"):
-        value = getattr(row, column)
-        if type(value) is not str:
-            problems.append(f"{column} must be a text, not {_found(value)}")
-    for column in ("control", "confirmed"):
-        value = getattr(row, column)
-        if type(value) is not bool:
-            problems.append(f"{column} must be True or False, not {_found(value)}")
-    for column in ("image_count", "technical_repeat_count"):
-        value = getattr(row, column)
-        if type(value) is not int:
-            problems.append(f"{column} must be a whole number of at least 0, not {_found(value)}")
-        elif value < 0:
-            problems.append(f"{column} must be a whole number of at least 0, not {value!r}")
-    return problems
-
-
-def _found(value: object) -> str:
-    """Return a value and its type for a message, e.g. ``'false' (of type str)``."""
-    return f"{value!r} (of type {type(value).__name__})"
+    """Return what ``type_faults`` finds in ``row``, as messages."""
+    return [message for _, message in type_faults(row)]
 
 
 def _bool_text(value: bool) -> str:
