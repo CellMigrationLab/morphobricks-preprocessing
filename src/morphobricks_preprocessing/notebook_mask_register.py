@@ -18,10 +18,13 @@ missing, a refusal), the step stops and names the step of cell 3 to use; nothing
 for the user there. Refused before anything changes: no masks written in cell 4, a run other
 than the app's, a masks folder inside the experiment (or the output folder), a masks folder
 other than the one the app's run uses, images changed since the run, and a mask type that
-collides with a declaration the description already has. The masks cell 4 wrote into the masks
-folder the run recorded are not a change: they are what is registered (any other file the run
-did not record still is). The folder check is made again whenever the app's last check did not
-see a mask type cell 4 wrote, even with the same masks folder.
+collides with a declaration the description already has. Before any mask is declared, the
+app's checked experiment must still be the segmented run's and its confirmed axes those the
+run's manifest records (the axes stop lets the user change both in cell 3).
+
+The masks cell 4 wrote into the masks folder the run recorded are not a change: they are what
+is registered (any other file the run did not record still is). The folder check is made again
+whenever the app's last check did not find a mask type cell 4 wrote, even in the same folder.
 """
 
 from __future__ import annotations
@@ -36,9 +39,11 @@ import ipywidgets as widgets
 from . import notebook_style as ui
 from .description_identity import nfc
 from .folder_rules import masks_folder_issues
+from .manifest import MANIFEST_FILENAME, ManifestFormatError, read_manifest
 from .mask_answers import INSTANCES
 from .notebook_cellpose_app import app_folders
 from .notebook_render import blocked_line
+from .report import mapping_summary
 from .run_inputs import RunInputsError, UnrecordedFilesError
 from .segmentation_cellpose_run import open_run
 from .segmentation_record import SegmentationError
@@ -66,6 +71,17 @@ AXES_AGAIN = (
     "The folder check with the masks folder asks you to confirm the axes again: in cell 3, "
     "step Axes, check the example and press Confirm these axes. Then press Register the masks "
     "again here."
+)
+OTHER_EXPERIMENT = (
+    "The app of cell 3 now holds another experiment ({app_root}) than the one cell 4 "
+    "segmented ({segmented}). Check {segmented} again in cell 3 and confirm its axes, then "
+    "press Register the masks again. Nothing was declared."
+)
+OTHER_AXES = (
+    "The axes confirmed in cell 3 ({confirmed}) are not those the segmented run recorded "
+    "({recorded}): its masks were made on the images read with the recorded axes. In cell 3, "
+    "step Axes, confirm the recorded axes, then press Register the masks again. Nothing was "
+    "declared."
 )
 NOT_SAVED = (
     "Check and save did not save the description: open cell 3, step Check and save, answer "
@@ -164,11 +180,37 @@ def _only_written(exc: UnrecordedFilesError, masks: Path, types: tuple[str, ...]
     a label image or any other mask the run did not record is still refused.
     """
     return not exc.files.images and all(
-        len(Path(path).parts) > 1
-        and Path(path).parts[0] in types
-        and (masks / path).is_file()
+        len(Path(path).parts) > 1 and Path(path).parts[0] in types and (masks / path).is_file()
         for path in exc.files.masks
     )
+
+
+def _mapping_text(mapping: object) -> str:
+    """Return an axis mapping on one line (:func:`.report.mapping_summary`'s words)."""
+    return "; ".join(line.strip() for line in mapping_summary(mapping).splitlines())
+
+
+def _other_experiment(app: object, inputs: object) -> str:
+    """Return why the app's experiment or confirmed axes are not the segmented run's, or "".
+
+    The app's checked experiment must be the run's experiment, and the axes confirmed in the
+    app must be the axis mapping the run's manifest records: the masks were made on the images
+    read with those axes. Read before anything is declared, saved or run.
+    """
+    app_root = Path(app.preflight.discovery.root).resolve()
+    segmented = Path(inputs.experiment_root).resolve()
+    if app_root != segmented:
+        return OTHER_EXPERIMENT.format(app_root=app_root, segmented=segmented)
+    try:
+        recorded = read_manifest(Path(inputs.output_folder) / MANIFEST_FILENAME).mapping
+    except (OSError, ManifestFormatError) as exc:
+        return CHANGED.format(reason=exc)
+    confirmed = app.confirmed_mapping
+    if (confirmed.axes, tuple(confirmed.roles)) != (recorded.axes, tuple(recorded.roles)):
+        return OTHER_AXES.format(
+            confirmed=_mapping_text(confirmed), recorded=_mapping_text(recorded)
+        )
+    return ""
 
 
 class MaskRegistration(widgets.VBox):
@@ -231,18 +273,21 @@ class MaskRegistration(widgets.VBox):
         if why:
             return self._stop(why)
         app, masks = self.app, Path(self.segmentation.workflow.masks_root).resolve()
-        checked = getattr(getattr(app.preflight, "masks", None), "folder", None)
-        asked = getattr(getattr(app, "mask_card", None), "questions", None) or {}
+        found = getattr(app.preflight, "masks", None)
+        checked = getattr(found, "folder", None)
         if (
             checked is None
             or Path(checked).resolve() != masks
-            or any(t not in asked for t in self.ticks)  # checked before cell 4 wrote them
+            or any(t not in found.types for t in self.ticks)  # checked before cell 4 wrote
         ):
             app.masks_folder.value = os.fspath(masks)
             app.check_folder()  # the app's Scan the folders, now with the masks folder
             self.rechecked = True
         if app.confirmed_mapping is None:
             return self._stop(AXES_AGAIN)
+        why = _other_experiment(app, self.segmentation.workflow.inputs)
+        if why:  # the axes stop lets the user change the app: check it is still the run's
+            return self._stop(why)
         for mask_type in self.ticks:
             question = app.mask_card.questions.get(mask_type)
             if question is None:

@@ -23,6 +23,7 @@ pytest.importorskip("matplotlib")
 
 from morphobricks_preprocessing import cellpose_install  # noqa: E402
 from morphobricks_preprocessing import segmentation_cellpose_model as model  # noqa: E402
+from morphobricks_preprocessing.axes import AxisMapping  # noqa: E402
 from morphobricks_preprocessing.description_file import DESCRIPTION_FILENAME  # noqa: E402
 from morphobricks_preprocessing.manifest import MANIFEST_FILENAME  # noqa: E402
 from morphobricks_preprocessing.mask_scan import MASK_REPORT_FILENAME  # noqa: E402
@@ -239,6 +240,48 @@ def test_cell_5_registers_masks_written_into_the_runs_own_masks_folder(tmp_path,
     manifest = json.loads((out / MANIFEST_FILENAME).read_text(encoding="utf-8"))
     assert sorted(manifest["masks"]["types"]) == ["Cells", "Nuclei"]
     assert RunInputs.open(out).mask_types() == ("Cells", "Nuclei")
+
+
+def stopped_for_the_axes(tmp_path, stub):
+    """Return the app and cell 5 after its first press stopped for the axes, and the output."""
+    nb = ran_app(tmp_path)
+    step = segmentation_step(nb)
+    segment(step, tmp_path / "masks")
+    registration = register_step(nb, step)
+    registration.ticks["Cells"].value = True
+    assert not registration.register()
+    assert AXES_AGAIN.split(":")[0] in registration.status.value
+    return nb, registration, nb._output_path(tmp_path / "exp")
+
+
+def snapshot(folder):
+    return {p: p.read_bytes() for p in sorted(folder.rglob("*")) if p.is_file()}
+
+
+def test_cell_5_refuses_axes_other_than_those_the_segmented_run_recorded(tmp_path, stub):
+    # B2: after the axes stop, only "some axes are confirmed" was checked.
+    nb, registration, out = stopped_for_the_axes(tmp_path, stub)
+    before = snapshot(out)
+    recorded = json.loads((out / MANIFEST_FILENAME).read_text(encoding="utf-8"))["axis_mapping"]
+    roles = recorded["roles"]
+    swapped = [*roles[:-2], roles[-1], roles[-2]]  # Y and X swapped
+    nb.confirmed_mapping = AxisMapping(recorded["axes"], tuple(swapped))
+    assert not registration.register() and not registration.registered
+    assert "not those the segmented run recorded" in registration.status.value
+    assert snapshot(out) == before  # nothing declared, saved or run
+
+
+def test_cell_5_refuses_an_app_now_on_another_experiment(tmp_path, stub):
+    nb, registration, out = stopped_for_the_axes(tmp_path, stub)
+    other = tmp_path / "other_exp"
+    shutil.copytree(tmp_path / "exp", other)
+    nb.folder.value = str(other)  # cell 3 now checks another experiment, same output
+    nb.check_button.click()
+    nb.quick_confirm.click()
+    before = snapshot(out)  # after cell 3's own check (it writes its check report)
+    assert not registration.register() and not registration.registered
+    assert "another experiment" in registration.status.value
+    assert snapshot(out) == before
 
 
 # cell 5 refuses rather than guesses ----------------------------------------------------------
