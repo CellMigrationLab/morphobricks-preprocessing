@@ -179,8 +179,6 @@ class RunProjection:
         bounds, record = data["z_range"], data["conversion_record"]
         if data["method"] not in METHODS:
             raise ValueError(f"{KEY}.method {data['method']!r} is not max, mean or sum")
-        if bounds is not None and not (isinstance(bounds, list) and len(bounds) == 2):
-            raise ValueError(f"{KEY}.z_range is not null or two numbers")
         if not isinstance(record, Mapping) or set(record) != {"file", "sha256"}:
             raise ValueError(f"{KEY}.conversion_record must be {{file, sha256}}")
         if not isinstance(record["file"], str) or not _SHA256.fullmatch(str(record["sha256"])):
@@ -194,15 +192,48 @@ class RunProjection:
             )
         if not isinstance(data["images"], list):
             raise ValueError(f"{KEY}.images is not a list")
+        images = tuple(ProjectedImage.from_dict(i) for i in data["images"])
         return cls(
             method=data["method"],
-            z_range=None if bounds is None else (bounds[0], bounds[1]),
+            z_range=_checked_range(bounds, images),
             conversion_record=(record["file"], record["sha256"]),
             source_root=data["source_root"],
-            images=tuple(ProjectedImage.from_dict(i) for i in data["images"]),
+            images=images,
             masks_paired=tuple(masks),
             warnings=tuple(warns),
         )
+
+
+def _checked_range(bounds: object, images: tuple[ProjectedImage, ...]) -> tuple[int, int] | None:
+    """Return the requested slice range, checked against itself and every image (#445).
+
+    Null (every slice: each image used its whole stack) or two whole numbers (not booleans)
+    ``0 <= start < stop``, each image's own range: the conversion projects every image of the
+    tree with the range asked for, and a stack it does not fit is refused there.
+
+    Raises
+    ------
+    ValueError
+        For any other range, or images that did not use it.
+    """
+    if bounds is None:
+        wanted = None
+    elif (
+        isinstance(bounds, list)
+        and len(bounds) == 2
+        and all(type(b) is int for b in bounds)
+        and 0 <= bounds[0] < bounds[1]
+    ):
+        wanted = (bounds[0], bounds[1])
+    else:
+        raise ValueError(f"{KEY}.z_range {bounds!r} is not null or two slice numbers START < STOP")
+    for image in images:
+        if image.z_range != (wanted or (0, image.source_z_size)):
+            used = f"{image.z_range[0]}:{image.z_range[1]}"
+            raise ValueError(
+                f"{KEY}.z_range {bounds!r} is not the slices {image.relative_path!r} used ({used})"
+            )
+    return wanted
 
 
 def recorded_projection(value: object) -> dict | None:
