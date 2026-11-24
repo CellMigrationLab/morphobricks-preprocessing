@@ -335,7 +335,12 @@ refused (`RunInputsError`) without the `zarr` extra, naming `morphobricks-prepro
 and so is a recorded OME-Zarr image whose `labels` group cannot be read (the message names
 it). A `masks_root` given for a run that recorded no masks folder makes every mask there
 paired with a recorded image unrecorded; the message then says to run preprocessing again
-with the masks folder (`--masks`).
+with the masks folder (`--masks`). A `masks_root` given is used as given, never replaced by the
+recorded folder: one that does not exist, is a file or is an empty path is refused with
+`MasksFolderNotFoundError` (a `RunInputsError`, `code = "masks_folder_not_found"`), and one that
+cannot be listed with `MasksFolderUnreadableError` (`code = "masks_folder_unreadable"`), each
+message starting with its code and naming the path, so a mistyped folder is never read as a
+folder without masks (issue #487). An existing empty folder is accepted: it holds no mask.
 `unrecorded_files(manifest, experiment_root, masks_root, output_folder=None)` gives the same
 list without raising (it raises `ZarrUnavailableError` or `NgffError` for those two cases).
 It gives:

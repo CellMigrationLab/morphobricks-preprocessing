@@ -71,7 +71,11 @@ from .planes import DEFAULT_MEMORY_LIMIT
 from .recorded_sizes import RecordedSize
 from .required_description import FIX, is_published, required_message
 from .run.generation import published_path, read_stable
-from .run_inputs_error import DescriptionRequiredError
+from .run_inputs_error import (
+    DescriptionRequiredError,
+    MasksFolderNotFoundError,
+    MasksFolderUnreadableError,
+)
 from .run_inputs_error import RunInputsError as RunInputsError  # re-exported (moved)
 from .run_inputs_image import LazyImage as LazyImage  # re-exported (moved)
 from .run_inputs_mask import MaskInputs
@@ -222,7 +226,9 @@ class RunInputs(
         experiment_root
             Where the experiment is now; by default where the run read it.
         masks_root
-            Where the masks folder is now; by default where the run read it.
+            Where the masks folder is now; by default where the run read it. A folder given
+            must exist and be listable, else ``MasksFolderNotFoundError`` or
+            ``MasksFolderUnreadableError`` (#487), before any image or mask is checked.
 
         Raises
         ------
@@ -276,7 +282,8 @@ class RunInputs(
         check_description(output, manifest)  # A_DRAFT_REFUSED, or changed since the run
         root = Path(experiment_root or manifest.experiment_root).resolve()
         _check_conversion(root, manifest)
-        masks = masks_root or (manifest.masks or {}).get("folder")
+        # A masks folder given is used as given, never replaced by the recorded one (#487).
+        masks = (manifest.masks or {}).get("folder") if masks_root is None else _given(masks_root)
         refused = [] if masks is None else masks_folder_issues(masks, root, output)
         if refused:
             # A run recorded before these folder rules (audit B1) is refused as a new one is.
@@ -462,6 +469,35 @@ def _manifest(output: Path) -> RunManifest:
     if not is_published(output):
         raise DescriptionRequiredError(f"{required_message(output)} {FIX}")
     return read_manifest(path)
+
+
+def _given(masks_root: str | os.PathLike) -> Path:
+    """Return the masks folder given as ``masks_root``, refused unless it can be listed (#487).
+
+    A run without masks would otherwise read a mistyped, missing or unreadable folder as one
+    with no masks, and the caller's masks would be left out without a word.
+    """
+    folder = Path(masks_root).resolve() if os.fspath(masks_root) else None
+    fix = (
+        "Give masks_root= the folder that holds one subfolder per mask type, or leave it out "
+        "to use the masks folder the run recorded."
+    )
+    if folder is None or not folder.is_dir():
+        what = "An empty path" if folder is None else f"{folder}"
+        raise MasksFolderNotFoundError(
+            f"masks_folder_not_found: {what} was given as masks_root=, and it is not an "
+            f"existing folder, so no mask can be read from it. {fix}"
+        )
+    try:
+        with os.scandir(folder):
+            pass
+    except OSError as exc:
+        raise MasksFolderUnreadableError(
+            f"masks_folder_unreadable: the masks folder {folder} given as masks_root= cannot "
+            f"be listed ({exc.strerror or exc}), so its masks cannot be checked against the "
+            f"run. Check its permissions. {fix}"
+        ) from exc
+    return folder
 
 
 def _check_sha(path: Path, expected: str, what: str) -> None:

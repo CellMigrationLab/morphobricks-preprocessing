@@ -210,3 +210,58 @@ def test_masks_given_to_a_run_without_masks_ask_for_a_run_with_them(tmp_path):
     message = str(raised.value)
     assert "with its masks folder (--masks <masks folder>" in message
     assert "--exclude" not in message
+
+
+# 4. A masks folder given explicitly must be one (#487) ----------------------------------
+
+
+def test_a_run_without_masks_opens_without_a_masks_folder(tmp_path):
+    clean = make_clean_run(tmp_path)
+    assert RunInputs.open(clean.output).masks_root is None
+
+
+def test_an_existing_empty_masks_folder_is_accepted(tmp_path):
+    clean = make_clean_run(tmp_path)
+    (tmp_path / "masks").mkdir()
+    inputs = RunInputs.open(clean.output, masks_root=tmp_path / "masks")
+    assert inputs.masks_root == (tmp_path / "masks").resolve()
+
+
+@pytest.mark.parametrize("kind", ["missing", "file", "empty"])
+def test_a_given_masks_folder_that_is_not_a_folder_is_refused(tmp_path, kind):
+    clean = make_clean_run(tmp_path)
+    given = tmp_path / "typo-in-segmentation"
+    if kind == "file":
+        given.write_bytes(b"not a folder")
+    elif kind == "empty":
+        given = ""
+    with pytest.raises(RunInputsError) as raised:
+        RunInputs.open(clean.output, masks_root=given)
+    refusal = raised.value
+    assert refusal.code == "masks_folder_not_found"
+    assert not isinstance(refusal, UnrecordedFilesError)
+    message = str(refusal)
+    assert message.startswith("masks_folder_not_found: ")
+    assert ("typo-in-segmentation" in message) == (kind != "empty")
+    assert "masks_root=" in message
+    again = pickle.loads(pickle.dumps(refusal))
+    assert type(again) is type(refusal) and str(again) == message
+
+
+def test_a_given_masks_folder_that_cannot_be_listed_is_refused(tmp_path, monkeypatch):
+    clean = make_clean_run(tmp_path)
+    locked = (tmp_path / "masks").resolve()
+    locked.mkdir()
+    scandir = __import__("os").scandir
+
+    def refuse(path="."):
+        if __import__("pathlib").Path(path).resolve() == locked:
+            raise PermissionError(13, "Permission denied", str(path))
+        return scandir(path)
+
+    monkeypatch.setattr("os.scandir", refuse)
+    with pytest.raises(RunInputsError) as raised:
+        RunInputs.open(clean.output, masks_root=locked)
+    assert raised.value.code == "masks_folder_unreadable"
+    assert str(raised.value).startswith("masks_folder_unreadable: ")
+    assert str(locked) in str(raised.value)
