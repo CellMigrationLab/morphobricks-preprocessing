@@ -30,6 +30,7 @@ used as an axis role.
 from __future__ import annotations
 
 import math
+import numbers
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -251,6 +252,24 @@ def _channel_layout(meta: TiffMetadata) -> tuple[AxisMapping, list[int], int]:
     return AxisMapping(meta.axes, tuple(roles)), projected, c
 
 
+def checked_shown(shown: object) -> int:
+    """Return ``shown``, the number of channels to draw, as an ``int`` (#433).
+
+    Any whole number (``int`` or a NumPy integer, ``numbers.Integral``) of at least 1 is
+    accepted; ``bool`` is not a number of channels.
+
+    Raises
+    ------
+    ValueError
+        When ``shown`` is a ``bool``, not a whole number, or below 1.
+    """
+    if isinstance(shown, bool) or not isinstance(shown, numbers.Integral) or shown < 1:
+        raise ValueError(
+            f"The number of channels to draw must be a whole number of at least 1, not {shown!r}."
+        )
+    return int(shown)
+
+
 def header_channels(
     path: str | os.PathLike, meta: TiffMetadata, side: int, shown: int = CHANNELS_SHOWN
 ) -> HeaderChannels:
@@ -268,10 +287,7 @@ def header_channels(
         When the file cannot be read; ValueError also when ``shown`` is not a whole number of
         at least 1.
     """
-    if isinstance(shown, bool) or not isinstance(shown, int) or shown < 1:
-        raise ValueError(  # before any read (#433)
-            f"The number of channels to draw must be a whole number of at least 1, not {shown!r}."
-        )
+    shown = checked_shown(shown)  # before any read (#433)
     if not meta.readable:
         raise PreviewUnavailable(f"the header cannot be read: {meta.error or 'unknown reason'}")
     mapping, projected, c_axis = _channel_layout(meta)
@@ -352,6 +368,7 @@ def header_preview(
 
 __all__ = [
     "CHANNELS_SHOWN",
+    "checked_shown",
     "HEADER_NOTE",
     "NO_YX",
     "PIXEL_CAP",

@@ -22,7 +22,7 @@ from dataclasses import dataclass
 
 from .axes import AxisMapping
 from .fingerprint import Fingerprint
-from .header_preview import CHANNELS_SHOWN
+from .header_preview import CHANNELS_SHOWN, checked_shown
 from .planes import DEFAULT_MEMORY_LIMIT
 from .preview import THUMBNAIL_SIDE, ReducedPlane, check_unchanged, read_plane
 from .preview_render import colour_composite, display_panel, png_bytes
@@ -132,11 +132,7 @@ class ViewRequest:
 
     def __post_init__(self) -> None:
         # Refused before any read: no channel to draw is not a picture (#433).
-        if isinstance(self.shown, bool) or not isinstance(self.shown, int) or self.shown < 1:
-            raise ValueError(
-                f"The number of channels to draw must be a whole number of at least 1, "
-                f"not {self.shown!r}."
-            )
+        object.__setattr__(self, "shown", checked_shown(self.shown))
 
 
 def read_view(
