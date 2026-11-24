@@ -138,7 +138,7 @@ def remove_stale_lock(output_folder: str | os.PathLike) -> LockHolder | None:
     if holder is None:
         return None
     path = Path(output_folder) / LOCK_FILENAME
-    if holder.host == socket.gethostname() and _running(holder.pid):
+    if holder_running(holder):
         raise OutputLockedError(path, holder)
     path.unlink(missing_ok=True)
     return holder
@@ -196,6 +196,16 @@ def looks_stale(holder: LockHolder) -> bool:
         and holder.host == socket.gethostname()
         and (not _running(pid))
     )
+
+
+def holder_running(holder: LockHolder) -> bool:
+    """Return True when the holder is a process that may still be running on this computer.
+
+    The liveness check of :func:`remove_stale_lock`, also used for the owner of a
+    conversion's work folder (:mod:`.conversion_write`, issue #482). Only POSIX can tell
+    (:func:`_running`); elsewhere, and for a holder on another computer, the answer is False.
+    """
+    return holder.host == socket.gethostname() and _running(holder.pid)
 
 
 def _running(pid: int) -> bool:

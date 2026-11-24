@@ -38,9 +38,11 @@ from .conversion_issues import (
     names_collide_issue,
     not_a_folder_issue,
     overlap_issue,
+    path_too_long_issue,
     pixel_type_issue,
 )
 from .conversion_record import CONVERTED, COPIED, RECORD_FILENAME, CopyEntry
+from .conversion_write import WORK_FOLDER, partial_path
 from .copy_axes import copy_layout
 from .fingerprint import Fingerprint
 from .links import relative_inside
@@ -105,12 +107,35 @@ def plan_conversion(
         which are otherwise copied byte for byte. Two images that would get the same copy
         name stop the plan (``copy_names_collide``). Default ``"ome-tiff"``.
 
+    On Windows, a copy any of whose files would have a path longer than
+    :data:`WINDOWS_MAX_PATH` characters while it is written, in the work folder, stops the
+    plan too (``copy_path_too_long``, :func:`long_path_issue`).
+
     Returns
     -------
     tuple
         The planned copies, sorted by path (empty when an error stops the conversion),
         and the issues: the errors that stop it, and the warnings.
     """
+    planned, issues = _plan(
+        root, mapping, destination, exclude, missing_as_singleton, memory_limit, **how
+    )
+    too_long = long_path_issue(root, destination, planned) if _windows() else None
+    if too_long is not None:
+        return (), [*issues, too_long]
+    return planned, issues
+
+
+def _plan(
+    root: Path,
+    mapping: AxisMapping | ConfirmedAxes,
+    destination: Path,
+    exclude: Iterable[str],
+    missing_as_singleton: bool,
+    memory_limit: int,
+    **how: Unpack[PlanOptions],
+) -> tuple[tuple[PlannedCopy, ...], list[ValidationIssue]]:
+    """Plan each image's copy: :func:`plan_conversion` but the length of the copies' paths."""
     projection, masks_folder = how.get("projection"), how.get("masks_folder")
     as_zarr = how.get("store", OME_TIFF) == OME_ZARR
     pre = preflight(root, destination, exclude=exclude, bind_headers=True)
@@ -151,6 +176,52 @@ def plan_conversion(
         else:
             planned.append(_copied(rel, headers.get(rel), source, rel in pre.excluded))
     return _stored(tuple(planned), issues, as_zarr)
+
+
+WINDOWS_MAX_PATH = 259
+"""The longest path Windows handles without long-path support (``MAX_PATH`` 260, with the
+terminating NUL)."""
+
+
+def _windows() -> bool:
+    """Return True on Windows, where a path is limited to :data:`WINDOWS_MAX_PATH` characters."""
+    return os.name == "nt"
+
+
+def long_path_issue(
+    root: Path, dest: Path, planned: tuple[PlannedCopy, ...]
+) -> ValidationIssue | None:
+    """Refuse copies with a file whose path would be too long for Windows (issue #482).
+
+    Each copy is written in the work folder (:func:`.conversion_write.partial_path`), whose
+    path is longer than its place in the copy tree; an OME-Zarr copy's deepest file is a
+    plane's chunk (``0/<index>/.../0/0``), and a folder copied byte for byte is read for its
+    deepest file.
+    """
+    work = dest / WORK_FOLDER
+    lengths = {
+        item.relative_path: len(str(partial_path(work, item))) + _deepest(root, item)
+        for item in planned
+    }
+    too_long = sorted(rel for rel, length in lengths.items() if length > WINDOWS_MAX_PATH)
+    if not too_long:
+        return None
+    return path_too_long_issue(dest, too_long, max(lengths.values()), WINDOWS_MAX_PATH)
+
+
+def _deepest(root: Path, item: PlannedCopy) -> int:
+    """Return how many characters a copy's deepest file adds to its path (0 for a file)."""
+    if item.layout is not None and item.store == OME_ZARR:
+        chunk = ["0", *(str(size - 1) for size in item.layout.shape[:-2]), "0", "0"]
+        return max(len(os.sep.join(chunk)), len(os.sep.join(["0", ".zarray"]))) + 1
+    source = root / item.source_path
+    if item.layout is not None or not source.is_dir():
+        return 0
+    deepest = 0
+    for folder, _, names in os.walk(source):
+        for name in names:
+            deepest = max(deepest, len(os.path.relpath(os.path.join(folder, name), source)) + 1)
+    return deepest
 
 
 class PlanOptions(TypedDict, total=False):
