@@ -42,6 +42,7 @@ from ._io import free_space
 from .axes import AxisMapping, prefill_mapping
 from .axis_check import ConfirmedAxes, confirmation_of
 from .conversion_issues import (
+    links_issue,
     lock_issue,
     record_issue,
     space_issue,
@@ -57,7 +58,7 @@ from .conversion_record import (
     read_record,
     write_record,
 )
-from .conversion_reuse import compare
+from .conversion_reuse import compare, links_below
 from .conversion_write import ConversionFailed, write_all
 from .manifest import package_versions
 from .ome_zarr_copy import OME_TIFF, STORES
@@ -271,6 +272,9 @@ def _locked_conversion(
     progress: Callable[[int, int, str], None] | None,
 ) -> ConversionResult:
     """Compare with what the copy tree holds, write the new copies and the record."""
+    linked = links_below(dest)
+    if linked:
+        return ConversionResult(dest, False, (links_issue(linked), *issues))
     try:
         earlier = read_record(dest)
     except ConversionRecordError as exc:
