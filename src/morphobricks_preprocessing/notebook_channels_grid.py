@@ -58,6 +58,7 @@ from .notebook_channels_view import (
     blank_chip,
     chip,
     columns,
+    partial_text,
     quoted,
     save_change,
 )
@@ -66,14 +67,6 @@ from .notebook_values import natural_key
 
 FOLDERS_LISTED = 3
 """Folders of a block listed at once where the page has the image viewer; more are folded."""
-
-
-def partial_text(label: str, used: int, total: int) -> str:
-    """Return the sentence for a label used in only some units, with its consequence."""
-    return (
-        f"used in {used} of {total} folders: an analysis of {html.escape(label)} will be "
-        "refused for the other folders"
-    )
 
 
 def folder_order(layout: UnitLayout) -> tuple:
@@ -212,9 +205,10 @@ class TagGrid:
 
         The click is one change (:func:`.channel_answers.tagged`, ``then`` in the same write),
         applied to the strict page's draft too: there, the click makes the unit's whole tags the
-        user's. A ``then`` sets the whole tag review in this write: never retried, and adopted
-        at once, before any further write (an interruption there leaves memory as the draft).
+        user's. A ``then`` sets the whole tag review: never retried, adopted before any other
+        write. Without one, fast mode leaves out the standing refused units (:meth:`held_out`).
         """
+        tags, cells = self.held_out(tags, cells) if then is None else (tags, cells)
         ok = save_change(self.store, tagged(self.layouts, tags, cells, then))
         ok and then is not None and self.by_repeat.adopt()  # before anything else can stop
         self.message = "" if ok else ui.status("error", "Not saved.", [self.store.refusal()])
@@ -223,6 +217,12 @@ class TagGrid:
         self.refresh()
         self._on_change()
         return ok
+
+    def held_out(self, tags: Mapping, cells: Sequence) -> tuple[dict, list]:
+        """Return ``tags`` and ``cells`` without fast mode's standing refused units' tags."""
+        held = self.by_repeat.standing() if self.same_channels.value else set()
+        kept = {key: value for key, value in tags.items() if key not in held}
+        return kept, [cell for cell in cells if cell[0] in kept]
 
     def split(self, key: UnitKey) -> None:
         """Take one folder out of its block, to tag it on its own (nothing is saved)."""
@@ -312,6 +312,7 @@ class TagGrid:
             if proposed:
                 tags[layout.key] = shown
                 cells += [(layout.key, index) for index in proposed]
+        tags, cells = self.held_out(tags, cells)  # fast mode: never a refused unit's header
         ok = save_change(self.store, tagged(self.layouts, tags, cells))
         self.message = "" if ok else ui.status("error", "Not saved.", [self.store.refusal()])
         if ok and rgb:

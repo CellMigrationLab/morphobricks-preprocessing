@@ -467,7 +467,11 @@ editing, or the confirmed ones. An image that cannot be drawn gets a sentence sa
    notebook, a listed acquisition is still listed, and still not counted, until you confirm it.
    In fast mode this holds also when you correct the acquisition's image header so that it fits
    its row: it is not tagged from its header but stays listed ("a refused unit is never tagged
-   from its header, even one that fits now; confirm its tags") until you confirm it. An
+   from its header, even one that fits now; confirm its tags") until you confirm it. In fast
+   mode a listed acquisition you have not confirmed also keeps its tags when you edit a
+   layout's row of tags, fill new acquisitions like the first, tag several acquisitions with one
+   dropdown, or use **Tag like the saved group** or a header pre-tag: only an action on it alone
+   (its override, a one-click confirmation, or its own dropdowns) changes them. An
    acquisition you set to colour (RGB) keeps its listing for later: it is not listed while it is
    colour, and is listed again if you set it back to channels.
    In fast mode a row offers only the acquisitions that do not fit the layout, and those it

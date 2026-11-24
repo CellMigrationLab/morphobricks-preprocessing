@@ -6,6 +6,11 @@ UI a block of more than three folders lists them inside a closed accordion, so a
 could be confirmed without being visible. Its name is now said beside the block's dropdowns.
 The paths that are no action on a refused unit never record a confirmation: a fast-mode block of
 several units, a fast-mode template edit, *Tag like the saved group* and a header pre-tag.
+
+External re-check ao (24 November), blocker 2: in fast mode those paths never change a refused
+unit's tags either. A blank layout template edited through its shared dropdown wrote the new
+template to an unconfirmed refused follower whose header names another unit's confirmation had
+saved as aliases: the unit was tagged with no action on it.
 """
 
 from __future__ import annotations
@@ -22,6 +27,7 @@ from test_notebook_channels import set_labels  # noqa: E402
 from test_notebook_check_save import opened  # noqa: E402
 from test_notebook_stepper import stepped  # noqa: E402
 from test_notebook_tag_by_repeat import KINDS4, TAGS, UNITS, _experiment, _set_row  # noqa: E402
+from test_notebook_tag_by_repeat_atomic import _draft  # noqa: E402
 from test_notebook_tag_by_repeat_drafts import _review  # noqa: E402
 from test_notebook_tag_by_repeat_oneclick import GONE, OTHER, _fast, _strict  # noqa: E402
 from test_notebook_tag_by_repeat_recheck import _recheck  # noqa: E402
@@ -107,12 +113,21 @@ def _layouts(grid, keys):
     return [u for u in grid.layouts if u.key in keys]
 
 
+def _tags(nb, out, keys=(GONE, OTHER)):
+    """Return the units' saved tags, in this session and on disk (None: no answer)."""
+    disk = _draft(out).units
+    own = nb.draft_answers.units
+    return [tuple(getattr(a.get(k), "channels", None) or ()) for a in (own, disk) for k in keys]
+
+
 def test_a_fast_mode_block_of_several_refused_units_records_no_confirmation(tmp_path):
     nb, root, rows = _fast(tmp_path)
     grid = nb.channel_grid
     units = _layouts(grid, (GONE, OTHER))
     assert rows.hand_tagged(units) is None
+    before = _tags(nb, tmp_path / "out")
     grid._tagged(units, 3, "EXTRA")  # one change for both: not an action on each
+    assert _tags(nb, tmp_path / "out") == before  # at 30af180 both took EXTRA at C3
     assert not rows.override.confirmed and set(rows.listed()) == {GONE, OTHER}
     assert not _review(tmp_path / "out").confirmed
     assert "confirms" not in _visible(grid.blocks)
@@ -120,9 +135,11 @@ def test_a_fast_mode_block_of_several_refused_units_records_no_confirmation(tmp_
 
 def test_a_fast_mode_template_edit_records_no_confirmation(tmp_path):
     nb, root, rows = _fast(tmp_path)
+    before = _tags(nb, tmp_path / "out")
     cell = nb.channel_grid.matrix.template_cells[(("ctrl", "rep1", "t1"), 2)]
     cell.value = None
     cell.value = "PHASE"
+    assert _tags(nb, tmp_path / "out") == before
     assert not rows.override.confirmed and set(rows.listed()) == {GONE, OTHER}
     assert not _review(tmp_path / "out").confirmed
 
@@ -136,9 +153,12 @@ def test_tag_like_the_saved_group_records_no_confirmation(tmp_path, request, fas
         nb, root, rows = _strict(tmp_path, request.getfixturevalue("statement_off"))
         tags = TAGS
     grid = nb.channel_grid
+    before = _tags(nb, tmp_path / "out")
     for units in ([GONE], [GONE, OTHER]):
         grid.tag_like(_layouts(grid, units), tags)
         assert not rows.override.confirmed and set(rows.listed()) == {GONE, OTHER}
+        if fast:  # at 30af180 GONE, then OTHER, took the tags (a strict block names them)
+            assert _tags(nb, tmp_path / "out") == before
     assert not _review(tmp_path / "out").confirmed
 
 
@@ -157,3 +177,67 @@ def test_a_header_pre_tag_records_no_confirmation(tmp_path, statement_off):
     assert nb.draft_answers.units[GONE].channels == ("ACTIN", "DNA", "PHASE")
     assert GONE in rows.listed() and not rows.override.confirmed
     assert not _review(out).confirmed
+
+
+# Fast mode never tags a refused unit with no action on it (review ao, blocker 2) ---------------
+
+
+def _blank_layout_with_b(tmp_path):
+    """GONE (B) refused and untagged; OTHER (C) confirmed, so P and Q are aliases of its tags.
+
+    The 4-channel units the row filled are on their own; **Add another layout** for them makes
+    a layout of B alone, its template blank: B follows it.
+    """
+    nb, root, rows = _fast(tmp_path)
+    rows.override.buttons[OTHER].click()
+    rows.override.confirm_button.click()  # C: P, Q saved as aliases of DNA, ACTIN
+    assert set(rows.listed()) == {GONE} and GONE in rows.standing()
+    matrix = nb.channel_grid.matrix
+    matrix.layout_buttons[4].click()
+    groups, _ = matrix.groups()
+    group = next(g for g in groups if GONE in [u.key for u in g])
+    assert matrix.template(group) == (None,) * 4
+    return nb, root, rows, group
+
+
+def test_a_blank_fast_template_edit_never_tags_a_refused_unit(tmp_path):
+    nb, root, rows, group = _blank_layout_with_b(tmp_path)
+    out = tmp_path / "out"
+    before = _tags(nb, out, (GONE,))
+    assert before == [(), ()]  # untagged, in this session and on disk
+    cell = nb.channel_grid.matrix.template_cells[(group[0].key, 0)]
+    cell.value = "DNA"  # the layout's shared dropdown: no action on GONE itself
+    assert _tags(nb, out, (GONE,)) == before  # at 30af180: GONE saved with DNA at C0
+    assert GONE in rows.listed() and GONE in rows.standing()
+    assert GONE in _draft(out).tag_review.refused and GONE not in _draft(out).tag_review.confirmed
+    again = opened(root, tmp_path / "masks", out)  # a restart on the saved draft
+    assert _tags(again, out, (GONE,)) == before
+    assert GONE in again.channel_grid.by_repeat.listed()
+    assert GONE in again.channel_grid.by_repeat.standing()
+
+
+def test_a_hand_edit_of_the_refused_unit_alone_still_confirms_it_in_fast_mode(tmp_path):
+    nb, root, rows, group = _blank_layout_with_b(tmp_path)
+    nb.channel_grid.matrix.template_cells[(group[0].key, 0)].value = "DNA"  # nothing on GONE
+    grid = nb.channel_grid
+    grid.matrix.tag_on_own([GONE])  # its own dropdowns: a deliberate hand-tag of GONE alone
+    for index, tag in enumerate(("DNA", "ACTIN", "PHASE", "EXTRA")):
+        grid.cells[(GONE, index)].value = tag
+    assert GONE not in rows.listed() and GONE not in rows.standing()
+    assert GONE in _draft(tmp_path / "out").tag_review.confirmed
+
+
+def test_a_visibly_scoped_strict_block_edit_still_confirms_the_refused_unit(
+    tmp_path, statement_off
+):
+    nb, root, rows = _strict(tmp_path, statement_off)
+    rows.override.buttons[OTHER].click()
+    rows.override.confirm_button.click()  # OTHER: P, Q saved as aliases
+    grid = nb.channel_grid
+    block, answer = _block_of(grid, GONE)
+    beside = block.children[block.children.index(answer) + 1]
+    assert unit_name(GONE) in _visible(beside)  # the click names GONE
+    for index, tag in enumerate(TAGS):
+        grid.cells[(GONE, index)].value = tag
+    assert GONE not in rows.listed()
+    assert GONE in _draft(tmp_path / "out").tag_review.confirmed

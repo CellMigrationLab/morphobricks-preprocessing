@@ -375,6 +375,13 @@ old pin are refused with `spec_commit_mismatch`, as at every re-pin.
 
 ### Fixed
 
+- **Tag by repeat: a row click's refusals are taken into memory before any further write**
+  (external re-check ao, 24 November). In fast mode the click's statement save ran before
+  memory adopted the refusals the first write had saved; an interruption there left a unit
+  refused in the draft but not in the session, whose save gate reads memory. `TagGrid.commit`
+  now adopts right after the save, and *Check and save* stays disabled while the session's tag
+  review differs from the draft's (`RepeatRows.saved`).
+
 - **Notebook installer: the installed commit, not only the version (#371).** Cell 1 of the
   Preprocessing notebook reused any installed package reporting version 0.8.0, so a 0.8.0 built
   from another commit (a development install from `main`) was taken for the release. It now
@@ -433,6 +440,12 @@ old pin are refused with `spec_commit_mismatch`, as at every re-pin.
   untagged and listed, with "its own tags are incomplete: a refused unit is never tagged from
   its header, even one that fits now; confirm its tags", until the user confirms it (**Override
   this unit**, **Confirm the same tags**), tags it by hand, or fills it with its row.
+  Nor is it tagged by any fast-mode click that is no action on it alone (external re-check ao,
+  24 November): a layout template edit, **Tag the N new unit(s) like the first tagged unit**, a
+  dropdown shared by several units, **Tag like the saved group** or a header pre-tag leave its
+  tags unchanged (`TagGrid.held_out`); before, a blank template edited through its shared
+  dropdown wrote the new tags to it when another unit's confirmation had saved its header
+  names as aliases.
 
 - **The Cellpose notebook's pin check covers the code it runs, not all of `src/` (#421).** A change
   under `src/` no longer needs a new `RELEASE_REF` in `notebooks/MorphoBricks_Cellpose.ipynb` unless
