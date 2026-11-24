@@ -8,6 +8,7 @@ through the app's own steps once the user ticked them.
 """
 
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -16,7 +17,7 @@ from types import SimpleNamespace
 import pytest
 
 from cellpose_stub import install
-from test_notebook_check_save import FOLDERS, add_folder, answer_all
+from test_notebook_check_save import FOLDERS, KINDS, add_folder, answer_all, write_channels
 
 pytest.importorskip("ipywidgets")
 pytest.importorskip("matplotlib")
@@ -327,8 +328,12 @@ def test_cell_5_refuses_an_app_now_on_another_experiment(tmp_path, stub):
 def segmented(tmp_path, nb, masks, mask_type="Cells"):
     """Return a stand-in of cell 4 that wrote ``mask_type`` into ``masks`` for the app's run."""
     batch = SimpleNamespace(counts=lambda: {"written": 4, "skipped": 0})
+    inputs = RunInputs.open(nb.result.output_folder)
     workflow = SimpleNamespace(
-        results={mask_type: batch}, inputs=RunInputs.open(nb.result.output_folder), masks_root=masks
+        results={mask_type: batch},
+        inputs=inputs,
+        masks_root=masks,
+        run_manifest_sha256=inputs.manifest_sha256,
     )
     return SimpleNamespace(workflow=workflow)
 
@@ -380,3 +385,35 @@ def test_files_the_run_did_not_record_besides_cell_4s_masks_are_still_refused(tm
     image = tmp_path / "exp" / FOLDERS[0] / "a.tif"
     shutil.copyfile(image, image.with_name("b.tif"))  # an image added since the run
     assert "did not record" in refused(register_step(nb, segmentation))
+
+
+def test_cell_5_refuses_masks_of_a_run_cell_3_published_again_after_cell_4(tmp_path, stub):
+    # Review of the #458 merge: cell 5 checked the run as it is now, not the one cell 4
+    # segmented. Cell 3 run again after cell 4 (here on a changed image) published another
+    # run at the same folder, which records the new image; its masks were made on the old
+    # one, yet they were offered and registered in the new run.
+    nb = ran_app(tmp_path)
+    out = nb.result.output_folder
+    step = segmentation_step(nb)
+    segment(step, tmp_path / "masks")
+    image = tmp_path / "exp" / FOLDERS[0] / "a.tif"
+    write_channels(image, ["DAPI", "Actin", "Ch3"], KINDS, seed=99)  # other pixels
+    stat = image.stat()
+    os.utime(image, ns=(stat.st_atime_ns, stat.st_mtime_ns + 10**10))
+    nb.check_button.click()
+    nb.quick_confirm.click()
+    assert nb.run().written  # cell 3 published again (the description is unchanged)
+    assert nb.result.read  # the changed image was read again
+    before = snapshot(out)
+    text = refused(register_step(nb, step))
+    assert "published again since cell 4 segmented it" in text
+    assert snapshot(out) == before  # nothing declared, saved or run
+
+
+def test_cell_5_run_again_after_it_registered_the_masks_is_not_refused(tmp_path, stub):
+    # Cell 5's own run publishes the run again: that publication is the registration's.
+    nb, registration, out = stopped_for_the_axes(tmp_path, stub)
+    nb.quick_confirm.click()
+    assert registration.register(), registration.status.value
+    again = register_step(nb, registration.segmentation)
+    assert list(again.ticks) == ["Cells"], again.status.value

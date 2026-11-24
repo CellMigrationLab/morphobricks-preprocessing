@@ -350,8 +350,9 @@ run the experiment in the app of cell 3. Then:
   axes again, do it in cell 3 (step **Axes**) and press the button again (or run cell 5
   again). It refuses, changing nothing, a mask type that collides with a mask already declared,
   a masks folder inside the experiment, masks of another run or masks folder than the app's,
-  images changed since the run, and, after that stop, axes other than those the segmented run
-  recorded or another experiment in cell 3.
+  images changed since the run, a run cell 3 published again after cell 4 opened it (open the
+  run again in cell 4 and segment again), and, after that stop, axes other than those the
+  segmented run recorded or another experiment in cell 3.
 
 ## 3. Supported images
 

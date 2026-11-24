@@ -25,6 +25,8 @@ run's manifest records (the axes stop lets the user change both in cell 3).
 The masks cell 4 wrote into the masks folder the run recorded are not a change: they are what
 is registered (any other file the run did not record still is). The folder check is made again
 whenever the app's last check did not find a mask type cell 4 wrote, even in the same folder.
+The run must still be the publication cell 4 opened (its pinned manifest) or the one cell 5
+made registering the masks: a run cell 3 published again since is refused.
 """
 
 from __future__ import annotations
@@ -45,7 +47,7 @@ from .notebook_cellpose_app import app_folders
 from .notebook_render import blocked_line
 from .report import mapping_summary
 from .run_inputs import RunInputsError, UnrecordedFilesError
-from .segmentation_cellpose_run import open_run
+from .segmentation_cellpose_run import manifest_sha256, open_run
 from .segmentation_record import SegmentationError
 
 NO_MASKS = (
@@ -65,6 +67,12 @@ COLLISION = (
     "The mask type {mask_type} collides with the mask {mask_id} the description already "
     "declares (source type {source_type}). Choose another mask type in cell 4 and segment "
     "again; nothing is declared twice."
+)
+REPUBLISHED = (
+    "The run in {segmented} was published again since cell 4 segmented it (cell 3 run again): "
+    "its masks were made on the run as cell 4 opened it. In cell 4 press Open the run again "
+    "and Segment the whole experiment again (overwrite), then run this cell again. Nothing was "
+    "declared."
 )
 CHANGED = "The images changed since the run, or the run cannot be opened: {reason}"
 AXES_AGAIN = (
@@ -163,6 +171,8 @@ def refusal(app: object, segmentation: object, *, rechecked: bool = False) -> st
     if not app_run or Path(app_run).resolve() != segmented:
         held = app_run or "no finished run"
         return OTHER_RUN.format(segmented=segmented, app_run=held)
+    if not _same_publication(segmentation, segmented):
+        return REPUBLISHED.format(segmented=segmented)
     issues = masks_folder_issues(masks, inputs.experiment_root, segmented)
     if issues:
         return f"{issues[0].message} {issues[0].action}".strip()
@@ -176,6 +186,21 @@ def refusal(app: object, segmentation: object, *, rechecked: bool = False) -> st
     except (RunInputsError, SegmentationError) as exc:
         return CHANGED.format(reason=exc)
     return next(filter(None, (_collision(app, t) for t in types)), "")
+
+
+def _same_publication(segmentation: object, segmented: Path) -> bool:
+    """Return whether the run's manifest is the one cell 4 segmented, or cell 5's own.
+
+    Cell 4 pins the manifest's SHA-256 when it opens the run (``run_manifest_sha256``,
+    :func:`.segmentation_cellpose_run.open_pinned`); a run published again since (cell 3 run
+    again, perhaps on changed images or other axes) is not the run the masks were made on. The
+    only other publication accepted is the one cell 5 made registering them
+    (``registered_manifest``), so that cell 5 run again after it is not refused.
+    """
+    now = manifest_sha256(segmented)
+    pinned = getattr(segmentation.workflow, "run_manifest_sha256", None)
+    ours = getattr(segmentation, "registered_manifest", None)
+    return now is not None and now in {pinned, ours}
 
 
 def _only_written(exc: UnrecordedFilesError, masks: Path, types: tuple[str, ...]) -> bool:
@@ -309,6 +334,8 @@ class MaskRegistration(widgets.VBox):
         result = app.run()
         if result is None or not result.written:
             return self._stop("The run of cell 3 stopped: its step Run says why.")
+        # Kept on cell 4's step: this publication is the registration's (cell 5 run again).
+        self.segmentation.registered_manifest = manifest_sha256(Path(result.output_folder))
         app.mask_step_button.click()  # the app's Describe the masks
         self.registered = True
         self.status.value = (

@@ -79,6 +79,9 @@ class SegmentationStep(widgets.VBox):
         The segmented run's output folder once cell 5 made the app's folder check again for it
         (:mod:`.notebook_mask_register`), which clears the app's run until it runs again; None
         before. Kept here so that cell 5 run again continues.
+    registered_manifest
+        The SHA-256 of the run manifest cell 5's run published when it registered the masks,
+        or None; cell 5 accepts that publication besides the one cell 4 opened.
     """
 
     def __init__(
@@ -91,6 +94,7 @@ class SegmentationStep(widgets.VBox):
         self.refused = _refusal(self.run_folder)
         self.segmentation: SegmentationApp | None = None
         self.rechecked_run: Path | None = None
+        self.registered_manifest: str | None = None
         self.notice = widgets.HTML(self._notice())
         self.install_box = widgets.VBox()
         self.children = [widgets.HTML(ui.STYLE_CSS), self.notice, self.install_box]
