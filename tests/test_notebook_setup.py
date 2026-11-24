@@ -110,7 +110,7 @@ def setup_environment(tmp_path, monkeypatch):
         namespace={},
         versions={
             "morphobricks-preprocessing": "0.8.0",
-            "morphobricks-normalization": "0.7.1",
+            "morphobricks-normalization": "0.8.0",
             "ipywidgets": "7.7.1",
         },
         # What pip recorded for the installed preprocessing (PEP 610); None: no record.
@@ -416,7 +416,7 @@ def test_cell_1_installs_without_mounting_drive_or_showing_the_app(
     assert namespace["SETUP_RECORD"]["release_ref"] == RELEASE_REF
     out = capsys.readouterr().out
     assert (
-        f"Ready: preprocessing 0.8.0 (commit {RELEASE_REF}); normalization 0.7.1; "
+        f"Ready: preprocessing 0.8.0 (commit {RELEASE_REF}); normalization 0.8.0; "
         "ipywidgets 7.7.1." in out
     )
     assert "Next: run cell 2 (Mount Google Drive), then cell 3 (Run preprocessing)." in out
