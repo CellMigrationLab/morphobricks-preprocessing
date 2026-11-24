@@ -233,14 +233,17 @@ def test_a_conversion_that_would_not_fit_is_refused_before_writing(tmp_path, mon
     assert convert_experiment(exp, SWAPPED, copies).written
 
 
-def test_partial_files_left_by_an_interrupted_conversion_are_written_again(tmp_path):
+def test_a_partial_file_beside_a_copy_is_not_the_conversions_and_is_kept(tmp_path):
+    # Issue #448: a ``.partial`` beside a planned copy was taken for an interrupted
+    # conversion's and removed. A conversion writes in its work folder
+    # (test_convert_partials), so such a file is the user's: refused, never removed.
     exp, copies = swapped_experiment(tmp_path / "exp"), tmp_path / "copies"
     left = copies / "ctrl" / "r1" / "a.tif.partial"
     left.parent.mkdir(parents=True)
     left.write_bytes(b"interrupted")
     result = convert_experiment(exp, SWAPPED, copies)
-    assert result.written and not left.exists()
-    assert tifffile.imread(copies / "ctrl" / "r1" / "a.tif").shape == (2, 9, 6)
+    assert not result.written and codes(result.issues) == ["copy_folder_not_empty"]
+    assert left.read_bytes() == b"interrupted"
 
 
 def test_the_copy_trees_lock_refuses_a_second_conversion(tmp_path):

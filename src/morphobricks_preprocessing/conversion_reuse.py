@@ -16,7 +16,7 @@ from pathlib import Path
 from .content_hash import unchanged_content
 from .conversion_issues import differs_issue, not_empty_issue, other_experiment_issue
 from .conversion_record import ConversionRecord, CopyEntry
-from .conversion_write import PARTIAL_SUFFIX
+from .conversion_write import WORK_FOLDER
 from .fingerprint import current_fingerprint
 from .links import is_link
 from .mounts import MountCheck
@@ -35,7 +35,7 @@ def compare(
 ) -> tuple[list[CopyEntry], list[PlannedCopy], ValidationIssue | None]:
     """Split the plan into copies to reuse and to write; refuse anything else there."""
     if earlier is None:
-        unknown = unknown_content(dest, planned)
+        unknown = unknown_content(dest)
         return [], list(planned), not_empty_issue(dest, unknown) if unknown else None
     record = earlier[0]
     if record.source_root != root.as_posix():
@@ -65,20 +65,21 @@ def _unchanged(old: CopyEntry, planned: CopyEntry, target: Path) -> bool:
     )
 
 
-def unknown_content(dest: Path, planned: tuple[PlannedCopy, ...]) -> list[str]:
+def unknown_content(dest: Path) -> list[str]:
     """Return the files in a folder without a record that this conversion did not leave.
 
-    Only the lock and the ``.partial`` files of the planned copies (left by an interrupted
-    conversion, removed before they are written again) are allowed.
+    Only the lock and the work folder (checked by the caller: a conversion's is removed,
+    anything else under its name refused) are allowed. A ``<name>.partial`` beside a planned
+    copy is unknown content like any other file: it is not the conversion's (issue #448).
     """
-    partials = {item.relative_path + PARTIAL_SUFFIX for item in planned}
     found = []
     for folder, subfolders, names in os.walk(dest):
         relative = Path(folder).relative_to(dest)
-        subfolders[:] = [d for d in subfolders if (relative / d).as_posix() not in partials]
+        if folder == str(dest):
+            subfolders[:] = [d for d in subfolders if d != WORK_FOLDER]
         for name in names:
             path = (relative / name).as_posix()
-            if path != LOCK_FILENAME and path not in partials:
+            if path not in (LOCK_FILENAME, WORK_FOLDER):
                 found.append(path)
     return sorted(found)
 

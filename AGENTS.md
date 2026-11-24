@@ -411,8 +411,10 @@ src/morphobricks_preprocessing/
   conversion_reuse.py compare: unchanged copies reused, anything else there refused; links_below:
                     links and mount points in the copy tree (is_link, MountCheck), refused (#447);
                     a folder it cannot read is refused too (copy_folder_unreadable, #467)
-  conversion_write.py write_all: .partial files moved into place together (any failure
-                    removes what it wrote)
+  conversion_write.py write_all: copies written in the conversion's own work folder
+                    (.morphobricks-conversion.partial, owner file first; a killed one's is
+                    removed only when its owner file is there, #448), moved into place
+                    together (any failure removes what it wrote); nothing else is removed
   zarr_input.py     OME-Zarr input: open_ngff (OME-NGFF 0.4/0.5 metadata -> level-0 array, axis
                     letters and physical sizes from the scale and axis units),
                     ngff_label_names/open_ngff_labels (label images, for later bricks),

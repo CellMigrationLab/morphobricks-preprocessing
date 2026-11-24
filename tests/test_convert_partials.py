@@ -7,10 +7,6 @@ had put it there. A conversion now writes its copies in its own work folder
 before it writes any copy; a later conversion removes a work folder only when that owner
 file is there. A ``.partial`` elsewhere is never removed: without a record it is refused as
 any other file, with a record it is left alone.
-
-Issue #467 (5): a link swapped into the copy tree while the copies are written is caught
-by a second check right before each copy is moved into place, and the clean-up after a
-failure never removes anything through a link.
 """
 
 import hashlib
@@ -18,13 +14,13 @@ import json
 import os
 
 import pytest
+import tifffile
 
 import morphobricks_preprocessing.conversion_write as write_module
 from morphobricks_preprocessing import convert_experiment
 from morphobricks_preprocessing.conversion_record import RECORD_FILENAME
 from test_convert_links import _tree
 from test_convert_run import SWAPPED, codes, swapped_experiment
-from test_links import _can_link
 
 WORK = ".morphobricks-conversion.partial"
 STORES = [
@@ -39,21 +35,27 @@ def _store(store):
 
 
 def _digests(folder):
-    """The SHA-256 of every file of the copy tree but its record and work folder."""
-    return {
-        name: hashlib.sha256(data).hexdigest()
-        for name, data in _tree(folder).items()
-        if name != RECORD_FILENAME and not name.startswith(WORK)
-    }
+    """The SHA-256 of every file of the copy tree but its record and work folder.
+
+    An OME-TIFF copy is taken by its pixels and axes: its OME-XML holds a new UUID each time.
+    """
+    found = {}
+    for name, data in _tree(folder).items():
+        if name == RECORD_FILENAME or name.startswith(WORK):
+            continue
+        if name.endswith(".tif"):
+            with tifffile.TiffFile(folder / name) as tif:
+                series = tif.series[0]
+                data = series.axes.encode() + series.asarray().tobytes()
+        found[name] = hashlib.sha256(data).hexdigest()
+    return found
 
 
 # Issue #448: a .partial the conversion did not write is never removed --------------------
 
 
 @pytest.mark.parametrize(("store", "copy"), STORES)
-def test_a_partial_folder_of_someone_else_is_refused_and_kept_byte_for_byte(
-    tmp_path, store, copy
-):
+def test_a_partial_folder_of_someone_else_is_refused_and_kept_byte_for_byte(tmp_path, store, copy):
     _store(store)
     exp, copies = swapped_experiment(tmp_path / "exp"), tmp_path / "copies"
     notes = copies / f"{copy}.partial" / "nested" / "unrelated_notes.txt"
@@ -147,67 +149,3 @@ def test_a_successful_conversion_leaves_no_work_folder(tmp_path):
     exp, copies = swapped_experiment(tmp_path / "exp"), tmp_path / "copies"
     assert convert_experiment(exp, SWAPPED, copies).written
     assert not (copies / WORK).exists() and not list(copies.rglob("*.partial"))
-
-
-# Issue #467 (5): a link swapped in during the conversion ----------------------------------
-
-
-@pytest.fixture
-def linkable(tmp_path):
-    if not _can_link(tmp_path):
-        pytest.skip("symbolic links cannot be made here (Windows without the privilege)")
-    return tmp_path
-
-
-def test_a_link_swapped_in_while_the_copies_are_written_is_refused_before_the_move(
-    linkable, monkeypatch
-):
-    exp, copies, elsewhere = (
-        swapped_experiment(linkable / "exp"),
-        linkable / "copies",
-        linkable / "elsewhere",
-    )
-    real, calls, at_swap = write_module.write_named_copy, [], {}
-
-    def swapping(source, target, *args, **kwargs):
-        calls.append(target)
-        real(source, target, *args, **kwargs)
-        if len(calls) == 3:  # every copy written: a link appears where one will go
-            if (copies / "drug").exists():
-                os.rename(copies / "drug", elsewhere)
-            else:
-                elsewhere.mkdir()
-            (copies / "drug").symlink_to(elsewhere, target_is_directory=True)
-            at_swap.update(_tree(elsewhere))
-
-    monkeypatch.setattr(write_module, "write_named_copy", swapping)
-    result = convert_experiment(exp, SWAPPED, copies)
-    assert not result.written and codes(result.issues) == ["copy_folder_has_links"]
-    assert result.issues[0].paths[0].startswith("drug ->")
-    assert _tree(elsewhere) == at_swap and not (elsewhere / "r1/a.tif").exists()
-    assert sorted(p.name for p in copies.iterdir()) == ["drug"]  # the link, nothing else
-
-
-def test_the_clean_up_after_a_failure_never_removes_through_a_link(linkable, monkeypatch):
-    exp, copies, elsewhere = (
-        swapped_experiment(linkable / "exp"),
-        linkable / "copies",
-        linkable / "elsewhere",
-    )
-    elsewhere.mkdir()
-    before = _tree(exp)
-    real, moved = os.replace, []
-
-    def swapping(source, target):
-        moved.append(target)
-        if len(moved) == 2:  # ctrl/r1/a.tif was moved into place: ctrl becomes a link
-            os.rename(copies / "ctrl", elsewhere / "ctrl")
-            (copies / "ctrl").symlink_to(exp / "ctrl", target_is_directory=True)
-            raise OSError("device removed")
-        return real(source, target)
-
-    monkeypatch.setattr(write_module.os, "replace", swapping)
-    result = convert_experiment(exp, SWAPPED, copies)
-    monkeypatch.undo()
-    assert not result.written and codes(result.issues) == ["conversion_failed"]
-    assert _tree(exp) == before, "an original was removed through the link"

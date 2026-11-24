@@ -79,6 +79,22 @@ def unreadable_issue(paths: list[str]) -> ValidationIssue:
     )
 
 
+def work_folder_issue(dest: Path) -> ValidationIssue:
+    """Refuse a copy tree whose conversion work folder a conversion did not make (#448)."""
+    from .conversion_write import WORK_FOLDER
+
+    return error(
+        "conversion_work_folder_unowned",
+        f"The folder for the named-axis copies holds {WORK_FOLDER}, the name of the folder a "
+        "conversion writes its copies in, but without the owner file a conversion writes into "
+        "it first, so it was not made by a conversion, or was changed since. Nothing was "
+        "removed and nothing was written.",
+        [WORK_FOLDER],
+        f"Move or remove {dest / WORK_FOLDER} yourself if you no longer need what it holds, "
+        "or choose a new, empty folder for the copies.",
+    )
+
+
 def names_collide_issue(paths: list[str]) -> ValidationIssue:
     """Refuse OME-Zarr copies of images that differ only by their extension."""
     return error(
