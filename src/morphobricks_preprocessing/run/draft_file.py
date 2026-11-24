@@ -8,8 +8,12 @@ consumer reads it as a description.
 - :func:`save_draft` writes it atomically under :func:`.lock.output_lock`, as the design CSV is
   saved (:func:`.design_file.write_design`), once the answers pass the rules: an answer the draft
   refuses is never saved, so the file on disk is always one that :func:`load_draft` accepts
-  (against the same folder). :func:`draft_holds` says whether the file holds exactly given
-  answers (a save stopped by an interruption replaced the file, or not).
+  (against the same folder). Given the draft's generation the writer last read or wrote
+  (``expected``, :func:`draft_generation`), it replaces the file only while the file is still
+  that generation, checked under the same hold of the lock as the replacement; otherwise
+  :class:`DraftChanged` is raised and nothing is written.
+- :func:`draft_generation` is the SHA-256 of the file's bytes (:data:`NO_DRAFT` without one);
+  :func:`answers_generation` is the generation :func:`save_draft` writes for given answers.
 - :func:`load_draft` resumes: the file is read strictly and refused when anything is wrong, and
   refused with ``spec_commit_mismatch`` when it was written under another pinned Spec commit
   (its confirmations were given under other rules) and with ``R_PUBLISHED_FILE_CHANGED`` when
@@ -18,7 +22,8 @@ consumer reads it as a description.
 - :func:`publish_draft` builds the description from the draft file
   (:func:`..draft_answers.description_from_draft`: every confirmation or nothing), publishes it
   with the checks of :func:`.description_file.publish_locked` together with its derived
-  ``experiment_design.csv``, and deletes the draft file, all under one hold of the lock. Any
+  ``experiment_design.csv``, and deletes the draft file, all under one hold of the lock (and,
+  given ``expected``, only while the draft file is still that generation). Any
   refusal writes nothing, and a failed write of the description, its records or its design
   changes none of them (issue #400; :mod:`.description_file` says how, and its limits): the
   draft, the published file and the design stay byte for byte as they were, so the draft can be
@@ -54,6 +59,32 @@ from ..draft_format import (
 from .description_file import Publication, PublicationRefused, check_base, publish_locked
 from .lock import output_lock
 from .output_guard import refuse_output_inside_masks
+
+NO_DRAFT = "no draft"
+"""The generation of an output folder without a draft file (:func:`draft_generation`)."""
+
+UNREAD = "unread"
+"""A generation no file has: a writer that cannot tell which draft it holds writes nothing."""
+
+
+class DraftChanged(DraftFileError):
+    """The draft file is no longer the generation the writer read or wrote; nothing written.
+
+    External re-check av (24 November 2026): two notebooks open on the same output folder each
+    hold the whole draft as they read it. The lock of the output folder makes their writes one
+    at a time but not current: the second wrote its stale answers over the first's saved
+    answers (a refusal, a confirmation, tags). A writer now names the generation it holds, and
+    the file is replaced only while it is still that one.
+    """
+
+    def __init__(self, folder: Path) -> None:
+        super().__init__(
+            f"{folder / DRAFT_FILENAME} was changed since this notebook read or saved it "
+            "(another notebook or program saved its own answers there). Nothing was saved, "
+            "so the answers saved there are kept: check the folder again (step 1, Check "
+            "folder) to read them, then give your change again",
+            "R_DRAFT_CHANGED",
+        )
 
 
 @dataclass(frozen=True)
@@ -102,11 +133,46 @@ def _require_current_spec(answers: DraftAnswers) -> None:
         )
 
 
-def save_draft(output_folder: str | os.PathLike, draft: Draft, answers: DraftAnswers) -> Path:
+def draft_generation(output_folder: str | os.PathLike) -> str:
+    """Return the draft file's generation: the SHA-256 of its bytes, or :data:`NO_DRAFT`.
+
+    Raises
+    ------
+    DraftFileError
+        ``R_FILE_SYMLINK`` when the draft path is a symbolic link.
+    OSError
+        When the file cannot be read.
+    """
+    data = _read_draft_bytes(Path(output_folder).resolve())
+    return NO_DRAFT if data is None else sha256_hex(data)
+
+
+def answers_generation(answers: DraftAnswers) -> str:
+    """Return the generation of the draft file :func:`save_draft` writes for ``answers``."""
+    return sha256_hex(answers_to_bytes(answers))
+
+
+def _require_generation(folder: Path, data: bytes | None, expected: str | None) -> None:
+    """Refuse a write over a draft file that is not the ``expected`` generation (None: any)."""
+    if expected is not None and (NO_DRAFT if data is None else sha256_hex(data)) != expected:
+        raise DraftChanged(folder)
+
+
+def save_draft(
+    output_folder: str | os.PathLike,
+    draft: Draft,
+    answers: DraftAnswers,
+    *,
+    expected: str | None = None,
+) -> Path:
     """Save the answers as ``morphobricks.draft.json``, holding the output folder's lock.
 
     The answers are applied to ``draft`` first and the exact bytes are read back with the strict
     reader, so a draft that would be refused on resume is refused here and nothing is written.
+    With ``expected`` the file is replaced only while it is that generation
+    (:func:`draft_generation`), read under the same hold of the lock as the replacement: the
+    notebook names the draft it read or last wrote, so answers held from an older draft are
+    never written over a newer one. The generation written is :func:`answers_generation`.
 
     Parameters
     ----------
@@ -116,6 +182,9 @@ def save_draft(output_folder: str | os.PathLike, draft: Draft, answers: DraftAns
         The draft derived from the folder, without the answers.
     answers
         All the user's answers so far (the file is replaced, not merged).
+    expected
+        The generation the writer holds (:data:`NO_DRAFT`: no file); None checks nothing (a
+        writer that read no draft before, as the tests set one up).
 
     Returns
     -------
@@ -133,6 +202,8 @@ def save_draft(output_folder: str | os.PathLike, draft: Draft, answers: DraftAns
     DraftFileError
         If the answers cannot be a draft file, the draft path is a symbolic link, or the answers
         carry a ``spec_commit`` other than the pinned one (``spec_commit_mismatch``).
+    DraftChanged
+        ``R_DRAFT_CHANGED``: the file is not the ``expected`` generation.
     """
     folder = Path(output_folder).resolve()
     refuse_output_inside_masks(folder)
@@ -141,22 +212,9 @@ def save_draft(output_folder: str | os.PathLike, draft: Draft, answers: DraftAns
     _require_current_spec(answers_from_bytes(data))
     folder.mkdir(parents=True, exist_ok=True)
     with output_lock(folder):
-        _read_draft_bytes(folder)  # a symbolic link is refused, never replaced
+        # a symbolic link is refused, never replaced; another generation is never replaced
+        _require_generation(folder, _read_draft_bytes(folder), expected)
         return write_text_atomic(folder / DRAFT_FILENAME, data.decode("utf-8"))
-
-
-def draft_holds(output_folder: str | os.PathLike, answers: DraftAnswers) -> bool:
-    """Return True when the draft file holds exactly the bytes :func:`save_draft` writes for these.
-
-    The file is replaced in one step, so after a save stopped by an interruption (external
-    re-check as, 24 November 2026) it holds the new answers or the ones before. False when the
-    file is missing, a symbolic link, unreadable or other answers.
-    """
-    try:
-        data = _read_draft_bytes(Path(output_folder).resolve())
-        return data is not None and data == answers_to_bytes(answers)
-    except (OSError, DraftFileError):
-        return False
 
 
 def _read_answers(folder: Path) -> DraftAnswers:
@@ -226,6 +284,7 @@ def publish_draft(
     confirmations: tuple[Reconfirmation, ...] = (),
     removals: tuple[Removal, ...] = (),
     recorded_on: str | None = None,
+    expected: str | None = None,
 ) -> Publication:
     """Publish the saved draft as ``morphobricks.toml``, derive the CSV, delete the draft.
 
@@ -245,10 +304,16 @@ def publish_draft(
     (:func:`.draft_answers.missing_confirmations`), so tags saved for another image are never
     published.
 
+    ``expected`` is the generation of the draft the caller checked (:func:`save_draft`): the
+    file is published only while it is that one, so a draft another notebook saved since is
+    never published on the strength of this one's check. None checks nothing.
+
     Raises
     ------
     OutputLockedError
         If a run holds the lock.
+    DraftChanged
+        ``R_DRAFT_CHANGED``: the file is not the ``expected`` generation; nothing is written.
     DraftFileError
         ``no_draft`` when no draft is saved, or the file is refused (see :func:`load_draft`).
     DraftIncomplete
@@ -258,6 +323,7 @@ def publish_draft(
     """
     folder = Path(output_folder)
     with output_lock(folder):
+        _require_generation(folder, _read_draft_bytes(folder), expected)
         resumed = _resume(folder, draft)
         candidate = description_from_draft(draft, resumed.answers, channel_counts=channel_counts)
         publication = publish_locked(

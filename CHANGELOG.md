@@ -436,6 +436,27 @@ old pin are refused with `spec_commit_mismatch`, as at every re-pin.
   the file holds exactly their bytes (`run.draft_file.draft_holds`), else goes back to the
   answers before, and fast mode's strict page's draft follows a save the file took
   (unticking no longer writes back a draft without it). Uninterrupted saves are unchanged.
+- **Tag by repeat: a click that fills no unit keeps its refusals after an interruption**
+  (external re-check av, 24 November, blocker 1). A repeat folder's row that refuses every unit
+  it offers writes only the tag review (`RepeatRows._save_review`). That write marked the
+  review as seen (`ReviewMemory.seen`) before memory took the refusals (`adopt`); stopped in
+  between, memory stayed behind a draft `sync` took for the one it saw, and the same session's
+  reconcile and persist erased the refusals from the draft. A row click's write is now marked
+  seen only by `adopt`, which takes the refusals first.
+- **Two notebooks on one output folder: a stale one never writes over the other's draft**
+  (external re-check av, 24 November, blocker 2). Each notebook holds the whole draft as it
+  read it; the output folder's lock made their writes one at a time but not current, so the
+  second wrote its stale answers over the first's saved refusal, confirmation or tags. The
+  notebook now pins the draft file's generation (SHA-256 of `morphobricks.draft.json`) when it
+  reads the draft and after each save of its own; `run.draft_file.save_draft(expected=...)`
+  and `publish_draft(expected=...)` compare it with the file under the same hold of the lock
+  as the write and otherwise refuse with `R_DRAFT_CHANGED` (`DraftChanged`), writing nothing.
+  Every save of the notebook (every card, the tag review, *Check and save*) and its
+  publication pass it; a folder this notebook never read is written only while it has no
+  draft file. A save stopped by an interruption keeps the new answers only when the file holds
+  them; when it holds neither them nor the draft before (another writer in between), every
+  later save is refused until the folder is checked again. `draft_holds` is replaced by
+  `draft_generation` and `answers_generation`. The command line writes no draft.
 
 - **Notebook installer: the installed commit, not only the version (#371).** Cell 1 of the
   Preprocessing notebook reused any installed package reporting version 0.8.0, so a 0.8.0 built

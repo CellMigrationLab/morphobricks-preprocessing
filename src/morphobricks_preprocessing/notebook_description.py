@@ -21,6 +21,7 @@ from __future__ import annotations
 import html
 import logging
 from dataclasses import replace
+from pathlib import Path
 
 import ipywidgets as widgets
 
@@ -46,7 +47,14 @@ from .notebook_description_view import (
 from .notebook_names import _NameRows, _updated
 from .notebook_strict_draft import _StrictDraft
 from .run import OutputLockedError
-from .run.draft_file import draft_holds, save_draft
+from .run.draft_file import (
+    NO_DRAFT,
+    UNREAD,
+    DraftChanged,
+    answers_generation,
+    draft_generation,
+    save_draft,
+)
 from .run.output_guard import OutputInsideMasksError
 
 IDS_QUESTION = "Are these IDs right?"
@@ -78,6 +86,7 @@ class _DescriptionCard(_NameRows, _SavedDraft, _StrictDraft):
         self._names_refusal = ""
         self._references_refusal = ""
         self._draft_saved = False
+        self._draft_pin: tuple[Path, str] | None = None
         self._keep_old_draft = False
         self._refreshing = False
         self._refusal: DraftError | None = None
@@ -151,7 +160,11 @@ class _DescriptionCard(_NameRows, _SavedDraft, _StrictDraft):
         self._keep_old_draft = False
         output = self._design_output
         answers, note, read = None, "", None
+        self._draft_pin = None
         if output is not None:
+            # pinned before the read: a file changed in between is another generation, and the
+            # first write refuses (:meth:`_save_description`), never overwrites it
+            self._draft_pin = (output.resolve(), self._generation_now(output))
             answers, note, read = self._read_saved_draft(output)
         self._carried_strict(read if answers is not None else None)
         self._draft_saved = answers is not None
@@ -212,12 +225,40 @@ class _DescriptionCard(_NameRows, _SavedDraft, _StrictDraft):
         have got them; a later save then wrote them with a stale tag review. The file is
         replaced in one step: it holds ``answers`` or the ones before. Memory keeps ``answers``
         only when the file holds them (or no output folder is set: memory is the only copy).
+
+        External re-check av: another notebook may have saved in between, so the file can be
+        neither. Memory then goes back to the answers before, and the pinned generation is
+        :data:`.run.draft_file.UNREAD`: every later write is refused until the folder is checked
+        again and the draft read (:meth:`_load_description`).
         """
         output = self._design_folder()
-        if output is None or draft_holds(output, answers):
-            self._draft_saved = output is not None
+        if output is None:
+            return
+        now = self._generation_now(output)
+        if now == answers_generation(answers):
+            self._draft_saved, self._draft_pin = True, (output.resolve(), now)
             return
         self.draft, self.draft_answers = before
+        if now != self._expected_generation(output):
+            self._draft_pin = (output.resolve(), UNREAD)
+
+    @staticmethod
+    def _generation_now(output: Path) -> str:
+        """Return the draft file's generation now; UNREAD when it cannot be read."""
+        try:
+            return draft_generation(output)
+        except (DraftFileError, OSError):
+            return UNREAD
+
+    def _expected_generation(self, output: Path) -> str:
+        """Return the generation of the draft this notebook holds in ``output``.
+
+        The one it read on opening or last wrote (:attr:`_draft_pin`); in another folder, one
+        with no draft file (:data:`.run.draft_file.NO_DRAFT`): a draft this notebook never read
+        is never written over.
+        """
+        pin = self._draft_pin
+        return pin[1] if pin is not None and pin[0] == output.resolve() else NO_DRAFT
 
     def _save_description(self) -> bool:
         """Save the answers to ``morphobricks.draft.json`` under the output folder's lock.
@@ -238,7 +279,8 @@ class _DescriptionCard(_NameRows, _SavedDraft, _StrictDraft):
             return False
         with self.log.attached():
             try:
-                save_draft(output, self._draft_base, self.draft_answers)
+                expected = self._expected_generation(output)
+                save_draft(output, self._draft_base, self.draft_answers, expected=expected)
             except OutputLockedError:
                 self.folder_lock.show(output)
                 self._save_problem = "another run holds the lock of the output folder"
@@ -246,6 +288,12 @@ class _DescriptionCard(_NameRows, _SavedDraft, _StrictDraft):
                     "error",
                     "Not saved: another run holds the lock of the output folder.",
                     ["Answer again once it is free."],
+                )
+                return False
+            except DraftChanged as exc:
+                self._save_problem = str(exc)
+                self._names_refusal = ui.status(
+                    "error", "Not saved: the draft changed.", [str(exc)]
                 )
                 return False
             except (OutputInsideMasksError, DraftFileError, DraftError) as exc:
@@ -260,6 +308,7 @@ class _DescriptionCard(_NameRows, _SavedDraft, _StrictDraft):
             finally:
                 self._show_log()
         self._draft_saved = True
+        self._draft_pin = (output.resolve(), answers_generation(self.draft_answers))
         return True
 
     # The names card ----------------------------------------------------------------------

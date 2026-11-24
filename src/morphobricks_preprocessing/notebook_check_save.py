@@ -60,7 +60,7 @@ from .notebook_replicates import _ReplicateBoxes
 from .published_answers import kept_date
 from .run import OutputLockedError
 from .run.description_file import PublicationRefused
-from .run.draft_file import publish_draft
+from .run.draft_file import NO_DRAFT, publish_draft
 from .validation import plural
 
 INTRO = (
@@ -527,14 +527,18 @@ class _CheckSaveScreen(_ReplicateBoxes):
             )
             removals, confirmations = self._publication_terms(state, candidate)
             recorded = today if state.reconciliation.counts else None
-        return publish_draft(
-            self._design_folder(),
+        output = self._design_folder()
+        publication = publish_draft(
+            output,
             self._draft_base,
             channel_counts=self._channel_counts(),
             confirmations=confirmations,
             removals=removals,
             recorded_on=recorded,
+            expected=self._expected_generation(output),  # the draft checked, never a newer one
         )
+        self._draft_pin = (output.resolve(), NO_DRAFT)  # published: the draft file is deleted
+        return publication
 
 
 __all__ = ["INTRO", "_CheckSaveScreen"]

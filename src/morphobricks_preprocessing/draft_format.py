@@ -82,7 +82,8 @@ class DraftFileError(ValueError):
 
     ``code`` is ``malformed``, ``unknown_version``, ``unknown_key`` (a key the format does not
     have), ``R_DRAFT_BASE_MISSING`` (no usable ``base_sha256``), ``R_FILE_SYMLINK``,
-    ``no_draft`` or ``spec_commit_mismatch`` (raised by :mod:`.run.draft_file`).
+    ``no_draft``, ``spec_commit_mismatch`` or ``R_DRAFT_CHANGED`` (raised by
+    :mod:`.run.draft_file`).
     """
 
     def __init__(self, message: str, code: str = "malformed") -> None:
