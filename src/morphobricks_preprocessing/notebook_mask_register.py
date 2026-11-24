@@ -147,14 +147,19 @@ def _app_run(app: object, rechecked: bool) -> tuple[str, str]:
 
 
 def refusal(app: object, segmentation: object, *, rechecked: bool = False) -> str:
-    """Return why the masks of cell 4 cannot be registered in the app's run, or ""."""
+    """Return why the masks of cell 4 cannot be registered in the app's run, or "".
+
+    ``rechecked``: cell 5 made the app's folder check for this run (also read from the
+    segmentation's ``rechecked_run``, so cell 5 run again after the axes stop continues).
+    """
     types = written_types(segmentation)
     if not types:
         return NO_MASKS
     workflow = segmentation.workflow
     inputs, masks = workflow.inputs, Path(workflow.masks_root).resolve()
-    app_run, app_masks = _app_run(app, rechecked)
     segmented = Path(inputs.output_folder).resolve()
+    rechecked = rechecked or getattr(segmentation, "rechecked_run", None) == segmented
+    app_run, app_masks = _app_run(app, rechecked)
     if not app_run or Path(app_run).resolve() != segmented:
         held = app_run or "no finished run"
         return OTHER_RUN.format(segmented=segmented, app_run=held)
@@ -222,7 +227,7 @@ class MaskRegistration(widgets.VBox):
         self.app, self.segmentation = app, segmentation
         self.status = widgets.HTML()
         self.ticks: dict[str, widgets.Checkbox] = {}
-        self.registered = self.rechecked = False
+        self.registered = False
         why = refusal(app, segmentation)
         if why:
             self.status.value = ui.status("error", "The masks cannot be registered", [why])
@@ -269,7 +274,7 @@ class MaskRegistration(widgets.VBox):
         """Declare the ticked masks through the app, save, run and describe; True when done."""
         if self.button.disabled:
             return False
-        why = refusal(self.app, self.segmentation, rechecked=self.rechecked)
+        why = refusal(self.app, self.segmentation)
         if why:
             return self._stop(why)
         app, masks = self.app, Path(self.segmentation.workflow.masks_root).resolve()
@@ -282,7 +287,10 @@ class MaskRegistration(widgets.VBox):
         ):
             app.masks_folder.value = os.fspath(masks)
             app.check_folder()  # the app's Scan the folders, now with the masks folder
-            self.rechecked = True
+            # Kept on cell 4's step, not this widget: cell 5 run again continues from here.
+            self.segmentation.rechecked_run = Path(
+                self.segmentation.workflow.inputs.output_folder
+            ).resolve()
         if app.confirmed_mapping is None:
             return self._stop(AXES_AGAIN)
         why = _other_experiment(app, self.segmentation.workflow.inputs)

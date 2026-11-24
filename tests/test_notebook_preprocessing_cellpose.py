@@ -258,6 +258,17 @@ def snapshot(folder):
     return {p: p.read_bytes() for p in sorted(folder.rglob("*")) if p.is_file()}
 
 
+def test_cell_5_run_again_after_the_axes_stop_continues(tmp_path, stub):
+    # Before, a new widget saw the app's run cleared by the folder check and refused OTHER_RUN.
+    nb, registration, out = stopped_for_the_axes(tmp_path, stub)
+    nb.quick_confirm.click()
+    again = register_step(nb, registration.segmentation)  # cell 5 run again
+    assert list(again.ticks) == ["Cells"], again.status.value
+    again.ticks["Cells"].value = True
+    assert again.register(), again.status.value
+    assert RunInputs.open(out).mask_types() == ("Cells",)
+
+
 def test_cell_5_refuses_axes_other_than_those_the_segmented_run_recorded(tmp_path, stub):
     # B2: after the axes stop, only "some axes are confirmed" was checked.
     nb, registration, out = stopped_for_the_axes(tmp_path, stub)
