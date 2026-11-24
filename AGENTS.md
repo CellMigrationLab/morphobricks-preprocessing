@@ -407,7 +407,8 @@ src/morphobricks_preprocessing/
                     its image's fingerprint (source_changed_during_check), planes checked
                     against the memory limit first, PlannedCopy per image;
                     copy_folder_issues (the folder rule) and preview_conversion (the plan,
-                    space needed and free, for the notebook card; writes nothing, PP-11b)
+                    with the conversion's store and projection, #488; space needed and
+                    free, for the notebook card; writes nothing, PP-11b)
   conversion_reuse.py compare: unchanged copies reused, anything else there refused; links_below:
                     links and mount points in the copy tree (is_link, MountCheck), refused (#447);
                     a folder it cannot read is refused too (copy_folder_unreadable, #467)

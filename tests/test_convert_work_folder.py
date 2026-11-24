@@ -107,3 +107,46 @@ def test_the_long_paths_setting_is_read_from_the_registry(monkeypatch, value, en
 def test_without_winreg_long_paths_count_as_disabled(monkeypatch):
     monkeypatch.setitem(sys.modules, "winreg", None)  # import winreg raises ImportError
     assert plan_module._long_paths_enabled() is False
+
+
+def test_the_preview_counts_ome_zarr_paths_as_the_conversion_does(tmp_path, monkeypatch):
+    # (3) The OME-TIFF copies fit Windows' limits, the OME-Zarr copies do not: the preview
+    # plans the store it is given, so it refuses what the conversion refuses.
+    _store("ome-zarr")
+    exp = swapped_experiment(tmp_path / "exp")
+    assert convert_experiment(exp, SWAPPED, tmp_path / "tiff").written
+    assert convert_experiment(exp, SWAPPED, tmp_path / "zarr", store="ome-zarr").written
+    tiff_folder, tiff_file = _deepest(tmp_path / "tiff")
+    zarr_file = _deepest(tmp_path / "zarr")[1]
+    work = len("/.mbconv/files/")
+    room = min(259 - tiff_file, 247 - tiff_folder) - work  # the OME-TIFF copies just fit
+    copies = tmp_path / ("c" * (room - len(str(tmp_path)) - 1))
+    assert len(str(copies)) + work + zarr_file > 259, "the OME-Zarr copies must not fit"
+    monkeypatch.setattr(plan_module, "_windows", lambda: True)
+    assert plan_module.preview_conversion(exp, SWAPPED, copies).ok
+    preview = plan_module.preview_conversion(exp, SWAPPED, copies, store="ome-zarr")
+    result = convert_experiment(exp, SWAPPED, copies, store="ome-zarr")
+    assert codes(preview.issues) == codes(result.issues) == ["copy_path_too_long"]
+    assert preview.issues[0].paths == result.issues[0].paths
+    assert "ctrl/r1/a.ome.zarr" in preview.issues[0].paths
+
+
+def test_the_preview_plans_the_store_and_the_projection(tmp_path):
+    # (3) The preview names what the conversion writes: OME-Zarr copies, projections.
+    _store("ome-zarr")
+    from morphobricks_preprocessing import Projection
+    from test_projection_convert import NAMES, ZCYX, stack_experiment
+
+    exp = swapped_experiment(tmp_path / "exp")
+    preview = plan_module.preview_conversion(exp, SWAPPED, tmp_path / "c1", store="ome-zarr")
+    names = [name for name, _ in preview.converted]
+    assert preview.ok and "ctrl/r1/a.ome.zarr" in names
+    stacks = tmp_path / "stacks"
+    stack_experiment(stacks)
+    projected = Projection("max")
+    preview = plan_module.preview_conversion(stacks, ZCYX, tmp_path / "c2", projection=projected)
+    assert preview.ok and preview.projected == NAMES
+    with pytest.raises(ValueError, match="store must be one of"):
+        plan_module.preview_conversion(exp, SWAPPED, tmp_path / "c3", store="zip")
+    with pytest.raises(TypeError, match="unexpected keyword"):
+        plan_module.preview_conversion(exp, SWAPPED, tmp_path / "c3", progress=None)

@@ -41,14 +41,14 @@ from .conversion_issues import (
     path_too_long_issue,
     pixel_type_issue,
 )
-from .conversion_record import CONVERTED, COPIED, RECORD_FILENAME, CopyEntry
+from .conversion_record import CONVERTED, COPIED, PROJECTED, RECORD_FILENAME, CopyEntry
 from .conversion_write import WORK_FOLDER, partial_path
 from .copy_axes import copy_layout
 from .fingerprint import Fingerprint
 from .links import relative_inside
 from .metadata import TiffMetadata
 from .ome_tiff_copy import copy_nbytes
-from .ome_zarr_copy import OME_TIFF, OME_ZARR, as_zarr_copy
+from .ome_zarr_copy import OME_TIFF, OME_ZARR, STORES, as_zarr_copy
 from .planes import DEFAULT_MEMORY_LIMIT, check_planes
 from .planned_copy import PlannedCopy
 from .projection import Projection
@@ -421,7 +421,10 @@ class ConversionPreview:
         The errors that would stop the conversion (the folder rule, then the checks of
         :func:`plan_conversion`), and the warnings.
     converted
-        Images that would be written as named-axis OME-TIFF, with their axis code, sorted.
+        Images that would be written as named-axis copies (OME-TIFF, or OME-Zarr with
+        ``store="ome-zarr"``), with their axis code, sorted.
+    projected
+        Images that would be written as projections (with ``projection``), sorted.
     copied
         Images that would be copied byte for byte, sorted (``"excluded"`` or None).
     needed_bytes
@@ -438,6 +441,7 @@ class ConversionPreview:
     issues: tuple[ValidationIssue, ...] = ()
     converted: tuple[tuple[str, str], ...] = ()
     copied: tuple[tuple[str, str | None], ...] = ()
+    projected: tuple[str, ...] = ()
     needed_bytes: int = 0
     free_bytes: int | None = None
     earlier_conversion: bool = False
@@ -461,7 +465,7 @@ def preview_conversion(
     exclude: Iterable[str] = (),
     missing_as_singleton: bool = False,
     memory_limit: int = DEFAULT_MEMORY_LIMIT,
-    masks_folder: str | os.PathLike | None = None,
+    **how: Unpack[PlanOptions],
 ) -> ConversionPreview:
     """Work out what :func:`.conversion.convert_experiment` would write; write nothing.
 
@@ -483,19 +487,36 @@ def preview_conversion(
         As :func:`.conversion.convert_experiment`.
     memory_limit
         As :func:`.conversion.convert_experiment`.
-    masks_folder
-        As :func:`.conversion.convert_experiment`.
+    **how
+        The keywords of :class:`PlanOptions`, as :func:`.conversion.convert_experiment`:
+        ``masks_folder``, ``projection`` and ``store``. The plan is the conversion's, so a
+        projection or OME-Zarr copies are counted as they will be written (their names,
+        their size, the length of their paths on Windows, issue #488).
 
     Returns
     -------
     ConversionPreview
+
+    Raises
+    ------
+    TypeError
+        For any other keyword.
+    ValueError
+        If ``store`` is unknown or ``projection`` is not a :class:`.projection.Projection`.
     """
+    unknown = sorted(set(how) - set(PlanOptions.__annotations__))
+    if unknown:
+        raise TypeError(f"preview_conversion() got unexpected keyword arguments {unknown}")
+    if how.get("store", OME_TIFF) not in STORES:
+        raise ValueError(f"store must be one of {STORES}, found {how['store']!r}")
+    if not isinstance(how.get("projection"), Projection | None):
+        raise ValueError(f"projection must be a Projection or None, found {how['projection']!r}")
     root, dest = Path(experiment_root).resolve(), Path(destination).resolve()
-    refused = copy_folder_issues(root, dest, masks_folder)
+    refused = copy_folder_issues(root, dest, how.get("masks_folder"))
     if refused:
         return ConversionPreview(dest, tuple(refused))
     planned, issues = plan_conversion(
-        root, mapping, dest, exclude, missing_as_singleton, memory_limit
+        root, mapping, dest, exclude, missing_as_singleton, memory_limit, **how
     )
     entries = [item.entry for item in planned]
     return ConversionPreview(
@@ -503,6 +524,7 @@ def preview_conversion(
         issues=tuple(sorted(issues, key=lambda issue: not issue.is_error)),
         converted=tuple((e.relative_path, e.reason) for e in entries if e.action == CONVERTED),
         copied=tuple((e.relative_path, e.reason) for e in entries if e.action == COPIED),
+        projected=tuple(e.relative_path for e in entries if e.action == PROJECTED),
         needed_bytes=sum(item.nbytes for item in planned),
         free_bytes=free_space(dest),
         earlier_conversion=(dest / RECORD_FILENAME).is_file(),
