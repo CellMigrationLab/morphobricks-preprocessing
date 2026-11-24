@@ -104,11 +104,20 @@ def _ambiguous_message(group: Sequence[ChannelFinding]) -> str:
             f"its {found.channel} looks like {alike} (distance {found.distance:.1f} to "
             f"{found.channel}, {near})"
         )
-    return (
+    text = (
         f"In unit {first.unit.label}, channels {_names([f.channel for f in group])} look "
         f"swapped in more than one way: compared with {others}, {'; '.join(parts)}. The "
-        f"possible pairs are within {PAIR_TOLERANCE:g} of each other, so no pair is named."
+        f"possible pairs are within {PAIR_TOLERANCE:g} robust deviations of each other in the "
+        "larger of their two cross distances, so no pair is named."
     )
+    for found in group:
+        if len(found.alternatives) > 1:
+            alike = _names([c for c, _ in found.alternatives])
+            text += (
+                f" {alike} look alike in the other units, which is why no pair can be "
+                f"chosen for {found.channel}."
+            )
+    return text
 
 
 def _others(across: bool) -> str:

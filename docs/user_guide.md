@@ -722,7 +722,7 @@ imaging unit's channels compared with the same channels of the other units of it
 (a treatment effect is not reported when the condition has at least 3 other units), with
 `channel_unlike_others`, `possible_channel_swap` (for example "channels DAPI and GFP look
 swapped") and `ambiguous_channel_swap` warnings (channels that look swapped in more than one
-way the check cannot tell apart: it names them all and no pair) and the channels it could not check; the notebook draws them under
+way the check cannot tell apart: it names them all and no pair; a cycle of three channels, A shows B, B shows C, C shows A, is not a swap and gives three "does not look like" warnings) and the channels it could not check; the notebook draws them under
 **Do the channels look like themselves?**. A swap made in every unit of a condition is not
 found. Warnings only: nothing is changed or blocked.
 
