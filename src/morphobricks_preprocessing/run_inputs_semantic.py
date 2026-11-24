@@ -27,8 +27,11 @@ from typing import TYPE_CHECKING
 from .description import Description
 from .description_consume import read_published_description
 from .description_file import DESCRIPTION_FILENAME
+from .description_record import KEY as DESCRIPTION_KEY
 from .description_record import check_declared_overrides
 from .description_unnamed import FIELD as UNNAMED_FIELD
+from .description_write import SECTIONS
+from .description_write import section_digests as published_digests
 from .fov_identity import FovIdentity, fov_identity
 from .manifest import FileEntry, RunManifest
 from .mask_representation import CHECKED, file_status, predates_value_rule, read_checked
@@ -38,6 +41,7 @@ from .run_inputs_error import (
     DescriptionRequiredError,
     MaskUncheckedError,
     RunInputsError,
+    SectionDigestMismatchError,
 )
 
 if TYPE_CHECKING:
@@ -84,6 +88,31 @@ def check_description(output: Path, manifest: RunManifest) -> Description:
             f"The run manifest contradicts its experiment description: {error}."
         ) from error
     return description
+
+
+def check_section_digests(manifest: RunManifest, description: Description) -> None:
+    """Refuse recorded section digests that are not the published description's (#490).
+
+    ``description`` is the one :func:`check_description` returned (its SHA-256 checked). The
+    manifest's digests are what ``section_digests()`` gives a brick for its cache keys and what
+    ``resolve_request()`` records as provenance, so each must equal the digest of that section
+    of the published file. The recorded value is never replaced by the recomputed one.
+
+    Raises
+    ------
+    SectionDigestMismatchError
+        ``manifest_section_digest_mismatch``, naming every section that differs.
+    """
+    recorded = manifest.experiment_description["section_digests"]
+    expected = published_digests(description)
+    differ = [name for name in SECTIONS if recorded[name] != expected[name]]
+    if differ:
+        fields = ", ".join(f"{DESCRIPTION_KEY}.section_digests.{name}" for name in differ)
+        raise SectionDigestMismatchError(
+            f"{SectionDigestMismatchError.code}: the run manifest records {fields} other than "
+            f"the digest of that section of {DESCRIPTION_FILENAME}, the description the run "
+            "read (the manifest was changed since the run). Run preprocessing again."
+        )
 
 
 def with_identity(fov: Fov, entry: FileEntry, description: Description) -> Fov:

@@ -33,7 +33,7 @@ from ._io import write_text_atomic
 from .axes import AxisMapping
 from .channel_identity_model import ChannelIdentitySettings, recorded_settings, settings_entry
 from .description_record import KEY as DESCRIPTION_KEY
-from .description_record import recorded_description
+from .description_record import SectionDigestsError, recorded_description
 from .image_qc_record import KEY as IMAGE_QC_KEY
 from .image_qc_record import recorded_image_qc
 from .lab_links import KEY as LAB_LINKS_KEY
@@ -77,6 +77,18 @@ _LABEL_KEYS = ("folder", "condition", "biological_repeat", "technical_repeat")
 
 class ManifestFormatError(ValueError):
     """Raised when a file is not a run manifest this version can read."""
+
+    code: str | None = None
+    """The refusal's code when it has one, else None."""
+
+
+class ManifestSectionDigestsError(ManifestFormatError):
+    """The description's ``section_digests`` are not the four sections' SHA-256 (#490).
+
+    Refused when the manifest is read, before any consumer sees them; never filled in.
+    """
+
+    code = SectionDigestsError.code
 
 
 @dataclass(frozen=True)
@@ -342,6 +354,8 @@ class RunManifest:
             )
         except ManifestFormatError:
             raise
+        except SectionDigestsError as exc:  # coded: a consumer's cache keys and provenance
+            raise ManifestSectionDigestsError(f"{exc}. {RERUN}") from exc
         except UnsupportedVersionError as exc:  # a later version's manifest: plainly refused
             raise ManifestFormatError(str(exc)) from exc
         except KeyError as exc:  # a key every current manifest writes: never defaulted (PP-05)

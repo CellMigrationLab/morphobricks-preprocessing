@@ -19,7 +19,7 @@ import pytest
 from described_tree import run_described
 from description_tree import MAPPING, build_experiment
 from morphobricks_preprocessing.description import description_from_bytes
-from morphobricks_preprocessing.description_write import canonical_bytes
+from morphobricks_preprocessing.description_write import canonical_bytes, section_digests
 from morphobricks_preprocessing.run_inputs import RunInputs, RunInputsError
 from morphobricks_preprocessing.run_inputs_error import ChannelNotFoundError
 from morphobricks_preprocessing.run_inputs_semantic import MaskSemantics
@@ -103,10 +103,13 @@ def test_a_unit_that_does_not_match_its_image_is_refused(tmp_path):
     short = replace(unit, channels=unit.channels[:1])
     changed = replace(member, technical_repeats={**member.technical_repeats, "single": short})
     repeats = {**description.repeats, "rep1": replace(repeat, members={"CTRL": changed})}
-    data = canonical_bytes(replace(description, repeats=repeats))
-    # Same file bytes recorded by the run: forge the manifest's SHA so only the units differ.
+    forged = replace(description, repeats=repeats)
+    data = canonical_bytes(forged)
+    # Same file bytes recorded by the run: forge the manifest's SHA and section digests (#490)
+    # so only the units differ.
     manifest = json.loads((out / "run_manifest.json").read_text())
     manifest["experiment_description"]["sha256"] = hashlib.sha256(data).hexdigest()
+    manifest["experiment_description"]["section_digests"] = section_digests(forged)
     (out / "run_manifest.json").write_text(json.dumps(manifest))
     (out / "morphobricks.toml").write_bytes(data)
     inputs = RunInputs.open(out)
