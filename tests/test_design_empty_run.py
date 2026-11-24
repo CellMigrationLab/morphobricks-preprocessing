@@ -29,4 +29,4 @@ def test_every_image_excluded_is_one_no_images_error_not_two(tmp_path):
 def test_an_empty_design_action_does_not_only_say_to_save_the_description_again():
     (issue,) = design_issues(DesignTable(()))
     assert issue.code == "invalid_experiment_design"
-    assert "not all excluded" in issue.action
+    assert "not all excluded" in issue.action and "again" in issue.action

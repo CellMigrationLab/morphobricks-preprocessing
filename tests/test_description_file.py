@@ -29,8 +29,8 @@ from morphobricks_preprocessing.run.description_file import (
     ABSENT,
     PublicationRefused,
     RecordsFileError,
-    publish_description,
     _candidate_records,
+    publish_description,
     read_records,
 )
 from morphobricks_preprocessing.run.lock import LOCK_FILENAME, OutputLockedError, output_lock
@@ -292,9 +292,7 @@ def test_a_write_that_fails_inside_the_append_leaves_file_and_records_as_before(
     assert _snapshot(tmp_path) == before  # file, records, no temporary file, no lock
 
 
-def test_a_temporary_file_that_cannot_be_removed_does_not_skip_the_put_back(
-    tmp_path, monkeypatch
-):
+def test_a_temporary_file_that_cannot_be_removed_does_not_skip_the_put_back(tmp_path, monkeypatch):
     base = _published(tmp_path)
     (tmp_path / RECORDS_FILENAME).write_bytes(SEEDED)
     before = _snapshot(tmp_path)
