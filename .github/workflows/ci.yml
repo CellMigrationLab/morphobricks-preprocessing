@@ -10,8 +10,9 @@ name: CI
 #   request labelled "release" (every push to it while the label is on; the release PR moves
 #   the notebooks' RELEASE_REF).
 #
-# The release condition is written three times below (env and the two matrix lists, which
-# cannot read env); keep the three copies identical.
+# The release condition is written five times below (env, the concurrency group and its
+# cancel-in-progress, and the two matrix lists: none of these but env can read env); keep the
+# five copies identical.
 on:
   push:
     branches: [main]
@@ -25,9 +26,17 @@ env:
     ${{ (github.event_name == 'workflow_dispatch' || github.ref_type == 'tag'
     || contains(github.event.pull_request.labels.*.name, 'release')) && '1' || '0' }}
 
+# A new push to a pull request or a branch (main included) cancels the older run of the same
+# ref, so stale runs do not queue ahead of real work. A release run is never cancelled: each
+# one gets its own group (its run ID), and cancel-in-progress is off for it.
 concurrency:
-  group: ci-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: >-
+    ${{ github.workflow }}-${{ (github.event_name == 'workflow_dispatch' || github.ref_type == 'tag'
+    || contains(github.event.pull_request.labels.*.name, 'release'))
+    && format('release-{0}', github.run_id) || github.ref }}
+  cancel-in-progress: >-
+    ${{ !(github.event_name == 'workflow_dispatch' || github.ref_type == 'tag'
+    || contains(github.event.pull_request.labels.*.name, 'release')) }}
 
 jobs:
   lint:

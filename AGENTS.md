@@ -574,7 +574,9 @@ functions the tests use.
    with Python 3.11 and 3.13) with `MORPHOBRICKS_RELEASE_RUN=1`: a manual run of the CI
    workflow (*Run workflow*), a push of a `v*` tag, or a pull request labelled `release`
    (`.github/workflows/ci.yml`). `python tools/check.py` matches the pull request gate;
-   `python tools/check.py --release` is a release run.
+   `python tools/check.py --release` is a release run. A new push to a pull request or a
+   branch cancels the older run of the same ref; a release run is never cancelled (its own
+   concurrency group).
 6. **Notebook pins move only in the release PR (owner, 24 November 2026).** A pull request
    never re-pins `RELEASE_REF` in `notebooks/MorphoBricks_Cellpose.ipynb` or
    `notebooks/MorphoBricks_Preprocessing.ipynb`, even when it changes code a notebook runs.

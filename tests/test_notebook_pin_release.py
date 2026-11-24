@@ -104,3 +104,7 @@ def test_the_release_ci_job_checks_the_freshness_test_ran():
     assert f"{SWITCH}:" in workflow
     assert "test_release_only_the_preprocessing_pin_is_a_commit_with_this_code" in workflow
     assert "fetch-depth: 0" in workflow
+    # A new push cancels the older run of its ref; a release run has its own group, never
+    # cancelled.
+    assert "format('release-{0}', github.run_id) || github.ref" in workflow
+    assert "cancel-in-progress: >-\n    ${{ !(github.event_name == 'workflow_dispatch'" in workflow

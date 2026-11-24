@@ -50,6 +50,8 @@ gates: `lint`, `wheel-identity` and one test job (Ubuntu, Python 3.13). The full
 (Ubuntu, Windows, macOS × Python 3.11, 3.13) runs only in a release run: a manual run of the
 CI workflow, a push of a `v*` tag, or a pull request labelled `release`. Pull requests do not
 re-pin the notebooks: `RELEASE_REF` moves only in the release PR (AGENTS.md §3 item 6).
+A new push to a pull request or a branch cancels the older run of the same ref; release runs
+are never cancelled.
 
 - **Size:** files at most 600 lines; functions at most 60 executable lines, complexity 15
   (`C901`), 8 parameters (`PLR0913`) and 50 statements (`PLR0915`).
