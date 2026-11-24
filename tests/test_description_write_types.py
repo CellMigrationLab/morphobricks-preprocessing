@@ -14,6 +14,7 @@ from __future__ import annotations
 import tomllib
 from dataclasses import replace
 
+import numpy as np
 import pytest
 
 from description_tree import build_experiment
@@ -170,3 +171,66 @@ def test_lists_and_tuples_write_the_same_array():
     assert canonical_bytes(as_list) == canonical_bytes(base)
     text = canonical_bytes(_condition(base, "DrugA", reference="CTRL")).decode("utf-8")
     assert tomllib.loads(text)["conditions"]["DrugA"]["reference"] == "CTRL"
+
+
+@pytest.mark.parametrize(
+    ("value", "found"), [(np.True_, "numpy.bool"), (np.int64(3), "numpy.int64")]
+)
+def test_a_numpy_value_is_named_with_its_module_everywhere_the_type_is_shown(
+    tmp_path, value, found
+):
+    """``np.bool_.__name__`` is ``bool``: the message must not read as the builtin (#470)."""
+    model = _repeat(_v01(), confirmed=value)
+    path = "repeats.rep1.confirmed"
+    with pytest.raises(DescriptionTypeError) as caught:
+        canonical_bytes(model)
+    assert f"{path} holds a value of type {found}," in str(caught.value)
+    root, out = tmp_path / "exp", tmp_path / "out"
+    out.mkdir()
+    build_experiment(root, _v01(), images=1)
+    check = check_candidate(model, preflight(root, out), None)
+    assert f"of type {found})" in check.refusals[0].message
+
+
+def _non_text_keys() -> list[tuple[Description, str]]:
+    base = _v01()
+    member = base.repeats["rep1"].members["CTRL"]
+    repeat = replace(base.repeats["rep1"], members={**base.repeats["rep1"].members, 7: member})
+    unit = member.technical_repeats["single"]
+    deep = replace(member, technical_repeats={**member.technical_repeats, 8: unit})
+    deep_repeat = replace(base.repeats["rep1"], members={"CTRL": deep})
+    return [
+        (replace(base, conditions={**base.conditions, 1: base.conditions["CTRL"]}), "conditions"),
+        (replace(base, channels={**base.channels, 2.5: base.channels["DNA"]}), "channels"),
+        (replace(base, repeats={**base.repeats, None: base.repeats["rep1"]}), "repeats"),
+        (replace(base, repeats={"rep1": repeat}), "repeats.rep1.members"),
+        (
+            replace(base, repeats={"rep1": deep_repeat}),
+            "repeats.rep1.members.CTRL.technical_repeats",
+        ),
+    ]
+
+
+@pytest.mark.parametrize(("model", "table"), _non_text_keys(), ids=[t for _, t in _non_text_keys()])
+def test_a_non_text_id_key_is_a_type_error_naming_the_key_and_its_type(model, table):
+    """#470: ``key_path`` raised a bare ``TypeError`` on ``conditions={1: ...}``."""
+    with pytest.raises(DescriptionTypeError) as caught:
+        canonical_bytes(model)
+    (issue,) = caught.value.issues
+    assert issue.code is Code.E_TYPE and issue.path.endswith(f" of {table}")
+    assert f"the key {issue.value!r} of {table} holds a value of type " in str(caught.value)
+    assert type(issue.value).__name__ in str(caught.value)
+    with pytest.raises(DescriptionTypeError):
+        section_digests(model)
+
+
+def test_check_and_save_turns_a_non_text_id_key_into_an_issue(tmp_path):
+    root, out = tmp_path / "exp", tmp_path / "out"
+    out.mkdir()
+    build_experiment(root, _v01(), images=1)
+    base = _v01()
+    model = replace(base, conditions={**base.conditions, 1: base.conditions["CTRL"]})
+    check = check_candidate(model, preflight(root, out), None)
+    assert not check.can_save and [i.code for i in check.refusals] == ["E_TYPE"]
+    assert "the key 1 of conditions" in check.refusals[0].message
+    assert "of type int" in check.refusals[0].message

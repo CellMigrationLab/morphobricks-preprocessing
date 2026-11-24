@@ -17,10 +17,15 @@ from pathlib import Path
 from ..calibration import CALIBRATION_FILENAME, Calibration
 from ..calibration_io import read_calibration, write_calibration_file
 from .lock import output_lock
-from .output_guard import refuse_output_inside_masks
+from .output_guard import refuse_output_inside_experiment, refuse_output_inside_masks
 
 
-def write_calibration(calibration: Calibration, output_folder: str | os.PathLike) -> Path:
+def write_calibration(
+    calibration: Calibration,
+    output_folder: str | os.PathLike,
+    *,
+    experiment_root: str | os.PathLike | None = None,
+) -> Path:
     """Write the statements to ``calibration.csv`` in the output folder, holding its lock.
 
     Parameters
@@ -30,6 +35,9 @@ def write_calibration(calibration: Calibration, output_folder: str | os.PathLike
         one leaves a file with only its header, which states nothing.
     output_folder
         The output folder; created if needed.
+    experiment_root
+        The experiment folder, which may not hold the output folder; by default the one the
+        run in the output folder recorded (none without such a run).
 
     Returns
     -------
@@ -43,8 +51,12 @@ def write_calibration(calibration: Calibration, output_folder: str | os.PathLike
     OutputInsideMasksError
         If the run in the output folder recorded a masks folder that holds it; nothing is
         written.
+    OutputInsideExperimentError
+        ``output_inside_experiment``: the output folder is the experiment folder or inside
+        it (#486); nothing is written and no folder is created.
     """
     output = Path(output_folder).resolve()
+    refuse_output_inside_experiment(output, experiment_root)
     refuse_output_inside_masks(output)
     output.mkdir(parents=True, exist_ok=True)
     with output_lock(output):
@@ -52,7 +64,10 @@ def write_calibration(calibration: Calibration, output_folder: str | os.PathLike
 
 
 def update_calibration(
-    output_folder: str | os.PathLike, change: Callable[[Calibration], Calibration]
+    output_folder: str | os.PathLike,
+    change: Callable[[Calibration], Calibration],
+    *,
+    experiment_root: str | os.PathLike | None = None,
 ) -> tuple[Calibration, Path | None]:
     """Change ``calibration.csv`` in the output folder, reading and writing it under its lock.
 
@@ -63,6 +78,9 @@ def update_calibration(
     change
         Given the statements in the file (none without one), returns every statement the
         file is to hold.
+    experiment_root
+        The experiment folder, which may not hold the output folder; by default the one the
+        run in the output folder recorded (none without such a run).
 
     Returns
     -------
@@ -77,10 +95,14 @@ def update_calibration(
     OutputInsideMasksError
         If the run in the output folder recorded a masks folder that holds it; nothing is
         read or written.
+    OutputInsideExperimentError
+        ``output_inside_experiment``: the output folder is the experiment folder or inside
+        it (#486); nothing is read or written and no folder is created.
     CalibrationFormatError
         If the file cannot be read; it is left as it is.
     """
     output = Path(output_folder).resolve()
+    refuse_output_inside_experiment(output, experiment_root)
     refuse_output_inside_masks(output)
     output.mkdir(parents=True, exist_ok=True)
     with output_lock(output):

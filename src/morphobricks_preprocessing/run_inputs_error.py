@@ -16,6 +16,11 @@ states ``RunInputs.open`` refuses: :class:`RunStoppedError` (``RUN_FOLDER_STOPPE
 holds a run that preprocessing stopped, with that run's own error issues; issue #322) and
 :class:`RunReportUnreadableError` (``RUN_FOLDER_REPORT_UNREADABLE``: the stopped run's report
 cannot be read, or is of a version this preprocessing does not read).
+
+A masks folder given explicitly as ``masks_root`` that is not an existing, listable folder is
+refused with the codes the run itself uses for a masks folder (issue #487):
+:class:`MasksFolderNotFoundError` (``masks_folder_not_found``) and
+:class:`MasksFolderUnreadableError` (``masks_folder_unreadable``).
 """
 
 from __future__ import annotations
@@ -31,7 +36,7 @@ class RunInputsError(ValueError):
     """The run cannot be used as it is: run preprocessing again (the message says why)."""
 
     code: str | None = None
-    """The Spec's code when the refusal has one (``A_*``), else None."""
+    """The refusal's code when it has one (the Spec's ``A_*``, a runtime code), else None."""
 
 
 class DescriptionRequiredError(RunInputsError):
@@ -84,6 +89,26 @@ class RgbNotSupportedError(RunInputsError):
     """
 
     code = "A_RGB_NOT_SUPPORTED"
+
+
+class MasksFolderNotFoundError(RunInputsError):
+    """The masks folder given as ``masks_root`` does not exist or is not a folder (#487).
+
+    An explicitly requested masks folder is never read as "no masks": the message names the
+    path given and what to give instead. The code is the run's own ``masks_folder_not_found``.
+    """
+
+    code = "masks_folder_not_found"
+
+
+class MasksFolderUnreadableError(RunInputsError):
+    """The masks folder given as ``masks_root`` cannot be listed (#487).
+
+    A folder that cannot be listed would hold no masks to the check of unrecorded files, so it
+    is refused, never read as empty; the message names the folder and the reason.
+    """
+
+    code = "masks_folder_unreadable"
 
 
 class RunStoppedError(RunInputsError):

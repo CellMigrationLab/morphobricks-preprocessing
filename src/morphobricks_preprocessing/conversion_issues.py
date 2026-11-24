@@ -80,23 +80,41 @@ def unreadable_issue(paths: list[str]) -> ValidationIssue:
     )
 
 
-def work_folder_issue(dest: Path, name: str) -> ValidationIssue:
-    """Refuse a copy tree whose conversion work folder ``name`` a conversion did not make (#448)."""
+def work_folder_issue(dest: Path, name: str, all_nul: bool = False) -> ValidationIssue:
+    """Refuse a copy tree whose conversion work folder ``name`` a conversion did not make (#448).
+
+    ``all_nul``: its owner file holds only NUL bytes, possibly left by a power loss (#488).
+    """
+    if all_nul:
+        cause = (
+            "Its owner file is unreadable: it holds only NUL bytes, possibly left by a power "
+            "loss while a conversion wrote it, so it cannot be proven that a conversion made "
+            "this folder."
+        )
+    else:
+        cause = (
+            "So it was not made by a conversion, or was changed since, and it cannot be "
+            "proven that a conversion made it."
+        )
     return error(
         "conversion_work_folder_unowned",
         f"The folder for the named-axis copies holds {name}, the name of the folder a "
         "conversion writes its copies in, but not as a conversion leaves it: the owner file a "
         "conversion writes into it first is missing or not well formed, or it holds something "
-        "else than that file and the folder 'files'. So it was not made by a conversion, or "
-        "was changed since. Nothing was removed and nothing was written.",
+        f"else than that file and the folder 'files'. {cause} Nothing was removed and "
+        "nothing was written.",
         [name],
-        f"Move or remove {dest / name} yourself if you no longer need what it holds, "
-        "or choose a new, empty folder for the copies.",
+        f"Check {dest / name}, then move or remove it yourself if you no longer need what it "
+        "holds, or choose a new, empty folder for the copies.",
     )
 
 
 def work_folder_in_use_issue(dest: Path, name: str, holder: LockHolder) -> ValidationIssue:
-    """Refuse a copy tree whose conversion work folder ``name`` a running process holds (#482)."""
+    """Refuse a copy tree whose conversion work folder ``name`` a running process holds (#482).
+
+    Only POSIX can tell, and only for a process on this computer
+    (:func:`.run.lock.holder_running`): elsewhere this is never given.
+    """
     return error(
         "conversion_work_folder_in_use",
         f"The folder for the named-axis copies holds {name}, the work folder of a "
@@ -109,16 +127,40 @@ def work_folder_in_use_issue(dest: Path, name: str, holder: LockHolder) -> Valid
     )
 
 
-def path_too_long_issue(dest: Path, paths: list[str], longest: int, limit: int) -> ValidationIssue:
-    """Refuse copies whose files would have paths too long for Windows (#482)."""
+def work_folder_not_removed_issue(dest: Path, name: str, exc: OSError) -> ValidationIssue:
+    """Refuse a conversion whose leftover work folder ``name`` cannot be removed (#488)."""
+    return error(
+        "conversion_work_folder_not_removed",
+        f"The folder for the named-axis copies holds {name}, the work folder of a conversion "
+        f"that was stopped, and it cannot be removed ({exc}): a file in it may be open in "
+        "another program, such as an antivirus or a sync client (OneDrive, Dropbox). Part of "
+        "it may have been removed. Nothing was written.",
+        [name],
+        "Close the programs that may use it, or wait for them to finish, then convert again "
+        f"(the conversion removes it). Or remove {dest / name} yourself.",
+    )
+
+
+def path_too_long_issue(
+    dest: Path, paths: list[str], over: dict[str, tuple[int, int]]
+) -> ValidationIssue:
+    """Refuse copies whose files or folders would have paths too long for Windows (#482, #488).
+
+    ``over``: for ``"file"`` and/or ``"folder"``, the longest such path and its limit.
+    """
+    what = " or ".join(
+        f"a {kind} whose path is longer than {limit} characters (up to {longest})"
+        for kind, (longest, limit) in over.items()
+    )
     return error(
         "copy_path_too_long",
-        f"{plural(len(paths), 'copy', 'copies')} would have a file whose path is longer than "
-        f"{limit} characters (up to {longest}) while it is written in the conversion's work "
-        f"folder in {dest}, and Windows cannot handle such paths. Nothing was written.",
+        f"{plural(len(paths), 'copy', 'copies')} would have {what} while it is written in the "
+        f"conversion's work folder in {dest}, and Windows cannot handle such paths without "
+        "long paths enabled. Nothing was written.",
         paths,
         "Choose a folder for the copies with a shorter path (for example near the top of the "
-        "drive), or shorten the names of these images or of their folders.",
+        "drive), or shorten the names of these images or of their folders, or ask your "
+        "administrator to enable Windows' long paths (LongPathsEnabled).",
     )
 
 
