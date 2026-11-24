@@ -201,3 +201,54 @@ def test_an_unreadable_or_vanished_folder_is_refused_and_named(tmp_path, monkeyp
         "ctrl",
         "ctrl/r1",
     ]
+
+
+def test_a_mount_at_or_above_the_copy_tree_is_allowed(tmp_path, monkeypatch):
+    # Issue #467 (4): the Colab case, a copy tree on a mounted Drive.
+    exp, copies = swapped_experiment(tmp_path / "exp"), tmp_path / "copies"
+    copies.mkdir()
+    above = frozenset({copies.resolve(), tmp_path.resolve()})
+    monkeypatch.setattr(mounts_module, "mount_points", lambda *_: above)
+    result = convert_experiment(exp, SWAPPED, copies)
+    assert result.written and not [i for i in result.issues if i.is_error]
+
+
+def test_a_link_inside_an_ome_zarr_copy_is_refused(linkable):
+    # Issue #467 (4): an OME-Zarr copy is a folder; the walk goes into it.
+    pytest.importorskip("zarr")
+    exp, copies, elsewhere = _folders(linkable)
+    assert convert_experiment(exp, SWAPPED, copies, store="ome-zarr").written
+    elsewhere.mkdir()
+    (copies / "ctrl/r1/a.ome.zarr/notes").symlink_to(elsewhere, target_is_directory=True)
+    before = _tree(copies)
+    _refused(
+        convert_experiment(exp, SWAPPED, copies, store="ome-zarr"), "ctrl/r1/a.ome.zarr/notes ->"
+    )
+    assert _tree(copies) == before and list(elsewhere.iterdir()) == []
+
+
+@pytest.mark.parametrize("inside", [True, False], ids=["an_original", "a_file_elsewhere"])
+def test_a_hard_linked_partial_leaves_the_original_intact(tmp_path, inside):
+    # Issue #467 (4): a hard link is no link to the walk (one more name of the same file).
+    # Either way it is a .partial this conversion did not write (#448): refused, never
+    # written into nor removed (an original hard-linked also gets the warning
+    # hard_linked_file from the experiment's walk).
+    exp, copies = swapped_experiment(tmp_path / "exp"), tmp_path / "copies"
+    original = exp / "ctrl/r1/a.tif" if inside else tmp_path / "elsewhere/notes.bin"
+    original.parent.mkdir(parents=True, exist_ok=True)
+    if not inside:
+        original.write_bytes(b"not an image")
+    partial = copies / "ctrl/r1/a.tif.partial"
+    partial.parent.mkdir(parents=True)
+    try:
+        os.link(original, partial)
+    except OSError:
+        pytest.skip("hard links cannot be made here")
+    before, kept = _tree(exp), original.read_bytes()
+    result = convert_experiment(exp, SWAPPED, copies)
+    assert _tree(exp) == before and original.read_bytes() == kept
+    assert os.path.samefile(partial, original)
+    refused = [issue for issue in result.issues if issue.is_error]
+    assert not result.written and codes(refused) == ["copy_folder_not_empty"]
+    assert refused[0].paths == ("ctrl/r1/a.tif.partial",)
+    assert ("hard_linked_file" in codes(result.issues)) == inside  # the original's warning
