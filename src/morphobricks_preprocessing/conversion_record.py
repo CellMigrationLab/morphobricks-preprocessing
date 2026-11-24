@@ -32,6 +32,7 @@ from .projection import Projection
 from .projection_marker import marked_images, marker_issue
 from .projection_record import ProjectionEntry, projection_from_data, projection_to_data
 from .projection_run import RunProjection, masks_issue, run_projection
+from .record_values import _bits, _choice, _flag, repeated
 from .recorded_sizes import RecordedSize, sizes_from_data, sizes_to_data
 from .validation import ValidationIssue, error, plural, warning
 
@@ -258,7 +259,20 @@ class ConversionRecord:
     projection: Projection | None = None
 
     def __post_init__(self) -> None:
-        """Refuse entries that do not fit the record's projection (or its absence)."""
+        """Refuse an image listed twice (#387), or entries that do not fit the projection.
+
+        Raises
+        ------
+        ConversionRecordError
+            If two entries have the same ``relative_path``: which one describes the copy is
+            not known, so neither is chosen.
+        """
+        twice = repeated(entry.relative_path for entry in self.files)
+        if twice:
+            raise ConversionRecordError(
+                f"the record lists {', '.join(map(repr, twice))} more than once, so it is not "
+                f"known which entry describes the copy; {_CONVERT_AGAIN}"
+            )
         for entry in self.files:
             _check_projection(self.projection, entry)
 
@@ -573,26 +587,3 @@ def _check_source_path(data: Mapping) -> None:
 def _fingerprint_data(fingerprint: Fingerprint) -> dict:
     """Return a fingerprint as JSON-compatible data."""
     return fingerprint.to_data()
-
-
-def _choice(value: object, allowed: tuple[str, ...], name: str) -> str:
-    """Return ``value`` when it is one of ``allowed``; raise otherwise."""
-    if value not in allowed:
-        raise ValueError(f"{name} {value!r} is not one of {', '.join(allowed)}")
-    return str(value)
-
-
-def _bits(value: object) -> int | None:
-    """Return recorded significant bits: a whole number, or None."""
-    if value is None:
-        return None
-    if isinstance(value, bool) or not isinstance(value, int):
-        raise ValueError(f"significant_bits {value!r} is not a whole number")
-    return value
-
-
-def _flag(value: object) -> bool:
-    """Return a JSON boolean; raise for anything else."""
-    if not isinstance(value, bool):
-        raise ValueError(f"{value!r} is not true or false")
-    return value
