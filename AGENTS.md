@@ -418,8 +418,15 @@ src/morphobricks_preprocessing/
                     links and mount points in the copy tree (is_link, MountCheck), refused (#447);
                     a folder it cannot read is refused too (copy_folder_unreadable, #467)
   conversion_write.py write_all: copies written in the conversion's own work folder
-                    (.morphobricks-conversion.partial, owner file first; a killed one's is
-                    removed only when its owner file is there, #448), moved into place
+                    (.mbconv, short for Windows paths; a leftover under its name before
+                    #482, .morphobricks-conversion.partial, is recovered the same way;
+                    owner file first; a killed one's is
+                    removed only with a well-formed owner file, nothing else but files/, and
+                    a holder that no longer runs (run.lock.holder_running); its own only
+                    while the owner file holds its token; an empty one, or one holding only
+                    an empty or cut-short owner file, is removed by rmdir; both before the
+                    space check, remove_leftover, #448, #482),
+                    moved into place
                     together (any failure removes what it wrote); nothing else is removed;
                     each write and move checks its way again for links (_Route, #467)
   zarr_input.py     OME-Zarr input: open_ngff (OME-NGFF 0.4/0.5 metadata -> level-0 array, axis
