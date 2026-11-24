@@ -63,7 +63,8 @@ def check_sources(
     Raises
     ------
     ValueError
-        If ``image_axes`` or ``identities`` is given without an entry for every path.
+        If ``image_axes`` or ``identities`` is given without an entry for every path, or
+        ``image_axes`` names a letter twice for an image (``"YYX"``).
     """
     root = Path(experiment_root)
     paths = list(dict.fromkeys(relative_paths))
@@ -71,6 +72,14 @@ def check_sources(
         absent = [path for path in paths if given is not None and path not in given]
         if absent:
             raise ValueError(f"{name} has no entry for {', '.join(absent)}")
+    for path in paths if image_axes is not None else ():
+        axes = str(image_axes[path]).upper()
+        if len(set(axes)) != len(axes):  # even on a dimension without a role (#485)
+            raise ValueError(
+                f"image_axes gives {path} the axes {axes!r}, which name "
+                f"{', '.join(sorted({a for a in axes if axes.count(a) > 1}))} more than once: "
+                "give one letter per dimension, each once"
+            )
     found: dict[str, list[tuple[str, str]]] = {}
 
     def report(code: str, path: str, detail: str = "") -> None:
