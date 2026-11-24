@@ -220,6 +220,27 @@ def test_cell_5_offers_the_declaration_and_registers_only_after_the_tick(tmp_pat
     assert "The masks are registered" in registration.status.value
 
 
+def test_cell_5_registers_masks_written_into_the_runs_own_masks_folder(tmp_path, stub):
+    # B1: the run recorded a masks folder (Nuclei); cell 4 writes Cells masks into it. Before,
+    # opening the run refused the new masks as unrecorded ("images changed since the run"),
+    # and the app's folder check, already made with that folder, was not made again.
+    nb = ran_app(tmp_path, with_masks=True)
+    out = nb.result.output_folder
+    step = segmentation_step(nb)
+    assert step.masks_folder == str((tmp_path / "masks").resolve())
+    segment(step)  # into the prefilled masks folder
+    registration = register_step(nb, step)
+    assert list(registration.ticks) == ["Cells"], registration.status.value
+    registration.ticks["Cells"].value = True
+    assert not registration.register()  # the folder check is made again: axes to confirm
+    assert AXES_AGAIN.split(":")[0] in registration.status.value
+    nb.quick_confirm.click()
+    assert registration.register(), registration.status.value
+    manifest = json.loads((out / MANIFEST_FILENAME).read_text(encoding="utf-8"))
+    assert sorted(manifest["masks"]["types"]) == ["Cells", "Nuclei"]
+    assert RunInputs.open(out).mask_types() == ("Cells", "Nuclei")
+
+
 # cell 5 refuses rather than guesses ----------------------------------------------------------
 
 
@@ -271,3 +292,11 @@ def test_images_changed_since_the_run_are_refused(tmp_path):
     image = tmp_path / "exp" / FOLDERS[0] / "a.tif"
     image.write_bytes(image.read_bytes()[:-1] + b"\x07")
     assert "The images changed since the run" in refused(register_step(nb, segmentation))
+
+
+def test_files_the_run_did_not_record_besides_cell_4s_masks_are_still_refused(tmp_path):
+    nb = ran_app(tmp_path, with_masks=True)
+    segmentation = segmented(tmp_path, nb, tmp_path / "masks")
+    image = tmp_path / "exp" / FOLDERS[0] / "a.tif"
+    shutil.copyfile(image, image.with_name("b.tif"))  # an image added since the run
+    assert "did not record" in refused(register_step(nb, segmentation))

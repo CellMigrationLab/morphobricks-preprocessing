@@ -18,7 +18,10 @@ missing, a refusal), the step stops and names the step of cell 3 to use; nothing
 for the user there. Refused before anything changes: no masks written in cell 4, a run other
 than the app's, a masks folder inside the experiment (or the output folder), a masks folder
 other than the one the app's run uses, images changed since the run, and a mask type that
-collides with a declaration the description already has.
+collides with a declaration the description already has. The masks cell 4 wrote into the masks
+folder the run recorded are not a change: they are what is registered (any other file the run
+did not record still is). The folder check is made again whenever the app's last check did not
+see a mask type cell 4 wrote, even with the same masks folder.
 """
 
 from __future__ import annotations
@@ -36,7 +39,7 @@ from .folder_rules import masks_folder_issues
 from .mask_answers import INSTANCES
 from .notebook_cellpose_app import app_folders
 from .notebook_render import blocked_line
-from .run_inputs import RunInputsError
+from .run_inputs import RunInputsError, UnrecordedFilesError
 from .segmentation_cellpose_run import open_run
 from .segmentation_record import SegmentationError
 
@@ -146,9 +149,26 @@ def refusal(app: object, segmentation: object, *, rechecked: bool = False) -> st
         return OTHER_MASKS.format(segmented=masks, app_masks=app_masks)
     try:
         open_run(os.fspath(segmented))
+    except UnrecordedFilesError as exc:
+        if not _only_written(exc, masks, types):
+            return CHANGED.format(reason=exc)
     except (RunInputsError, SegmentationError) as exc:
         return CHANGED.format(reason=exc)
     return next(filter(None, (_collision(app, t) for t in types)), "")
+
+
+def _only_written(exc: UnrecordedFilesError, masks: Path, types: tuple[str, ...]) -> bool:
+    """Return whether the run left out only masks cell 4 wrote: files in ``masks/<type>/``.
+
+    Those are the masks to register (the run before them could not record them). An image,
+    a label image or any other mask the run did not record is still refused.
+    """
+    return not exc.files.images and all(
+        len(Path(path).parts) > 1
+        and Path(path).parts[0] in types
+        and (masks / path).is_file()
+        for path in exc.files.masks
+    )
 
 
 class MaskRegistration(widgets.VBox):
@@ -212,7 +232,12 @@ class MaskRegistration(widgets.VBox):
             return self._stop(why)
         app, masks = self.app, Path(self.segmentation.workflow.masks_root).resolve()
         checked = getattr(getattr(app.preflight, "masks", None), "folder", None)
-        if checked is None or Path(checked).resolve() != masks:
+        asked = getattr(getattr(app, "mask_card", None), "questions", None) or {}
+        if (
+            checked is None
+            or Path(checked).resolve() != masks
+            or any(t not in asked for t in self.ticks)  # checked before cell 4 wrote them
+        ):
             app.masks_folder.value = os.fspath(masks)
             app.check_folder()  # the app's Scan the folders, now with the masks folder
             self.rechecked = True
