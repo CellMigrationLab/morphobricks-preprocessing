@@ -141,3 +141,20 @@ def test_a_numpy_value_is_named_with_its_module(tmp_path, changes, message):
         write_experiment_design(bad, tmp_path / DESIGN_FILENAME)
     assert message in str(caught.value)
     assert message in design_issues(bad)[0].message
+
+
+def test_a_type_error_gets_a_type_action_not_the_repeat_group_one():
+    """#470: the action said to name repeat groups and dates for a wrong ``control``."""
+    bad = DesignTable((replace(CTRL, control="false", image_count=2.0, confirmed_on=None), DRUG))
+    (issue,) = design_issues(bad)
+    assert issue.action == (
+        "Give confirmed_on as text; control as True or False; "
+        "image_count as a whole number of at least 0."
+    )
+    assert "repeat group" not in issue.action
+
+
+def test_a_type_error_and_a_name_error_each_keep_their_own_action():
+    bad = DesignTable((replace(CTRL, control="false"), replace(DRUG, repeat_group=" rep1")))
+    (issue,) = design_issues(bad)
+    assert issue.action.startswith("Give control as True or False. Give every repeat group a name")
