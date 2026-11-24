@@ -19,6 +19,17 @@ MAX_CHANNELS = 3
 """Cellpose 4.2.1.1 reads at most three channels and drops the rest silently."""
 NAMED_IMAGES = 5
 """How many images of a channel layout a refusal names before it counts the rest."""
+NOT_THE_SNAPSHOT = (
+    "run_manifest_sha256 {given} is not the SHA-256 of the run manifest the run was read from "
+    "({pinned}): give the run's own (RunInputs.manifest_sha256), or none."
+)
+"""The refusal of a job given a run manifest SHA-256 other than its run's snapshot's (ar B2)."""
+UNPINNED = (
+    "The run was not opened with RunInputs.open, so the SHA-256 of the manifest it was read "
+    "from is unknown: open the run with RunInputs.open. Nothing is segmented or recorded "
+    "against a run manifest that is not known."
+)
+"""The refusal of a job whose run has no ``manifest_sha256`` (built by hand)."""
 REPUBLISHED = (
     "The run was published again since it was opened (its run_manifest.json changed): press "
     "Open the run again. Nothing is segmented or recorded against a run other than the one "
@@ -42,13 +53,14 @@ def open_run(run_folder: str) -> RunInputs:
     return RunInputs.open(Path(run_folder.strip()))
 
 
-def open_pinned(run_folder: str) -> tuple[RunInputs, str]:
+def open_pinned(run_folder: str) -> tuple[RunInputs, str | None]:
     """Open the run (:func:`open_run`) and return it with the SHA-256 of its manifest.
 
-    The manifest is hashed before and after the run is read: the snapshot and the SHA-256 are
-    of the same manifest, or the open is refused (:data:`REPUBLISHED`). Every preview, batch
-    and record then checks the manifest against that SHA-256 (:func:`check_manifest`), and the
-    record names it; the file is never hashed again for the record (review aq, B2).
+    The SHA-256 is the snapshot's (:attr:`.run_inputs.RunInputs.manifest_sha256`: of the bytes
+    the manifest was parsed from, review ar B2); a run published again before this returns is
+    refused (:data:`REPUBLISHED`). Every preview, batch and record then checks the manifest
+    against that SHA-256 (:func:`check_manifest`), and the record names it; the file is never
+    hashed again for the record (review aq, B2).
 
     Raises
     ------
@@ -57,10 +69,9 @@ def open_pinned(run_folder: str) -> tuple[RunInputs, str]:
     RunInputsError
         For a run that cannot be opened.
     """
-    before = manifest_sha256(Path(run_folder.strip()).resolve()) if run_folder.strip() else None
     inputs = open_run(run_folder)
-    check_manifest(inputs, before)
-    return inputs, before
+    check_manifest(inputs, inputs.manifest_sha256)
+    return inputs, inputs.manifest_sha256
 
 
 def manifest_sha256(run: RunInputs | Path) -> str | None:
@@ -82,6 +93,25 @@ def check_manifest(inputs: RunInputs, pinned: str | None) -> None:
     """
     if pinned is None or manifest_sha256(inputs) != pinned:
         raise SegmentationError(REPUBLISHED)
+
+
+def pinned_manifest(inputs: RunInputs, given: str | None) -> str:
+    """Return the SHA-256 of the manifest ``inputs`` was read from, the one a job records.
+
+    It is the snapshot's (:attr:`.run_inputs.RunInputs.manifest_sha256`), never the file's now
+    (review ar, B2): a SHA-256 ``given`` must be that one.
+
+    Raises
+    ------
+    SegmentationError
+        :data:`UNPINNED` for inputs without one; :data:`NOT_THE_SNAPSHOT` for another given.
+    """
+    pinned = inputs.manifest_sha256
+    if pinned is None:
+        raise SegmentationError(UNPINNED)
+    if given is not None and given != pinned:
+        raise SegmentationError(NOT_THE_SNAPSHOT.format(given=given, pinned=pinned))
+    return pinned
 
 
 def channel_coverage(inputs: RunInputs) -> dict[str, tuple[int, int]]:

@@ -75,10 +75,10 @@ from .segmentation_cellpose_run import (
     channel_coverage,
     check_channel_count,
     check_manifest,
-    manifest_sha256,
     next_steps_lines,
     non_2d_images,
     open_run,
+    pinned_manifest,
 )
 from .segmentation_cellpose_settings import (
     BOTH_NEEDS,
@@ -315,8 +315,9 @@ class SegmentationJob:
         The channel number typed for a channel chosen by number (#440), as
         ``((channel ID, number), ...)``; recorded with the ID it was translated to.
     run_manifest_sha256
-        The SHA-256 of the run manifest ``inputs`` was opened from (``open_pinned``); by default
-        the manifest's now. The record names it, and a batch refuses a manifest changed since.
+        The SHA-256 of the run manifest ``inputs`` was read from, by default and only
+        ``inputs.manifest_sha256`` (another is refused, never the file's now; review ar, B2).
+        The record names it, and a batch refuses a manifest changed since.
     """
 
     inputs: RunInputs
@@ -334,8 +335,8 @@ class SegmentationJob:
     def __post_init__(self) -> None:
         """Fix the masks folder; refuse a job without resolved channels or with unfit roles."""
         object.__setattr__(self, "masks_root", Path(self.masks_root).expanduser().resolve())
-        if self.run_manifest_sha256 is None:
-            object.__setattr__(self, "run_manifest_sha256", manifest_sha256(self.inputs))
+        pinned = pinned_manifest(self.inputs, self.run_manifest_sha256)
+        object.__setattr__(self, "run_manifest_sha256", pinned)
         if self.plan is None:
             raise SegmentationError("No channels are resolved: choose channels the run has.")
         self.roles_entry()

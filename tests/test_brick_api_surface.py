@@ -120,6 +120,7 @@ FIELDS = {
         ("masks_root", "Path | None"),
         ("manifest", "RunManifest"),
         ("records", "tuple[PlaneRecord, ...]"),
+        ("manifest_sha256", "str | None"),  # review ar, B2: additive, last, defaults to None
     ],
     Fov: [
         ("key", "tuple[str, str, str, str]"),

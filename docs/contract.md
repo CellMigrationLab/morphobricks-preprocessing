@@ -319,6 +319,8 @@ run on named-axis copies costs one read of those copies (the excluded images' co
 not read). Checking on every read instead would read a copy whole for each of its planes.
 Reads after `open` check the fingerprint, as for any image. `RunInputs.projection` is the run's `RunProjection` (`method`, `z_range`, `conversion_record`, `source_root`, `images` and `image(relative_path)` with each image's slices used, types, rule and source SHA-256, `masks_paired`, `warnings`), or None for a run on images that are not projected copies, so a brick can carry the projection into its own records without reading the conversion record.
 
+`RunInputs.manifest_sha256` is the SHA-256 of the exact `run_manifest.json` bytes the snapshot's `manifest` was parsed from (read once, at `open`; review ar, B2): a brick names the run it read by it, never by hashing the file later, which may be another run published since at the same path. It is None only in a `RunInputs` built by hand, and it takes no part in equality.
+
 It also refuses an experiment holding files the run neither recorded nor excluded
 (`UnrecordedFilesError`, a `RunInputsError`, PP-8b): images that preprocessing's own
 discovery (`discover_experiment`) would analyse, and masks it would pair with a recorded
@@ -1324,7 +1326,7 @@ needs from this brick. They make no decision for the tool and guess nothing.
 erases how the first batch's masks were made. A batch holds `batch_id` (unique in the file),
 `tool` and `tool_version`, `model` (`name`, `file` or null, `sha256`), `parameters` (a JSON
 object), `channel_ids`, `device` (`cuda`, `cpu` or `mps`, always stated), `run_folder`,
-`run_manifest_sha256`, and `images`: one entry per image (its path relative to the experiment,
+`run_manifest_sha256` (of the manifest the run was read from, `RunInputs.manifest_sha256`; a job given another is refused), and `images`: one entry per image (its path relative to the experiment,
 once per batch), `status` `written`, `skipped` or `failed`, a `message` (required for
 `failed`) and `mask_sha256`, the SHA-256 of the file written (required for `written`, null
 otherwise). `new_batch_id()` makes a batch ID that is unique (the UTC start time and 8 random hex characters, so two batches started in the same second differ); an ID chosen by the caller must be unique too, since a repeated one is refused only when the record is written, after the masks. `write_record` holds an exclusive lock file (`.segmentation_record.lock`, beside the record, created with `O_CREAT | O_EXCL` and removed at the end only while it still names this writer; the run's own lock, `lock_file.exclusive_lock`) while it reads, changes and rewrites the record, and refuses at once, naming the holder, when another writer holds it (it never waits; delete the file only when no writer is running). `write_record` adds a batch; the same `batch_id` again (a batch written as it
