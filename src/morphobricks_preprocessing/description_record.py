@@ -278,7 +278,7 @@ def _checked_unit_fields(unit: object, where: str) -> None:
     ]
     if not named:
         named = [
-            f"{where}.{name} is not non-empty text" for name in _IDENTITY if not _text(unit[name])
+            f"{where}.{name} must be non-empty text" for name in _IDENTITY if not _text(unit[name])
         ]
         channels = unit["channels"]
         if not isinstance(channels, list) or not all(_text(item) for item in channels):
@@ -286,7 +286,7 @@ def _checked_unit_fields(unit: object, where: str) -> None:
         if not isinstance(unit["image_type_header_verified"], bool):
             named.append(f"{where}.image_type_header_verified is not true or false")
         if CHANNELS_FROM in unit and not _text(unit[CHANNELS_FROM]):
-            named.append(f"{where}.{CHANNELS_FROM} is not non-empty text")
+            named.append(f"{where}.{CHANNELS_FROM} must be non-empty text")
     if named:
         raise UnitRecordError(f"{UNIT_MALFORMED}: {'; '.join(named)}")
 

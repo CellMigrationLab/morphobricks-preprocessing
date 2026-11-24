@@ -88,9 +88,9 @@ def _set_rgb(field, value):
         (_pop_rgb("technical_repeat"), "technical_repeat is missing"),
         (_pop_rgb("channels"), "channels is missing"),
         (_pop_rgb("image_type_header_verified"), "image_type_header_verified is missing"),
-        (_set_rgb("repeat", ""), "repeat is not"),
-        (_set_rgb("condition", 7), "condition is not"),
-        (_set_rgb("technical_repeat", None), "technical_repeat is not"),
+        (_set_rgb("repeat", ""), "repeat must be non-empty text"),
+        (_set_rgb("condition", 7), "condition must be non-empty text"),
+        (_set_rgb("technical_repeat", None), "technical_repeat must be non-empty text"),
         (_set_rgb("channels", "R"), "channels is not"),
         (_set_rgb("channels", ["R", 1, "B"]), "channels is not"),
         (_set_rgb("image_type_header_verified", "false"), "image_type_header_verified is not"),
@@ -184,3 +184,38 @@ def test_valid_rgb_and_plain_unit_records_open(rgb_run, plain_run):
         RunInputs.open(run.output)
     assert _units(plain_run) and all("rgb_header_override" not in u for u in _units(plain_run))
     assert any(u.get("rgb_header_override") is True for u in _units(rgb_run))
+
+
+@pytest.fixture
+def fast_run(tmp_path):
+    """A fast-mode run (Spec ``v42``): every unit records ``channels_from``."""
+    return make_described_run(tmp_path / "fast", VALID["v42"].data)
+
+
+def test_a_fast_mode_run_opens_with_its_channels_from_records(fast_run):
+    RunInputs.open(fast_run.output)
+    recorded = {u["channels_from"] for u in _units(fast_run)}
+    assert recorded == {"experiment", "unit"}
+
+
+@pytest.mark.parametrize("change", ["dropped", "changed"])
+def test_a_dropped_or_changed_channels_from_is_refused_at_open(fast_run, change):
+    """The unit tagged on its own (``unit``) has no ``fast_layout_images``, so only the
+    description check can see its ``channels_from`` altered; the ``experiment`` units' records
+    are bound to ``fast_layout_images`` by the manifest reader already."""
+    units = _units(fast_run)
+    index = next(i for i, u in enumerate(units) if u["channels_from"] == "unit")
+
+    def edit(records):
+        if change == "dropped":
+            del records[index]["channels_from"]
+        else:  # another well-formed text: read, then refused as not the published unit's
+            records[index]["channels_from"] = "other"
+
+    before = _edit(fast_run, edit)
+    read_manifest(fast_run.output / MANIFEST_FILENAME)  # well-formed: read
+    with pytest.raises(RunInputsError, match=rf"units\[{index}\]\.channels_from") as refused:
+        RunInputs.open(fast_run.output)
+    assert type(refused.value).__name__ == "UnitRecordMismatchError"
+    assert refused.value.code == MISMATCH
+    assert (fast_run.output / MANIFEST_FILENAME).read_bytes() == before  # never repaired
