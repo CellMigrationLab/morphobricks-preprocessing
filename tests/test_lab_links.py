@@ -345,3 +345,24 @@ def test_cli_refuses_a_url_with_a_credential_before_anything_is_written(
     assert "is refused" in printed and "a password before '@'" in printed
     assert "secret" not in printed
     assert sorted(p.name for p in out.iterdir()) == ["morphobricks.toml"]  # nothing written
+
+
+@pytest.mark.parametrize("mark", ["‮", "‪", "⁦", "⁩", "​", "‏"])
+@pytest.mark.parametrize(
+    "where",
+    [
+        lambda m: _with(repeat_codes={f"R{m}100": "Day1", "R002": "Day2"}),
+        lambda m: _with(repeat_codes={"R001": f"Day{m}1", "R002": "Day2"}),
+        lambda m: _with(experiment_path=f"experiments/{m}2026"),
+        lambda m: _with(repository_url=f"https://example.org/lab/{m}database"),
+    ],
+)
+def test_invisible_formatting_characters_are_refused(mark, where):
+    # #416: a bidi control can show a repeat-code mapping other than the one confirmed.
+    with pytest.raises(LabLinksError, match="invisible formatting characters"):
+        parse_lab_links(_bytes(where(mark)))
+
+
+def test_ordinary_unicode_letters_are_accepted():
+    links = parse_lab_links(_bytes(_with(experiment_path="expériences/µ-2026/Ω")))
+    assert links.experiment_path == "expériences/µ-2026/Ω"

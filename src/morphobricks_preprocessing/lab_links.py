@@ -267,15 +267,17 @@ def recorded_lab_links(data: object) -> dict | None:
 
 
 def _check_text(value: object, key: str) -> None:
-    """Refuse a value that is not non-empty text kept exactly as typed."""
+    """Refuse a value that is not non-empty text kept exactly as typed, nothing invisible."""
     if not isinstance(value, str):
         raise LabLinksError(f"{key} must be text, found {type(value).__name__} {value!r}")
     if not value:
         raise LabLinksError(f"{key} is empty: give its value, or leave the file out")
-    if value != value.strip() or any(unicodedata.category(c) == "Cc" for c in value):
+    # Cf: bidi controls and zero-width characters can show another text than the one
+    # confirmed (#416); the message shows them escaped (repr)
+    if value != value.strip() or any(unicodedata.category(c) in ("Cc", "Cf") for c in value):
         raise LabLinksError(
-            f"{key} {value!r} has spaces around it or control characters: nothing is trimmed, "
-            "so correct it in the file"
+            f"{key} {value!r} has spaces around it, control characters or invisible formatting "
+            "characters: nothing is trimmed, so correct it in the file"
         )
 
 
