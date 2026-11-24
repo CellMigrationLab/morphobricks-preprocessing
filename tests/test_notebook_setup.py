@@ -109,7 +109,7 @@ def setup_environment(tmp_path, monkeypatch):
         drive=tmp_path / "content/drive",
         namespace={},
         versions={
-            "morphobricks-preprocessing": "0.8.0",
+            "morphobricks-preprocessing": "0.9.0",
             "morphobricks-normalization": "0.8.0",
             "ipywidgets": "7.7.1",
         },
@@ -172,7 +172,7 @@ def checkout_at(path):
     package.mkdir(parents=True)
     (package / "__init__.py").write_text("", encoding="utf-8")
     (path / "pyproject.toml").write_text(
-        '[project]\nname = "morphobricks-preprocessing"\nversion = "0.8.0"\n',
+        '[project]\nname = "morphobricks-preprocessing"\nversion = "0.9.0"\n',
         encoding="utf-8",
     )
     return path
@@ -189,7 +189,7 @@ def test_setup_installs_missing_package_from_the_exact_commit(setup_environment,
     assert target.startswith("morphobricks-preprocessing[notebook] @ git+")
     assert target.endswith("@" + namespace["RELEASE_REF"])
     assert namespace["RELEASE_REF"] == "438a2d37625ae7941953fa831914aa5ef5572696"
-    assert "pinned v0.8.0 candidate" in capsys.readouterr().out
+    assert "pinned v0.9.0 candidate" in capsys.readouterr().out
 
 
 def test_setup_prefers_a_nearby_checkout(setup_environment, tmp_path, monkeypatch, capsys):
@@ -272,7 +272,7 @@ def test_an_explicit_development_override_uses_the_checkout_and_says_so(
     assert sys.path[0] == str(checkout / "src")
     assert f"commit {OTHER_COMMIT}, uncommitted changes" in out
     assert "DEVELOPMENT OVERRIDE is on" in out
-    assert "DEVELOPMENT OVERRIDE on" in out.split("Notebook 0.8.0")[1]
+    assert "DEVELOPMENT OVERRIDE on" in out.split("Notebook 0.9.0")[1]
     record = namespace["SETUP_RECORD"]
     assert record["checkout_commit"] == OTHER_COMMIT
     assert record["checkout_has_uncommitted_changes"] is True
@@ -416,7 +416,7 @@ def test_cell_1_installs_without_mounting_drive_or_showing_the_app(
     assert namespace["SETUP_RECORD"]["release_ref"] == RELEASE_REF
     out = capsys.readouterr().out
     assert (
-        f"Ready: preprocessing 0.8.0 (commit {RELEASE_REF}); normalization 0.8.0; "
+        f"Ready: preprocessing 0.9.0 (commit {RELEASE_REF}); normalization 0.8.0; "
         "ipywidgets 7.7.1." in out
     )
     assert "Next: run cell 2 (Mount Google Drive), then cell 3 (Run preprocessing)." in out
@@ -434,8 +434,8 @@ def test_running_cell_1_again_installs_nothing_more(setup_environment, capsys):
     assert len(state.installs) == 1
     assert "Installing notebook requirements" in first
     assert "Installing notebook requirements" not in again
-    assert "Ready: preprocessing 0.8.0" in again
-    assert state.namespace["SETUP_RECORD"]["preprocessing_version"] == "0.8.0"
+    assert "Ready: preprocessing 0.9.0" in again
+    assert state.namespace["SETUP_RECORD"]["preprocessing_version"] == "0.9.0"
     assert record["release_ref"] == state.namespace["SETUP_RECORD"]["release_ref"]
 
 

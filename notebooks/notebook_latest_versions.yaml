@@ -1,5 +1,5 @@
 # Latest version of each notebook, read by LabConstrictor's version check by notebook_name.
 # Equal to the notebook's current_version and its RELEASE_TAG without the "v" (README, "Notebook").
-"MorphoBricks_Preprocessing": "0.8.0"
+"MorphoBricks_Preprocessing": "0.9.0"
 "MorphoBricks_Cellpose": "0.1.0"
-"MorphoBricks_Preprocessing_Cellpose": "0.8.0"
+"MorphoBricks_Preprocessing_Cellpose": "0.9.0"

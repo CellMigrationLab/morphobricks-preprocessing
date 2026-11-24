@@ -6,7 +6,22 @@ The design is `docs/restart/preprocessing-design-v0.4.md` in MorphoFeature, on b
 are in [docs/plan.md](docs/plan.md) §12. (The v0.3 to v0.4 migration guide was removed in
 v0.5.1: no run before v0.5.1 is read.)
 
-## Unreleased
+## v0.9.0 (24 November 2026)
+
+**Stable 1: two notebooks, normalization v0.8.0, and the integrity fixes.** A minor release
+(semantic versioning before 1.0, `docs/development.md`): the user-facing notebooks are now two,
+`MorphoBricks_Preprocessing.ipynb` (images to a run ready for MorphoFeature) and
+`MorphoBricks_Preprocessing_Cellpose.ipynb` (the same three cells, then Cellpose segmentation and
+mask registration, #441); `MorphoBricks_Cellpose.ipynb` stays until the combined notebook has
+passed the owner's Colab test. Normalization is pinned at v0.8.0 (#471, additive). The Spec pin
+moves from `bf68d30` to `232fb38` (fast mode, Spec ADR 0006), so drafts written under the old pin
+are refused (`spec_commit_mismatch`) and the draft file is version 4. The run manifest stays
+version 5; a run's integrity is now checked when it is read and opened (the description's
+section digests, unit records and channel coverage, #489, #490, #491), mask headers must be bound
+to a fingerprint (#480), and conversion and publication no longer write through links, remove
+files they did not write or leave a new description with an old design (#400, #447, #448, #467,
+#482, #488, #497). NumPy 2.0 or later is required. CI runs minimal gates on pull requests and the
+full matrix at release; the notebooks' `RELEASE_REF` moves only in the release PR.
 
 - **`binary_refusals` refuses unbound mask headers for the whole inventory before any read (#490, from the #502 review of #480).** It refused a file found without `bind=True` only when that file's turn came (`scan_fingerprints`), so the bound `binary` files before it were read first, the `MaskUnboundError` named one file, and an unbound file of a mask that is not `binary` passed. It now calls `refuse_unbound` on every file of the inventory first: every unbound file is named (`mask_header_unbound`) and nothing is read. Its docstring lists `MaskUnboundError` under Raises. The mask step's own inventories are found bound, so its behaviour is unchanged. `tests/test_binary_refusals_unbound.py`.
 - **The section-digest check is tested on runs of other shapes (#490).** #501's tests built runs from `v08` (with masks) only. `tests/test_manifest_section_digests.py` now also opens runs of `v01` (no masks), `v41` (fast mode) and `v43` (fast mode, RGB units with the header override), checks `section_digests()` against the published description's and that a wrong digest of each section is refused. Tests only; these runs already opened correctly.
