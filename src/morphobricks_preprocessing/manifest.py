@@ -33,7 +33,7 @@ from ._io import write_text_atomic
 from .axes import AxisMapping
 from .channel_identity_model import ChannelIdentitySettings, recorded_settings, settings_entry
 from .description_record import KEY as DESCRIPTION_KEY
-from .description_record import SectionDigestsError, recorded_description
+from .description_record import SectionDigestsError, UnitRecordError, recorded_description
 from .image_qc_record import KEY as IMAGE_QC_KEY
 from .image_qc_record import recorded_image_qc
 from .lab_links import KEY as LAB_LINKS_KEY
@@ -89,6 +89,15 @@ class ManifestSectionDigestsError(ManifestFormatError):
     """
 
     code = SectionDigestsError.code
+
+
+class ManifestUnitRecordError(ManifestFormatError):
+    """A description unit record without its fields or of the wrong types (#491).
+
+    Refused when the manifest is read, naming the unit record and the field; never filled in.
+    """
+
+    code = UnitRecordError.code
 
 
 @dataclass(frozen=True)
@@ -345,7 +354,7 @@ class RunManifest:
                 ),
                 conversion_record_sha256=optional_text(data.get("conversion_record_sha256")),
                 calibration_sha256=optional_text(data.get("calibration_sha256")),
-                experiment_description=recorded_description(data.get(DESCRIPTION_KEY)),
+                experiment_description=_recorded_description(data.get(DESCRIPTION_KEY)),
                 projection=recorded_projection(data.get(PROJECTION_KEY)),
                 lab_links=recorded_lab_links(data.get(LAB_LINKS_KEY)),
                 image_qc=recorded_image_qc(data.get(IMAGE_QC_KEY)),
@@ -354,8 +363,6 @@ class RunManifest:
             )
         except ManifestFormatError:
             raise
-        except SectionDigestsError as exc:  # coded: a consumer's cache keys and provenance
-            raise ManifestSectionDigestsError(f"{exc}. {RERUN}") from exc
         except UnsupportedVersionError as exc:  # a later version's manifest: plainly refused
             raise ManifestFormatError(str(exc)) from exc
         except KeyError as exc:  # a key every current manifest writes: never defaulted (PP-05)
@@ -365,6 +372,16 @@ class RunManifest:
             ) from exc
         except (TypeError, ValueError, AttributeError) as exc:
             raise ManifestFormatError(f"The manifest is incomplete or malformed: {exc}") from exc
+
+
+def _recorded_description(value: object) -> dict | None:
+    """Return :func:`.description_record.recorded_description`, its coded refusals kept coded."""
+    try:
+        return recorded_description(value)
+    except SectionDigestsError as exc:  # coded: a consumer's cache keys and provenance (#490)
+        raise ManifestSectionDigestsError(f"{exc}. {RERUN}") from exc
+    except UnitRecordError as exc:  # coded: RunInputs reads the unit identities (#491)
+        raise ManifestUnitRecordError(f"{exc}. {RERUN}") from exc
 
 
 def write_manifest(manifest: RunManifest, path: str | os.PathLike) -> Path:

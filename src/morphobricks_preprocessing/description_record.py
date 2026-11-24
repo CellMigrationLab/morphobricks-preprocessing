@@ -13,7 +13,7 @@ import re
 from collections.abc import Mapping, Sequence
 
 from .channel_plan import channel_coverage
-from .description import Description
+from .description import Description, Unit
 from .description_unnamed import FIELD, checked_items, unnamed_items
 from .description_write import SECTIONS, section_digests
 from .fast_layout import HEADER, STATEMENT
@@ -37,6 +37,17 @@ FAST_IMAGES = "fast_layout_images"
 per index of the list, the channel, the header name as read and its evidence."""
 DIGESTS_MALFORMED = "manifest_section_digests_malformed"
 """The code of a ``section_digests`` record that is not the four sections' SHA-256 (#490)."""
+UNIT_MALFORMED = "manifest_unit_record_malformed"
+"""The code of a unit record that is not an object with its fields and their types (#491)."""
+UNIT_MISMATCH = "manifest_unit_record_mismatch"
+"""The code of a well-formed unit record that is not the published description's unit (#491)."""
+_IDENTITY = ("repeat", "condition", "technical_repeat")
+_UNIT_KEYS = (*_IDENTITY, "channels", "image_type_header_verified")
+"""The fields :func:`unit_records` writes for every unit."""
+_UNIT_OPTIONAL = frozenset(
+    {DECLARED, OVERRIDDEN, PHOTOMETRIC, OVERRIDE_IMAGES, FIELD, CHANNELS_FROM, FAST_IMAGES}
+)
+"""The fields :func:`unit_records` writes for some units only."""
 _USE_KEYS = frozenset({"image", "override", "header_photometric"})
 _FIELDS = (
     "sha256",
@@ -220,17 +231,64 @@ def recorded_description(value: object) -> dict | None:
             raise ValueError(f"{KEY}.{name} is not a {kind.__name__}")
     _checked_section_digests(value["section_digests"])
     for index, unit in enumerate(value["units"]):
-        if isinstance(unit, dict) and FIELD in unit:
-            checked_items(unit[FIELD], f"{KEY}.units[{index}]")
-        if isinstance(unit, dict) and DECLARED in unit and not isinstance(unit[DECLARED], bool):
-            raise ValueError(f"{KEY}.units[{index}].{DECLARED} is not true or false")
-        if isinstance(unit, dict) and OVERRIDE_IMAGES in unit:
-            _checked_override_items(unit[OVERRIDE_IMAGES], f"{KEY}.units[{index}]")
-        if isinstance(unit, dict):
-            _checked_override_agreement(unit, f"{KEY}.units[{index}]")
-        if isinstance(unit, dict) and FAST_IMAGES in unit:
-            checked_fast_images(unit, f"{KEY}.units[{index}]")
+        where = f"{KEY}.units[{index}]"
+        _checked_unit_fields(unit, where)
+        if FIELD in unit:
+            checked_items(unit[FIELD], where)
+        if DECLARED in unit and not isinstance(unit[DECLARED], bool):
+            raise ValueError(f"{where}.{DECLARED} is not true or false")
+        if OVERRIDE_IMAGES in unit:
+            _checked_override_items(unit[OVERRIDE_IMAGES], where)
+        _checked_override_agreement(unit, where)
+        if FAST_IMAGES in unit:
+            checked_fast_images(unit, where)
     return value
+
+
+class UnitRecordError(ValueError):
+    """A unit record that is not an object with its fields and their types (#491)."""
+
+    code = UNIT_MALFORMED
+
+
+class UnitRecordMismatch(ValueError):
+    """A well-formed unit record that is not the published description's unit (#491)."""
+
+    code = UNIT_MISMATCH
+
+
+def _text(value: object) -> bool:
+    return isinstance(value, str) and bool(value)
+
+
+def _checked_unit_fields(unit: object, where: str) -> None:
+    """Refuse a unit record without its fields, with another field, or of the wrong types.
+
+    The identity (``repeat``, ``condition``, ``technical_repeat``) is non-empty text,
+    ``channels`` a list of non-empty text, ``image_type_header_verified`` true or false and
+    ``channels_from``, when present, non-empty text; nothing missing is filled in (#491).
+    """
+    if not isinstance(unit, dict):
+        raise UnitRecordError(f"{UNIT_MALFORMED}: {where} is not an object")
+    named = [f"{where}.{name} is missing" for name in _UNIT_KEYS if name not in unit]
+    named += [
+        f"{where}.{name} is not a unit record field"
+        for name in sorted(str(key) for key in unit)
+        if name not in _UNIT_KEYS and name not in _UNIT_OPTIONAL
+    ]
+    if not named:
+        named = [
+            f"{where}.{name} is not non-empty text" for name in _IDENTITY if not _text(unit[name])
+        ]
+        channels = unit["channels"]
+        if not isinstance(channels, list) or not all(_text(item) for item in channels):
+            named.append(f"{where}.channels is not a list of channel IDs")
+        if not isinstance(unit["image_type_header_verified"], bool):
+            named.append(f"{where}.image_type_header_verified is not true or false")
+        if CHANNELS_FROM in unit and not _text(unit[CHANNELS_FROM]):
+            named.append(f"{where}.{CHANNELS_FROM} is not non-empty text")
+    if named:
+        raise UnitRecordError(f"{UNIT_MALFORMED}: {'; '.join(named)}")
 
 
 class SectionDigestsError(ValueError):
@@ -341,18 +399,87 @@ def _checked_override_agreement(unit: dict, where: str) -> None:
 
 
 def check_declared_overrides(recorded: dict, description: Description) -> None:
-    """Refuse a recorded unit whose declared override differs from the published description.
+    """Refuse recorded unit records that are not the published description's units (#491).
 
-    ``recorded`` is :func:`recorded_description`'s entry and ``description`` the published file
-    the run read (its SHA-256 already checked): the manifest's ``rgb_header_override`` of an RGB
-    unit must equal the description's.
+    ``recorded`` is :func:`recorded_description`'s entry (its unit records well-formed) and
+    ``description`` the published file the run read (its SHA-256 already checked). Each record
+    names a declared unit, once, and every declared unit has a record; its ``channels`` and
+    ``channels_from`` are the unit's; the declared ``rgb_header_override`` is recorded exactly
+    for a unit declared ``rgb`` and equals the description's (review K, N1).
+
+    Raises
+    ------
+    UnitRecordMismatch
+        ``manifest_unit_record_mismatch``, naming the unit record and the field.
     """
-    for index, unit in enumerate(recorded["units"]):
-        if not isinstance(unit, dict) or DECLARED not in unit:
-            continue
-        member = description.repeats[unit["repeat"]].members[unit["condition"]]
-        declared = member.technical_repeats[unit["technical_repeat"]].rgb_header_override is True
-        if unit[DECLARED] != declared:
-            raise ValueError(
-                f"{KEY}.units[{index}].{DECLARED} differs from the published description"
+    declared = {
+        (repeat_id, condition_id, unit_id)
+        for repeat_id, repeat in description.repeats.items()
+        for condition_id, member in repeat.members.items()
+        for unit_id in member.technical_repeats
+    }
+    seen: set[tuple[str, str, str]] = set()
+    for index, record in enumerate(recorded["units"]):
+        where = f"{KEY}.units[{index}]"
+        identity = tuple(record[name] for name in _IDENTITY)
+        unit = _declared_unit(record, description, where)
+        if identity in seen:
+            raise UnitRecordMismatch(
+                f"{UNIT_MISMATCH}: {where} records unit {'/'.join(identity)} more than once"
             )
+        seen.add(identity)
+        _check_unit_record(record, unit, where)
+    missing = ", ".join("/".join(identity) for identity in sorted(declared - seen))
+    if missing:
+        raise UnitRecordMismatch(
+            f"{UNIT_MISMATCH}: the published description's unit {missing} has no record in "
+            f"{KEY}.units"
+        )
+
+
+def _declared_unit(record: dict, description: Description, where: str) -> Unit:
+    """Return the published unit a record names, refusing the first field naming none."""
+    repeat = description.repeats.get(record["repeat"])
+    if repeat is None:
+        raise UnitRecordMismatch(
+            f"{UNIT_MISMATCH}: {where}.repeat {record['repeat']!r} is not a biological repeat "
+            "of the published description"
+        )
+    member = repeat.members.get(record["condition"])
+    if member is None:
+        raise UnitRecordMismatch(
+            f"{UNIT_MISMATCH}: {where}.condition {record['condition']!r} is not a condition of "
+            f"biological repeat {record['repeat']!r} in the published description"
+        )
+    unit = member.technical_repeats.get(record["technical_repeat"])
+    if unit is None:
+        raise UnitRecordMismatch(
+            f"{UNIT_MISMATCH}: {where}.technical_repeat {record['technical_repeat']!r} is not a "
+            f"technical repeat of {record['repeat']!r}/{record['condition']!r} in the published "
+            "description"
+        )
+    return unit
+
+
+def _check_unit_record(record: dict, unit: Unit, where: str) -> None:
+    """Refuse a record whose channels or declared override differ from its published unit."""
+    if record["channels"] != list(unit.channels):
+        raise UnitRecordMismatch(
+            f"{UNIT_MISMATCH}: {where}.channels differs from the published description"
+        )
+    if record.get(CHANNELS_FROM) != unit.channels_from:
+        raise UnitRecordMismatch(
+            f"{UNIT_MISMATCH}: {where}.{CHANNELS_FROM} differs from the published description"
+        )
+    rgb = unit.image_type == RGB
+    if (DECLARED in record) != rgb:
+        state = "records" if DECLARED in record else "does not record"
+        kind = "not declared rgb" if DECLARED in record else "declared rgb"
+        raise UnitRecordMismatch(
+            f"{UNIT_MISMATCH}: {where} {state} {DECLARED}, but the published description's "
+            f"unit is {kind}"
+        )
+    if rgb and record[DECLARED] != (unit.rgb_header_override is True):
+        raise UnitRecordMismatch(
+            f"{UNIT_MISMATCH}: {where}.{DECLARED} differs from the published description"
+        )
