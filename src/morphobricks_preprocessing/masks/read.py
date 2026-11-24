@@ -106,9 +106,16 @@ def _wanted_plane(mask: MaskFile, z: int | None, t: int | None) -> dict[str, int
     Raises
     ------
     ValueError
-        If ``z`` or ``t`` is not a whole number (``bool`` and floats included, #477), or is
-        missing or outside the mask.
+        If the mask's axes are not confirmed (empty ``mask.axes``: its inventory's
+        ``mask_not_2d``), or ``z`` or ``t`` is not a whole number (``bool`` and floats
+        included, #477), or is missing or outside the mask.
     """
+    if not mask.axes:  # an inventory's mask_not_2d: never read as one plane (#478)
+        raise ValueError(
+            f"the mask {mask.path} (header axes {mask.header_axes or 'unknown'}): its axes are "
+            "not confirmed, so its planes are not known; state them for its mask type (for "
+            f"example --mask-axes {mask.mask_type or 'Cells'}=TYX)"
+        )
     wanted = {"Z": z, "T": t}
     for axis, index in wanted.items():
         if index is not None and (
@@ -118,7 +125,7 @@ def _wanted_plane(mask: MaskFile, z: int | None, t: int | None) -> dict[str, int
                 f"the mask {mask.path}: {axis.lower()}={index!r} is not a whole number; give "
                 "the plane's index as an integer"
             )
-        length = mask.planes[axis] if mask.axes else 1
+        length = mask.planes[axis]
         if index is None and length > 1:
             raise ValueError(
                 f"the mask {mask.path} has {length} planes along {axis}; say which one to read"
