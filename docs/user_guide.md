@@ -868,7 +868,11 @@ folder or inside it (also through a link) is refused with `output_inside_experim
 anything is created or written, against the experiment folder you give, or, with only
 `--output`, against the experiment the run in that output folder recorded. With only `--output`
 and no run there yet, no experiment is known: give the experiment folder too
-(`calibrate /data/exp1 --output /data/exp1_out ...`) so the check can be made.
+(`calibrate /data/exp1 --output /data/exp1_out ...`) so the check can be made. The command still
+runs in that case, but says so on the error output (stderr): "Note: no experiment was given and
+none is recorded in <output folder>, so it was not checked that the output folder is outside the
+experiment (give the experiment folder to check it)." It is not an error and does not change the
+exit status; it is not printed when the experiment is given or recorded.
 
 ### Named-axis copies (`convert`)
 
@@ -1302,7 +1306,7 @@ continues.
 | `invalid_name` | Error | A folder or image name starts or ends with a space, or is `NA`, `nan`, `none`, `null`, `n/a` or `<NA>` (any case), which tables read as a missing value. Rename it. |
 | `duplicate_position_id` | Error | Two images in one folder have the same name apart from the extension or upper/lower case (`img_01.tif` and `img_01.ome.zarr`), so their positions cannot be told apart. Rename one, or move it out of the experiment. |
 | `folder_too_deep` | Error | Folders below the technical repeat. Move the images up, or select a lower folder as the experiment. |
-| `output_inside_experiment` | Error | The output folder is inside the experiment. Choose another. `calibrate` refuses it too, before it creates the folder or writes `calibration.csv` (`OutputInsideExperimentError` from `write_calibration` and `update_calibration`). |
+| `output_inside_experiment` | Error | The output folder is inside the experiment. Choose another. `calibrate` refuses it too, before it creates the folder or writes `calibration.csv` (`OutputInsideExperimentError` from `write_calibration` and `update_calibration`). Without an experiment given or recorded in the output folder it cannot be checked: `calibrate` then prints a one-line note on stderr and goes on. |
 | `no_images` | Error | No images to analyse (or all excluded). Check the folder. |
 | `unreadable_tiff` | Error | A TIFF file cannot be opened. Export it again, or exclude it. |
 | `unreadable_ome_zarr` | Error | A `.zarr` folder is not an OME-Zarr image that can be read; the message says why. That includes an image whose metadata do not name its axes (OME-NGFF 0.3 to 0.5 require them), and every OME-NGFF 0.1 or 0.2 store (their metadata never name the axes): the axes are never guessed. Re-save an 0.1 or 0.2 store as OME-NGFF 0.4 or later. Export it again as OME-Zarr (OME-NGFF 0.4 or 0.5) with its axes, or exclude it. |

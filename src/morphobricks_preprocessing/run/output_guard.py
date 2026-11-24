@@ -106,9 +106,25 @@ def output_experiment_issues(
     """
     output = Path(output_folder).resolve()
     if experiment_root is None:
-        manifest = usable(read_previous(output)[0])
-        experiment_root = None if manifest is None else manifest.experiment_root
+        experiment_root = recorded_experiment_of(output)
     return [] if experiment_root is None else check_output_folder(experiment_root, output)
+
+
+def recorded_experiment_of(output_folder: str | os.PathLike) -> str | None:
+    """Return the experiment folder the run in the output folder recorded, or None.
+
+    Parameters
+    ----------
+    output_folder
+        The output folder.
+
+    Returns
+    -------
+    str or None
+        None without a usable (v0.4.0 or later) manifest.
+    """
+    manifest = usable(read_previous(Path(output_folder).resolve())[0])
+    return None if manifest is None else manifest.experiment_root
 
 
 def refuse_output_inside_experiment(

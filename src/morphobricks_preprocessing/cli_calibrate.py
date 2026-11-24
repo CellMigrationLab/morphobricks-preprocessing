@@ -11,6 +11,7 @@ sizes with their source, and names the change in its report; no row is recompute
 from __future__ import annotations
 
 import argparse
+import sys
 from functools import partial
 from pathlib import Path
 
@@ -28,7 +29,7 @@ from .report import format_issues
 from .run import OutputLockedError
 from .run.calibrate import update_calibration
 from .run.lock import lock_issue
-from .run.output_guard import output_experiment_issues
+from .run.output_guard import output_experiment_issues, recorded_experiment_of
 
 
 def add_calibrate_parser(commands: argparse._SubParsersAction) -> argparse.ArgumentParser:
@@ -88,6 +89,14 @@ def calibrate_command(args: argparse.Namespace) -> int:
     if inside:
         print(format_issues(inside))
         return 1
+    if experiment is None and recorded_experiment_of(output) is None:
+        # Not refused (existing users' command lines), but never silent.
+        print(
+            "Note: no experiment was given and none is recorded in "
+            f"{output}, so it was not checked that the output folder is outside the "
+            "experiment (give the experiment folder to check it).",
+            file=sys.stderr,
+        )
     path = output / CALIBRATION_FILENAME
     try:
         if not (args.size or args.pixels or args.remove):

@@ -85,6 +85,44 @@ def test_calibrate_writes_next_to_the_experiment(exp, tmp_path, capsys):
     assert "Written to" in capsys.readouterr().out
 
 
+def test_calibrate_allows_a_prefix_sibling_of_the_experiment(exp, tmp_path, capsys):
+    # exp2/out shares only a name prefix with exp: it is outside the experiment.
+    output = tmp_path / "exp2" / "out"
+    assert main(["calibrate", str(exp), "--output", str(output), *SIZE]) == 0
+    assert (output / CALIBRATION_FILENAME).is_file()
+    assert "output folder is inside" not in capsys.readouterr().out
+
+
+def unchecked_note(output):
+    return (
+        "Note: no experiment was given and none is recorded in "
+        f"{output.resolve()}, so it was not checked that the output folder is outside the "
+        "experiment (give the experiment folder to check it)."
+    )
+
+
+@pytest.mark.parametrize("show", [False, True])
+def test_calibrate_says_when_it_could_not_check_the_output_folder(tmp_path, capsys, show):
+    output = tmp_path / "out"  # no experiment given, and no run in it
+    assert main(["calibrate", "--output", str(output), *([] if show else SIZE)]) == 0
+    captured = capsys.readouterr()
+    assert captured.err.strip() == unchecked_note(output)
+    assert "Note:" not in captured.out
+    assert (output / CALIBRATION_FILENAME).is_file() == (not show)
+
+
+def test_calibrate_gives_no_note_when_the_experiment_is_given(exp, tmp_path, capsys):
+    assert main(["calibrate", str(exp), "--output", str(tmp_path / "out"), *SIZE]) == 0
+    assert main(["calibrate", str(exp), *SIZE]) == 0  # the default output folder
+    assert capsys.readouterr().err == ""
+
+
+def test_calibrate_gives_no_note_when_the_run_recorded_the_experiment(tmp_path, capsys):
+    clean = make_clean_run(tmp_path)
+    assert main(["calibrate", "--output", str(clean.output), *SIZE]) == 0
+    assert capsys.readouterr().err == ""
+
+
 @pytest.fixture
 def recorded_inside(tmp_path):
     # A run whose output folder is inside the experiment its manifest records.
