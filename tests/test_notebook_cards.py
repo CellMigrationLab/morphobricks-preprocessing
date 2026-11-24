@@ -475,10 +475,16 @@ def test_the_plan_names_the_mask_changes_the_run_names(experiment, tmp_path):
     output = output_of(experiment).resolve()
     assert nb._planned_changes(output) == ()
     nb.masks_folder.value = str(second)  # a new masks folder: its statements start over
+    nb.masks_button.click()  # paired with the new folder: asked again, not preset (#484)
+    assert nb._mask_choices["cells"].value == "" and nb.run_button.disabled
     nb._mask_choices["cells"].value = "TYX"
     nb.masks_button.click()
     planned = nb._planned_changes(output)
-    assert [change.name for change in planned] == ["masks_folder"]
+    # The statement is the new folder's own: named against none kept, not the old folder's.
+    assert [(change.name, change.recorded) for change in planned] == [
+        ("masks_folder", first.resolve().as_posix()),
+        ("mask_axes", "none"),
+    ]
     assert nb.run().input_changes == planned
     nb.masks_folder.value = ""
     nb.masks_drop.click()  # explicit, as --no-masks

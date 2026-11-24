@@ -271,7 +271,24 @@ banner then says "commit unknown" and that the override is on). Then:
   `ACTIN`), never by position: a **cell channel** (cytoplasm or cell border) and a **nuclear
   channel**, both optional but at least one. A cell mask reads the cell channel, then the
   nuclear one if chosen (a cell channel is required); a nuclei mask reads the nuclear channel
-  only (required). The record names each channel's role and the output. When some images
+  only (required). The record names each channel's role and the output.
+- **Both.** The output **Both** segments each image twice: the cells from the cell channel and
+  the nuclear channel (stacked as cell, nuclear), the nuclei from the nuclear channel alone. It
+  needs both channels. The two are separate mask types (`Cells` and `Nuclei` by default, both
+  editable and different), each with its own `segmentation_record.json`, its own skip, overwrite
+  and rollback and its own table; a batch that stops does not stop the other. One model and
+  one set of settings serve both unless, under **Advanced Cellpose settings**, you tick a
+  different model or settings for the nuclei. The preview shows both results. The notebook
+  never pairs a cell with a nucleus by label number: relate them downstream from the geometry
+  (MorphoRelate, containment or overlap).
+- **Channels by number.** Tags (channel IDs) are the default. You may instead choose **By
+  number** and type a channel's number (its C position, 1 for the first), only when every
+  image of the run has the same channel IDs at the same positions: the number is translated
+  once to that ID, resolved like a tag, and the record keeps the ID with the number typed
+  (`channel_number` in `channel_roles`). When the layouts differ (3 channels in some repeats
+  and 4 in others) the number is refused with the images of each layout named: choose the
+  channel by its tag. A number is never resolved image by image.
+- **Partial channels.** When some images
   have a channel that others lack (a fourth stain in one biological repeat), only the channels
   every image has can be used: the dropdown says which channel is partial, and choosing it
   shows preprocessing's refusal (`A_SCOPE_INCOMPLETE`) unchanged. Cellpose reads at most three
@@ -302,7 +319,7 @@ banner then says "commit unknown" and that the override is on). Then:
   file name and SHA-256, every setting (the full normalisation and the flow iterations included), whether the weights were downloaded now and from where, the channels, the device and each image as written,
   skipped or failed. The final table lists every image, with the error of a failed one.
 
-Afterwards declare the mask type in the experiment description (for example `[masks.Cells]`
+Afterwards declare the mask type (both mask types for **Both**) in the experiment description (for example `[masks.Cells]`
 with `source_type = "Cells"` and `representation = "instances"`), save it, run preprocessing
 again with the masks folder, **Describe the masks**, then continue with MorphoFeature.
 
@@ -656,7 +673,7 @@ the same bytes in every file except that time (and the manifest SHA-256 the repo
 | `--remove-stale-lock` | Remove the lock left by a run that was stopped or whose computer restarted (`check`, `run`, `masks` and `calibrate`); give it only when no other run uses the output folder, on any computer (only Linux and macOS can tell whether a process on this computer still runs) |
 | `--outlier-limit N`, `--saturation-limit FRACTION`, `--min-images N` | Limits of the intensity checks printed after the run (default 3, 0.01 and 5) |
 | `--log FILE` | Write technical details to a file (`run`, `masks`, `convert`). It is checked before anything is written and opened only once the other options are checked: a file inside the experiment or masks folder (given or recorded by the earlier run), inside the folder of the copies (`convert`), or named as one of the run's files in the output folder (`plane_histograms.csv`, `run_manifest.json`, the reports, `experiment_design.csv`, `calibration.csv`, `mask_relationships.json`, the lock) is refused and nothing is written; so is a file that is a hard link (it has another name). Any other name in the output folder is fine, for example `run.log` |
-| `--masks FOLDER` | The masks folder (§2). `check` lists the mask types found and checks every mask from its header; `run` stops on a mask error and records the masks in `run_manifest.json` |
+| `--masks FOLDER` | The masks folder (§2). `check` lists the mask types found and checks every mask from its header; `run` stops on a mask error and records the masks in `run_manifest.json`. A masks folder other than the one an earlier run recorded does not reuse the mask axes stated for that folder's masks (`--mask-axes`): state them again for the new folder (those of OME-Zarr label images are kept) |
 | `--mask-axes TYPE=ROLES` | The axes of a mask type, one role (Y, X, Z or T) per axis as stored, stated once per type: `Cells=TYX` for plain stacks of time points whose files do not name their axes; a 2D mask needs none, and `Cells=YX` (the removed shared 2D mask) is the error `shared_mask_not_supported` (repeatable; `check`, `run`, `masks`). Masks are never reordered. |
 
 After writing, `run` prints the intensity checks of the table, grouped by kind, each with

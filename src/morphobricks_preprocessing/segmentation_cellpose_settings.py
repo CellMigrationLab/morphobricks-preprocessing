@@ -7,7 +7,9 @@ it.
 from __future__ import annotations
 
 import math
+from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import Any
 
 from .segmentation_record import SegmentationError
 
@@ -141,8 +143,16 @@ NUCLEI_OUTPUT = "nuclei"
 """Output: a nuclei mask, from the nuclear channel only."""
 OUTPUT_MASK_TYPES = {CELL_OUTPUT: "Cells", NUCLEI_OUTPUT: "Nuclei"}
 """The mask type each output proposes (the user may change it)."""
+BOTH_OUTPUT = "both"
+"""Output: a cell mask and a nuclei mask, each segmented on its own (#440); never paired here."""
 NO_CHANNEL = "Choose a cell channel, a nuclear channel or both, by channel ID; neither is chosen."
 """The refusal when neither channel is chosen."""
+BOTH_NEEDS = (
+    "The output Both needs a cell channel and a nuclear channel: the cells are segmented from "
+    "the cell channel and the nuclear channel, the nuclei from the nuclear channel alone. "
+    "Choose both channels, or choose the output Cell mask or Nuclei mask."
+)
+"""The refusal of the output Both without a cell channel or without a nuclear channel."""
 
 
 def input_channels(output: str, cell: str, nuclear: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
@@ -177,21 +187,56 @@ def input_channels(output: str, cell: str, nuclear: str) -> tuple[tuple[str, ...
     raise SegmentationError(f"The output must be {CELL_OUTPUT} or {NUCLEI_OUTPUT}, not {output!r}.")
 
 
-def channel_roles_entry(
-    channel_ids: tuple[str, ...], roles: tuple[str, ...], output: str | None = None
-) -> list[dict[str, str]] | None:
-    """Return the record's ``channel_roles``: each channel ID with its role, in Cellpose's order.
+def output_inputs(
+    output: str, cell: str, nuclear: str
+) -> tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...]:
+    """Return each mask an output makes: ``(mask output, channel IDs, roles)``, cells first.
 
-    The roles only label the channels chosen by ID: for a cell mask the cell channel, then the
-    nuclear channel if any; for a nuclei mask the nuclear channel alone. No roles (``()``, and
-    no output) are recorded as null, never guessed.
+    A cell mask or a nuclei mask is one entry (:func:`input_channels`). **Both** (#440) is two
+    segmentations of each image, each with its own input: the cells from the cell channel and
+    the nuclear channel, stacked as (cell, nuclear), the nuclei from the nuclear channel alone.
+    It needs both channels. The two masks are never paired by label number.
 
     Raises
     ------
     SegmentationError
-        For roles without an output or the reverse, or roles that are not those of the output.
+        As :func:`input_channels`, and for Both without a cell or a nuclear channel.
     """
-    if not roles and output is None:
+    if output != BOTH_OUTPUT:
+        return ((output, *input_channels(output, cell, nuclear)),)
+    if not cell and not nuclear:
+        raise SegmentationError(NO_CHANNEL)
+    if not (cell and nuclear):
+        raise SegmentationError(BOTH_NEEDS)
+    return tuple((o, *input_channels(o, cell, nuclear)) for o in (CELL_OUTPUT, NUCLEI_OUTPUT))
+
+
+def channel_roles_entry(
+    channel_ids: tuple[str, ...],
+    roles: tuple[str, ...],
+    output: str | None = None,
+    numbers: Mapping[str, int] | None = None,
+) -> list[dict[str, Any]] | None:
+    """Return the record's ``channel_roles``: each channel ID with its role, in Cellpose's order.
+
+    The roles only label the channels chosen by ID: for a cell mask the cell channel, then the
+    nuclear channel if any; for a nuclei mask the nuclear channel alone. No roles (``()``, and
+    no output) are recorded as null, never guessed. A channel chosen by number (#440) also has
+    ``channel_number``, the number typed (C position, 1-based), beside the ID it stands for.
+
+    Raises
+    ------
+    SegmentationError
+        For roles without an output or the reverse, roles that are not those of the output, or
+        a number for a channel that is not read.
+    """
+    numbers = dict(numbers or {})
+    if set(numbers) - set(channel_ids):
+        raise SegmentationError(
+            f"Channel numbers were given for {sorted(set(numbers) - set(channel_ids))}, which "
+            f"are not among the channels read ({list(channel_ids)})."
+        )
+    if not roles and output is None and not numbers:
         return None
     allowed = {
         CELL_OUTPUT: ((CELL_ROLE,), (CELL_ROLE, NUCLEAR_ROLE)),
@@ -203,4 +248,7 @@ def channel_roles_entry(
             f"{output!r}: a cell mask reads the cell channel, then the nuclear one if any; a "
             "nuclei mask reads the nuclear channel only."
         )
-    return [{"channel_id": c, "role": r} for c, r in zip(channel_ids, roles, strict=True)]
+    return [
+        {"channel_id": c, "role": r, **({"channel_number": numbers[c]} if c in numbers else {})}
+        for c, r in zip(channel_ids, roles, strict=True)
+    ]

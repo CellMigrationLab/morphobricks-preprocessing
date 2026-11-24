@@ -109,7 +109,7 @@ def test_an_unknown_output_is_refused(cells):
     run = cells.run
     run_cell(cells.ns, OPEN, run_folder=str(run.out), masks_folder=str(run.masks))
     with pytest.raises(notebook_cellpose.CellStop, match="output must be one of"):
-        cells.ns["workflow"].choose_channels("Cells", "both")
+        cells.ns["workflow"].choose_channels("Cells", "all")
 
 
 @pytest.mark.parametrize(

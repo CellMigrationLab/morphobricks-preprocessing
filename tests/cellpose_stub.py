@@ -201,3 +201,27 @@ def mixed_run(tmp_path):
         masks=base / "masks",
         data=data,
     )
+
+
+def two_channel_run(tmp_path):
+    """Return a described run whose every image has DNA then TUB (C = 1, 2): one layout."""
+    data = extra_stain()
+    for old, new in (
+        (b'["DNA", "ACTIN", "TUB", "EXTRA"]', b'["DNA", "TUB"]'),
+        (b'["DNA", "ACTIN", "TUB"]', b'["DNA", "TUB"]'),
+        (b'["ACTIN", "DNA", "EXTRA", "TUB"]', b'["DNA", "TUB"]'),
+        (b"[channels.ACTIN]\n\n", b""),
+        (b"[channels.EXTRA]\n\n", b""),
+    ):
+        assert old in data, old
+        data = data.replace(old, new)
+    result, out, _ = described_run(tmp_path, data)
+    assert result.written, [(i.code, i.message) for i in result.issues]
+    base = out.parent
+    return SimpleNamespace(
+        inputs=RunInputs.open(out),
+        out=out,
+        experiment=base / "exp",
+        masks=base / "masks",
+        data=data,
+    )
