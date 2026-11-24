@@ -225,9 +225,7 @@ class _ResultsStep:
                 self.stats_status.value = ui.status(
                     "warn", "This histogram table does not exist.", [str(path)]
                 )
-            self.statistics.value = ""
-            ui.set_visible(self.statistics_card, False)
-            ui.set_visible(self.distribution_card, False)
+            self._hide_statistics()
             return
         try:
             percentiles = [float(q) for q in self.percentiles.value.replace(";", ",").split(",")]
@@ -239,13 +237,12 @@ class _ResultsStep:
                 "The percentiles cannot be read.",
                 ["Use numbers from 0 to 100 separated by commas, for example 1, 99.8."],
             )
+            self._hide_statistics()  # the earlier ones are not of these percentiles (#527)
             return
         self._busy(self.statistics_button, "Calculating…")
         self._stats_wait = Wait(self.stats_status)
         self._stats_wait.start("Reading the histogram table")
-        self.stats_tiles.value = self.statistics.value = ""
-        ui.set_visible(self.statistics_card, False)
-        ui.set_visible(self.distribution_card, False)
+        self._hide_statistics()
         try:
             self._calculate_statistics(path, percentiles)
         except Exception as exc:
