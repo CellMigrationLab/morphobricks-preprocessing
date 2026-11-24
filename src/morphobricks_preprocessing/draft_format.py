@@ -4,7 +4,10 @@ A draft file is one JSON object: ``format``, ``version``, ``base_sha256``, ``spe
 seven tables of the user's answers (``conditions``, ``technical_repeats``, ``repeats``,
 ``pairing``, ``units``, ``channels``, ``masks``), the fast-mode statement ``channel_layout``
 (``null`` for a strict draft; version 4, Spec ADR 0006) and ``switch_mode`` (true only when the
-user switched a published file between fast and strict mode), every key required. Reading never
+user switched a published file between fast and strict mode), every key required, and one
+optional key, ``tag_review`` (the units *Tag by repeat* refused and the user confirmed,
+:mod:`.repeat_review`; written only while not empty, so a draft without it is read as before,
+and a ``tag_review`` that is malformed is refused like any other key). Reading never
 repairs: bytes that are not UTF-8 JSON, a duplicate key, ``NaN``, an unknown ``version``, a key the
 format does not have, a missing key, a value of the wrong type or a date that is not a real
 ``YYYY-MM-DD`` day are refused with :class:`DraftFileError`, whose ``code`` says which.
@@ -32,6 +35,7 @@ from .draft_answers import (
     UnitAnswer,
     valid_day,
 )
+from .repeat_review import Override, RefusedUnit, TagReview, review_to_json
 from .run.description_file import ABSENT
 
 DRAFT_FORMAT = "morphobricks-description-draft"
@@ -59,6 +63,11 @@ TOP = (
     "channel_layout",
     "switch_mode",
 )
+OPTIONAL_TOP = ("tag_review",)
+"""Top-level keys a file may leave out (a draft written before they existed has none)."""
+REVIEW_KEYS = ("refused", "confirmed")
+REFUSED_KEYS = ("unit", "tags", "reference", "aliases")
+CONFIRMED_KEYS = ("unit", "tags", "names")
 CONDITION_KEYS = ("id", "display_name", "reference", "target", "treatment_key")
 REPEAT_KEYS = ("id", "confirmed_on", "display_name")
 UNIT_KEYS = ("channels", "image_type", "display_name", "rgb_header_override", "channels_from")
@@ -73,7 +82,8 @@ class DraftFileError(ValueError):
 
     ``code`` is ``malformed``, ``unknown_version``, ``unknown_key`` (a key the format does not
     have), ``R_DRAFT_BASE_MISSING`` (no usable ``base_sha256``), ``R_FILE_SYMLINK``,
-    ``no_draft`` or ``spec_commit_mismatch`` (raised by :mod:`.run.draft_file`).
+    ``no_draft``, ``spec_commit_mismatch`` or ``R_DRAFT_CHANGED`` (raised by
+    :mod:`.run.draft_file`).
     """
 
     def __init__(self, message: str, code: str = "malformed") -> None:
@@ -235,6 +245,53 @@ def _layout(value: object) -> LayoutAnswer | None:
     return LayoutAnswer(channels, kind, day)
 
 
+def _unit_key(value: object, where: str) -> tuple[str, str, str]:
+    """Read a unit's folders: condition, source repeat and technical repeat, three texts."""
+    keys = _texts(value, where)
+    if len(keys) != 3:
+        raise _bad(where, "three folder names are expected")
+    return keys[0], keys[1], keys[2]
+
+
+def _review(value: object) -> TagReview:
+    """Read ``tag_review`` strictly: null, a unit twice or a wrong value is refused."""
+    top = _table(value, "tag_review", REVIEW_KEYS, REVIEW_KEYS)
+    refused, confirmed = {}, {}
+    for number, raw in enumerate(_list(top["refused"], "tag_review.refused")):
+        where = f"tag_review.refused[{number}]"
+        item = _table(raw, where, REFUSED_KEYS, REFUSED_KEYS)
+        key = _unit_key(item["unit"], f"{where}.unit")
+        if key in refused:
+            raise _bad(f"{where}.unit", f"unit {'/'.join(key)} is listed twice")
+        reference = item["reference"]
+        aliases = {
+            k: _texts(v, f"{where}.aliases.{k}")
+            for k, v in _entries(item["aliases"], f"{where}.aliases").items()
+        }
+        refused[key] = RefusedUnit(
+            _texts(item["tags"], f"{where}.tags"),
+            None if reference is None else _unit_key(reference, f"{where}.reference"),
+            aliases,
+        )
+    for number, raw in enumerate(_list(top["confirmed"], "tag_review.confirmed")):
+        where = f"tag_review.confirmed[{number}]"
+        item = _table(raw, where, CONFIRMED_KEYS, CONFIRMED_KEYS)
+        key = _unit_key(item["unit"], f"{where}.unit")
+        names = _list(item["names"], f"{where}.names")
+        if key in confirmed:
+            raise _bad(f"{where}.unit", f"unit {'/'.join(key)} is listed twice")
+        if not all(n is None or isinstance(n, str) for n in names):
+            raise _bad(f"{where}.names", "each entry is a header name (text) or null")
+        confirmed[key] = Override(_texts(item["tags"], f"{where}.tags"), tuple(names))
+    return TagReview(refused, confirmed)
+
+
+def _list(value: object, where: str) -> list:
+    if not isinstance(value, list):
+        raise _bad(where, "a list is expected")
+    return value
+
+
 def _base(doc: dict) -> str:
     base = doc.get("base_sha256")
     if not isinstance(base, str) or not (base == ABSENT or SHA256.fullmatch(base)):
@@ -257,7 +314,7 @@ def _header(doc: object) -> dict:
             f"version {version!r} is not supported: this brick reads version {DRAFT_VERSION}",
             "unknown_version",
         )
-    _table(doc, "the file", TOP)
+    _table(doc, "the file", (*TOP, *OPTIONAL_TOP))
     if "base_sha256" not in doc:
         raise DraftFileError("base_sha256 is missing", BASE_MISSING)
     return doc
@@ -281,7 +338,7 @@ def answers_from_bytes(data: bytes) -> DraftAnswers:
     except (UnicodeDecodeError, ValueError, RecursionError) as error:
         raise DraftFileError(f"the file is not UTF-8 JSON ({error})") from error
     doc = _header(raw)
-    _table(doc, "the file", TOP, TOP)
+    _table(doc, "the file", (*TOP, *OPTIONAL_TOP), TOP)
     base = _base(doc)
     commit = _text(doc["spec_commit"], "spec_commit")
     if not COMMIT.fullmatch(commit):
@@ -304,6 +361,7 @@ def answers_from_bytes(data: bytes) -> DraftAnswers:
         _pairing(doc["pairing"]),
         _layout(doc["channel_layout"]),
         _flag(doc["switch_mode"]),
+        _review(doc["tag_review"]) if "tag_review" in doc else None,
     )
 
 
@@ -377,6 +435,8 @@ def answers_to_bytes(answers: DraftAnswers) -> bytes:
         },
         "switch_mode": answers.switch_mode,
     }
+    if answers.tag_review is not None and not answers.tag_review.empty:
+        doc["tag_review"] = review_to_json(answers.tag_review)
     try:
         return (json.dumps(doc, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
     except UnicodeEncodeError as error:

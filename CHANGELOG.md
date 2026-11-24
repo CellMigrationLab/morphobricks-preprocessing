@@ -93,6 +93,104 @@ old pin are refused with `spec_commit_mismatch`, as at every re-pin.
 
 ### Added
 
+- **Tag by repeat: another output folder is another draft** (owner requirement): pointing only the
+  output folder at another draft of the same experiment reopens the channel grid on that draft
+  (the draft is part of its reopening key), so its refused units stay listed and untagged; the
+  header trust restores the draft's own record first when the memory is another draft's
+  (`MatrixView.trust_headers`), and the save stays refused until it is.
+- **Tag by repeat: override a listed unit** (owner requirement): from the list of units whose
+  headers disagree with their repeat's row, **Override this unit (start from the row's tags)**
+  opens the unit's tags prefilled with the row's, header names shown and disagreements
+  highlighted. The unit counts as tagged only after **Confirm these tags**; the confirmation
+  holds while the unit's own tags and header names are unchanged (`repeat_tags.Override`,
+  `override_holds`; `notebook_channels_override`). A refused unit is counted only when the user
+  confirms that unit: aliases saved by confirming or tagging another unit never clear its
+  refusal, never tag it in fast mode (`RepeatRows.standing`) and never change its highlights
+  (the refusal keeps the aliases of its time, `Refusal.channels`; `repeat_fill(frozen=...)`). A
+  listed unit with the same header names, at every C index, as a confirmed one shows "same
+  headers as <unit>, which you confirmed as <tags>" with **Confirm the same tags**, and
+  **Confirm all N like it** when several are listed: one click each through the same
+  validation and save as the editor (all or none), never automatic.
+  A deliberate hand-tag of a listed unit on the grid (or a strict-mode block click on it) that
+  leaves its tags complete and fitting its header is recorded as its confirmation, in the same
+  draft write as its tags (`RepeatRows.hand_tagged`), so it counts and can be the source of
+  **Confirm the same tags** like any confirmation.
+  - A label renamed or removed after a refusal no longer breaks the editor: that cell opens blank
+    (the unit stays unconfirmed until it is tagged), and a label gone is never offered by a
+    one-click button. Before, the dropdown raised and every later redraw raised too.
+  - Refusals and confirmations are kept in the draft file (optional `tag_review`, draft version
+    still 4, `repeat_review.py`; written only while not empty; read strictly) and restored on
+    opening, before headers are trusted: after a kernel restart a refused unit is still listed,
+    untagged and unsaved until that unit is confirmed, and the one-click offer is still made.
+  - Fast mode decides which refusals stand against the row's current reference unit, as the
+    list does, and **Confirm all N like it** buttons keep a stable order.
+  - The review belongs to the draft it was made in (experiment folder and draft file): a notebook
+    pointed at another folder or output forgets the refusals, confirmations and editor state of
+    the first and restores the new draft's own (empty without one), before headers are trusted;
+    one draft's record is never written into another, and switching back restores the first
+    from its file. A failed save of the review shows a line on the tagging grid and is retried
+    at the next change.
+  - A refused unit the user has not confirmed is never tagged by fast mode's header trust,
+    whatever its row's reference is now (`RepeatRows.standing` is the refused units without a
+    holding confirmation, kept in the draft's `tag_review`): removing the units before it in its
+    row no longer lets it be tagged from aliases and cleared.
+  - **Confirm these tags**, **Confirm the same tags** and **Confirm all N like it** save the
+    tags and the draft's tag review with the new confirmations in ONE draft write
+    (`TagGrid.commit(..., then)`): a refused write saves neither and confirms nothing. The save
+    button stays disabled while the tag review is not saved in the draft, and any later saved
+    tag change retries it. A confirmation made while an earlier review write is unsaved is that
+    retry: its own write holds the whole review and is the only write (before, the retry ran
+    inside the confirmation's save, before the confirmation was in memory, and wrote the review
+    without it over the one just saved; the session counted the unit while the draft did not).
+  - A refused unit whose channel count changed (a re-check) no longer breaks the override
+    editor: it stays listed ("its channel count changed (N at the refusal, M now): choose every
+    channel again", `repeat_tags.recount`) and the editor opens with one blank dropdown per
+    channel it has now; the old tags are never cut, padded or applied, and a draft of another
+    length is refused. A refused unit fast mode no longer offers (now inside the layout) stays
+    refused.
+  - A confirmed unit whose own header changes is listed again ("its header changed since you
+    confirmed it: confirm it again", `repeat_tags.relapsed`), also when its new
+    header fits its row and its tags are complete; a re-check no longer drops the refusal of a
+    unit whose confirmation still holds, so it stays the source of **Confirm the same tags**.
+  - A refusal is never dropped while its unit is still in the folder: a refused unit set to
+    colour (RGB) or unusable keeps its refusal (and confirmation) through a re-check, and is
+    listed again once it is back in a row; only a unit removed from the folder drops it
+    (`RepeatRows.reconcile`). Before, the re-check dropped it, and set back to channels fast
+    mode tagged it from another unit's aliases with no listing or confirmation. While the unit
+    is colour (channels R, G and B) or unusable it is not listed and does not hold the save:
+    there are no channel tags to confirm (`RepeatRows.listed` reads the same rows as
+    `repeat_tags.repeat_groups`).
+  - The save button's line says "the tag review is another draft's" only when a review of
+    another draft was read; before Channels was opened it names the missing answers first, then
+    "this draft's tag review is not read yet".
+  - One authority releases a refusal: the unit's persisted confirmation (`tag_review`), read by
+    `RepeatRows.listed`, `RepeatRows.standing` and so the save (`RepeatRows._released`). Before,
+    a refused unit with complete saved tags left the list, and the save opened, when another
+    unit's confirmation saved aliases matching its header. A header or aliases that fit later
+    never release a refusal, and a re-check keeps every refusal of a unit still in the folder
+    (it says "refused by its repeat folder's row and not confirmed since" when nothing else is
+    left to say).
+  - A unit refused because its own images disagreed keeps its refusal once they agree: it takes
+    its row's reference and is listed ("its images agree again since the refusal ... confirm
+    them") with its editor; its tags are never read from the new header, also in fast mode
+    after a restart. Before, the re-check dropped it and fast mode could tag it from its header.
+  - *Check and save* is refreshed right after a confirmation: the save button opens at the last
+    confirmation (`RepeatRows.adopt`, called by `TagGrid.commit` before it refreshes).
+  - A row click that fills some units and refuses others saves their tags, aliases and the
+    resulting tag review (the new refusals, the refusals of the filled units dropped) in ONE
+    draft write (`RepeatRows.apply` passes the review as `TagGrid.commit`'s `then`; one
+    review-only write when it fills nothing), and memory takes the new refusals only once that
+    write succeeded (`RepeatRows.adopt`). Before, the tags were written first and the refusals
+    in a second write: a failure or an interruption between the two left a draft with the
+    filled units' tags and no refusal of the others, which fast mode's header trust could tag
+    after a restart. A refused write now leaves the draft and the session as before the click.
+  - A strict-mode block whose click would confirm refused units names them under its dropdowns,
+    outside the folded folder list ("A tag chosen here also confirms the refused unit(s) ...";
+    `OverrideEditor.scope`, shown exactly when `RepeatRows.hand_tagged` would record one). The
+    shipped stepper folds a block of more than three folders, so before a refused unit in it
+    could be confirmed by a shared click without its name on screen. A fast-mode block of
+    several units, a template edit, **Tag like the saved group** and a header pre-tag still
+    record no confirmation.
 - **`check_metadata(files, *, allow_z=False)` and `inspect_images(..., allow_z=False)`: header
   checks of Z-stacks for other tools (related: #438).** With `allow_z=True`,
   `z_stack_not_supported` is not reported; every other header check runs unchanged. The default
@@ -325,6 +423,67 @@ old pin are refused with `spec_commit_mismatch`, as at every re-pin.
 
 ### Fixed
 
+- **Tag by repeat: a row click's refusals are taken into memory before any further write**
+  (external re-check ao, 24 November). In fast mode the click's statement save ran before
+  memory adopted the refusals the first write had saved; an interruption there left a unit
+  refused in the draft but not in the session, whose save gate reads memory. `TagGrid.commit`
+  now adopts right after the save, and *Check and save* stays disabled while the session's tag
+  review differs from the draft's (`RepeatRows.saved`).
+- **Tag by repeat: memory behind the draft never overwrites its saved tag review** (external
+  re-check as, 24 November). After a write that set the tag review succeeded (a row click's
+  tags and refusals, an editor's or a hand-tag's tags and confirmation), an interruption before
+  memory took it left this session's refusals and confirmations behind the draft's; reopening
+  *Tag channels* in the same session then reconciled and persisted that stale memory over the
+  saved review, erasing a refusal (the unit no longer listed, and the save possible) or a
+  confirmation. A preexisting refusal in memory also kept `restore` from reading the draft.
+  Memory now remembers the review it last took or wrote (`RepeatRows.seen`, in the new
+  `notebook_channels_memory.ReviewMemory`) and takes the draft's again whenever it holds
+  another (`sync`), before anything lists, holds out, reconciles or writes; a review is written
+  only over the one memory saw. A save of the answers stopped by an interruption no longer
+  leaves memory holding answers the draft file never got: `_save_answers` keeps them only when
+  the file holds exactly their bytes (`run.draft_file.draft_holds`), else goes back to the
+  answers before, and fast mode's strict page's draft follows a save the file took
+  (unticking no longer writes back a draft without it). Uninterrupted saves are unchanged.
+- **Tag by repeat: a click that fills no unit keeps its refusals after an interruption**
+  (external re-check av, 24 November, blocker 1). A repeat folder's row that refuses every unit
+  it offers writes only the tag review (`RepeatRows._save_review`). That write marked the
+  review as seen (`ReviewMemory.seen`) before memory took the refusals (`adopt`); stopped in
+  between, memory stayed behind a draft `sync` took for the one it saw, and the same session's
+  reconcile and persist erased the refusals from the draft. A row click's write is now marked
+  seen only by `adopt`, which takes the refusals first.
+- **Two notebooks on one output folder: a stale one never writes over the other's draft**
+  (external re-check av, 24 November, blocker 2). Each notebook holds the whole draft as it
+  read it; the output folder's lock made their writes one at a time but not current, so the
+  second wrote its stale answers over the first's saved refusal, confirmation or tags. The
+  notebook now pins the draft file's generation (SHA-256 of `morphobricks.draft.json`) when it
+  reads the draft and after each save of its own; `run.draft_file.save_draft(expected=...)`
+  and `publish_draft(expected=...)` compare it with the file under the same hold of the lock
+  as the write and otherwise refuse with `R_DRAFT_CHANGED` (`DraftChanged`), writing nothing.
+  Every save of the notebook (every card, the tag review, *Check and save*) and its
+  publication pass it; a folder this notebook never read is written only while it has no
+  draft file. A save stopped by an interruption keeps the new answers only when the file holds
+  them; when it holds neither them nor the draft before (another writer in between), every
+  later save is refused until the folder is checked again. `draft_holds` is replaced by
+  `draft_generation` and `answers_generation`. The command line writes no draft.
+- **`describe --publish` never publishes over the notebook's saved draft** (external re-check
+  ay, 24 November, blocker). The command built a new fast-mode description from its flags and
+  published it with `run.description_file.publish_description` without reading
+  `morphobricks.draft.json`: a strict-mode tag review's refused units (or a draft another
+  notebook held stale) were published without the action on each unit that alone releases
+  them. `publish_description` now refuses, under the output folder's lock, while a draft file
+  exists (a symbolic link too), with `R_DRAFT_EXISTS` (`DraftExists`, a `ValueError`) naming
+  the draft and saying to finish and publish it in the notebook, or to remove or archive it
+  deliberately; nothing is written. `publish_draft`, which publishes that draft itself
+  (generation-checked), still calls `publish_locked` directly and is unchanged; the command is
+  the only other caller. An output folder with no draft is published as before.
+- **An unusable draft is copied aside only by a save that passes its generation check**
+  (external re-check ay, file item). The notebook copied it to
+  `morphobricks.draft.unused-N.json` before the locked check of `save_draft(expected=...)`, so
+  a stale save that was then refused had copied another notebook's newer draft. The copy is now
+  made by `save_draft(..., keep_previous=True)` after the check, under the same hold of the
+  lock, never over an existing copy; a copy that cannot be written (`UnusedDraftNotKept`)
+  replaces nothing. `UNUSED_PREFIX` moved to `run.draft_file`.
+
 - **Notebook installer: the installed commit, not only the version (#371).** Cell 1 of the
   Preprocessing notebook reused any installed package reporting version 0.8.0, so a 0.8.0 built
   from another commit (a development install from `main`) was taken for the release. It now
@@ -374,6 +533,21 @@ old pin are refused with `spec_commit_mismatch`, as at every re-pin.
     units it will not fill.
 
 ### Changed
+
+- **Tag by repeat, fast mode: a refused unit whose header is fixed stays refused until
+  confirmed** (behaviour change, owner decision of 22 November). A unit a repeat folder's row
+  refused, and that the user has not confirmed, is left out of fast mode's header trust
+  (`RepeatRows.standing`). So when its image header is corrected to fit its row, a re-check no
+  longer tags it from its header and releases it, as before this release: it stays refused,
+  untagged and listed, with "its own tags are incomplete: a refused unit is never tagged from
+  its header, even one that fits now; confirm its tags", until the user confirms it (**Override
+  this unit**, **Confirm the same tags**), tags it by hand, or fills it with its row.
+  Nor is it tagged by any fast-mode click that is no action on it alone (external re-check ao,
+  24 November): a layout template edit, **Tag the N new unit(s) like the first tagged unit**, a
+  dropdown shared by several units, **Tag like the saved group** or a header pre-tag leave its
+  tags unchanged (`TagGrid.held_out`); before, a blank template edited through its shared
+  dropdown wrote the new tags to it when another unit's confirmation had saved its header
+  names as aliases.
 
 - **The Cellpose notebook's pin check covers the code it runs, not all of `src/` (#421).** A change
   under `src/` no longer needs a new `RELEASE_REF` in `notebooks/MorphoBricks_Cellpose.ipynb` unless

@@ -37,6 +37,7 @@ from .description import (
 )
 from .description_transition import DATE
 from .draft import Draft, DraftError, OpenQuestion
+from .repeat_review import TagReview
 
 CHANNELS = "channels"
 """The answer "an ordinary channel image": published as an absent ``image_type`` (§4.4b)."""
@@ -146,6 +147,7 @@ class DraftAnswers:
     pairing: Mapping[tuple[str, str], str] = field(default_factory=dict)
     channel_layout: LayoutAnswer | None = None  # the fast-mode statement; None: strict
     switch_mode: bool = False  # only the user's switch of a published file's mode (section 10)
+    tag_review: TagReview | None = None  # refused/confirmed units of Tag by repeat (draft only)
 
 
 class DraftIncomplete(DraftError):

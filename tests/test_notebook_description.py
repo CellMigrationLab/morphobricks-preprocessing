@@ -272,6 +272,22 @@ def test_a_draft_that_cannot_be_used_is_copied_aside_and_never_overwritten(root,
     assert (out / "morphobricks.draft.unused-2.json").read_bytes() == stale
 
 
+def test_a_stale_save_that_is_refused_copies_no_draft_aside(root, out):
+    """External re-check ay (FILE): the copy is made only after the save's generation check."""
+    first = labelled(root, out)
+    first.ids_confirmed.button.click()
+    path = out / DRAFT_FILENAME
+    newer = path.read_bytes()
+    path.write_bytes(newer.replace(SPEC_COMMIT.encode(), b"1" * 40))
+    again = labelled(root, out)  # reads an unusable draft: to be copied aside before a save
+    assert "was not used" in again.names_status.value
+    path.write_bytes(newer)  # another notebook saved since
+    again.ids_confirmed.button.click()
+    assert not again.ids_confirmed.value  # refused: the draft changed
+    assert "was changed since this notebook read or saved it" in again.names_status.value
+    assert path.read_bytes() == newer and not list(out.glob("*.unused-*"))
+
+
 def test_without_a_writable_output_folder_the_answers_are_kept_in_the_notebook(root):
     nb = labelled(root, "")
     nb.output.value = ""
