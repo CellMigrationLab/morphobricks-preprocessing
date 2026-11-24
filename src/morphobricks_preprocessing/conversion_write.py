@@ -26,10 +26,12 @@ from dataclasses import asdict, replace
 from pathlib import Path
 
 from .content_hash import content_sha256
-from .conversion_issues import failed_issue
+from .conversion_issues import failed_issue, links_issue
 from .conversion_record import CopyEntry
 from .fingerprint import Fingerprint, current_fingerprint
+from .links import is_link_stat
 from .lock_file import LockHolder
+from .mounts import MountCheck
 from .ome_tiff_copy import CopyWriteError, write_named_copy, write_projected_copy
 from .ome_zarr_copy import OME_ZARR, write_named_zarr, write_projected_zarr
 from .planes import PlaneReadError
@@ -88,7 +90,7 @@ def write_all(
         shutil.rmtree(work)  # left by a conversion that was killed: proven by its owner file
     if not to_write:
         return []
-    made = _missing_folders(dest, to_write)
+    made, route = _missing_folders(dest, to_write), _Route(dest)
     written: list[Path] = []
     contents: dict[str, str] = {}
     current, mine = to_write[0].relative_path, False
@@ -99,6 +101,7 @@ def write_all(
             current = item.relative_path
             if progress is not None:
                 progress(done, len(to_write), current)
+            route.check(partial_path(work, item))
             found = _write_partial(root, work, item, memory_limit)
             if found is not None:
                 contents[item.relative_path] = found
@@ -107,7 +110,11 @@ def write_all(
         entries = []
         for item in to_write:
             current, target = item.relative_path, dest / item.relative_path
+            route.check(target)
             target.parent.mkdir(parents=True, exist_ok=True)
+            route.check(target)
+            if os.path.lexists(target):
+                raise FileExistsError(f"{current} appeared during the conversion")
             os.replace(partial_path(work, item), target)
             written.append(target)
             copy, sha256 = Fingerprint.of(target), content_sha256(target)
@@ -118,7 +125,9 @@ def write_all(
             entries.append(entry)
     except BaseException as exc:
         logger.debug("Conversion of %s failed", current, exc_info=True)
-        _clean_up(work if mine else None, written, made)
+        _clean_up(route, work if mine else None, written, made)
+        if isinstance(exc, _Diverted):
+            raise ConversionFailed(links_issue([exc.name])) from exc
         if isinstance(exc, ProjectionRefused):
             raise ConversionFailed(projection_failed_issue(current, exc)) from exc
         if isinstance(exc, (*_FAILURES, _SourceChanged)):
@@ -161,13 +170,71 @@ def _make_work_folder(work: Path, holder: LockHolder) -> None:
         os.fsync(file.fileno())
 
 
-def _clean_up(work: Path | None, written: list[Path], made: list[Path]) -> None:
-    """Remove what a failed conversion wrote: its work folder, its copies, its folders."""
+def _clean_up(route: _Route, work: Path | None, written: list[Path], made: list[Path]) -> None:
+    """Remove what a failed conversion wrote: its work folder, its copies, its folders.
+
+    Nothing is removed through a link or mount point that appeared meanwhile (#467): such a
+    path is left, and logged.
+    """
     for path in written:
-        _remove(path)
-    if work is not None:
+        if route.clear(path):
+            _remove(path)
+    if work is not None and route.clear(work):
         _remove_work_folder(work)
-    _remove_empty(made)
+    _remove_empty([folder for folder in made if route.clear(folder)])
+
+
+class _Diverted(Exception):
+    """A link or mount point appeared in the copy tree during the conversion (#467)."""
+
+    def __init__(self, name: str) -> None:
+        super().__init__(name)
+        self.name = name
+
+
+class _Route:
+    """Check that a path below the copy tree goes through no link or mount point (#467).
+
+    :func:`.conversion_reuse.links_below` checks the whole copy tree once, before anything
+    is written; this checks again, right before each copy is written and moved into place
+    and before the clean-up removes anything, only the folders on that copy's way: one
+    :func:`os.lstat` per level, the mount table read once. A link swapped in between this
+    check and the write or move is not caught: that needs writes relative to an open folder
+    that follow no link (``dir_fd``, ``O_NOFOLLOW``, ``renameat``), which Windows does not
+    have and the OME-Zarr writer, writing by path, could not use.
+    """
+
+    def __init__(self, dest: Path) -> None:
+        self.dest = dest
+        self.mounts = MountCheck(dest)
+
+    def check(self, path: Path) -> None:
+        """Raise :class:`_Diverted` naming the first link or mount point on the way to ``path``.
+
+        ``path`` itself is checked too; a level that does not exist ends the check (nothing
+        below it can be gone through).
+        """
+        current = self.dest
+        for part in path.relative_to(self.dest).parts:
+            current = current / part
+            try:
+                found = os.lstat(current)
+            except FileNotFoundError:
+                return
+            name = current.relative_to(self.dest).as_posix()
+            if is_link_stat(found):
+                raise _Diverted(f"{name} -> {os.readlink(current)}")
+            if self.mounts.is_mounted_folder(current, found):
+                raise _Diverted(name)
+
+    def clear(self, path: Path) -> bool:
+        """Return True when ``path`` can be removed: no link or mount point on its way."""
+        try:
+            self.check(path)
+        except (_Diverted, OSError):
+            logger.warning("%s is not removed: a link or mount point is on its way", path)
+            return False
+        return True
 
 
 def _remove_work_folder(work: Path) -> None:
