@@ -1350,7 +1350,13 @@ The helper refuses what the run would refuse, before writing: an ambiguous mask 
 leaving the folder, **any discovered mask type** that cannot be a `source_type` (the run's
 `_description_name_issues`: `R_MASK_TYPE_NAME_INVALID`, a decomposed name; also for a type
 other than the one asked for), a mask type spelled in two ways (`mask_names_differ_in_case`)
-and an image with two masks of the type (`duplicate_mask`). A mask is never silently replaced:
+and an image with two masks of the type (`duplicate_mask`). A mask type whose name differs only
+in case from an entry of the masks folder, even an empty folder or one holding only a record
+(`cells/` when `Cells` is asked), is refused by `images_to_segment`, `write_mask`,
+`write_record` and so `run_batch` (`check_mask_type_folder`, `mask_type_differs_in_case`,
+#459), the same on every file system, naming both: on Windows and macOS they are one folder.
+Use the existing folder's exact name or another mask type; nothing is renamed or merged, and
+the exact name stays allowed. A mask is never silently replaced:
 without `overwrite` the name is claimed exclusively, so it works on a file system without hard
 links (a Google Drive mount) too.
 

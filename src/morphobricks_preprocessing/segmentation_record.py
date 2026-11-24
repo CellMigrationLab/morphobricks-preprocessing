@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 import re
+import unicodedata
 import uuid
 from collections.abc import Iterator
 from contextlib import AbstractContextManager, ExitStack, contextmanager
@@ -398,6 +399,42 @@ def check_mask_type(mask_type: str) -> None:
         raise SegmentationError(f"{mask_type!r} is not a mask type: it names one folder.")
 
 
+def check_mask_type_folder(masks_root: str | Path, mask_type: str) -> None:
+    """Refuse ``mask_type`` when the masks folder holds a name that differs only in case (#459).
+
+    A mask type is its exact name. On Windows and macOS ``cells`` and ``Cells`` are one folder,
+    so the masks and records of two types would be mixed; on Linux a second folder would be
+    made beside the first. The refusal is the same on every file system and names both; nothing
+    is renamed or merged. An entry named exactly ``mask_type`` is the type's own folder (resume,
+    skip) and is allowed; a masks folder that does not exist yet holds nothing.
+
+    Raises
+    ------
+    SegmentationError
+        For a mask type :func:`check_mask_type` refuses, or an entry of the masks folder whose
+        name equals ``mask_type`` ignoring case (NFC, casefold) but is spelled otherwise.
+    """
+    check_mask_type(mask_type)
+    folder = Path(masks_root)
+    if not folder.is_dir():
+        return
+    folded = unicodedata.normalize("NFC", mask_type).casefold()
+    clashes = sorted(
+        entry.name
+        for entry in folder.iterdir()
+        if entry.name != mask_type and unicodedata.normalize("NFC", entry.name).casefold() == folded
+    )
+    if clashes:
+        named = " and ".join(f'"{name}"' for name in clashes)
+        raise SegmentationError(
+            f'The masks folder {folder} already holds {named}: the mask type "{mask_type}" '
+            "differs from it only in upper/lower case. A mask type is its exact name, but on "
+            "Windows and macOS these are one folder, so the masks of two types would be mixed. "
+            f"Type the existing folder's exact name ({named}) to add to its masks, or choose "
+            "another mask type. (mask_type_differs_in_case)"
+        )
+
+
 def mask_sha256(path: str | Path) -> str:
     """Return the SHA-256 of a mask file's bytes, for the entry of a written image."""
     return file_sha256(path)
@@ -473,11 +510,13 @@ def write_record(masks_root: str | Path, mask_type: str, batch: SegmentationBatc
     Raises
     ------
     SegmentationError
-        For a mask type preprocessing would refuse, an existing record that is not valid, a
-        batch ID already used by a batch made another way or whose earlier entries the new
+        For a mask type preprocessing would refuse or that differs only in case from an entry
+        of the masks folder (:func:`check_mask_type_folder`), an existing record that is not
+        valid, a batch ID already used by a batch made another way or whose earlier entries the new
         one drops or changes.
     """
     path = record_path(masks_root, mask_type)
+    check_mask_type_folder(masks_root, mask_type)  # never beside a type differing in case (#459)
     with _record_lock(path):
         earlier = (
             read_record(masks_root, mask_type) if path.exists() else SegmentationRecord(mask_type)

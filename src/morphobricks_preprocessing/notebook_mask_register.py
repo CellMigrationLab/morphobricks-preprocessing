@@ -48,7 +48,7 @@ from .notebook_render import blocked_line
 from .report import mapping_summary
 from .run_inputs import RunInputsError, UnrecordedFilesError
 from .segmentation_cellpose_run import manifest_sha256, open_run
-from .segmentation_record import SegmentationError
+from .segmentation_record import SegmentationError, check_mask_type_folder
 
 NO_MASKS = (
     "Cell 4 wrote no masks in this session: run cell 4, press Segment the whole experiment, "
@@ -185,7 +185,15 @@ def refusal(app: object, segmentation: object, *, rechecked: bool = False) -> st
             return CHANGED.format(reason=exc)
     except (RunInputsError, SegmentationError) as exc:
         return CHANGED.format(reason=exc)
-    return next(filter(None, (_collision(app, t) for t in types)), "")
+    collision = next(filter(None, (_collision(app, t) for t in types)), "")
+    if collision:
+        return collision
+    for mask_type in types:  # a folder differing only in case appeared since cell 4 (#459)
+        try:
+            check_mask_type_folder(masks, mask_type)
+        except SegmentationError as exc:
+            return str(exc)
+    return ""
 
 
 def _same_publication(segmentation: object, segmented: Path) -> bool:
