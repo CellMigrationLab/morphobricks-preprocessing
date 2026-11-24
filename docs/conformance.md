@@ -6,6 +6,42 @@ real run; a skip is never counted as a pass. Owner rulings of 8 November 2026 (i
 "no skips" applies to the Spec conformance modules (`tests/test_spec_*.py`); a skip elsewhere
 in the suite is listed as **not run**, with its reason.
 
+## Release record: v0.9.0 (24 November 2026)
+
+A G1-style record of the v0.9.0 release candidate, a minor release, Stable 1: two notebooks
+(`MorphoBricks_Preprocessing` and `MorphoBricks_Preprocessing_Cellpose`, #441), normalization
+pinned at v0.8.0 (#471), the Spec pin at `232fb38` (fast mode, Spec ADR 0006; draft file
+version 4), run integrity checked at read and open (#480, #489, #490, #491), the conversion and
+publication fixes (#400, #447, #448, #467, #482, #488, #497), the channel-tag override with its
+per-unit review (#376) and the removal of a whole repeat or condition (#283). The run manifest
+stays version 5. It does not decide a gate; deciding a gate is the owner's.
+
+| | |
+|---|---|
+| Release candidate | Measured on the tree of the merge commit `32be653a82521ab630d96d79e9cd5454bb14904e` (branch `claude/release-v0.9.0`: the first preparation commit `fb8e8a0`, from `main` at `75cde57`, merged with `main` at `b683c7c`, which adds #376 and #283/#535) before this record was added; the record changes only this file, and the commit that adds it is the v0.9.0 preparation commit A (`git diff 32be653 A -- src pyproject.toml` is empty). A keeps the notebooks' `RELEASE_REF` at their v0.8.0-era pins. Commit B then points the `RELEASE_REF` of all three notebooks at A and records the pair in `RELEASE_CALLS`. |
+| Spec pin | `tests/spec_fixtures/PIN.toml`: MorphoBricks-Spec `232fb38880cc487510532d99dc71d46a27005f23` (moved from `bf68d30` in this release, ADR 0006) |
+| Environment | Linux, Python 3.13.18, `pip install --no-cache-dir -e '.[dev,zarr,notebook]'` in a fresh venv (normalization 0.8.0, imagecodecs 2026.11.11, numpy 2.5.5, scipy 1.18.1, tifffile 2026.11.16, zarr 3.4.2, ipywidgets 8.1.9, pytest 9.2.0, ruff 0.17.6; scikit-image not installed); `PYTEST_ADDOPTS` unset; run as root on a case-sensitive file system |
+| Commands | `python tools/check.py` (the whole suite in one run); `python -m pytest -q -p no:cacheprovider -rsxX tests/test_spec_*.py`; `python -m pytest -q -p no:cacheprovider -rsxX tests/test_notebook_setup.py tests/test_notebook_file.py` |
+| `tools/check.py` | Ruff clean, Ruff format 705 files already formatted, pytest **8042 passed, 19 skipped** (not run, below), 0 failed, code rules passed (exit status 0) |
+| Spec modules (`tests/test_spec_*.py`, 30 files) | **2122 passed, 0 skipped, 0 failed** |
+| Notebook pin and version tests | `test_notebook_setup.py` and `test_notebook_file.py`: **49 passed**, 0 skipped (run on the tree of the merge commit) |
+
+**Not run (19 skips, none in the Spec modules):** 11 tests that need scikit-image (the `he-mask`
+extra, not installed in this venv; CI's matrix installs it): `tests/test_he_tissue_array.py:27`,
+`tests/test_he_tissue_consumer_gate.py:24`, `tests/test_he_tissue_mask.py:23`,
+`tests/test_he_tissue_rule.py:24`, `tests/test_cli_tissue_mask.py:41`, `:61` and `:74`,
+`tests/test_notebook_tissue_mask.py:33`, `:81`, `:99` and `:118`; the four environment skips
+`tests/test_cli_log.py:166`, `tests/test_folder_rules.py:199` and `:230` (they need a
+case-insensitive file system) and `tests/test_discovery.py:665` (cannot run as root); the
+editable-install identity test `tests/test_code_identity.py:169`, which CI's `wheel-identity`
+job runs on a wheel install; and the 3 release-only freshness tests (`tests/release_run.py:40`,
+`test_release_only_the_preprocessing_pin_is_a_commit_with_this_code` for each pinned notebook),
+which run in the release PR with `MORPHOBRICKS_RELEASE_RUN=1` once commit B has moved the pins.
+The behaviours of these skips are **not verified by this run**.
+
+**Still the owner's:** the `release` label (the full matrix as a release run), the Colab and
+JupyterLab browser check (`docs/colab-release-check.md`) at commit B, before tagging.
+
 ## Release record: v0.8.0 (19 November 2026)
 
 A G1-style record of the v0.8.0 release candidate (first prepared as v0.7.1; renumbered by owner decision because of the breaking entries), a minor release: lazy windows
