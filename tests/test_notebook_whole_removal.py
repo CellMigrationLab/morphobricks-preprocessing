@@ -71,7 +71,9 @@ def check_with_the_spec(out, before):
     report, doc = refval().validate(data)
     assert report.errors == []
     codes = refval().transition(tomllib.loads(before.decode("utf-8")), doc)
-    assert not codes & {"R_USED_ID_DROPPED", "R_USED_ID_REUSED"}
+    # The exact set: the removal's retired ID shows as the one confirmed change, and nothing
+    # else (an extra code would be a transition this save must not make).
+    assert codes == {"R_CONFIRMED_ID_CHANGED"}
     records = refrecords().validate_records((out / RECORDS_FILENAME).read_bytes())
     assert records.errors == []
 
