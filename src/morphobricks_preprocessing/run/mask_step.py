@@ -102,9 +102,10 @@ class MaskStepResult:
     ----------
     report
         The description of the masks, or None when the output folder's lock refused the
-        step (no mask was read).
+        step or the published description is gone or unreadable (no mask was read).
     path
-        The report written, or None when the output folder's lock refused it.
+        The report written, or None when the output folder's lock refused it or there is no
+        description to check against (an earlier report is then left as it was).
     refusal
         ``output_locked`` when another run holds the output folder's lock, else None.
     issues
@@ -113,7 +114,7 @@ class MaskStepResult:
         negative value or two or more distinct positive values (such a file stays ``not yet
         checked`` and is left out of the report, which is written all the same), or the error
         that the description cannot be read, or ``A_DESCRIPTION_REQUIRED`` when it was removed
-        since the step was prepared.
+        since the step was prepared (then no mask is read and no report written, #418).
     """
 
     report: MaskReport | None
@@ -301,12 +302,10 @@ def describe_masks(
         # recorded inputs or removing the report; a locked folder is refused before any read.
         with output_lock(output):
             described, problems = _published(output)
+            if described is None:  # removed or unreadable since prepared: nothing read (#418)
+                return MaskStepResult(report=None, path=None, issues=tuple(problems))
             root = step.preflight.discovery.root
-            refused = (
-                {}
-                if described is None
-                else binary_refusals(described.description, step.masks, root)
-            )
+            refused = binary_refusals(described.description, step.masks, root)
             report = scan_masks(
                 _without(step.masks, refused),
                 root,
@@ -314,12 +313,10 @@ def describe_masks(
                 thresholds=thresholds,
                 verify_content=step.verify_content,
             )
-            issues = tuple(problems)
-            if described is not None:
-                checked = check_representation(
-                    described.description, step.masks, root, output, refused=refused
-                )
-                issues = checked.issues
+            checked = check_representation(
+                described.description, step.masks, root, output, refused=refused
+            )
+            issues = checked.issues
             path = write_mask_report(report, output / MASK_REPORT_FILENAME)
     except OutputLockedError as exc:
         return MaskStepResult(report=None, path=None, refusal=lock_issue(exc))
