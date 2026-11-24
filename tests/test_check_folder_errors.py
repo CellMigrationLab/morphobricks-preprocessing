@@ -67,6 +67,9 @@ def assert_cleared(nb):
     assert nb.run_button.disabled
     assert not nb.check_button.disabled
     assert nb.check_button.description == " Check folder"
+    # The bins recommended for the earlier check's pixel type are not shown as valid.
+    assert nb._default_bins is None and nb.bins_hint.value == ""
+    assert "bins per plane" not in nb.recommended_hint.value
 
 
 @pytest.mark.parametrize(
@@ -83,6 +86,7 @@ def test_a_failed_recheck_clears_the_checked_state_and_can_be_retried(
 ):
     output = tmp_path / "out"
     nb = ready(experiment, output)
+    assert nb._default_bins == 256 and "256 bins per plane" in nb.recommended_hint.value
     before = files_under(output)
     real = notebook_folder.preflight
     monkeypatch.setattr(notebook_folder, "preflight", failing_preflight(exc))

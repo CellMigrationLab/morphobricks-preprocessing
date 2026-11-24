@@ -433,9 +433,10 @@ editing, or the confirmed ones. An image that cannot be drawn gets a sentence sa
    shows the images as the check read them; the folders found, the check's
    report (formatted: a summary, then tables with the details folded) and **Exclude images**
    are collapsed below.
-   If the check itself fails (for example Google Drive stopped answering), nothing of an
-   earlier check stays shown as valid: its labels, roles and confirmations are cleared, and a
-   red message names the folder and the error (the full report is in **Technical details**).
+   If the check itself fails or is interrupted (for example Google Drive stopped answering),
+   nothing of an earlier check stays shown as valid on any step: its labels, roles, offers,
+   pictures, recommended bins and confirmations are cleared, and a red message names the
+   folder and the error (the full report is in **Technical details**).
    Make sure Google Drive is mounted and the folder is there, then click the button again.
 2. **Axes.** What the files hold, in two parts. The roles start from the proposal of step
    1 (the header's, or what you chose on the example) and can be changed here at any time;
@@ -897,12 +898,15 @@ morphobricks-preprocessing calibrate /data/exp1 --remove treated Z
 ```
 
 The target is `.` (the whole experiment), a folder (a condition or repeat) or an image,
-relative to the experiment folder with `/`, spelled exactly as on disk. A target of only
-slashes or backslashes (`/`, `//`, `\`) names no folder and is refused
-(`calibration_target_root`), never read as the whole experiment: for the whole experiment
-give `.` (in the notebook, **Use for all images**). The most specific
-statement applies: an image's own over its folder's, a folder's over the whole
-experiment's. Each axis is stated on its own (`XY` states both with the same size), so Y
+relative to the experiment folder with `/`, spelled exactly as on disk. Only `.` and `./`
+are the whole experiment: a target of only slashes, backslashes and `.` steps (`/`, `//`,
+`\`, `.\`, `./.`, `.//`, `././`) names no folder and is refused (reason
+`calibration_target_root`), never read as the whole experiment; `.\` and `./.` were read as
+the whole experiment before and are no longer accepted. `calibrate` and the notebook change
+nothing; a line of `calibration.csv` edited by hand to such a target (for example `/`, read
+as the whole experiment before) now stops the run with `calibration_unreadable`, naming the
+line (`calibrate` and the notebook always write `.`). The most specific statement applies:
+an image's own over its folder's, a folder's over the whole experiment's. Each axis is stated on its own (`XY` states both with the same size), so Y
 and X never trade sizes. Units are pm, Å, nm, µm (um, micron), mm, cm or m. You may also
 edit the file in a spreadsheet; its columns are `target,axis,size,unit`, with an empty size
 and the unit `pixels` for a pixel statement:
@@ -1450,7 +1454,7 @@ continues.
 | `calibration_axis_absent` | Warning | `calibration.csv` states a size for an axis some images do not have (for example a Z size for 2D images or projections); the message names them. No size is recorded for an axis an image does not have. Give the statement a narrower target, or no action if it is meant for the other images. |
 | `calibration_differs_from_header` | Warning | `calibration.csv` states a pixel size (or `pixels`) that differs from an image's metadata; the message names each image and axis with both sizes. The stated size is used. Correct or remove the statement if the metadata are right. |
 | `calibration_target_not_found` | Error | `calibration.csv` names a folder or image that is not in the experiment (names are compared exactly, case included). Correct the target, or remove the line. |
-| `calibration_target_root` | Error | A pixel-size target is only slashes or backslashes (`/`, `//`, `\`, `.//`, …), so it names no folder; it is refused rather than read as the whole experiment. `calibrate` and the notebook change nothing; in `calibration.csv` the file is `calibration_unreadable`, naming the line, and the run stops. For the whole experiment give the target `.` (in the notebook, **Use for all images**); otherwise give the folder or image. |
+| `calibration_target_root` | Error (reason) | Not a message of its own: the reason given inside the refusal of a pixel-size target of only slashes, backslashes and `.` steps (`/`, `//`, `\`, `.\`, `./.`, `.//`, `././`), which names no folder and is never read as the whole experiment. In `calibration.csv` the message is `calibration_unreadable` (below), naming the line and this reason, and the run stops, the file kept; `calibrate` and the notebook's calibration card refuse it and change nothing. For the whole experiment give the target `.` (in the notebook, **Use for all images**); otherwise give the folder or image. |
 | `calibration_unreadable` | Error | `calibration.csv` cannot be read; the message names the line and what is wrong. The file is left as it is: correct it, or remove it to use the sizes in the metadata. |
 | `unbalanced_images` | Warning | A condition and biological repeat has fewer than half or more than twice the median number of images. Check for missing, misplaced or duplicated images. |
 | `repeat_missing_conditions` | Warning | A biological repeat is not found in every condition. It is still used. If it has another folder name in some condition, pair it in the experiment design (step 1). |

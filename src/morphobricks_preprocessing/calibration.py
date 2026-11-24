@@ -1,4 +1,4 @@
-"""Calibration: the pixel sizes the user states, and the size each image is recorded with.
+r"""Calibration: the pixel sizes the user states, and the size each image is recorded with.
 
 Design v0.4 §3. For each space axis (Y, X, Z) an image's size comes from its header, or is
 stated by the user in ``calibration.csv`` in the output folder, for the whole experiment, a
@@ -9,10 +9,12 @@ so. Each axis is recorded with its source, ``"header"``, ``"stated"`` or ``"pixe
 (:class:`.recorded_sizes.RecordedSize`).
 
 - **Targets.** ``"."`` is the whole experiment; any other target is a folder or an image,
-  relative to the experiment folder, with ``/`` separators, compared exactly. A target of
-  only separators (``/``, ``//``) is refused (``calibration_target_root``, #390). The most
-  specific statement that covers an image applies: an image's own over its folders', a
-  deeper folder's over a higher one's, any folder's over the whole experiment's.
+  relative to the experiment folder, with ``/`` separators, compared exactly. Only ``.`` and
+  ``./`` are the whole experiment: a target of only slashes, backslashes and ``.`` steps
+  (``/``, ``//``, ``\``, ``.\``, ``./.``, ``.//``, ``././``) names no folder and is refused
+  (``calibration_target_root``, #390). The most specific statement that covers an image
+  applies: an image's own over its folders', a deeper folder's over a higher one's, any
+  folder's over the whole experiment's.
 - **Roles, never positions.** A statement names the role it sizes; the header's sizes are
   by the axes the header names, which are the roles of every image that passes the axis
   check (contract §2). Nothing exchanges the sizes of Y and X.
@@ -81,9 +83,8 @@ class CalibrationTargetRootError(ValueError):
         self.target = target
         super().__init__(
             f"the target {target!r} is not a folder or image inside the experiment folder, "
-            f"and is refused rather than read as the whole experiment ({self.code}): to state "
-            "a size for the whole experiment, give no folder, only the target . (in the "
-            "notebook, Use for all images)"
+            f"and is refused rather than read as the whole experiment ({self.code}): for the "
+            "whole experiment, give the target . (in the notebook, Use for all images)"
         )
 
 

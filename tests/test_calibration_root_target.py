@@ -24,7 +24,7 @@ from morphobricks_preprocessing.calibration import (
 from morphobricks_preprocessing.cli import main
 from morphobricks_preprocessing.testing import make_clean_run
 
-ROOTS = ["/", "//", "////", "\\", "\\\\", "/\\", ".//", "./\\", "././", ".\\"]
+ROOTS = ["/", "//", "////", "\\", "\\\\", "/\\", ".//", "./\\", "././", ".\\", "./."]
 """Targets that the trim of trailing separators would read as the whole experiment."""
 
 
@@ -36,7 +36,7 @@ def test_a_root_target_is_refused_with_its_code(target):
     assert found.value.target == target
     message = str(found.value)
     assert repr(target) in message and "calibration_target_root" in message
-    assert "only the target ." in message  # what to give for the whole experiment
+    assert "give the target ." in message  # what to give for the whole experiment
     assert isinstance(found.value, ValueError)  # every entry already refuses a ValueError
     with pytest.raises(CalibrationTargetRootError):
         calibration_entry(target, "Z", None, "pixels")
