@@ -416,7 +416,8 @@ src/morphobricks_preprocessing/
                     #482, .morphobricks-conversion.partial, is recovered the same way;
                     owner file first; a killed one's is
                     removed only with a well-formed owner file, nothing else but files/, and
-                    a holder that no longer runs (run.lock.holder_running); its own only
+                    a holder not known to run (run.lock.holder_running: POSIX, this
+                    computer only; the lock is the real guard); its own only
                     while the owner file holds its token; an empty one, or one holding only
                     an empty or cut-short owner file, is removed by rmdir; both before the
                     space check, remove_leftover, #448, #482),

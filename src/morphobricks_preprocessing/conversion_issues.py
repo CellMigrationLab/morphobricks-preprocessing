@@ -96,7 +96,11 @@ def work_folder_issue(dest: Path, name: str) -> ValidationIssue:
 
 
 def work_folder_in_use_issue(dest: Path, name: str, holder: LockHolder) -> ValidationIssue:
-    """Refuse a copy tree whose conversion work folder ``name`` a running process holds (#482)."""
+    """Refuse a copy tree whose conversion work folder ``name`` a running process holds (#482).
+
+    Only POSIX can tell, and only for a process on this computer
+    (:func:`.run.lock.holder_running`): elsewhere this is never given.
+    """
     return error(
         "conversion_work_folder_in_use",
         f"The folder for the named-axis copies holds {name}, the work folder of a "

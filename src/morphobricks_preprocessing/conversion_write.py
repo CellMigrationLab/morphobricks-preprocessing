@@ -12,13 +12,17 @@ conversion makes that folder itself (it must not exist) and writes its owner fil
 (``owner.json``: what made it, and the lock holder with its token) into it before any copy,
 so whatever is below it was written by a conversion. A conversion killed before its clean-up
 leaves it; the next conversion removes it only when it holds nothing but a well-formed owner
-file and ``files/``, and the holder named there is not a process still running on this
-computer (:func:`work_folder_state`, issue #482). Anything else under that name is refused
-(``conversion_work_folder_unowned``, or ``conversion_work_folder_in_use`` for a live holder)
-and kept. A conversion removes its own work folder only while the owner file still holds
-its own token. Nothing else in the copy tree is ever removed but the
-copies this conversion moved into place and the folders it made: a ``<name>.partial`` file
-or folder beside a copy is not the conversion's (it was, before #448) and is never removed.
+file and ``files/``, and the holder named there is not known to be running
+(:func:`work_folder_state`, issue #482). Anything else under that name is refused
+(``conversion_work_folder_unowned``, or ``conversion_work_folder_in_use`` for a holder known
+to be running) and kept. Only POSIX can tell whether a process runs, and only one on this
+computer: on Windows, or for a holder on another computer, the holder counts as gone. The
+real guard is the copy tree's lock, held throughout a conversion; removing it
+(``remove_stale_lock``) means the user confirms that no conversion is running anywhere. A
+conversion removes its own work folder only while the owner file still holds its own token.
+Nothing else in the copy tree is ever removed but the copies this conversion moved into place
+and the folders it made: a ``<name>.partial`` file or folder beside a copy is not the
+conversion's (it was, before #448) and is never removed.
 """
 
 from __future__ import annotations
@@ -92,7 +96,8 @@ class WorkFolder:
         :data:`OWNED` (left by a conversion that is gone: it may be removed),
         :data:`UNFINISHED` (empty, or holding only an empty or truncated owner file: a
         conversion was killed while making it; it is removed by an ``rmdir``),
-        :data:`IN_USE` (its holder is a process still running on this computer) or
+        :data:`IN_USE` (its holder is a process known to be running on this computer: only
+        POSIX can tell, see :func:`.run.lock.holder_running`) or
         :data:`UNOWNED` (not proven to be a conversion's: never removed).
     holder
         The holder its owner file names, when it is well formed.
@@ -204,11 +209,15 @@ def work_folder_state(dest: Path, name: str = WORK_FOLDER) -> WorkFolder | None:
     WorkFolder or None
         None when there is none. :data:`OWNED` only for a real folder (not a link) holding
         a well-formed owner file (:func:`read_owner`) and nothing else but ``files/``, a
-        real folder, whose holder is not a process still running on this computer (the
-        lock's liveness check, :func:`.run.lock.holder_running`; in this process, a holder
-        is live while its conversion runs). :data:`IN_USE` for such a folder whose holder
-        is live. :data:`UNFINISHED` for a real folder that is empty or holds only an empty
-        or truncated owner file (a kill between making the folder and writing that file,
+        real folder, whose holder is not known to be running (the lock's liveness check,
+        :func:`.run.lock.holder_running`; in this process, a holder is live while its
+        conversion runs). :data:`IN_USE` for such a folder whose holder is live. That check
+        tells only on POSIX, and only for a process on this computer: on Windows, and for a
+        holder on another computer, the holder counts as gone and its folder as
+        :data:`OWNED`. The copy tree's lock is the real guard: it is held throughout a
+        conversion, and removing it means the user confirms no conversion runs anywhere.
+        :data:`UNFINISHED` for a real folder that is empty or holds only an empty or
+        truncated owner file (a kill between making the folder and writing that file,
         issue #482). Anything else is :data:`UNOWNED`: it is never removed.
     """
     work = dest / name
@@ -313,7 +322,12 @@ def _only_owner_and_files(work: Path) -> bool:
 
 
 def _live(holder: LockHolder) -> bool:
-    """Return True when the holder may still be writing its work folder on this computer."""
+    """Return True when the holder may still be writing its work folder.
+
+    In this process, while its conversion runs; elsewhere, only a process known to be running
+    on this computer (POSIX only, :func:`.run.lock.holder_running`): on Windows, or on another
+    computer, the holder counts as gone, and the copy tree's lock is the guard.
+    """
     if holder.host == socket.gethostname() and holder.pid == os.getpid():
         return holder.token in _WRITING
     return holder_running(holder)
