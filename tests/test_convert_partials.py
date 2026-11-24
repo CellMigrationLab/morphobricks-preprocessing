@@ -11,6 +11,14 @@ it is refused as any other file, with a record it is left alone.
 Issue #467 (5): a link swapped into the copy tree while the copies are written is caught
 by a second check right before each copy is moved into place, and the clean-up after a
 failure never removes anything through a link.
+
+Issue #482, the follow-ups of #474's review: (1) the owner file must hold a well-formed
+holder with a token, the work folder nothing else but it and ``files/``, and a holder still
+running here is refused; a conversion removes its own work folder only while the owner file
+holds its token; (2) an empty or unfinished work folder is removed by ``rmdir``; (3) copies
+moved into place before a kill are named as such; (4) a leftover is removed before the space
+check; (5) the work folder is ``.mbconv``, the old name still recovered, and a copy path too
+long for Windows is refused when planned.
 """
 
 import hashlib
@@ -381,6 +389,15 @@ def test_a_copy_path_too_long_for_windows_is_refused_when_planned(
     assert not copies.exists()
     monkeypatch.setattr(plan_module, "_windows", lambda: False)  # elsewhere: no such limit
     assert convert_experiment(exp, SWAPPED, copies, store=store).written
+
+
+def test_the_preview_shows_a_copy_path_too_long_for_windows(tmp_path, monkeypatch):
+    exp = swapped_experiment(tmp_path / "exp")
+    copies = tmp_path / ("c" * (259 - len(str(tmp_path)) - len("/.mbconv/files/ctrl/r1/a.") + 1))
+    monkeypatch.setattr(plan_module, "_windows", lambda: True)
+    preview = plan_module.preview_conversion(exp, SWAPPED, copies)
+    assert not preview.ok and codes(preview.issues) == ["copy_path_too_long"]
+    assert "ctrl/r1/a.tif" in preview.issues[0].paths and not copies.exists()
 
 
 def test_a_copy_path_that_fits_windows_is_written(tmp_path, monkeypatch):
