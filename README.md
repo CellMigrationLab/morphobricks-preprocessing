@@ -34,6 +34,11 @@ Pre-alpha; the current release is v0.8.0 (what is planned next is in
 - A Cellpose notebook ([notebooks/MorphoBricks_Cellpose.ipynb](notebooks/MorphoBricks_Cellpose.ipynb))
   that makes masks for a described run, channels chosen by channel ID (Cellpose 4.2.1.1; not a
   dependency of the brick)
+- A combined notebook ([notebooks/MorphoBricks_Preprocessing_Cellpose.ipynb](notebooks/MorphoBricks_Preprocessing_Cellpose.ipynb)):
+  the Preprocessing notebook's cells, then Cellpose segmentation of the run just made
+  (Cellpose and PyTorch installed only when that cell is used and ticked) and the registration
+  of the new masks (declaration confirmed by the user, rescan with the histograms reused, masks
+  described), so a run is ready for MorphoFeature in one notebook
 - A step-by-step notebook ([notebooks/MorphoBricks_Preprocessing.ipynb](notebooks/MorphoBricks_Preprocessing.ipynb))
   and a command line (`morphobricks-preprocessing check` / `run` / `masks` / `calibrate` /
   `describe` / `convert`)

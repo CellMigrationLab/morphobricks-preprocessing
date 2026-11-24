@@ -227,13 +227,20 @@ def _layouts_differ(number: int, layouts: dict[tuple[str, ...] | None, tuple[str
 
 
 def next_steps_lines(
-    mask_types: str | Sequence[str], masks_root: str | os.PathLike
+    mask_types: str | Sequence[str],
+    masks_root: str | os.PathLike,
+    *,
+    register_with: str | None = None,
 ) -> tuple[str, ...]:
     """Return what to do after the masks are made, as lines of text.
 
     ``mask_types`` is the mask type made, or the two of the output Both (#440): each is
     declared on its own. The notebook never pairs a cell with a nucleus; that relationship is
     computed downstream from the geometry (MorphoRelate, containment or overlap).
+
+    ``register_with``: where the notebook itself registers the masks (the combined notebook:
+    its cell 5, :mod:`.notebook_mask_register`), which then replaces the four steps done by
+    hand in the Preprocessing notebook; None for those steps.
 
     Raises
     ------
@@ -247,15 +254,25 @@ def next_steps_lines(
         f'[masks.{t}]  source_type = "{t}"  representation = "instances"' for t in types
     )
     named = "the new mask type" if len(types) == 1 else f"the {len(types)} new mask types"
-    lines = [
-        f"1. Declare {named} in the experiment description, in the preprocessing "
-        f"notebook (step 4, Masks) or by adding to morphobricks.toml:  {sections}.",
-        "2. Save the description.",
-        f"3. Run preprocessing again with the masks folder {os.fspath(masks_root)} (the "
-        "histograms are reused; the masks are read and checked).",
-        "4. Describe the masks (step 4 of the preprocessing notebook).",
-        "5. Then continue with MorphoFeature.",
-    ]
+    rerun = (
+        f"preprocessing again with the masks folder {os.fspath(masks_root)} (the histograms "
+        "are reused; the masks are read and checked)"
+    )
+    if register_with is not None:
+        lines = [
+            f"1. {register_with}: it declares {named} in the experiment description "
+            f"({sections}), saves it, runs {rerun} and describes the masks.",
+            "2. Then continue with MorphoFeature.",
+        ]
+    else:
+        lines = [
+            f"1. Declare {named} in the experiment description, in the preprocessing "
+            f"notebook (step 4, Masks) or by adding to morphobricks.toml:  {sections}.",
+            "2. Save the description.",
+            f"3. Run {rerun}.",
+            "4. Describe the masks (step 4 of the preprocessing notebook).",
+            "5. Then continue with MorphoFeature.",
+        ]
     if len(types) > 1:
         lines.append(
             f"The mask types {' and '.join(types)} are separate: this notebook never pairs a "

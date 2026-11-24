@@ -23,7 +23,12 @@ from morphobricks_preprocessing import segmentation_cellpose as cp
 from morphobricks_preprocessing.manifest import MANIFEST_FILENAME
 from morphobricks_preprocessing.notebook_cellpose_preview import MaskResult, channel_figure
 from morphobricks_preprocessing.segmentation_record import read_record
-from notebook_pin import check_pin_holds_this_code, code_sources, install_setting
+from notebook_pin import (
+    check_pin_holds_this_code,
+    code_sources,
+    install_setting,
+    notebook_modules,
+)
 from test_segmentation_handoff import MASKS_SECTION
 
 ROOT = Path(__file__).parents[1]
@@ -139,12 +144,38 @@ def test_the_pins_are_cellpose_4_2_1_1_and_one_preprocessing_commit():
     assert "DEVELOPMENT_OVERRIDE = False" in source(INSTALL)
 
 
-def test_release_only_the_preprocessing_pin_is_a_commit_with_this_code():
+PINNED_NOTEBOOKS = {
+    # name: how many leading cells are the Preprocessing notebook's (install, Drive, app),
+    # whose local checkouts the pin check follows (#441); 0: every cell checked strictly
+    "MorphoBricks_Cellpose": 0,
+    "MorphoBricks_Preprocessing_Cellpose": 3,
+}
+"""The notebooks whose ``RELEASE_REF`` the pin-scope check covers (#421, #422, #441)."""
+
+
+@pytest.mark.parametrize("name", PINNED_NOTEBOOKS)
+def test_the_pin_is_one_preprocessing_commit_and_the_cells_scope_is_derived(name):
+    # Every run, no Git history: the pin is one commit of this repository, the install is
+    # pinned and what the cells run is derived from them (a PinScopeError otherwise).
+    path = ROOT / "notebooks" / f"{name}.ipynb"
+    install_cell = code_sources(path)[INSTALL]
+    assert re.fullmatch(r"[0-9a-f]{40}", install_setting(install_cell, "RELEASE_REF"))
+    repository = install_setting(install_cell, "REPOSITORY")
+    assert repository.endswith("CellMigrationLab/morphobricks-preprocessing.git")
+    assert "DEVELOPMENT_OVERRIDE = False" in install_cell
+    assert notebook_modules(code_sources(path), checkout=PINNED_NOTEBOOKS[name])
+
+
+@pytest.mark.parametrize("name", PINNED_NOTEBOOKS)
+def test_release_only_the_preprocessing_pin_is_a_commit_with_this_code(name):
     # Release runs only (owner, 24 November 2026; ``release_run.py``): the notebook installs
     # the package at RELEASE_REF, so that commit must hold the code the notebook's cells run
     # (every module they import, at any depth), the build's inputs and the install-relevant
     # pyproject.toml, exactly as HEAD has them (issue #421). The release PR moves the pin.
-    check_pin_holds_this_code(ROOT, setting("RELEASE_REF"), code_sources(NOTEBOOK))
+    path = ROOT / "notebooks" / f"{name}.ipynb"
+    sources = code_sources(path)
+    ref = install_setting(sources[INSTALL], "RELEASE_REF")
+    check_pin_holds_this_code(ROOT, ref, sources, checkout=PINNED_NOTEBOOKS[name])
 
 
 def test_the_version_file_names_the_notebooks_current_version():
@@ -379,13 +410,14 @@ def test_a_preview_names_an_image_of_the_run_or_is_refused(cells):
     assert name in cells.ns["workflow"].shown[-1] and len(cells.stub.calls) == 1
 
 
-def test_a_cell_run_too_early_says_which_cell_to_run_first(cells):
-    with pytest.raises(RuntimeError, match="Run cell 3 first"):
+def test_a_cell_run_too_early_says_what_to_do_first(cells):
+    with pytest.raises(RuntimeError, match="Run cell 3 first"):  # the notebook's own cell text
         run_cell(cells.ns, CHANNELS)
     run_cell(cells.ns, OPEN, run_folder=str(cells.run.out), masks_folder=str(cells.run.masks))
-    with pytest.raises(RuntimeError, match="Run cell 4 first"):
+    # The component names the step's button, never a cell number (#463 review).
+    with pytest.raises(RuntimeError, match="Press Choose the channels first"):
         run_cell(cells.ns, NEXT)
-    with pytest.raises(RuntimeError, match="Run cell 5 first"):
+    with pytest.raises(RuntimeError, match="Press Load the model first"):
         run_cell(cells.ns, BATCH)
 
 
