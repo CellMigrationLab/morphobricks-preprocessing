@@ -313,6 +313,7 @@ class PlaneAccumulator:
         self._count = 0
         self._running: np.ndarray | None = None
         self._special: np.ndarray | None = None
+        self._result: np.ndarray | None = None
         if self.rule.source_dtype in _FLOAT_INPUTS and method != "max":
             self._special = np.zeros(self._shape, dtype=np.uint8)
 
@@ -353,6 +354,9 @@ class PlaneAccumulator:
     def result(self) -> np.ndarray:
         """Return the projected plane, in the output type.
 
+        The plane is made once; every later call returns that same plane, so a mean is
+        never divided twice (issue #434).
+
         Raises
         ------
         ValueError
@@ -363,6 +367,8 @@ class PlaneAccumulator:
         """
         if self._running is None or self._count != self.rule.slices:
             raise ValueError(f"{self._count} of {self.rule.slices} declared slices were added")
+        if self._result is not None:
+            return self._result
         running = self._running
         if self._special is not None:
             self._check_floats(running)
@@ -372,6 +378,7 @@ class PlaneAccumulator:
             running /= self.rule.slices
         elif running.dtype != self.rule.output_dtype:
             running = running.astype(self.rule.output_dtype)
+        self._result = running
         return running
 
     def _check_floats(self, running: np.ndarray) -> None:

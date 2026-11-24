@@ -2,7 +2,9 @@
 
 Moved from :mod:`.conversion` (PP-11c). A copy is reused only when its plan and its copy
 are unchanged: the copy's fingerprint and its SHA-256 (read whole, issue #87) as recorded;
-anything else already there is refused, never overwritten.
+anything else already there is refused, never overwritten. A copy tree holding a link or a
+mount point anywhere below it is refused first (:func:`links_below`, issue #447): writes
+through it would land outside the folder chosen for the copies.
 """
 
 from __future__ import annotations
@@ -15,6 +17,8 @@ from .conversion_issues import differs_issue, not_empty_issue, other_experiment_
 from .conversion_record import ConversionRecord, CopyEntry
 from .conversion_write import PARTIAL_SUFFIX
 from .fingerprint import current_fingerprint
+from .links import is_link
+from .mounts import MountCheck
 from .planned_copy import PlannedCopy
 from .run.lock import LOCK_FILENAME
 from .validation import ValidationIssue
@@ -73,4 +77,30 @@ def unknown_content(dest: Path, planned: tuple[PlannedCopy, ...]) -> list[str]:
             path = (relative / name).as_posix()
             if path != LOCK_FILENAME and path not in partials:
                 found.append(path)
+    return sorted(found)
+
+
+def links_below(dest: Path) -> list[str]:
+    """Return every link and mount point below the copy tree ``dest`` (resolved), sorted.
+
+    A conversion writes only real files in real folders, so anything that sends a path
+    below ``dest`` elsewhere is refused, wherever it leads (into the experiment, another
+    folder, nowhere) and whether or not a planned copy goes through it (issue #447). Links
+    and directory junctions are told by :func:`.links.is_link`, mount points by
+    :class:`.mounts.MountCheck`, the rules of the experiment's walk (#81); neither is
+    entered. Links are named ``link -> target``, relative to ``dest``.
+    """
+    mounts, found, pending = MountCheck(dest), [], [dest]
+    while pending:
+        folder = pending.pop()
+        with os.scandir(folder) as entries:
+            for entry in entries:
+                path = Path(entry.path)
+                name = path.relative_to(dest).as_posix()
+                if is_link(entry):
+                    found.append(f"{name} -> {os.readlink(path)}")
+                elif mounts.is_mount(path, entry):
+                    found.append(name)
+                elif entry.is_dir(follow_symlinks=False):
+                    pending.append(path)
     return sorted(found)

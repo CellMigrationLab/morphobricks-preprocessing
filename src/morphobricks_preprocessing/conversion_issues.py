@@ -51,6 +51,19 @@ def not_a_folder_issue(dest: Path) -> ValidationIssue:
     )
 
 
+def links_issue(paths: list[str]) -> ValidationIssue:
+    """Refuse a copy tree holding links or mount points, which writes would go through."""
+    return error(
+        "copy_folder_has_links",
+        f"The folder for the named-axis copies holds {plural(len(paths), 'link')} (link -> "
+        "target) or mount points, through which the copies would be written somewhere else, "
+        "perhaps over the originals. Nothing was written.",
+        paths,
+        "Remove these links or mount points from the folder for the copies, or choose a new, "
+        "empty folder.",
+    )
+
+
 def names_collide_issue(paths: list[str]) -> ValidationIssue:
     """Refuse OME-Zarr copies of images that differ only by their extension."""
     return error(
