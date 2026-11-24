@@ -477,13 +477,15 @@ def _given(masks_root: str | os.PathLike) -> Path:
     A run without masks would otherwise read a mistyped, missing or unreadable folder as one
     with no masks, and the caller's masks would be left out without a word.
     """
-    folder = Path(masks_root).resolve() if os.fspath(masks_root) else None
+    # "" and Path("") (which is ".") both mean no path was given; "." and Path(".") could mean
+    # the current directory, but are indistinguishable from Path(""), so they are refused too.
+    folder = None if Path(masks_root) == Path(".") else Path(masks_root).resolve()
     fix = (
-        "Give masks_root= the folder that holds one subfolder per mask type, or leave it out "
-        "to use the masks folder the run recorded."
+        "Give masks_root= the folder that holds one subfolder per mask type (its path, not "
+        '"" or "."), or leave it out to use the masks folder the run recorded.'
     )
     if folder is None or not folder.is_dir():
-        what = "An empty path" if folder is None else f"{folder}"
+        what = 'An empty path or "."' if folder is None else f"{folder}"
         raise MasksFolderNotFoundError(
             f"masks_folder_not_found: {what} was given as masks_root=, and it is not an "
             f"existing folder, so no mask can be read from it. {fix}"
