@@ -452,7 +452,9 @@ def _masks_effect(given: GivenInputs, before: RunManifest) -> str:
     effect = (
         "no row is affected; the masks are recorded again and mask_relationships.json is removed"
     )
-    dropped = sorted(set(recorded_mask_axes(before)) - set(_kept_mask_axes(given, before)))
+    dropped = set(recorded_mask_axes(before)) - set(_kept_mask_axes(given, before))
+    # A type stated again in the same call is not outstanding, so it is not named.
+    dropped = sorted(dropped - set(given.mask_axes or ()))
     if given.masks_folder is False or not dropped:
         return effect
     return (

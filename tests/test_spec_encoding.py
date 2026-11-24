@@ -18,7 +18,7 @@ from morphobricks_preprocessing.description_transition import Reconfirmation
 from morphobricks_preprocessing.description_write import canonical_bytes, section_digests
 from morphobricks_preprocessing.run.description_file import (
     RecordsFileError,
-    _append_records,
+    _candidate_records,
     publish_description,
     read_records,
 )
@@ -72,7 +72,7 @@ def test_non_ascii_text_is_written_unescaped_and_read_back_whole(tmp_path):
         "old_sha256": "absent",
         "new_sha256": "0" * 64,
     }
-    _append_records(tmp_path, (record,))
+    (tmp_path / RECORDS_FILENAME).write_bytes(_candidate_records(tmp_path, (record,)))
     data = (tmp_path / RECORDS_FILENAME).read_bytes()
     assert "café x\u0085y".encode() in data and b"\\u" not in data
     assert data.count(b"\n") == 1 and data.endswith(b"\n")
@@ -88,5 +88,5 @@ def test_a_torn_or_foreign_records_file_is_refused_before_anything_is_written(tm
     with pytest.raises(RecordsFileError):
         read_records(tmp_path)
     with pytest.raises(RecordsFileError):
-        _append_records(tmp_path, ({"type": "reconfirmation"},))
+        _candidate_records(tmp_path, ({"type": "reconfirmation"},))
     assert (tmp_path / RECORDS_FILENAME).read_bytes() == content

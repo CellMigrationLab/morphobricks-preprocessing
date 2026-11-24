@@ -220,6 +220,7 @@ def test_a_non_text_id_key_is_a_type_error_naming_the_key_and_its_type(model, ta
     assert issue.code is Code.E_TYPE and issue.path.endswith(f" of {table}")
     assert f"the key {issue.value!r} of {table} holds a value of type " in str(caught.value)
     assert type(issue.value).__name__ in str(caught.value)
+    assert caught.value.phase == 3  # the structure phase, though found before phase 2 (#497)
     with pytest.raises(DescriptionTypeError):
         section_digests(model)
 

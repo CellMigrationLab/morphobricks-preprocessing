@@ -229,6 +229,12 @@ def reconcile_design(design: DesignTable, repeats: Iterable[BiologicalRepeat]) -
     )
 
 
+EMPTY_DESIGN_ACTION = (  # at run time not always a description to save again (#497)
+    "Check that the experiment folder holds condition folders with images that are not all "
+    "excluded; if you changed the folders, save the experiment description again (Check and save)."
+)
+
+
 def design_issues(design: DesignTable) -> list[ValidationIssue]:
     """Check that a design can be used: every repeat group confirmed, one folder per condition.
 
@@ -250,8 +256,7 @@ def design_issues(design: DesignTable) -> list[ValidationIssue]:
                 "invalid_experiment_design",
                 "The experiment design lists no folder, so there is nothing to confirm or process.",
                 [],
-                "Check that the experiment folder holds condition folders with images, then "
-                "save the experiment description again (Check and save).",
+                EMPTY_DESIGN_ACTION,
             )
         ]
     issues = []

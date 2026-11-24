@@ -114,6 +114,8 @@ def header_checks(
     if design is not None:
         design = reconcile_design(design, pre.dataset.repeats)
         design_problems = design_issues(design)
+        if not design.rows and has_errors([*pre.discovery.issues, *pre.exclusion_issues]):
+            design_problems = []  # such as no_images: it already says why no folder is left
         dataset = check_dataset(pre.discovery, design.repeat_groups(), excluded=pre.excluded)
     issues = [
         *pre.discovery.issues,
