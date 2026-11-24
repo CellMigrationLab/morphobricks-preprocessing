@@ -16,7 +16,7 @@ from pathlib import Path
 from .content_hash import unchanged_content
 from .conversion_issues import differs_issue, not_empty_issue, other_experiment_issue
 from .conversion_record import ConversionRecord, CopyEntry
-from .conversion_write import WORK_FOLDER
+from .conversion_write import WORK_FOLDERS
 from .fingerprint import current_fingerprint
 from .links import is_link
 from .mounts import MountCheck
@@ -76,10 +76,10 @@ def unknown_content(dest: Path) -> list[str]:
     for folder, subfolders, names in os.walk(dest):
         relative = Path(folder).relative_to(dest)
         if folder == str(dest):
-            subfolders[:] = [d for d in subfolders if d != WORK_FOLDER]
+            subfolders[:] = [d for d in subfolders if d not in WORK_FOLDERS]
         for name in names:
             path = (relative / name).as_posix()
-            if path not in (LOCK_FILENAME, WORK_FOLDER):
+            if path != LOCK_FILENAME and path not in WORK_FOLDERS:
                 found.append(path)
     return sorted(found)
 
