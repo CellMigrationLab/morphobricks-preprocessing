@@ -270,7 +270,8 @@ def remove_leftover(found: WorkFolder | None) -> ValidationIssue | None:
     An :data:`OWNED` folder is removed whole: its ``files/`` first, then its owner file and
     the folder (``rmdir``), so one is still owned while its files are being removed; an
     :data:`UNFINISHED` one by unlinking its one owner file, if any, and an ``rmdir``, which
-    removes only an empty folder, never with ``rmtree``. Each is checked again right before, so what changed since is left.
+    removes only an empty folder, never with ``rmtree``. Each is checked again right before, so what changed since is
+    left.
 
     Returns
     -------
