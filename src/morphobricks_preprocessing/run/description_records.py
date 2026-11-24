@@ -36,7 +36,7 @@ from ..description import Description, Member
 from ..description_reconcile import PublishedUnit, UnitFolders, published_units
 from ..description_removal import Removal
 from ..description_rules import Refusal
-from ..description_transition import DATE, Reconfirmation, transition_issues
+from ..description_transition import DATE, Reconfirmation, _declared, transition_issues
 
 FOLDER_AND_ID_CHANGED = "folder_and_id_changed"
 """Preprocessing's refusal of a candidate that changes the folder and the ID of one entity."""
@@ -74,6 +74,28 @@ def _paths(description: Description) -> set[tuple[str, str, str]]:
     }
 
 
+_PATH = ("repeats", "conditions", "technical_repeats")
+"""The kinds in the order of a unit's ID path (:func:`_paths`)."""
+
+
+def _ids(unit: PublishedUnit) -> dict[str, str]:
+    return {
+        "conditions": unit.condition_id,
+        "repeats": unit.repeat_id,
+        "technical_repeats": unit.technical_id,
+    }
+
+
+def _fixed_ids(unit: PublishedUnit, fix: dict[str, dict[str, str]]) -> dict[str, str]:
+    """Return a unit's IDs after the confirmed ID corrections ``fix`` (:func:`_renames`)."""
+    return {kind: fix[kind].get(i, i) for kind, i in _ids(unit).items()}
+
+
+def _path(ids: dict[str, str]) -> tuple[str, str, str]:
+    """Return the ID path (repeat, condition, technical repeat) of a unit's IDs by kind."""
+    return ids["repeats"], ids["conditions"], ids["technical_repeats"]
+
+
 def _removed_units(
     old: Description, new: Description, confirmations: Iterable[Reconfirmation]
 ) -> dict[UnitFolders, PublishedUnit]:
@@ -82,14 +104,24 @@ def _removed_units(
     kept_keys, kept_paths = set(published_units(new)), _paths(new)
     gone = {}
     for key, unit in published_units(old).items():
-        path = (
-            fix["repeats"].get(unit.repeat_id, unit.repeat_id),
-            fix["conditions"].get(unit.condition_id, unit.condition_id),
-            fix["technical_repeats"].get(unit.technical_id, unit.technical_id),
-        )
-        if key not in kept_keys and path not in kept_paths:
+        if key not in kept_keys and _path(_fixed_ids(unit, fix)) not in kept_paths:
             gone[key] = unit
     return gone
+
+
+def _unanswered(
+    old: Description,
+    new: Description,
+    removals: Iterable[Removal],
+    confirmations: Iterable[Reconfirmation],
+) -> tuple[dict[UnitFolders, PublishedUnit], list[UnitFolders], list[UnitFolders]]:
+    """Return the dropped units, those no removal confirms, and removals of units not dropped.
+
+    The two checks :func:`removal_records` asserts and :func:`folder_id_changes` reports.
+    """
+    gone = _removed_units(old, new, confirmations)
+    asked = {key for removal in removals for key in removal.units}
+    return gone, sorted(set(gone) - asked), sorted(asked - set(gone))
 
 
 @dataclass(frozen=True, order=True)
@@ -167,7 +199,7 @@ class FolderIdChange:
         return f"Undo the ID edit: put {self.old_id} back."
 
 
-def _labels(keys: tuple[UnitFolders, ...]) -> str:
+def _labels(keys: Iterable[UnitFolders]) -> str:
     return ", ".join(_label(k) for k in keys)
 
 
@@ -175,7 +207,6 @@ def _label(key: UnitFolders) -> str:
     return f"{key.condition}/{key.source_repeat}/{key.technical}"
 
 
-_PATH = ("repeats", "conditions", "technical_repeats")
 _ATTR = {"conditions": "condition_id", "repeats": "repeat_id", "technical_repeats": "technical_id"}
 
 
@@ -187,23 +218,6 @@ def _parts(key: UnitFolders) -> tuple[str, str, str]:
 def _moved(key: UnitFolders, other: UnitFolders) -> list[str]:
     """Return the kinds whose folder differs between two units."""
     return [k for k, a, b in zip(_PATH, _parts(key), _parts(other), strict=True) if a != b]
-
-
-def _declared(description: Description) -> dict[str, set[str]]:
-    """Return the condition, repeat and technical repeat IDs the description declares."""
-    return {
-        "conditions": set(description.conditions),
-        "repeats": set(description.repeats),
-        "technical_repeats": {tid for *_, tid in _paths(description)},
-    }
-
-
-def _ids(unit: PublishedUnit) -> dict[str, str]:
-    return {
-        "conditions": unit.condition_id,
-        "repeats": unit.repeat_id,
-        "technical_repeats": unit.technical_id,
-    }
 
 
 def folder_id_changes(
@@ -226,7 +240,8 @@ def folder_id_changes(
     its folders, is reported with an empty ``kind``. An empty result means
     :func:`removal_records` accepts the candidate and the removals. Pure.
     """
-    confirmations, answered = tuple(confirmations), {k for r in removals for k in r.units}
+    confirmations = tuple(confirmations)
+    gone, loose, extra = _unanswered(old, new, removals, confirmations)
     fix = _renames(confirmations)
     declared, before = _declared(new), _declared(old)
     paired = {
@@ -236,8 +251,7 @@ def folder_id_changes(
     }
     paired_old = {(kind, old_id) for kind, old_id, _ in paired}
     units, held = published_units(old), published_units(new)
-    by_path = {tuple(_ids(u)[k] for k in _PATH): key for key, u in held.items()}
-    gone = _removed_units(old, new, confirmations)
+    by_path = {_path(_ids(u)): key for key, u in held.items()}
     found: dict[tuple[str, str], dict[str, set]] = {}
 
     def add(kind: str, key: UnitFolders, part: str, *also: tuple[str, object]) -> None:
@@ -249,31 +263,25 @@ def folder_id_changes(
             entry.setdefault(name, set()).add(value)
 
     def retired(unit: PublishedUnit) -> list[str]:  # a paired ID change is refused on its own
-        return [
-            k
-            for k, i in _ids(unit).items()
-            if fix[k].get(i, i) not in declared[k] and (k, i) not in paired_old
-        ]
+        ids, fixed = _ids(unit), _fixed_ids(unit, fix)
+        return [k for k in ids if fixed[k] not in declared[k] and (k, ids[k]) not in paired_old]
 
     for key, unit in units.items():
-        ids, kinds = _ids(unit), retired(unit)
         if key in held:  # the same folders: an ID gone and the folders now under a new ID
-            for kind in kinds:
+            for kind in retired(unit):
                 new_id = _ids(held[key])[kind]
                 if new_id not in before[kind]:
                     add(kind, key, "kept", ("new_ids", new_id))
-            if key in answered:
-                add("", key, "removed")  # a removal of a folder the candidate keeps
-        elif key in gone:
-            if key not in answered:
-                for kind in kinds or [""]:
-                    add(kind, key, "lost")
-        elif key in answered:  # removed, but its IDs are held by other folders
-            other = by_path[tuple(fix[k].get(ids[k], ids[k]) for k in _PATH)]
+    for key in loose:  # dropped, and no removal confirms it
+        for kind in retired(gone[key]) or [""]:
+            add(kind, key, "lost")
+    for key in extra:  # a removal of a unit the candidate does not drop
+        if key in units and key not in held:  # removed, but its IDs are held by other folders
+            other = by_path[_path(_fixed_ids(units[key], fix))]
             for kind in _moved(key, other):
                 add(kind, key, "removed", ("given_to", other))
-    for key in answered - set(units):
-        add("", key, "removed")  # a removal of a folder the published file does not have
+        else:  # a removal of a folder the candidate keeps or the published file does not have
+            add("", key, "removed")
     return tuple(
         sorted(
             FolderIdChange(kind, old_id, **{part: tuple(sorted(v)) for part, v in entry.items()})
@@ -299,16 +307,11 @@ def removal_records(
         names a unit the candidate keeps or the published file does not have. Publication and
         the pre-save check refuse these first, with a code (:func:`folder_id_changes`).
     """
-    gone = _removed_units(old, new, confirmations)
-    asked = {key for removal in removals for key in removal.units}
-    loose = sorted(set(gone) - asked)
+    gone, loose, extra = _unanswered(old, new, removals, confirmations)
     if loose:
-        names = ", ".join(f"{k.condition}/{k.source_repeat}/{k.technical}" for k in loose)
-        raise ValueError(f"a unit is removed and no removal confirms it: {names}")
-    extra = sorted(asked - set(gone))
+        raise ValueError(f"a unit is removed and no removal confirms it: {_labels(loose)}")
     if extra:
-        names = ", ".join(f"{k.condition}/{k.source_repeat}/{k.technical}" for k in extra)
-        raise ValueError(f"a removal names a unit the candidate does not remove: {names}")
+        raise ValueError(f"a removal names a unit the candidate does not remove: {_labels(extra)}")
 
     def day(keys: Iterable[UnitFolders]) -> str:
         held = set(keys)
