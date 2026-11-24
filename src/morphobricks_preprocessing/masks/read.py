@@ -6,6 +6,7 @@ Moved from ``masks.py`` (PP-5).
 from __future__ import annotations
 
 import math
+import numbers
 import os
 from collections.abc import Mapping
 from pathlib import Path
@@ -105,10 +106,18 @@ def _wanted_plane(mask: MaskFile, z: int | None, t: int | None) -> dict[str, int
     Raises
     ------
     ValueError
-        If ``z`` or ``t`` is missing or outside the mask.
+        If ``z`` or ``t`` is not a whole number (``bool`` and floats included, #477), or is
+        missing or outside the mask.
     """
     wanted = {"Z": z, "T": t}
     for axis, index in wanted.items():
+        if index is not None and (
+            isinstance(index, bool | np.bool_) or not isinstance(index, numbers.Integral)
+        ):
+            raise ValueError(
+                f"the mask {mask.path}: {axis.lower()}={index!r} is not a whole number; give "
+                "the plane's index as an integer"
+            )
         length = mask.planes[axis] if mask.axes else 1
         if index is None and length > 1:
             raise ValueError(
