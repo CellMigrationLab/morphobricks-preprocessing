@@ -13,11 +13,17 @@ import pytest
 from morphobricks_preprocessing import description_candidate
 from morphobricks_preprocessing.description_file import RECORDS_FILENAME
 from morphobricks_preprocessing.description_reconcile import FolderRename, confirm_repeat, reconcile
-from morphobricks_preprocessing.description_removal import candidate, reconfirmations
+from morphobricks_preprocessing.description_removal import (
+    candidate,
+    reconfirmations,
+    removal_questions,
+)
 from morphobricks_preprocessing.description_transition import Reconfirmation, transition_issues
 from morphobricks_preprocessing.run.description_file import publish_description
 from test_spec_reconcile import (
     DAY,
+    folder,
+    key,
     model,
     on_disk_as_ctl,
     published_in,
@@ -36,10 +42,12 @@ def with_repeat_id(description, old, new):
     return replace(description, repeats=repeats, used_ids=used)
 
 
-def candidate_check(monkeypatch, edited, published, confirmations):
+def candidate_check(monkeypatch, edited, published, confirmations, removals=()):
     """Return the pre-save check of ``edited`` (the physical checks are not this test's)."""
     monkeypatch.setattr(description_candidate, "check_description", lambda found, *_: (found, []))
-    return description_candidate.check_candidate(edited, None, None, published, confirmations)
+    return description_candidate.check_candidate(
+        edited, None, None, published, confirmations, removals
+    )
 
 
 def test_a_repeat_id_changed_with_a_member_folder_rename_is_refused_before_save(
@@ -84,6 +92,40 @@ def test_a_repeat_id_changed_with_a_member_folder_rename_is_refused_before_save(
     own = (Reconfirmation(*change, DAY),)
     assert candidate_check(monkeypatch, second, draft, own).refusals == ()
     publish_description(output, second, base_sha256=renamed.sha256, confirmations=own)
+
+
+def test_a_repeat_id_changed_with_a_confirmed_removal_of_its_member_is_refused(
+    tmp_path, monkeypatch
+):
+    # Issue #475: DrugA/experiment_23 is removed (Yes, remove) and the repeat ID Day1 -> DayX is
+    # edited in the same save. Main published it silently (can_save True, no refusal): the
+    # removal accounted for the dropped folder and Day1 was no longer declared, so a ``removed``
+    # record of the repeat Day1 was written although its member CTRL/rep1 was kept under DayX.
+    published = model("v03")
+    seen = folder(published)
+    del seen[key("DrugA", "experiment_23")]
+    rec = reconcile(published, seen)
+    answers = tuple(question.answer(DAY) for question in removal_questions(published, rec))
+    draft = confirm_repeat(candidate(published, rec, answers), "Day1", DAY)
+    edited = with_repeat_id(draft, "Day1", "DayX")
+    found = reconfirmations(published, edited, rec, answers)
+    assert found.open == ()  # every answer is given: only the new check stops it
+    check = candidate_check(monkeypatch, edited, published, found.accepted, answers)
+    assert not check.can_save
+    (first,) = [r for r in check.refusals if r.code == "folder_and_id_changed"]
+    assert first is check.refusals[0]
+    assert "the folder and the ID of repeat Day1" in first.message
+    assert "CTRL/rep1/single is now under DayX" in first.message
+    assert first.action == "Undo the ID edit: put Day1 back."
+    output, base = published_in(tmp_path, published)
+    before = (output / "morphobricks.toml").read_bytes()
+    with pytest.raises(ValueError, match="folder_and_id_changed") as refused:
+        publish_description(
+            output, edited, base_sha256=base, confirmations=found.accepted, removals=answers
+        )
+    assert refused.value.codes == {"folder_and_id_changed"}
+    assert (output / "morphobricks.toml").read_bytes() == before
+    assert not (output / RECORDS_FILENAME).exists()
 
 
 def test_a_condition_id_changed_with_its_folder_rename_names_the_condition_first(monkeypatch):
