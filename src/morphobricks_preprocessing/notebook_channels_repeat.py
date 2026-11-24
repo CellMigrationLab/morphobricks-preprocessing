@@ -266,16 +266,20 @@ class RepeatRows:
         if self.other_draft():
             return False  # memory is another draft's: never written into this one
         answers = self.grid.store.answers()
-        same = (answers.tag_review or TagReview()) == review
-        return same or self.grid.store.update(replace(answers, tag_review=review))
+        return self.saved(review) or self.grid.store.update(replace(answers, tag_review=review))
+
+    def saved(self, review: TagReview | None = None) -> bool:
+        """Return True when the draft holds ``review`` (memory's by default): else no publish."""
+        return (self.grid.store.answers().tag_review or TagReview()) == (review or self._review())
 
     def adopt(self) -> None:
         """Take the confirmations a successful tag write just saved, as the draft now holds them.
 
-        Called by :meth:`.TagGrid.commit` after a write that set the whole tag review, before it
-        redraws and refreshes *Check and save*: the check reads the confirmations of the very
-        write, never the ones before it. That write held the whole review (:attr:`unsaved`);
-        after a row click it also held the click's refusals (:attr:`staged`), taken here.
+        Called by :meth:`.TagGrid.commit` right after a write that set the whole tag review,
+        before any other write, redraw or *Check and save* refresh: the check reads the very
+        write's confirmations, never the ones before it. That write held the whole review
+        (:attr:`unsaved`); after a row click it also held the click's refusals (:attr:`staged`),
+        taken here.
         """
         if self.staged is not None:  # a row click's refusals, saved by this very write
             self.refused, self.staged = self.staged, None
@@ -413,16 +417,12 @@ class RepeatRows:
             lines,
             raw=True,
         )
-        failed = (
-            ui.status(
-                "error",
-                "Not saved: the refusals and confirmations could not be written to the draft.",
-                ["They stay in this session and are saved again at the next change."],
-            )
-            if self.unsaved
-            else ""
+        failed = ui.status(
+            "error",
+            "Not saved: the refusals and confirmations could not be written to the draft.",
+            ["They stay in this session and are saved again at the next change."],
         )
-        self.message = self.notice + (listed if lines else "") + failed
+        self.message = self.notice + (listed if lines else "") + (failed if self.unsaved else "")
         self.notice = ""
         override = self.override.build(width)
         if not groups:

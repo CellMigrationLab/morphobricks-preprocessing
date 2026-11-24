@@ -4,6 +4,12 @@ External re-check of 23 November, blocker 1: a row click that filled some units 
 others (B) wrote A's tags first and B's refusal in a second write. A failure or an interruption
 between the two left a draft with A's tags and no refusal of B; after a restart nothing kept B
 out of fast mode's header trust. The draft must hold A's tags and B's refusal, or neither.
+
+External re-check ao (24 November), blocker 1: in fast mode the click's statement save (a second
+write, after the one that holds the tags and the review) ran before memory took the refusals. An
+interruption there left B refused on disk but not in this session, whose save gate reads memory:
+with B's tags complete from before the click, the description could be published. Memory now
+takes the write at once, and the save is refused while memory and the draft's review differ.
 """
 
 from __future__ import annotations
@@ -20,7 +26,7 @@ from morphobricks_preprocessing.draft_answers import ChannelAnswer  # noqa: E402
 from morphobricks_preprocessing.draft_format import answers_from_bytes  # noqa: E402
 from morphobricks_preprocessing.repeat_review import TagReview  # noqa: E402
 from test_notebook_channels import set_labels  # noqa: E402
-from test_notebook_check_save import opened  # noqa: E402
+from test_notebook_check_save import answer_all, opened  # noqa: E402
 from test_notebook_tag_by_repeat import EXTRA, TAGS, _experiment  # noqa: E402
 from test_notebook_tag_by_repeat_oneclick import GONE, LEAD, OTHER, _like  # noqa: E402
 
@@ -36,20 +42,31 @@ def _draft(out):
     return answers_from_bytes((out / DRAFT_FILENAME).read_bytes())
 
 
-def _before_the_click(tmp_path, fast):
-    """The row of rep2 set but not clicked yet; A (LEAD) untagged, nothing refused."""
+def _before_the_click(tmp_path, fast, b_tagged=False):
+    """The row of rep2 set but not clicked yet; A (LEAD) untagged, nothing refused.
+
+    Every image type is answered, so that in fast mode the click also saves the statement (the
+    units it fills are marked as tagged on their own): a second write. With ``b_tagged`` B holds
+    complete tags from before the click (DNA and ACTIN swapped: the row refuses them).
+    """
     root, masks, out = _experiment(tmp_path, extra=fast, names=_like(REFUSED, fast))
     nb = opened(root, masks, out)
     tags, row = (EXTRA, ("rep2", 4)) if fast else (TAGS, ("rep2", 3))
     set_labels(nb, list(tags))
     grid = nb.channel_grid
     assert grid.same_channels.value == fast
+    for layout in grid.layouts:
+        nb.channel_types.radios[layout.key].value = "channels"
     if fast:
         for index, tag in enumerate(TAGS):
             grid.matrix.template_cells[(("ctrl", "rep1", "t1"), index)].value = tag
+    for key in REFUSED if b_tagged else ():
+        grid.split(key)  # a hand-tag of B on its own, before the click
+        for index, tag in enumerate((tags[1], tags[0], *tags[2:])):
+            grid.cells[(key, index)].value = tag
     for drop, tag in zip(grid.by_repeat.drops[row], tags, strict=True):
         drop.value = tag
-    assert not grid.by_repeat.refused and LEAD not in _draft(out).units
+    assert not grid.by_repeat.refused and _untagged(_draft(out), LEAD)
     return nb, (root, masks, out), row, tags
 
 
@@ -110,11 +127,13 @@ def test_a_row_click_saves_a_tags_and_b_refusal_together_or_neither(
     b_refused = set(REFUSED) <= set(review.refused)
     # at 40aca1d, failing the second write: A's tags on disk, B's refusal not
     assert a_saved == b_refused, (writes, a_saved, b_refused)
-    if alive:  # this session: memory is the draft's, never ahead of it
-        assert rows._review() == review and not rows.unsaved
-        if not a_saved:
-            said = nb.channel_grid.problem.value + rows.message
-            assert rows._review() == before and "Not saved" in said
+    # this session, interrupted or not: memory is the draft's, never behind or ahead of it
+    assert rows._review() == review and not rows.unsaved, (writes, alive)
+    if b_refused:  # at 30af180, interrupted at the statement save: B refused on disk only
+        assert all(k in rows.listed() and k in rows.standing() for k in REFUSED)
+    if alive and not a_saved:
+        said = nb.channel_grid.problem.value + rows.message
+        assert rows._review() == before and "Not saved" in said
     fresh = opened(*exp)  # a restart on the draft as it is on disk
     if not b_refused:  # nothing of the click was kept: the click is to be made again
         assert _untagged(fresh.draft_answers, LEAD) and not fresh.channel_grid.by_repeat.refused
@@ -130,6 +149,56 @@ def test_a_row_click_saves_a_tags_and_b_refusal_together_or_neither(
     rows.override.confirm_button.click()
     assert OTHER not in rows.listed() and GONE in rows.listed()
     assert OTHER in _draft(exp[2]).tag_review.confirmed
+
+
+def _publishable_but_for_b(nb, tags):
+    """Answer every other question; the cells a redraw did not show are A's, saved already."""
+    grid = nb.channel_grid
+    for (key, index), cell in list(grid.cells.items()):
+        if cell.value is None and key not in REFUSED:
+            cell.value = tags[index]
+    answer_all(nb)
+    assert all(None not in nb.draft_answers.units[k].channels for k in REFUSED)
+
+
+def _blocked_by_b(nb, out):
+    rows = nb.channel_grid.by_repeat
+    assert nb.save_button.disabled and not nb.save_experiment()
+    assert set(REFUSED) <= set(_draft(out).tag_review.refused)
+    assert all(k in rows.listed() and k in rows.standing() for k in REFUSED)
+
+
+def test_b_tagged_before_the_click_stays_refused_after_an_interrupted_statement_save(tmp_path):
+    nb, exp, row, tags = _before_the_click(tmp_path, True, b_tagged=True)
+    rows = nb.channel_grid.by_repeat
+    writes, alive = _click(nb, row, 2, "interrupted")  # the statement save after the tags
+    assert (writes, alive) == (2, False)
+    assert set(REFUSED) <= set(_draft(exp[2]).tag_review.refused)  # durable
+    _publishable_but_for_b(nb, tags)
+    _blocked_by_b(nb, exp[2])  # at 30af180 the save succeeded in this very session
+    assert rows._review() == _draft(exp[2]).tag_review  # at 30af180: B refused on disk only
+    _blocked_by_b(opened(*exp), exp[2])  # and after a restart
+
+
+def test_the_save_waits_while_memory_differs_from_the_saved_review(tmp_path, monkeypatch):
+    nb, exp, row, tags = _before_the_click(tmp_path, True, b_tagged=True)
+    rows = nb.channel_grid.by_repeat
+    adopt = rows.adopt
+
+    def stopped():  # the kernel stops right after the write, before memory takes it
+        monkeypatch.setattr(rows, "adopt", adopt)
+        raise Interrupted
+
+    monkeypatch.setattr(rows, "adopt", stopped)
+    with pytest.raises(Interrupted):
+        rows.buttons[row].click()
+    assert set(REFUSED) <= set(_draft(exp[2]).tag_review.refused) and not rows.refused
+    assert not rows.listed()  # memory alone would let B count
+    _publishable_but_for_b(nb, tags)
+    assert nb.save_button.disabled and not nb.save_experiment()
+    assert "differs from the draft" in nb.save_blocker.value
+    assert not rows.saved()
+    _blocked_by_b(opened(*exp), exp[2])  # a restart reads the draft's review
 
 
 # After the one write: no second statement save or redraw (review an, FILE) ----------------------

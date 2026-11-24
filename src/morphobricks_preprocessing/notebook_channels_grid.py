@@ -212,13 +212,14 @@ class TagGrid:
 
         The click is one change (:func:`.channel_answers.tagged`, ``then`` in the same write),
         applied to the strict page's draft too: there, the click makes the unit's whole tags the
-        user's. A ``then`` sets the whole tag review in this write: never retried, and adopted.
+        user's. A ``then`` sets the whole tag review in this write: never retried, and adopted
+        at once, before any further write (an interruption there leaves memory as the draft).
         """
         ok = save_change(self.store, tagged(self.layouts, tags, cells, then))
+        ok and then is not None and self.by_repeat.adopt()  # before anything else can stop
         self.message = "" if ok else ui.status("error", "Not saved.", [self.store.refusal()])
         ok and self.matrix.sync_statement(cells)  # the user's clicked cells (ADR 0006)
         ok and then is None and self.by_repeat.unsaved and self.by_repeat.persist()  # a retry
-        ok and then is not None and self.by_repeat.adopt()  # before the check reads it
         self.refresh()
         self._on_change()
         return ok

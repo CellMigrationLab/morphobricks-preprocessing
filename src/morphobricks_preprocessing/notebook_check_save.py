@@ -226,6 +226,7 @@ class _CheckSaveScreen(_ReplicateBoxes):
             and not rows
             and not self.channel_grid.by_repeat.other_draft()  # its refusals are not read yet
             and not self.channel_grid.by_repeat.unsaved  # the draft does not hold the review
+            and self.channel_grid.by_repeat.saved()  # memory is the draft's saved review
         )
         self.save_button.disabled = not ready or self._saved_current()
         self.save_note.value = (
@@ -267,6 +268,11 @@ class _CheckSaveScreen(_ReplicateBoxes):
             or (
                 ["this draft's tag review is not read yet: open Channels"]
                 if review.other_draft()
+                else []
+            )
+            or (
+                ["this session's tag review differs from the draft's: run the notebook again"]
+                if not review.saved()
                 else []
             )
             or ["these answers are refused: see the red message above the button"]
