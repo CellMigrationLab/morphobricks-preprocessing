@@ -74,6 +74,8 @@ def test_a_file_differing_only_in_case_is_refused_too(tmp_path):
 
 def test_both_spellings_present_are_refused_even_for_the_exact_one(tmp_path):
     (tmp_path / "Cells").mkdir()
+    if (tmp_path / "cells").is_dir():  # macOS, Windows: the same folder
+        pytest.skip("this file system ignores case: both spellings cannot exist")
     (tmp_path / "cells").mkdir()  # only possible where case counts (Linux)
     with pytest.raises(SegmentationError, match=CODE):
         check_mask_type_folder(tmp_path, "Cells")
