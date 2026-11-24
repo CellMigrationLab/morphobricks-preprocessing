@@ -50,7 +50,12 @@ from .masks.model import MaskFile
 from .metadata import OME_ZARR, TiffMetadata
 from .run_inputs import Fov, RunInputs
 from .run_inputs_request import FovSelection, Request
-from .segmentation_record import SegmentationError, check_mask_type, hold_lock
+from .segmentation_record import (
+    SegmentationError,
+    check_mask_type,
+    check_mask_type_folder,
+    hold_lock,
+)
 from .zarr_input import is_zarr_name
 
 WRITE_LOCK_FILENAME = ".segmentation_write.lock"
@@ -88,11 +93,14 @@ def images_to_segment(
     SegmentationError
         For a mask type that is not one folder name, a masks folder inside the experiment or
         the output folder (or holding them), or a masks folder the run itself would refuse
-        (an ambiguous mask, a link leaving the folder).
+        (an ambiguous mask, a link leaving the folder), or a mask type that differs only in
+        case from an entry of the masks folder, even an empty folder
+        (:func:`.segmentation_record.check_mask_type_folder`; #459).
     """
     check_mask_type(mask_type)
     _check_folders(inputs, masks_root)
     made = {m.image for m in _paired(inputs, masks_root, mask_type)}
+    check_mask_type_folder(masks_root, mask_type)  # cells/ beside Cells (#459)
     return tuple(fov for fov in inputs.fovs() if fov.relative_path not in made)
 
 
@@ -265,7 +273,8 @@ def write_mask(
         For labels that are not 2D, not the image's size, floating point or complex, negative
         or too large; an image with more than one Z plane or time point; a mask that exists
         without ``overwrite`` (or another TIFF of the same name); a masks folder inside the
-        experiment or the output folder; or another writer holding the type's write lock
+        experiment or the output folder; a mask type that differs only in case from an entry of
+        the masks folder (#459); or another writer holding the type's write lock
         (``<masks>/<type>/.segmentation_write.lock``), which is refused at once and names the
         holder; or a rollback that could not restore or remove the mask (naming the files).
     """
@@ -275,6 +284,7 @@ def write_mask(
     data = _checked_labels(labels, inputs.plane_shape(fov), fov.relative_path)
     type_folder = Path(masks_root) / mask_type
     _refuse_twins(inputs, masks_root, mask_type, fov, target, overwrite)  # nothing made if refused
+    check_mask_type_folder(masks_root, mask_type)  # cells/ beside Cells: nothing made (#459)
     with hold_lock(type_folder / WRITE_LOCK_FILENAME, f"The {mask_type} masks in {masks_root}"):
         # one writer per type for the twin check, the claim and the publish, in both modes
         _refuse_twins(inputs, masks_root, mask_type, fov, target, overwrite)

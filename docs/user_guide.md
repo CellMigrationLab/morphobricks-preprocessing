@@ -318,6 +318,12 @@ banner then says "commit unknown" and that the override is on). Then:
   unless you tick overwrite, and `<masks>/<type>/segmentation_record.json` with the model's
   file name and SHA-256, every setting (the full normalisation and the flow iterations included), whether the weights were downloaded now and from where, the channels, the device and each image as written,
   skipped or failed. The final table lists every image, with the error of a failed one.
+- **A mask type is its exact name.** A mask type whose name differs from a folder already in
+  the masks folder only in upper/lower case (`Cells` when `cells/` is there, even empty) is
+  refused when you choose it, on every computer, naming both (`mask_type_differs_in_case`): on
+  Windows and macOS the two are one folder, so the masks of two types would be mixed. Type the
+  existing folder's exact name (`cells`) to add to its masks, or choose another mask type.
+  Nothing is renamed or merged.
 
 Afterwards declare the mask type (both mask types for **Both**) in the experiment description (for example `[masks.Cells]`
 with `source_type = "Cells"` and `representation = "instances"`), save it, run preprocessing
@@ -349,6 +355,8 @@ run the experiment in the app of cell 3. Then:
   the masks folder the run already used are fine. If its folder check asks you to confirm the
   axes again, do it in cell 3 (step **Axes**) and press the button again (or run cell 5
   again). It refuses, changing nothing, a mask type that collides with a mask already declared,
+  a mask type cell 4 wrote beside a folder of the masks folder whose name differs from it only
+  in case (`mask_type_differs_in_case`),
   a masks folder inside the experiment, masks of another run or masks folder than the app's,
   images changed since the run, a run cell 3 published again after cell 4 opened it (open the
   run again in cell 4 and segment again), and, after that stop, axes other than those the
