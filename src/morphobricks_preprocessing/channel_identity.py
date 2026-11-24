@@ -420,12 +420,12 @@ def _pairs(
     return sorted(pairs)
 
 
-def _choose(pairs: list[_Pair]) -> tuple[list[_Pair], list[list[_Pair]]]:
+def _choose(pairs: list[_Pair], tolerance: float) -> tuple[list[_Pair], list[list[_Pair]]]:
     """Choose the mutual pairs by strength; return the pairs kept and the ambiguous groups.
 
     Greedy from the strongest pair (smallest strength): a channel is in one pair at most. When
     a remaining pair sharing a channel with the strongest one (directly or through each other)
-    is within :data:`PAIR_TOLERANCE` of its strength, none of them is chosen: they form one
+    is within ``pair_tolerance`` of its strength, none of them is chosen: they form one
     ambiguous group, and its channels are not paired with anything else. Channel names and
     input order never decide (#395).
     """
@@ -439,7 +439,7 @@ def _choose(pairs: list[_Pair]) -> tuple[list[_Pair], list[list[_Pair]]]:
         close = [
             p
             for p in remaining
-            if p.unit == first.unit and p.strength <= first.strength + PAIR_TOLERANCE
+            if p.unit == first.unit and p.strength <= first.strength + tolerance
         ]
         group, channels = [first], set(first.channels)
         grown = True
@@ -472,7 +472,7 @@ def _findings(
     Otherwise a channel that clearly looks like another channel of its unit is a swap.
     """
     findings = {key: f for key, place in places.items() if (f := _finding(place, settings))}
-    kept, groups = _choose(_pairs(places, findings, settings))
+    kept, groups = _choose(_pairs(places, findings, settings), settings.pair_tolerance)
     for pair in kept:
         a, b = ((pair.unit, c) for c in pair.channels)
         items = {

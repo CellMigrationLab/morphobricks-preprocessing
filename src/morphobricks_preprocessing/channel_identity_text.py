@@ -12,7 +12,6 @@ from .channel_identity_model import (
     AMBIGUOUS_CHANNEL_SWAP,
     CHANNEL_IDENTITY_CODES,
     CHANNEL_UNLIKE_OTHERS,
-    PAIR_TOLERANCE,
     POSSIBLE_CHANNEL_SWAP,
     ChannelFinding,
     ChannelIdentityReport,
@@ -62,7 +61,7 @@ def finding_issues(
         if found.code == AMBIGUOUS_CHANNEL_SWAP:
             group = _group(found, by_place)
             done.update((f.unit, f.channel) for f in group)
-            message = _ambiguous_message(group)
+            message = _ambiguous_message(group, settings.pair_tolerance)
         elif partner is not None:
             done.add((partner.unit, partner.channel))
             message = _swap_message(found, partner)
@@ -92,8 +91,11 @@ def _names(channels: Sequence[str]) -> str:
     return channels[0] if len(channels) == 1 else f"{', '.join(channels[:-1])} and {channels[-1]}"
 
 
-def _ambiguous_message(group: Sequence[ChannelFinding]) -> str:
-    """Word an ambiguous swap: every channel, its own distance and those to its alternatives."""
+def _ambiguous_message(group: Sequence[ChannelFinding], tolerance: float) -> str:
+    """Word an ambiguous swap: every channel, its own distance and those to its alternatives.
+
+    ``tolerance`` is the limits' ``pair_tolerance``, the one the group was found with.
+    """
     first = group[0]
     others = _others(any(f.across_conditions for f in group))
     parts = []
@@ -107,7 +109,7 @@ def _ambiguous_message(group: Sequence[ChannelFinding]) -> str:
     text = (
         f"In unit {first.unit.label}, channels {_names([f.channel for f in group])} look "
         f"swapped in more than one way: compared with {others}, {'; '.join(parts)}. The "
-        f"possible pairs are within {PAIR_TOLERANCE:g} robust deviations of each other in the "
+        f"possible pairs are within {tolerance:g} robust deviations of each other in the "
         "larger of their two cross distances, so no pair is named."
     )
     for found in group:
@@ -172,9 +174,10 @@ def describe_settings(settings: ChannelIdentitySettings) -> str:
         f"least {settings.min_log_difference:g} log units, references of at least "
         f"{plural(settings.min_reference, 'other unit')}, robust spread at least "
         f"{settings.mad_floor:g} log units; a swap when two channels of a unit look like each "
-        f"other ({settings.partner_ratio:g} times nearer each other), or one is at distance "
-        f"{settings.swap_limit:g} or less from another channel and {settings.swap_ratio:g} times "
-        "nearer it than its own"
+        f"other ({settings.partner_ratio:g} times nearer each other; pairs within "
+        f"{settings.pair_tolerance:g} of each other in strength are not told apart), or one is "
+        f"at distance {settings.swap_limit:g} or less from another channel and "
+        f"{settings.swap_ratio:g} times nearer it than its own"
     )
 
 

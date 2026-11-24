@@ -722,9 +722,15 @@ imaging unit's channels compared with the same channels of the other units of it
 (a treatment effect is not reported when the condition has at least 3 other units), with
 `channel_unlike_others`, `possible_channel_swap` (for example "channels DAPI and GFP look
 swapped") and `ambiguous_channel_swap` warnings (channels that look swapped in more than one
-way the check cannot tell apart: it names them all and no pair; a cycle of three channels, A shows B, B shows C, C shows A, is not a swap and gives three "does not look like" warnings) and the channels it could not check; the notebook draws them under
+way the check cannot tell apart, the pairs being within `pair_tolerance`, 0.5 by default, of each other: it names them all and no pair; a cycle of three channels, A shows B, B shows C, C shows A, is not a swap and gives three "does not look like" warnings) and the channels it could not check; the notebook draws them under
 **Do the channels look like themselves?**. A swap made in every unit of a condition is not
 found. Warnings only: nothing is changed or blocked.
+
+The channel check's limits, `pair_tolerance` included, are recorded in `run_manifest.json`
+(`channel_identity`). They have no command-line option or notebook field: to apply others, call
+`check_channel_identity(result.intensity.summaries, ChannelIdentitySettings(pair_tolerance=0.8))`
+(Python, both from `morphobricks_preprocessing.channel_identity`), which recomputes nothing. A manifest whose limits lack `pair_tolerance` (written
+before it was recorded) is read with 0.5, the value that code used.
 
 Read the warnings as prompts to look, not as verdicts. With very noisy data (units that differ
 by about 30 % per channel) false warnings are frequent: in a simulation, 171 of 300 runs

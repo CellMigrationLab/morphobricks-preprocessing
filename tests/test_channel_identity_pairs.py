@@ -9,6 +9,7 @@ from morphobricks_preprocessing.channel_identity import (
     AMBIGUOUS_CHANNEL_SWAP,
     PAIR_TOLERANCE,
     POSSIBLE_CHANNEL_SWAP,
+    ChannelIdentitySettings,
     Unit,
     channel_identity_text,
     check_channel_identity,
@@ -100,14 +101,17 @@ def test_tied_mutual_pairs_are_one_ambiguous_finding():
     assert f"in more than one way ({AMBIGUOUS_CHANNEL_SWAP}, 1):" in text
 
 
-def strengths_of(monkeypatch, summaries):
+def strengths_of(monkeypatch, summaries, settings=None):
     """Run the check and return ``({channels: strength}, report)`` of the candidate pairs."""
     seen = []
     choose = channel_identity._choose
-    monkeypatch.setattr(
-        channel_identity, "_choose", lambda pairs: (seen.append(pairs), choose(pairs))[1]
-    )
-    report = check_channel_identity(summaries)
+
+    def spy(pairs, tolerance):
+        seen.append(pairs)
+        return choose(pairs, tolerance)
+
+    monkeypatch.setattr(channel_identity, "_choose", spy)
+    report = check_channel_identity(summaries, settings)
     return {p.channels: p.strength for p in seen[0]}, report
 
 
@@ -124,7 +128,7 @@ def faint_scaled(factor):
 
 
 def test_a_near_tie_just_inside_the_tolerance_is_ambiguous(monkeypatch):
-    """#395: strengths 0 and about 0.46 (within PAIR_TOLERANCE of each other) are one group."""
+    """#395: strengths 0 and about 0.46 (within the default pair_tolerance) are one group."""
     strengths, report = strengths_of(monkeypatch, faint_scaled(1.14))
     assert strengths[("bright", "faint")] == pytest.approx(0.0, abs=1e-6)
     assert 0.40 < strengths[("bright", "dim")] < PAIR_TOLERANCE
@@ -146,6 +150,46 @@ def test_a_near_tie_just_outside_the_tolerance_is_a_clean_swap(monkeypatch):
     }
     swaps = [i.message for i in report.validation_issues() if "look swapped" in i.message]
     assert len(swaps) == 1 and "channels bright and faint look swapped" in swaps[0]
+
+
+CLEAN_TIE_BREAK = {
+    "dim": (POSSIBLE_CHANNEL_SWAP, "bright", False),
+    "bright": (POSSIBLE_CHANNEL_SWAP, "faint", True),
+    "faint": (POSSIBLE_CHANNEL_SWAP, "bright", True),
+}
+
+
+@pytest.mark.parametrize(
+    ("factor", "tolerance", "ambiguous"),
+    [
+        (1.14, 0.3, False),  # strengths 0 and about 0.46
+        (1.14, 0.5, True),
+        (1.14, 0.8, True),
+        (1.10, 0.3, False),  # strengths 0 and about 0.63
+        (1.10, 0.5, False),
+        (1.10, 0.8, True),
+    ],
+)
+def test_the_recorded_pair_tolerance_decides_a_near_tie(monkeypatch, factor, tolerance, ambiguous):
+    """Owner decision of 24 November 2026: ``pair_tolerance`` is a recorded limit, not a constant.
+
+    The same summaries give a clean swap or an ambiguous one by the limits' tolerance only,
+    and the ambiguous warning names the tolerance it was found with.
+    """
+    settings = ChannelIdentitySettings(pair_tolerance=tolerance)
+    strengths, report = strengths_of(monkeypatch, faint_scaled(factor), settings)
+    assert strengths[("bright", "faint")] == pytest.approx(0.0, abs=1e-6)
+    assert (strengths[("bright", "dim")] <= tolerance) == ambiguous
+    assert report.settings.pair_tolerance == tolerance
+    found = {f.channel: (f.code, f.nearest, f.mutual) for f in report.findings}
+    if not ambiguous:
+        assert found == CLEAN_TIE_BREAK
+        return
+    assert {c: code for c, (code, _, _) in found.items()} == {
+        c: AMBIGUOUS_CHANNEL_SWAP for c in ROLE_REF
+    }
+    (issue,) = report.validation_issues()
+    assert f"within {tolerance:g} robust deviations of each other" in issue.message
 
 
 def units_off(shown_by_unit, ref, conditions=("ctrl", "treated"), per_condition=6):
