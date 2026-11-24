@@ -298,9 +298,11 @@ def test_cell_5_refuses_axes_other_than_those_the_segmented_run_recorded(tmp_pat
     nb, registration, out = stopped_for_the_axes(tmp_path, stub)
     before = snapshot(out)
     recorded = json.loads((out / MANIFEST_FILENAME).read_text(encoding="utf-8"))["axis_mapping"]
-    roles = recorded["roles"]
-    swapped = [*roles[:-2], roles[-1], roles[-2]]  # Y and X swapped
-    nb.confirmed_mapping = AxisMapping(recorded["axes"], tuple(swapped))
+    assert recorded == {"axes": "CYX", "roles": ["C", "Y", "X"]}
+    nb.quick_confirm.click()
+    # Other roles than the run's: the app refuses Y and X swapped for these TIFFs (their header
+    # names the axes), but not for images without axes in their header, so set them directly.
+    nb.confirmed_mapping = AxisMapping("CYX", ("C", "X", "Y"))
     assert not registration.register() and not registration.registered
     assert "not those the segmented run recorded" in registration.status.value
     assert snapshot(out) == before  # nothing declared, saved or run
