@@ -253,6 +253,12 @@ def repeat_code_issues(
     return issues
 
 
+_BIDI = frozenset("\u061c\u200e\u200f\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069")
+"""The bidi controls refused in the links' text (#416): U+061C ARABIC LETTER MARK, U+200E/F
+LEFT-TO-RIGHT/RIGHT-TO-LEFT MARK, the embeddings and overrides U+202A-U+202E and the isolates
+U+2066-U+2069."""
+
+
 def recorded_lab_links(data: object) -> dict | None:
     """Check a manifest's ``lab_links`` entry as :class:`LabLinks` does; None when absent.
 
@@ -272,12 +278,13 @@ def _check_text(value: object, key: str) -> None:
         raise LabLinksError(f"{key} must be text, found {type(value).__name__} {value!r}")
     if not value:
         raise LabLinksError(f"{key} is empty: give its value, or leave the file out")
-    # Cf: bidi controls and zero-width characters can show another text than the one
-    # confirmed (#416); the message shows them escaped (repr)
-    if value != value.strip() or any(unicodedata.category(c) in ("Cc", "Cf") for c in value):
+    # bidi controls can show another text than the one confirmed (#416); other format
+    # characters (ZWNJ, ZWJ, soft hyphen) belong to names and are kept. Shown escaped (repr)
+    if value != value.strip() or any(unicodedata.category(c) == "Cc" or c in _BIDI for c in value):
         raise LabLinksError(
             f"{key} {value!r} has spaces around it, control characters or invisible formatting "
-            "characters: nothing is trimmed, so correct it in the file"
+            "characters that reorder text (bidi controls): nothing is trimmed, so correct it in "
+            "the file"
         )
 
 

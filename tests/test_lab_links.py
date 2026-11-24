@@ -347,7 +347,10 @@ def test_cli_refuses_a_url_with_a_credential_before_anything_is_written(
     assert sorted(p.name for p in out.iterdir()) == ["morphobricks.toml"]  # nothing written
 
 
-@pytest.mark.parametrize("mark", ["‮", "‪", "⁦", "⁩", "​", "‏"])
+_BIDI = "\u061c\u200e\u200f\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069"
+
+
+@pytest.mark.parametrize("mark", list(_BIDI))
 @pytest.mark.parametrize(
     "where",
     [
@@ -366,3 +369,19 @@ def test_invisible_formatting_characters_are_refused(mark, where):
 def test_ordinary_unicode_letters_are_accepted():
     links = parse_lab_links(_bytes(_with(experiment_path="expériences/µ-2026/Ω")))
     assert links.experiment_path == "expériences/µ-2026/Ω"
+
+
+@pytest.mark.parametrize(
+    "mark",
+    # ZWNJ and ZWJ (needed in Persian, Indic and emoji names), soft hyphen, BOM / ZWNBSP,
+    # zero-width space, word joiner: Unicode Cf, accepted before #416 and not bidi controls
+    ["\u200c", "\u200d", "\u00ad", "\ufeff", "\u200b", "\u2060"],
+)
+def test_format_characters_that_are_not_bidi_controls_are_accepted(mark):
+    # #416 review: only the bidi controls the issue names are refused, so a value the
+    # reader took before (recorded_lab_links checks a written manifest again) still reads.
+    code, repeat, path = f"R{mark}1", f"Day{mark}1", f"experiments/\u0645\u06cc{mark}2026"
+    data = _with(repeat_codes={code: repeat, "R002": "Day2"}, experiment_path=path)
+    links = parse_lab_links(_bytes(data))
+    assert links.repeat_codes[code] == repeat and links.experiment_path == path
+    assert recorded_lab_links(links.to_dict()) == links.to_dict()
