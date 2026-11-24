@@ -58,6 +58,7 @@ def segmentation_app(
     *,
     app: object = None,
     on_masks_written: Callable[[cp.BatchResult], object] | None = None,
+    register_with: str | None = None,
 ) -> SegmentationApp:
     """Return the whole Cellpose segmentation as one widget.
 
@@ -74,6 +75,10 @@ def segmentation_app(
     on_masks_written
         Called with the :class:`.segmentation_cellpose.BatchResult` after each batch (its
         ``record`` is the record file, ``counts()`` what was written), e.g. to rescan the masks.
+    register_with
+        Where the notebook registers the masks itself (the combined notebook's cell 5); its
+        **What to do next** then names it (:func:`.segmentation_cellpose_run.next_steps_lines`).
+        None: the steps by hand, as in the Cellpose notebook.
 
     Returns
     -------
@@ -89,6 +94,7 @@ def segmentation_app(
     masks = os.fspath(masks_folder) if masks_folder is not None else found[1]
     workflow = CellposeNotebook()
     workflow.on_masks_written = on_masks_written
+    workflow.register_with = register_with
     forms = [getattr(workflow, f"{step}_form")() for step in STEPS]
     opener = workflow.forms["open"]
     opener.fields["run_folder"].value, opener.fields["masks_folder"].value = run, masks

@@ -25,12 +25,13 @@ if TYPE_CHECKING:
     from .notebook_cellpose_form import CellposeNotebook
 
 RUN_CHANGED = (
-    "The run folder or the masks folder in cell 3 changed since the run was opened: press Open "
-    "the run again. Nothing is written to a folder the form no longer shows."
+    "The run folder or the masks folder of the Open the run step changed since the run was "
+    "opened: press Open the run again. Nothing is written to a folder the form no longer shows."
 )
 """The refusal of a preview or a run whose cell 3 folders no longer match the run opened."""
 REPLACED = (
-    "Replaced: cell 3 was run again, so this form no longer works. Use the forms shown after it."
+    "Replaced: this segmentation step was run again, so this form no longer works. Use the "
+    "forms shown after it."
 )
 """What a retired form says, and the refusal of a press on it."""
 _current: weakref.ReferenceType[CellposeNotebook] | None = None

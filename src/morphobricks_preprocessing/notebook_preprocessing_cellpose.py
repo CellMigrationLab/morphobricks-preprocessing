@@ -50,6 +50,9 @@ RUN_REFUSED = (
     "Run), then run this cell again."
 )
 """What cell 4 says, with the refusal, when the app's run cannot be opened."""
+REGISTER_WITH = "Run cell 5, Register the masks"
+"""What the component's **What to do next** names in this notebook: its cell 5 registers the
+masks (:mod:`.notebook_mask_register`)."""
 INSTALL_TEXT = (
     "Cellpose {version} is not installed in this environment. It is installed only here, only "
     "when you tick the box: it brings PyTorch, a download of a few gigabytes. Preprocessing "
@@ -122,7 +125,9 @@ class SegmentationStep(widgets.VBox):
 
     def _mount(self) -> None:
         """Mount the segmentation component on the app's run (opened when both folders are)."""
-        self.segmentation = segmentation_app(app=self.app, on_masks_written=self._on_masks_written)
+        self.segmentation = segmentation_app(
+            app=self.app, on_masks_written=self._on_masks_written, register_with=REGISTER_WITH
+        )
         self.install_box.children = [self.segmentation]
         opener = self.segmentation.workflow.forms["open"]
         if self.run_folder and self.masks_folder and opener.stopped is not None:
@@ -208,4 +213,4 @@ def segmentation_step(
     return SegmentationStep(app, on_masks_written)
 
 
-__all__ = ["NO_RUN", "RUN_REFUSED", "SegmentationStep", "segmentation_step"]
+__all__ = ["NO_RUN", "REGISTER_WITH", "RUN_REFUSED", "SegmentationStep", "segmentation_step"]

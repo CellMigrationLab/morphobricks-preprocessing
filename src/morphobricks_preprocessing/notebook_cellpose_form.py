@@ -54,7 +54,8 @@ __all__ = [
 STOPPED = "This step stopped"
 """The title of the card that shows a refusal; its message is the refusal, unchanged."""
 MODEL_CHANGED = (
-    "The model, the model file or the device in cell 5 (or the nuclei's own model) changed "
+    "The model, the model file or the device of the Load the model step (or the nuclei's own "
+    "model) changed "
     "since the model was loaded: "
     "press Load the model again. A model is never reloaded without that."
 )
@@ -210,7 +211,7 @@ class CellposeNotebook(CellposeWorkflow):
         ]
         form = StepForm(
             self,
-            "3 · Open the preprocessing run",
+            "Open the preprocessing run",
             "Open the run with preprocessing's own checks and list its channels.",
             cards,
             "Open the run",
@@ -246,7 +247,7 @@ class CellposeNotebook(CellposeWorkflow):
 
         form = StepForm(
             self,
-            "4 · Choose the output and the channels",
+            "Choose the output and the channels",
             "Choose a cell channel, a nuclear channel or both, <b>by channel ID</b>.",
             output_cards(fields, changed),
             "Choose the channels",
@@ -283,7 +284,7 @@ class CellposeNotebook(CellposeWorkflow):
         device = widgets.HTML(ui.status("ok" if found else "warn", "Device", [line]))
         form = StepForm(
             self,
-            "5 · Choose the model and the settings, then load the model",
+            "Choose the model and the settings, then load the model",
             "Load the model you choose, on the device you choose, and check it.",
             [device, *model_cards(fields, status)],
             "Load the model",
@@ -364,8 +365,9 @@ class CellposeNotebook(CellposeWorkflow):
         ]
         form = StepForm(
             self,
-            "6 · Preview one example result",
-            "Segment one image with the loaded model and the settings of cell 5, and show "
+            "Preview one example result",
+            "Segment one image with the loaded model and the settings of the Load the model "
+            "step, and show "
             "Cellpose's result; nothing is written.",
             cards,
             "Preview",
@@ -392,7 +394,7 @@ class CellposeNotebook(CellposeWorkflow):
         ]
         form = StepForm(
             self,
-            "7 · Segment the whole experiment",
+            "Segment the whole experiment",
             "Segment every image of the run, write the masks and the record, and list every "
             "image. The button is active once a model is loaded.",
             cards,
@@ -452,7 +454,7 @@ class CellposeNotebook(CellposeWorkflow):
         """Show the closing cell's button: what to do now that the masks are made."""
         form = StepForm(
             self,
-            "8 · What to do next",
+            "What to do next",
             "Declare the new mask type, then run preprocessing again with the masks folder.",
             [],
             "Show the next steps",

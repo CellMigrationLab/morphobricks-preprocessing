@@ -397,13 +397,14 @@ def test_a_preview_names_an_image_of_the_run_or_is_refused(cells):
     assert name in cells.ns["workflow"].shown[-1] and len(cells.stub.calls) == 1
 
 
-def test_a_cell_run_too_early_says_which_cell_to_run_first(cells):
-    with pytest.raises(RuntimeError, match="Run cell 3 first"):
+def test_a_cell_run_too_early_says_what_to_do_first(cells):
+    with pytest.raises(RuntimeError, match="Run cell 3 first"):  # the notebook's own cell text
         run_cell(cells.ns, CHANNELS)
     run_cell(cells.ns, OPEN, run_folder=str(cells.run.out), masks_folder=str(cells.run.masks))
-    with pytest.raises(RuntimeError, match="Run cell 4 first"):
+    # The component names the step's button, never a cell number (#463 review).
+    with pytest.raises(RuntimeError, match="Press Choose the channels first"):
         run_cell(cells.ns, NEXT)
-    with pytest.raises(RuntimeError, match="Run cell 5 first"):
+    with pytest.raises(RuntimeError, match="Press Load the model first"):
         run_cell(cells.ns, BATCH)
 
 

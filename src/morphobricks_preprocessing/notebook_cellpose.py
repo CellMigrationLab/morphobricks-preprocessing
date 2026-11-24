@@ -76,6 +76,14 @@ def output_mask_types(output: str, mask_type: str, nuclei_mask_type: str = "") -
     return {output: mask_type}
 
 
+NEEDED = {
+    "run": "Press Open the run first.",
+    "channels": "Press Choose the channels first.",
+    "model": "Press Load the model first.",
+}
+"""The refusal of a step whose earlier step has not run, by what it needs (the step's button)."""
+
+
 class CellposeWorkflow:
     """The Cellpose notebook's state: the run, the channels, the model and the batch.
 
@@ -104,6 +112,7 @@ class CellposeWorkflow:
         self.previewed: list[MaskResult] = []
         self.shown: list[str] = []
         self.on_masks_written: Callable[[cp.BatchResult], object] | None = None
+        self.register_with: str | None = None
 
     def _show(self, widget: widgets.Widget) -> None:
         """Display ``widget`` (the style sheet goes first, once)."""
@@ -112,15 +121,19 @@ class CellposeWorkflow:
         self.shown.append(getattr(widget, "value", ""))
         display(widget)
 
-    def _need(self, what: str, cell: int) -> None:
-        """Refuse a step whose earlier cell has not run."""
+    def _need(self, what: str) -> None:
+        """Refuse a step whose earlier step has not run, naming that step's button.
+
+        The step is named, never a cell number: the component runs in the Cellpose notebook,
+        one step per cell, and in one cell of the combined notebook.
+        """
         missing = {
             "run": self.inputs is None,
             "channels": self.picker is None,
             "model": self.loaded is None,
         }[what]
         if missing:
-            raise SegmentationError(f"Run cell {cell} first.")
+            raise SegmentationError(NEEDED[what])
 
     def drop_choice(self) -> None:
         """Forget the channels, the mask types and every loaded model (the choice changed)."""
@@ -136,7 +149,8 @@ class CellposeWorkflow:
         if output == cp.NUCLEI_OUTPUT and self.nuclei_settings is not None:
             if self.nuclei_loaded is None:
                 raise SegmentationError(
-                    "The nuclei have their own model: load the nuclei model first (cell 5)."
+                    "The nuclei have their own model: load it first (Advanced settings of the Load "
+                    "the model step)."
                 )
             return self.nuclei_loaded, self.nuclei_settings
         return self.loaded, self.settings
@@ -187,7 +201,7 @@ class CellposeWorkflow:
         For Both, ``mask_type`` names the cell masks and ``nuclei_mask_type`` the nuclei masks;
         the two must differ.
         """
-        self._need("run", 3)
+        self._need("run")
         if output not in OUTPUT_NAMES:
             raise SegmentationError(
                 f"The output must be one of {', '.join(OUTPUT_NAMES)}, not {output!r}."
@@ -249,10 +263,10 @@ class CellposeWorkflow:
         install_dino: bool,
     ) -> None:
         """Say what loading does, then load the verified model (cell 5)."""
-        self._need("channels", 4)
+        self._need("channels")
         self.picker.current_targets()
         if self.settings is None:
-            raise SegmentationError("Set the settings first: run set_settings in cell 5.")
+            raise SegmentationError("Set the settings first: press Load the model.")
         self.loaded = None
         self.loaded = self._load_model(
             model, custom_model_file, device, download_weights, install_dino, self.settings
@@ -270,7 +284,9 @@ class CellposeWorkflow:
         """Load a separate model for the nuclei of the output Both (cell 5's Advanced)."""
         self._need_both()
         if self.nuclei_settings is None:
-            raise SegmentationError("Set the nuclei settings first (cell 5, Advanced).")
+            raise SegmentationError(
+                "Set the nuclei settings first (Advanced settings of the Load the model step)."
+            )
         self.nuclei_loaded = None
         self.nuclei_loaded = self._load_model(
             model, custom_model_file, device, download_weights, install_dino, self.nuclei_settings
@@ -278,11 +294,12 @@ class CellposeWorkflow:
 
     def _need_both(self) -> None:
         """Refuse a separate nuclei model unless the output chosen in cell 4 is Both."""
-        self._need("channels", 4)
+        self._need("channels")
         if self.picker.output != cp.BOTH_OUTPUT:
             raise SegmentationError(
-                "A separate nuclei model is for the output Both only; choose Both in cell 4, "
-                "or untick the separate nuclei model in cell 5 (Advanced)."
+                "A separate nuclei model is for the output Both only; choose Both in the Choose "
+                "the channels step, or untick the separate nuclei model (Advanced settings of "
+                "the Load the model step)."
             )
 
     def same_model_for_nuclei(self) -> None:
@@ -342,7 +359,7 @@ class CellposeWorkflow:
 
         For Both, the image is segmented twice, the cells and the nuclei, each shown.
         """
-        self._need("model", 5)
+        self._need("model")
         targets = self.picker.current_targets()
         fovs = self.inputs.fovs()
         by_path = {f.relative_path: f for f in fovs}
@@ -396,7 +413,7 @@ class CellposeWorkflow:
             The :class:`.segmentation_cellpose.BatchResult` of each mask type that ran, by mask
             type; :attr:`result` is the first (the only one unless the output is Both).
         """
-        self._need("model", 5)
+        self._need("model")
         jobs = [self._job(target, overwrite) for target in self.picker.current_targets()]
         self.results, error = {}, None
         for job in jobs:
@@ -474,8 +491,10 @@ class CellposeWorkflow:
     @stops
     def next_steps(self) -> None:
         """Say what to do now that the masks are made (the closing cell)."""
-        self._need("channels", 4)
-        lines = cp.next_steps_lines(tuple(self.mask_types.values()), self.masks_root)
+        self._need("channels")
+        lines = cp.next_steps_lines(
+            tuple(self.mask_types.values()), self.masks_root, register_with=self.register_with
+        )
         self._show(_card("info", "Next steps", lines))
 
 

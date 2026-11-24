@@ -31,10 +31,16 @@ NOT_TICKED = (
 """The refusal of an installation the user did not tick (``{version}``: the pinned release)."""
 RESTART = (
     "The installation changed {changed} while the runtime already has it loaded. Restart the "
-    "runtime (Colab: Runtime > Restart session), then run cell 1, cell 3 and this cell again: "
-    "Cellpose is installed and nothing more is installed."
+    "runtime (Colab: Runtime > Restart session), then {again}: Cellpose is installed and nothing "
+    "more is installed."
 )
-"""The stop when ``pip`` replaced a loaded package (``{changed}``: what changed, and how)."""
+"""The stop when ``pip`` replaced a loaded package (``{changed}``: what changed, and how;
+``{again}``: :data:`AGAIN`)."""
+AGAIN = (
+    "run cells 1 to 3 again (in cell 3, run preprocessing again: the histograms are reused) "
+    "and then this cell"
+)
+"""What to run after a restart in the combined notebook: its cells 1 to 3, then cell 4."""
 
 
 def cellpose_ready() -> bool:
@@ -101,12 +107,12 @@ def install_cellpose(ticked: bool) -> str:
     importlib.invalidate_caches()
     changed = _changed(before)
     if changed:
-        raise SegmentationError(RESTART.format(changed=", ".join(changed)))
+        raise SegmentationError(RESTART.format(changed=", ".join(changed), again=AGAIN))
     found = model.installed_version("cellpose")
     if found != CELLPOSE_VERSION:
         raise SegmentationError(
             f"Cellpose {CELLPOSE_VERSION} is not installed ({found}). Restart the runtime, then "
-            "run cell 1, cell 3 and this cell again."
+            f"{AGAIN}."
         )
     return found
 

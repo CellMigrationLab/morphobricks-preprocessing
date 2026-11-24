@@ -139,6 +139,18 @@ def test_cell_4_refuses_changed_images_even_when_the_run_has_no_masks_folder(tmp
     assert step.notice.value.count(RUN_REFUSED) == 1
 
 
+def test_what_to_do_next_in_cell_4_names_cell_5_and_no_cell_of_the_cellpose_notebook(
+    tmp_path, stub
+):
+    step = segmentation_step(ran_app(tmp_path))
+    segment(step, tmp_path / "masks")
+    step.workflow.forms["next"].button.click()
+    shown = step.workflow.shown[-1]
+    assert "Run cell 5, Register the masks: it declares the new mask type" in shown
+    assert "[masks.Cells]" in shown and "MorphoFeature" in shown
+    assert "step 4" not in shown and "Save the description" not in shown
+
+
 # installing Cellpose on first use ------------------------------------------------------------
 
 
@@ -185,6 +197,7 @@ def test_an_install_that_changes_a_loaded_numpy_asks_for_a_restart(tmp_path, pip
     assert not step.install()
     assert "numpy 2.0.0 -&gt; 2.3.0" in step.install_status.value
     assert "Restart the runtime" in step.install_status.value and step.segmentation is None
+    assert "run cells 1 to 3 again" in step.install_status.value
 
 
 def test_preprocessing_alone_never_imports_cellpose_or_torch():

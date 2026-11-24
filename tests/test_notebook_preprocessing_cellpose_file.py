@@ -149,3 +149,36 @@ def test_cell_4_installs_cellpose_by_the_rules_of_the_cellpose_notebooks_install
     ]
     assert ast.literal_eval(assigned) == cellpose_install.LOADED_BY_KERNEL
     assert cellpose_install.cellpose_install_command()[-1] == f"cellpose=={CELLPOSE_VERSION}"
+
+
+COMPONENT = (
+    "notebook_cellpose*.py",
+    "segmentation_cellpose*.py",
+    "segmentation_record.py",
+    "notebook_stop.py",
+)
+"""The segmentation component's modules, shared by the Cellpose notebook and cell 4 here."""
+CELL_NUMBER = re.compile(r"\bcells?\s+\d|^\d+ · ", re.I)
+"""A cell number (``cell 5``, ``cells 1 to 4``) or a numbered form title (``3 · Open...``)."""
+
+
+def _messages(path):
+    """Return the text of every string of ``path`` but its docstrings (bare string lines)."""
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    bare = {id(n.value) for n in ast.walk(tree) if isinstance(n, ast.Expr)}
+    texts = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str) and id(node) not in bare:
+            texts.append(node.value)
+    return texts
+
+
+def test_no_component_message_names_a_cell_number():
+    # In the combined notebook the whole component is cell 4: the Cellpose notebook's cell
+    # numbers ("Run cell 5 first", "3 · Open the preprocessing run") were wrong there. The
+    # component names its steps instead (#463 review).
+    source = ROOT / "src/morphobricks_preprocessing"
+    paths = sorted({p for pattern in COMPONENT for p in source.glob(pattern)})
+    assert len(paths) > 10
+    found = [(p.name, t) for p in paths for t in _messages(p) if CELL_NUMBER.search(t)]
+    assert found == []

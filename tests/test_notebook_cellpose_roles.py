@@ -101,7 +101,7 @@ def test_changing_the_output_after_choosing_drops_the_choice(cells):
     workflow = cells.ns["workflow"]
     workflow.forms["channels"].fields["output"].value = "nuclei"
     assert workflow.picker is None and workflow.loaded is None
-    with pytest.raises(notebook_cellpose.CellStop, match="Run cell 5 first"):
+    with pytest.raises(notebook_cellpose.CellStop, match="Press Load the model first"):
         run_cell(cells.ns, BATCH)  # the model is dropped with the choice
 
 

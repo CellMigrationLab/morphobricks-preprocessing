@@ -299,10 +299,14 @@ def test_nuclei_settings_without_a_loaded_nuclei_model_are_refused(cells, monkey
         with pytest.raises(notebook_cellpose.CellStop, match="no weights"):
             workflow.load_nuclei("cpsam", "", "cpu", False, False)
     assert workflow.nuclei_loaded is None
-    with pytest.raises(notebook_cellpose.CellStop, match="load the nuclei model first"):
+    with pytest.raises(
+        notebook_cellpose.CellStop, match="The nuclei have their own model: load it first"
+    ):
         workflow.run()
     assert cells.stub.calls == [] and workflow.results == {}  # refused before any image
-    with pytest.raises(notebook_cellpose.CellStop, match="load the nuclei model first"):
+    with pytest.raises(
+        notebook_cellpose.CellStop, match="The nuclei have their own model: load it first"
+    ):
         workflow.preview()  # the preview refuses the nuclei the same way
     assert nothing_written(cells, "Cells", "Nuclei")
 

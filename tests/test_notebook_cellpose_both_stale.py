@@ -85,7 +85,7 @@ def test_a_refused_open_drops_the_nuclei_model_and_both_mask_types(both, tmp_pat
     assert workflow.loaded is None and workflow.nuclei_loaded is None
     assert workflow.nuclei_settings is None and workflow.mask_types == {}
     assert disabled(workflow)
-    assert press(workflow.forms["segment"]) == "Run cell 5 first."
+    assert press(workflow.forms["segment"]) == "Press Load the model first."
     assert both.stub.calls == [] and nothing_written(both.run.masks)
 
 
@@ -126,7 +126,7 @@ def test_the_nuclei_mask_type_is_taken_once_typed_and_a_change_drops_both_models
     assert workflow.picker is None and workflow.mask_types == {}
     assert workflow.loaded is None and workflow.nuclei_loaded is None
     assert disabled(workflow)
-    assert press(workflow.forms["segment"]) == "Run cell 5 first."
+    assert press(workflow.forms["segment"]) == "Press Load the model first."
     assert both.stub.calls == [] and nothing_written(both.run.masks)
 
 
