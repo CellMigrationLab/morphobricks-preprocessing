@@ -330,15 +330,9 @@ def apply_answers(draft: Draft, answers: DraftAnswers) -> Draft:
             draft = draft.confirm_id("repeats", label, repeat.id)
         if repeat.confirmed_on is not None:
             draft = confirm_repeat(draft, label, repeat.confirmed_on)
-    # None keeps what the draft holds, "" (the explicit "no comparison") removes it and a folder
-    # replaces it: the explicit choice clears a reference even of a draft that already has one
-    # (issue #408).
-    references = dict(draft.references)
-    for folder, answer in answers.conditions.items():
-        if answer.reference == "":
-            references.pop(folder, None)
-        elif answer.reference is not None:
-            references[folder] = answer.reference
+    # None keeps the draft's reference, "" ("no comparison") removes it, a folder replaces it.
+    chosen = {f: a.reference for f, a in answers.conditions.items() if a.reference is not None}
+    references = {f: t for f, t in {**draft.references, **chosen}.items() if t}
     problem = _reference_problem(references)
     if problem is not None:
         raise problem
