@@ -237,7 +237,9 @@ def design_issues(design: DesignTable) -> list[ValidationIssue]:
         (decision D-e: NA-like, empty, or with outer whitespace) or a ``confirmed_on`` that
         is not empty or a date in :data:`DATE_FORMAT`; ``repeat_group_conflict`` for a
         group with two folders of one condition; ``design_not_confirmed`` for groups not
-        confirmed yet. All are errors.
+        confirmed yet. All are errors. A value of the wrong type (a ``control`` that is not a
+        bool, a count that is not an int; #410) is ``invalid_experiment_design`` and the
+        group checks are not run.
     """
     issues = []
     invalid = _design_problems(design)
@@ -254,6 +256,8 @@ def design_issues(design: DesignTable) -> list[ValidationIssue]:
                 f"confirmation date as {DATE_FORMAT}.",
             )
         )
+    if any(_type_problems(row) for row in design.rows):
+        return issues  # the group checks below compare values of the types the rows lack
     if design.conflicts:
         described = "; ".join(
             f"{group} has more than one folder of {', '.join(conditions)}"
@@ -296,13 +300,19 @@ def write_experiment_design(design: DesignTable, path: str | os.PathLike) -> Pat
 
     The file is UTF-8 with LF line endings; the same design always gives the
     same bytes. Every ``confirmed_on`` it writes is empty or a date in
-    :data:`DATE_FORMAT`, and every repeat group a valid name.
+    :data:`DATE_FORMAT`, and every repeat group a valid name. Nothing is converted
+    (issue #410): ``control`` and ``confirmed`` must be booleans, the counts whole
+    numbers (``int``, not ``bool``) of at least 0 and the labels text. The bytes are
+    parsed back with :func:`parse_design_bytes` and must give the same table before
+    the file is replaced, so the writer writes nothing its parser refuses.
 
     Raises
     ------
     DesignFormatError
-        If a row has a repeat-group name or confirmation date the parser refuses
-        (:func:`design_issues`, ``invalid_experiment_design``); nothing is written.
+        If a row has a value of the wrong type, a repeat-group name or confirmation
+        date the parser refuses (:func:`design_issues`, ``invalid_experiment_design``),
+        or the table is one :func:`parse_design_bytes` refuses (a folder twice, one
+        condition both a control and not); nothing is written.
     """
     path = Path(path)
     invalid = _design_problems(design)
@@ -312,6 +322,21 @@ def write_experiment_design(design: DesignTable, path: str | os.PathLike) -> Pat
             + "; ".join(f"{_folder(row)}: {problem}" for row, problem in invalid)
             + "."
         )
+    text = _design_text(design)
+    try:
+        parsed = parse_design_bytes(text.encode("utf-8"))
+    except DesignFormatError as exc:
+        raise DesignFormatError(f"The experiment design cannot be written: {exc}") from None
+    if parsed != design:
+        raise DesignFormatError(
+            "The experiment design cannot be written: its parser would read it back as "
+            "another table."
+        )
+    return write_text_atomic(path, text, parents=True)
+
+
+def _design_text(design: DesignTable) -> str:
+    """Return the text of ``design``'s file; its values were checked (:func:`_row_problems`)."""
     buffer = io.StringIO()
     writer = csv.writer(buffer, lineterminator="\n")
     writer.writerow(DESIGN_COLUMNS)
@@ -329,7 +354,7 @@ def write_experiment_design(design: DesignTable, path: str | os.PathLike) -> Pat
                 DESIGN_SCHEMA_VERSION,
             ]
         )
-    return write_text_atomic(path, buffer.getvalue(), parents=True)
+    return buffer.getvalue()
 
 
 def parse_design_bytes(data: bytes, name: str = DESIGN_FILENAME) -> DesignTable:
@@ -485,6 +510,8 @@ def _design_problems(design: DesignTable) -> list[tuple[DesignRow, str]]:
     problems = [(row, problem) for row in design.rows for problem in _row_problems(row)]
     spellings: dict[str, str] = {}
     for row in design.rows:
+        if type(row.repeat_group) is not str:  # reported by _row_problems
+            continue
         first = spellings.setdefault(row.repeat_group.casefold(), row.repeat_group)
         if first != row.repeat_group:
             problems.append(
@@ -509,7 +536,10 @@ def _check_group_case(numbered: Iterable[tuple[int, DesignRow]], name: str) -> N
 
 
 def _row_problems(row: DesignRow) -> list[str]:
-    problems = []
+    """Return what is wrong with one row's own values: types first, then the identity rules."""
+    problems = _type_problems(row)
+    if problems:
+        return problems
     try:
         check_identity_text(row.repeat_group, "repeat_group")
     except IdentityError as exc:
@@ -521,10 +551,39 @@ def _row_problems(row: DesignRow) -> list[str]:
     return problems
 
 
+def _type_problems(row: DesignRow) -> list[str]:
+    """Return each value of ``row`` that has not its exact type, or a count below 0 (#410).
+
+    Exact types (``type(x) is ...``): a ``bool`` is not a count and ``1`` or ``"false"`` is
+    not a ``control``; nothing is converted by truthiness or by ``str``.
+    """
+    problems = []
+    for column in ("condition", "biological_repeat", "repeat_group", "confirmed_on"):
+        value = getattr(row, column)
+        if type(value) is not str:
+            problems.append(f"{column} must be a text, not {_found(value)}")
+    for column in ("control", "confirmed"):
+        value = getattr(row, column)
+        if type(value) is not bool:
+            problems.append(f"{column} must be True or False, not {_found(value)}")
+    for column in ("image_count", "technical_repeat_count"):
+        value = getattr(row, column)
+        if type(value) is not int:
+            problems.append(f"{column} must be a whole number of at least 0, not {_found(value)}")
+        elif value < 0:
+            problems.append(f"{column} must be a whole number of at least 0, not {value!r}")
+    return problems
+
+
+def _found(value: object) -> str:
+    """Return a value and its type for a message, e.g. ``'false' (of type str)``."""
+    return f"{value!r} (of type {type(value).__name__})"
+
+
 def _bool_text(value: bool) -> str:
     return "true" if value else "false"
 
 
 def _folder(row: DesignRow) -> str:
-    parts = [p for p in (row.condition, row.biological_repeat) if p != SINGLE]
+    parts = [str(p) for p in (row.condition, row.biological_repeat) if p != SINGLE]
     return "/".join(parts) or "."

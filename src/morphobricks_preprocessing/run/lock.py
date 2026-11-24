@@ -75,13 +75,41 @@ def output_lock(output_folder: str | os.PathLike) -> Iterator[LockHolder]:
     PublicationIncompleteError
         When an unfinished publication's files cannot be moved into place.
     """
+    with folder_lock(output_folder) as holder:
+        finish_publication(Path(output_folder))
+        yield holder
+
+
+@contextmanager
+def folder_lock(folder: str | os.PathLike) -> Iterator[LockHolder]:
+    """Hold the lock of :func:`output_lock` on a folder that is no run's output folder.
+
+    The same lock file, taken and refused the same way, but nothing in the folder is read
+    or changed: no publication is finished or discarded. A conversion holds it on its copy
+    tree (issue #467): a ``.publish`` folder there is not a run's, and finishing it would
+    remove or move files, through a link even, before the copy tree is checked.
+
+    Parameters
+    ----------
+    folder
+        The folder; it must exist.
+
+    Yields
+    ------
+    LockHolder
+        This holder, as recorded in the lock file.
+
+    Raises
+    ------
+    OutputLockedError
+        When another run or conversion holds the lock.
+    """
     stack = ExitStack()
     try:
-        holder = stack.enter_context(exclusive_lock(Path(output_folder) / LOCK_FILENAME))
+        holder = stack.enter_context(exclusive_lock(Path(folder) / LOCK_FILENAME))
     except LockHeldError as held:
         raise OutputLockedError(held.path, held.holder) from None
     with stack:
-        finish_publication(Path(output_folder))
         yield holder
 
 

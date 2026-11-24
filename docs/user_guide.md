@@ -32,17 +32,33 @@ Cell 1 chooses one source:
    use that checkout's source code. The checkout must be the commit the notebook pins
    (`RELEASE_REF`) with no uncommitted changes, and setup prints its commit and tree state. Any
    other commit or edited tree is refused; developers set `DEVELOPMENT_OVERRIDE = True` at the
-   top of cell 1 to use it, and the printed header then says so.
+   top of cell 1 to use it, and the printed header then says so. An editable install
+   (`pip install -e`) of a checkout elsewhere follows the same rule: used when it is the clean
+   `RELEASE_REF` commit, otherwise refused (never replaced, since a developer set it up).
+   `DEVELOPMENT_OVERRIDE` covers local checkouts only: an installed package of another commit
+   is still replaced.
 2. **Matching installed package:** otherwise, reuse an installed preprocessing package only
-   when its version matches the notebook.
+   when pip recorded (its `direct_url.json`, PEP 610) that it installed `RELEASE_REF` from the
+   notebook's GitHub repository. The version number alone is never enough: the same version
+   built from another commit, another repository or no record is replaced by `RELEASE_REF`
+   (#371). pip would keep such a package (same version), so cell 1 reinstalls the package
+   alone at `RELEASE_REF` (`--force-reinstall --no-deps`) before installing what is missing.
 3. **Pinned GitHub source:** otherwise install the notebook's immutable `RELEASE_REF`, never
    moving `main`.
 
 Missing notebook dependencies are installed into the same Python environment as the kernel.
 A local checkout is installed in editable mode when it needs dependencies. Setup prints the
-preprocessing, normalization and ipywidgets versions, the notebook version and the selected
-source. Installation needs internet access, and the GitHub option needs Git. If another copy
-of the package is already loaded, restart the kernel before switching source checkouts.
+preprocessing version and commit, the normalization and ipywidgets versions, the notebook
+version and the selected source; after an installation it reads the commit again and stops if
+pip did not install `RELEASE_REF`, naming the `pip install --force-reinstall --no-deps` command
+that replaces it (a restart would not help there). Installation needs internet access, and the GitHub option needs Git. If another copy
+of the package is already loaded, restart the kernel before switching source checkouts. When
+pip replaces a preprocessing the kernel had already imported, cell 1 stops and asks for a
+restart (the loaded module stays the old copy until then); run it again after the restart: it
+installs nothing more. The Cellpose notebook's cell 1 does the same. Both also stop when the
+package the kernel imports is not the copy pip installed (for example when the working folder
+is a checkout's `src` folder): pip's record would then name a commit that is not the code
+running.
 
 To install everything manually instead, run these commands in the environment used by
 your notebook kernel:
@@ -237,11 +253,25 @@ notebook's step 3 (§4), also tells how they relate.
 [`notebooks/MorphoBricks_Cellpose.ipynb`](../notebooks/MorphoBricks_Cellpose.ipynb) makes masks
 for a run you already have (run preprocessing first and describe the experiment). Its cells:
 install (Cellpose 4.2.1.1 and the preprocessing commit it is made for), Google Drive, open the
-run's output folder and a masks folder, choose the mask type and **one to three channels by
-channel ID**, choose the model, device and settings and load the model, preview one image, and
-segment all images. Then:
+run's output folder and a masks folder, choose the output and the **channels by channel ID**,
+choose the model, device and settings and load the model, preview one example result (a
+dropdown of the run's images and Cellpose's own result panels, as in the ZeroCostDL4Mic
+Cellpose notebook; nothing is written), and segment the whole experiment. From cell 3 on, each cell shows a form of widgets, the same in Google
+Colab, JupyterLab and LabConstrictor: fill it in and press its button (**Open the run**,
+**Choose the channels**, **Load the model**, **Preview**, **Segment the whole experiment**). You never edit
+code. Folders are typed or pasted, or chosen with **Browse…** where a dialog can open (not on
+Colab: copy the path from the **Files** panel). A refusal is shown under the button in a red card,
+with the same message as before; change the form and press the button again. Its
+`DEVELOPMENT_OVERRIDE = True` (top of cell 1, for developers) differs from the Preprocessing
+notebook's: it keeps whatever preprocessing is installed, of any commit or none recorded (the
+banner then says "commit unknown" and that the override is on). Then:
 
-- **Channels.** You choose channels by ID (`DNA`, `ACTIN`), never by position. When some images
+- **Output and channels.** You choose the output, a **cell mask** or a **nuclei mask** (the
+  mask type follows it, `Cells` or `Nuclei`, and stays editable), and channels by ID (`DNA`,
+  `ACTIN`), never by position: a **cell channel** (cytoplasm or cell border) and a **nuclear
+  channel**, both optional but at least one. A cell mask reads the cell channel, then the
+  nuclear one if chosen (a cell channel is required); a nuclei mask reads the nuclear channel
+  only (required). The record names each channel's role and the output. When some images
   have a channel that others lack (a fourth stain in one biological repeat), only the channels
   every image has can be used: the dropdown says which channel is partial, and choosing it
   shows preprocessing's refusal (`A_SCOPE_INCOMPLETE`) unchanged. Cellpose reads at most three
@@ -251,13 +281,19 @@ segment all images. Then:
   `cpsam_v2`. The weights of a built-in model are downloaded from Hugging Face on first use,
   only if you tick the download box. `cpdino` models also need DINOv3, installed at a pinned
   commit (the head of its default branch on 22 November 2026, not verified against `cpdino`; installed without its dependencies) only if you tick its box. Restart the runtime after installing it, then run the cells again.
-- **Device.** You choose `cuda`, `mps` or `cpu`. A GPU that is not available is refused, never
+- **Device.** The model form says, before anything loads, whether a GPU was found and which.
+  You choose `cuda`, `mps` or `cpu`. A GPU that is not available is refused, never
   replaced by the CPU, and after loading every parameter and buffer of the network must be on
   the device you chose. Cellpose may still move its flow-threshold quality step to the CPU when
   GPU memory is short, and always computes the masks on the CPU on `mps`; that is Cellpose's
   behaviour, it is not refused, and the record notes it.
+- **Advanced Cellpose settings** (a closed section of the model form): the diameter, the flow
+  and cell probability thresholds (0.4 and 0) and the batch size (8).
 - **Diameter** is in pixels. Blank means the model's own native scale (Cellpose 4.2.1.1 does
   not estimate a diameter); 0 is refused.
+- **Normalisation** is always Cellpose's own, per image (each channel to its 1st to 99th
+  percentile); it is not a choice, and images are never sent to Cellpose unnormalised. The full
+  normalisation is written to the record.
 - **2D only.** An image with more than one Z plane or time point fails with a message that
   says so.
 - **Result.** One mask per image at `<masks>/<type>/<the image's folders>/<image>.tif`
@@ -455,7 +491,9 @@ editing, or the confirmed ones. An image that cannot be drawn gets a sentence sa
    it (one re-confirmation per channel, written when you save), also when a folder is removed
    or renamed in the same save: the saved file keeps no header names per folder, so **Yes,
    remove** cannot show that a name went with its folder. A change after the click is asked
-   again.
+   again. **Yes, remove** and a stated folder rename confirm only the folders they show: a
+   saved ID replaced by another ID in the same save (a channel `DNA` now `DAPI`) is never
+   confirmed by them, and the save is refused with `R_CONFIRMED_ID_CHANGED` (#402).
 4. **Masks.** The masks the check paired with the images (and, for masks whose files do not
    name their axes, the axes to state), then for each mask type: *separate objects*,
    *regions* or *grouped labels (one value per parent, e.g. mitochondria by cell)*. Nothing is
@@ -921,9 +959,15 @@ images; when nothing is added the record is left as it was. Bricks reading the r
 copies (`RunInputs`) refuse it if the conversion record is changed or removed afterwards,
 or if a copy no longer has the SHA-256 the record gives.
 `convert` never overwrites anything else: a folder holding other files, copies of other
-images or made with other roles is refused (`copy_folder_not_empty`, `copy_differs`);
+images or made with other roles is refused (`copy_folder_not_empty`, `copy_differs`), and so
+is a folder holding a link or mount point anywhere below it (`copy_folder_has_links`), or a
+folder below it that cannot be read (`copy_folder_unreadable`);
 convert into a new folder then. If it fails (`conversion_failed`), the folder is left as it
-was. Images of 64-bit integers cannot be saved as OME-TIFF (`cannot_convert_pixel_type`).
+was. The copies are written in a hidden work folder, `.morphobricks-conversion.partial`, and
+moved into place together; if a conversion is killed (the computer stopped, the Colab
+session ended), the next one removes that folder, since a conversion marks it as its own
+when it makes it. A file or folder named like a copy with `.partial` added is never removed:
+it is not the conversion's. Images of 64-bit integers cannot be saved as OME-TIFF (`cannot_convert_pixel_type`).
 
 **Z-stacks: recorded 2-D projections.**
 A Z-stack is still refused by `check` and `run` (`z_stack_not_supported`). To analyse one,
@@ -1304,6 +1348,9 @@ continues.
 | `copy_folder_overlaps_masks` | Error | `convert`: the folder for the copies is the masks folder, inside it, or holds it; copies there would be read as masks. Choose a folder outside the masks folder. |
 | `copy_folder_not_a_folder` | Error | `convert`: the path given with `--to` is a file. Choose a folder. |
 | `copy_names_collide` | Error | An OME-Zarr copy: two images of one folder differ only by their extension, so their copies would have the same name. Nothing is written. Rename or exclude one of them. |
+| `copy_folder_has_links` | Error | `convert`: the folder for the copies holds symbolic links (directory junctions on Windows) or mount points, named `link -> target`, through which the copies would be written elsewhere, perhaps over the originals. Nothing is written; remove them or choose a new, empty folder. |
+| `copy_folder_unreadable` | Error | `convert`: a folder below the folder for the copies cannot be read, or disappeared while it was checked, so it cannot be checked for links or mount points; it is named. Nothing is written. Make it readable or remove it, or choose a new, empty folder. |
+| `conversion_work_folder_unowned` | Error | `convert`: the folder for the copies holds `.morphobricks-conversion.partial`, the name of the folder a conversion writes its copies in, but without the owner file a conversion writes into it first. Nothing is removed or written. Move or remove it yourself, or choose a new, empty folder. |
 | `copy_folder_not_empty` | Error | `convert`: the folder for the copies holds files and no conversion record. Nothing is overwritten; choose a new or empty folder. |
 | `copy_differs` | Error | `convert`: images in the folder of copies differ from the copies this conversion would write (an original changed, other roles, a copy changed, an image no longer in the experiment), or the folder holds copies of another experiment. Nothing is overwritten; convert into a new folder, or remove those copies first. |
 | `cannot_convert_pixel_type` | Error | `convert`: images of 64-bit integers cannot be saved as OME-TIFF, and pixel values are never changed to fit. Save them again with named axes in a 32-bit type if their values fit, or correct the roles. |

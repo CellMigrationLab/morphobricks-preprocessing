@@ -33,7 +33,7 @@ dependencies = [
     "imagecodecs>=2024.12.30",
     # Per-plane histograms, the CSV table, pooling and normalization, pinned to a release tag;
     # what each pin brought is in CHANGELOG.md.
-    "morphobricks-normalization @ git+https://github.com/CellMigrationLab/morphobricks-normalization.git@v0.7.1",
+    "morphobricks-normalization @ git+https://github.com/CellMigrationLab/morphobricks-normalization.git@v0.8.0",
 ]
 
 [project.optional-dependencies]
@@ -48,7 +48,7 @@ zarr = [
 # BM15): scikit-image through normalization's histology extra, spelled with exactly the core
 # requirement's URL (pip refuses two direct URLs for one package).
 he-mask = [
-    "morphobricks-normalization[histology] @ git+https://github.com/CellMigrationLab/morphobricks-normalization.git@v0.7.1",
+    "morphobricks-normalization[histology] @ git+https://github.com/CellMigrationLab/morphobricks-normalization.git@v0.8.0",
     # Normalization's histology extra allows scikit-image 0.22, which does not import with
     # NumPy 2 (checked); 0.24 is the first release that does.
     "scikit-image>=0.24",
@@ -185,6 +185,11 @@ baseline = "tools/code_rules_baseline.json"
 "morphobricks_preprocessing.notebook_axes_quick" = "ui"
 "morphobricks_preprocessing.notebook_channel_thumbs" = "ui"
 "morphobricks_preprocessing.notebook_cellpose" = "ui"
+"morphobricks_preprocessing.notebook_cellpose_app" = "ui"
+"morphobricks_preprocessing.notebook_cellpose_form" = "ui"
+"morphobricks_preprocessing.notebook_cellpose_guard" = "ui"
+"morphobricks_preprocessing.notebook_cellpose_preview" = "ui"
+"morphobricks_preprocessing.notebook_stop" = "ui"
 "morphobricks_preprocessing.notebook_channels" = "ui"
 "morphobricks_preprocessing.notebook_channel_moves" = "ui"
 "morphobricks_preprocessing.notebook_channels_grid" = "ui"
@@ -369,6 +374,7 @@ baseline = "tools/code_rules_baseline.json"
 "morphobricks_preprocessing.segmentation_cellpose" = "io"
 "morphobricks_preprocessing.segmentation_cellpose_commit" = "io"
 "morphobricks_preprocessing.segmentation_cellpose_model" = "io"
+"morphobricks_preprocessing.segmentation_cellpose_run" = "io"
 "morphobricks_preprocessing.segmentation_cellpose_settings" = "pure"
 "morphobricks_preprocessing.segmentation_handoff" = "io"
 "morphobricks_preprocessing.segmentation_record" = "io"

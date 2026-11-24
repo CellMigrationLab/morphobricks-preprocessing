@@ -14,6 +14,76 @@ def pytest_configure(config):
     config.pluginmanager.register(SkipIsFailure(EXPECTED_MODULES), "spec-skip-is-failure")
 
 
+def _widget_registry():
+    """Return ipywidgets' registry of open widgets and the widget class, or None if not imported.
+
+    ipywidgets 8 keeps the open widgets in ``widget._instances``; 7.x in ``Widget.widgets``.
+    """
+    module = sys.modules.get("ipywidgets.widgets.widget")
+    if module is None:
+        return None
+    registry = module._instances if hasattr(module, "_instances") else module.Widget.widgets
+    return registry, module.Widget
+
+
+def _module_level_widgets(widget_class) -> set[int]:
+    """Return the ids of the widgets held by this package's or the tests' modules and classes.
+
+    A module-level widget (such as a shared ``Layout``) is made by the first test that imports
+    its module and is used by every later test, so it must stay open.
+    """
+    tests = Path(__file__).parent
+    found = set()
+    for name, module in list(sys.modules.items()):
+        file = getattr(module, "__file__", None) or ""
+        if not (name.startswith("morphobricks_preprocessing") or Path(file).parent == tests):
+            continue
+        values = list(vars(module).values())
+        values += [
+            value
+            for item in values
+            if isinstance(item, type) and item.__module__ == name
+            for value in vars(item).values()
+        ]
+        for value in values:
+            if isinstance(value, dict):
+                items = value.values()
+            elif isinstance(value, list | tuple | set | frozenset):
+                items = value
+            else:
+                items = (value,)
+            found.update(id(item) for item in items if isinstance(item, widget_class))
+    return found
+
+
+@pytest.fixture(autouse=True)
+def _release_widgets_and_figures():
+    """Close the widgets and pyplot figures a test made once it ends (issue #457).
+
+    ipywidgets keeps every open widget in its registry and in the comm manager, so the pages of
+    the notebook tests were never freed and one pytest process grew to about 10 GB. Closing
+    them after the test changes nothing the test sees; widgets made before it (module-level
+    ones included) stay open.
+    """
+    found = _widget_registry()
+    before = set(found[0]) if found else set()
+    yield
+    pyplot = sys.modules.get("matplotlib.pyplot")
+    if pyplot is not None:
+        pyplot.close("all")
+    found = _widget_registry()
+    if found is None:
+        return
+    registry, widget_class = found
+    made = [widget for key, widget in list(registry.items()) if key not in before]
+    if not made:
+        return
+    kept = _module_level_widgets(widget_class)
+    for widget in made:
+        if id(widget) not in kept:
+            widget.close()
+
+
 @pytest.fixture
 def segment_reads(monkeypatch):
     """Record the index of every TIFF strip or tile the block reader reads (window tests)."""

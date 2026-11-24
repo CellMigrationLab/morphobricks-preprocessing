@@ -18,9 +18,10 @@ tree must be outside the experiment (and not hold it); the user names it. The co
 each image's relative path, so ``source_relative_path``, ``plane_id`` and the FOV key stay
 the same, and the conversion record (:mod:`.conversion_record`) is written last.
 
-Safe to repeat: the copy tree's lock is held throughout; every copy is first written as
-``<name>.partial`` and moved into place only once every copy is written, so a failed
-conversion leaves the folder as it was; a copy already there is reused when its source,
+Safe to repeat: the copy tree's lock is held throughout; every copy is first written in
+the conversion's own work folder (:data:`.conversion_write.WORK_FOLDER`, marked by its owner
+file before any copy, issue #448) and moved into place only once every copy is written, so a
+failed conversion leaves the folder as it was; a copy already there is reused when its source,
 roles and copy are unchanged, and anything else already there is refused, never
 overwritten. Then the user runs preprocessing on the copy tree, with the same output
 folder: the recorded experiment root becomes the copy tree (the report says so) and every
@@ -42,9 +43,12 @@ from ._io import free_space
 from .axes import AxisMapping, prefill_mapping
 from .axis_check import ConfirmedAxes, confirmation_of
 from .conversion_issues import (
+    links_issue,
     lock_issue,
     record_issue,
     space_issue,
+    unreadable_issue,
+    work_folder_issue,
 )
 from .conversion_plan import copy_folder_issues, plan_conversion
 from .conversion_record import (
@@ -57,15 +61,16 @@ from .conversion_record import (
     read_record,
     write_record,
 )
-from .conversion_reuse import compare
-from .conversion_write import ConversionFailed, write_all
+from .conversion_reuse import compare, links_below
+from .conversion_write import UNOWNED, ConversionFailed, work_folder_state, write_all
+from .lock_file import LockHolder
 from .manifest import package_versions
 from .ome_zarr_copy import OME_TIFF, STORES
 from .planes import DEFAULT_MEMORY_LIMIT
 from .planned_copy import PlannedCopy
 from .projection import Projection
 from .projection_issues import projection_differs_issue
-from .run.lock import OutputLockedError, output_lock
+from .run.lock import OutputLockedError, folder_lock
 from .validation import ValidationIssue, has_errors
 
 logger = logging.getLogger(__name__)
@@ -227,9 +232,9 @@ def convert_experiment(
         return ConversionResult(dest, False, _sorted(issues))
     dest.mkdir(parents=True, exist_ok=True)
     try:
-        with output_lock(dest):
+        with folder_lock(dest) as holder:
             options = _Options(
-                confirmation_of(mapping)[0], missing_as_singleton, memory_limit, projection
+                confirmation_of(mapping)[0], missing_as_singleton, memory_limit, holder, projection
             )
             return _locked_conversion(root, dest, planned, issues, options, progress)
     except OutputLockedError as exc:
@@ -259,6 +264,7 @@ class _Options:
     mapping: AxisMapping
     missing_as_singleton: bool
     memory_limit: int
+    holder: LockHolder
     projection: Projection | None = None
 
 
@@ -271,6 +277,13 @@ def _locked_conversion(
     progress: Callable[[int, int, str], None] | None,
 ) -> ConversionResult:
     """Compare with what the copy tree holds, write the new copies and the record."""
+    linked, unreadable = links_below(dest)
+    refused = [links_issue(linked)] if linked else []
+    refused += [unreadable_issue(unreadable)] if unreadable else []
+    if work_folder_state(dest) == UNOWNED:
+        refused.append(work_folder_issue(dest))
+    if refused:
+        return ConversionResult(dest, False, (*refused, *issues))
     try:
         earlier = read_record(dest)
     except ConversionRecordError as exc:
@@ -284,7 +297,7 @@ def _locked_conversion(
     if refusal is not None:
         return ConversionResult(dest, False, (refusal, *issues))
     try:
-        written = write_all(root, dest, to_write, options.memory_limit, progress)
+        written = write_all(root, dest, to_write, options.memory_limit, progress, options.holder)
     except ConversionFailed as failed:
         return ConversionResult(dest, False, (failed.issue, *issues))
     files = sorted([*reused, *written], key=lambda entry: entry.relative_path)

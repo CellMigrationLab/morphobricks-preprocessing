@@ -18,14 +18,13 @@ from pathlib import Path
 from typing import ParamSpec, TypeVar
 
 import ipywidgets as widgets
-import numpy as np
 from IPython.display import display
-from matplotlib.figure import Figure
 
 from . import segmentation_cellpose as cp
+from .notebook_cellpose_preview import MaskResult, preview_figures
 from .notebook_progress import progress_html
+from .notebook_stop import CellStop
 from .notebook_style import STYLE_CSS, status, table, tiles
-from .preview_render import as_colour, display_panel, outline
 from .run_inputs import RunInputs, RunInputsError
 from .segmentation_handoff import (
     SegmentationPlan,
@@ -36,17 +35,12 @@ from .segmentation_handoff import (
 from .segmentation_record import SegmentationError, check_mask_type
 
 NONE = "(none)"
+OUTPUT_NAMES = {cp.CELL_OUTPUT: "Cell mask", cp.NUCLEI_OUTPUT: "Nuclei mask"}
+"""The outputs offered, as the notebook names them. *Both* comes with #440."""
 P = ParamSpec("P")
 T = TypeVar("T")
 REFUSALS = (SegmentationError, RunInputsError)
 """What the hand-off and the run refuse with; their messages are shown unchanged."""
-
-
-class CellStop(RuntimeError):
-    """Stop a notebook cell with its message on one line, without a traceback."""
-
-    def _render_traceback_(self) -> list:
-        return [str(self)]
 
 
 def stops(method: Callable[P, T]) -> Callable[P, T]:
@@ -73,53 +67,60 @@ def _card(kind: str, title: str, lines: tuple[str, ...] = (), *, raw: bool = Fal
 
 
 class ChannelPicker:
-    """Up to three dropdowns of the run's channel IDs, resolved by ID as soon as they change.
+    """A cell channel and a nuclear channel, both optional, by channel ID, for one output.
+
+    Owner, 23 November 2026: a **cell mask** reads the cell channel, then the nuclear channel
+    if one is chosen; a **nuclei mask** reads the nuclear channel only
+    (:func:`.segmentation_cellpose.input_channels`, which refuses a choice that does not fit).
+    The roles only name and order the channels; they are resolved by ID as before. Nothing is
+    chosen for the user: both start blank.
 
     The options are the channel IDs of the run; one that not every image has says so, and
     choosing it shows the resolver's refusal (``A_SCOPE_INCOMPLETE``) unchanged under the
     dropdowns. :attr:`plan` is the resolved selection, or None while the choice is refused.
     """
 
-    def __init__(self, inputs: RunInputs) -> None:
-        """Build the dropdowns for ``inputs`` and resolve the first choice."""
-        self.inputs = inputs
+    def __init__(self, inputs: RunInputs, output: str = cp.CELL_OUTPUT) -> None:
+        """Build the dropdowns for ``inputs`` and the ``output`` and resolve the choice."""
+        self.inputs, self.output = inputs, output
         coverage = cp.channel_coverage(inputs)
-        shared = [c for c, (have, total) in coverage.items() if have == total]
         options = [
-            (c if have == total else f"{c} (in {have} of {total} images)", c)
-            for c, (have, total) in coverage.items()
-        ]
-        first = shared[0] if shared else next(iter(coverage), "")
-        self.dropdowns = [
-            widgets.Dropdown(options=options, value=first, description="Channel 1"),
+            (NONE, ""),
             *(
-                widgets.Dropdown(
-                    options=[(NONE, ""), *options], value="", description=f"Channel {n}"
-                )
-                for n in (2, 3)
+                (c if have == total else f"{c} (in {have} of {total} images)", c)
+                for c, (have, total) in coverage.items()
             ),
         ]
+        style = {"description_width": "11em"}
+        self.cell = widgets.Dropdown(
+            options=options, value="", description="Cell channel", style=style
+        )
+        self.nuclear = widgets.Dropdown(
+            options=options, value="", description="Nuclear channel", style=style
+        )
+        self.dropdowns = [self.cell, self.nuclear]
         self.message = widgets.HTML()
         self.plan: SegmentationPlan | None = None
         self.refusal = ""
+        self.channel_ids: tuple[str, ...] = ()
+        self.channel_roles: tuple[str, ...] = ()
         for dropdown in self.dropdowns:
             dropdown.observe(self._changed, names="value")
         self._changed()
 
-    @property
-    def channel_ids(self) -> tuple[str, ...]:
-        """The chosen channel IDs, in the order of the dropdowns (blank ones left out)."""
-        return tuple(d.value for d in self.dropdowns if d.value)
-
     def _changed(self, _change: object = None) -> None:
         """Resolve the choice; show what was resolved, or the refusal verbatim."""
         try:
-            cp.check_channel_count(self.channel_ids)
-            self.plan = resolve_segmentation(self.inputs, self.channel_ids)
+            ids, roles = cp.input_channels(self.output, self.cell.value, self.nuclear.value)
+            self.channel_ids, self.channel_roles = ids, roles
+            cp.check_channel_count(ids)
+            self.plan = resolve_segmentation(self.inputs, ids)
             self.refusal = ""
-            note = _card("ok", "Channels: " + ", ".join(self.channel_ids))
+            named = ", ".join(f"{c} ({r})" for c, r in zip(ids, roles, strict=True))
+            note = _card("ok", f"{OUTPUT_NAMES[self.output]} from {named}")
         except REFUSALS as exc:
             self.plan, self.refusal = None, str(exc)
+            self.channel_ids = self.channel_roles = ()
             note = _card(
                 "error", "These channels cannot be used", (_verbatim(self.refusal),), raw=True
             )
@@ -144,31 +145,13 @@ class ChannelPicker:
 
     def box(self) -> widgets.VBox:
         """Return the dropdowns and the message under them."""
-        return widgets.VBox([*self.dropdowns, self.message])
-
-
-def preview_figure(stack: np.ndarray, labels: np.ndarray, channel_ids: tuple[str, ...]) -> Figure:
-    """Return the preview: each channel (display contrast only) and the outlines of the labels.
-
-    The contrast stretch (preprocessing's own display contrast, which also shows non-finite
-    pixels as such) is for the eye: the stack that was segmented, and the masks, are the stored
-    values and are never changed by it.
-    """
-    panels = [display_panel(np.asarray(channel)).pixels for channel in stack]
-    edge = outline(np.asarray(labels))
-    figure = Figure(figsize=(4 * (len(panels) + 1), 4))
-    axes = figure.subplots(1, len(panels) + 1, squeeze=False)[0]
-    for axis, panel, name in zip(axes, panels, channel_ids, strict=False):
-        axis.imshow(panel, cmap="gray", vmin=0, vmax=255)
-        axis.set_title(f"{name} (display contrast)")
-    overlay = as_colour(panels[0]).copy()
-    overlay[edge] = (255, 217, 0)
-    axes[-1].imshow(overlay)
-    axes[-1].set_title(f"Cellpose: {int(labels.max())} objects")
-    for axis in axes:
-        axis.axis("off")
-    figure.tight_layout()
-    return figure
+        help_line = widgets.HTML(
+            "<div class='mb-help'>Choose by channel ID. The <b>cell channel</b> (cytoplasm or "
+            "cell border) and the <b>nuclear channel</b> are both optional, but at least one is "
+            "needed. A cell mask reads the cell channel, then the nuclear channel if one is "
+            "chosen; a nuclei mask reads the nuclear channel only.</div>"
+        )
+        return widgets.VBox([*self.dropdowns, help_line, self.message])
 
 
 class CellposeWorkflow:
@@ -187,6 +170,7 @@ class CellposeWorkflow:
         self.loaded: cp.LoadedModel | None = None
         self.settings: cp.Settings | None = None
         self.result: cp.BatchResult | None = None
+        self.previewed: list[MaskResult] = []
         self.shown: list[str] = []
 
     def _show(self, widget: widgets.Widget) -> None:
@@ -208,12 +192,16 @@ class CellposeWorkflow:
 
     @stops
     def open(self, run_folder: str, masks_folder: str) -> None:
-        """Open the run and say what it holds (cell 3)."""
+        """Open the run and say what it holds (cell 3).
+
+        What an earlier open chose is dropped first: a refused open leaves no run, channels or
+        model to segment with, so nothing is written to the folders of the run before.
+        """
+        self.inputs = self.masks_root = self.picker = self.loaded = self.result = None
         if not masks_folder.strip():
             raise SegmentationError("Give the masks folder (outside the experiment and the run).")
         inputs = cp.open_run(run_folder)
         self.inputs, self.masks_root = inputs, Path(masks_folder.strip())
-        self.picker = self.loaded = self.result = None
         coverage = cp.channel_coverage(inputs)
         lines = [
             f"{c}: in {have} of {total} images" + ("" if have == total else " (partial)")
@@ -232,18 +220,22 @@ class CellposeWorkflow:
         )
 
     @stops
-    def choose_channels(self, mask_type: str) -> None:
-        """Check the mask type and show the channel dropdowns (cell 4)."""
+    def choose_channels(self, mask_type: str, output: str = cp.CELL_OUTPUT) -> None:
+        """Check the mask type and the output, and show the channel dropdowns (cell 4)."""
         self._need("run", 3)
+        if output not in OUTPUT_NAMES:
+            raise SegmentationError(
+                f"The output must be one of {', '.join(OUTPUT_NAMES)}, not {output!r}."
+            )
         check_mask_type(mask_type)
         todo = images_to_segment(self.inputs, mask_type, self.masks_root)
         self.mask_type, self.loaded = mask_type, None
-        self.picker = ChannelPicker(self.inputs)
+        self.picker = ChannelPicker(self.inputs, output)
         self._show(
             _card(
                 "info",
-                f"Mask type {mask_type}: {len(todo)} of {len(self.inputs.fovs())} images "
-                "have no mask yet",
+                f"{OUTPUT_NAMES[output]}, mask type {mask_type}: {len(todo)} of "
+                f"{len(self.inputs.fovs())} images have no mask yet",
             )
         )
         self._show(self.picker.box())
@@ -254,16 +246,18 @@ class CellposeWorkflow:
         diameter: str,
         flow_threshold: float,
         cellprob_threshold: float,
-        normalize: bool,
         batch_size: int,
     ) -> None:
-        """Check the inference settings (cell 5); a blank diameter is the model's native scale."""
+        """Check the inference settings (cell 5); a blank diameter is the model's native scale.
+
+        Normalisation is not a choice: it is always Cellpose's own, per image (1st to 99th
+        percentile of each channel).
+        """
         self.settings = cp.Settings(
             cp.diameter_from_text(diameter),
             flow_threshold,
             cellprob_threshold,
-            normalize,
-            batch_size,
+            batch_size=batch_size,
         )
 
     @stops
@@ -337,9 +331,20 @@ class CellposeWorkflow:
             )
         fov = by_path[image.strip()] if image.strip() else (todo or fovs)[0]
         stack = plan.read(fov)
-        labels = cp.segment_image(self.loaded, self.settings, stack)
-        self._show(_card("info", f"Preview of {fov.relative_path} (nothing is written)"))
-        display(preview_figure(stack, labels, plan.channel_ids))
+        labels, flows = cp.evaluate(self.loaded, self.settings, stack)
+        named = tuple(zip(plan.channel_ids, self.picker.channel_roles, strict=True))
+        results = [MaskResult(OUTPUT_NAMES[self.picker.output], stack, named, labels, flows)]
+        diameter = self.settings.diameter
+        size = f"{diameter:g} pixels" if diameter is not None else "blank = " + cp.NATIVE_SCALE
+        lines = tuple(f"{r.name}: {r.objects} objects; diameter {size}" for r in results)
+        self._show(_card("info", f"Preview of {fov.relative_path} (nothing is written)", lines))
+        try:
+            figures = preview_figures(results)
+        except ValueError as exc:
+            raise SegmentationError(str(exc)) from exc
+        for figure in figures:
+            display(figure)
+        self.previewed = results
 
     @stops
     def run(self, overwrite: bool = False) -> cp.BatchResult:
@@ -353,6 +358,8 @@ class CellposeWorkflow:
             self.mask_type,
             self.masks_root,
             overwrite,
+            self.picker.channel_roles,
+            self.picker.output,
         )
         bar = widgets.HTML()
         display(bar)

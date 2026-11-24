@@ -44,7 +44,7 @@ Pre-alpha; the current release is v0.8.0 (what is planned next is in
 Every feature, message code and output file is described in the [user guide](docs/user_guide.md).
 
 From the normalization brick (`morphobricks_normalization`, a required dependency, pinned
-to its release v0.7.1): per-plane histograms with the robust range and the range check
+to its release v0.8.0): per-plane histograms with the robust range and the range check
 (`histogram`, `ranges`), the histogram table (`csv_io`, schema version 5: channels by canonical
 ID, so acquisitions may have different channels), pooled group statistics
 (`pooling`) and normalization parameters (`normalization`); import them from
@@ -80,8 +80,9 @@ pip install -e ".[dev]"
 
 The optional `notebook` extra installs the widget dependencies for the notebook
 (`pip install "morphobricks-preprocessing[notebook] @ git+https://github.com/CellMigrationLab/morphobricks-preprocessing.git@v0.8.0"`).
-The notebook's first code cell (**1. Install**) can set this up automatically: it uses a compatible nearby
-checkout or installed package, and installs missing requirements into the active kernel. A standalone
+The notebook's first code cell (**1. Install**) can set this up automatically: it uses a nearby
+checkout or an installed package only when it is the pinned `RELEASE_REF` commit (never by version alone),
+and installs missing requirements into the active kernel. A standalone
 download installs from GitHub if needed (internet access and Git required).
 
 The optional `he-mask` extra installs scikit-image (through `morphobricks-normalization[histology]`)

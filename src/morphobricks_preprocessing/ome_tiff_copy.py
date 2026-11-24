@@ -97,7 +97,7 @@ def write_named_copy(
     source
         The TIFF image.
     target
-        The file to write (the caller's ``.partial`` file); replaced if it exists.
+        The file to write (the caller's file in its work folder); replaced if it exists.
     layout
         The copy's axes, shape and metadata (:func:`.copy_axes.copy_layout`).
     mapping
@@ -160,7 +160,7 @@ def write_projected_copy(
     source
         The TIFF image.
     target
-        The file to write (the caller's ``.partial`` file); replaced if it exists.
+        The file to write (the caller's file in its work folder); replaced if it exists.
     layout
         The projected copy's layout (:func:`.projection_layout.projected_layout`: no Z).
     mapping

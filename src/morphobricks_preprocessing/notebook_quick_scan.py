@@ -37,6 +37,8 @@ from .validation import plural
 
 SCAN_LABEL, DEEP_LABEL = " Scan the folders", " Looks right: read all image headers"
 SEED_RANGE = 1_000_000
+SCAN_REPEATS = "biological repeats not counted: no repeat groups declared yet"
+"""The scan's words for the biological repeats: a folder scan declares no repeat group."""
 EXAMPLE_SIDE = 190
 """The largest side of the quick scan's picture, in pixels."""
 
@@ -51,16 +53,19 @@ def tree_html(discovery: DiscoveryResult, excluded: frozenset[str]) -> str:
 
 
 def scan_summary(discovery: DiscoveryResult, excluded: frozenset[str]) -> str:
-    """Return one line of counts: images, folders, conditions and biological repeats."""
+    """Return one line of counts: images, folders and conditions.
+
+    Biological repeats are not counted: they are the repeat groups the description declares,
+    never the repeat folders a scan finds (issue #456), and a scan declares none.
+    """
     leaves = discovery.leaves
     images = sum(image not in excluded for image in discovery.images)
     conditions = {leaf.condition for leaf in leaves}
-    repeats = {(leaf.condition, leaf.biological_repeat) for leaf in leaves}
     parts = [
         plural(images, "image"),
         plural(len(leaves), "folder"),
         plural(len(conditions), "condition"),
-        plural(len(repeats), "biological repeat"),
+        SCAN_REPEATS,
     ]
     left_out = len(discovery.images) - images
     if left_out:

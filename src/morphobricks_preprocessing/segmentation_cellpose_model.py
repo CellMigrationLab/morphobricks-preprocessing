@@ -162,6 +162,29 @@ def check_device(device: str) -> None:
         )
 
 
+def device_status() -> tuple[bool, str]:
+    """Return whether PyTorch finds a GPU here, and a line that says which (or that none is).
+
+    Shown before loading so that a missing GPU is seen early. It chooses nothing: the device is
+    still the user's, and :func:`check_device` still refuses an unavailable one.
+    """
+    try:
+        torch = _torch()
+    except SegmentationError as exc:
+        return False, str(exc)
+    if torch.cuda.is_available():
+        count = torch.cuda.device_count() if hasattr(torch.cuda, "device_count") else 1
+        name = torch.cuda.get_device_name(0) if hasattr(torch.cuda, "get_device_name") else "?"
+        return True, f"GPU found: cuda ({name}; {count} device(s)). Choose the device cuda."
+    if torch.backends.mps.is_available():
+        return True, "GPU found: mps (Apple silicon). Choose the device mps."
+    return False, (
+        "No GPU found here: neither cuda nor mps is available, so loading on either is refused. "
+        "Switch the runtime to one with a GPU (Google Colab: Runtime > Change runtime type), or "
+        "choose the device cpu on purpose (much slower)."
+    )
+
+
 def weights_file(name: str) -> Path:
     """Return where Cellpose keeps the weights of built-in model ``name`` (it may not exist yet)."""
     return Path(os.fspath(_cellpose_models().MODEL_DIR)) / name
