@@ -298,6 +298,13 @@ src/morphobricks_preprocessing/
                     notebook_cellpose_app.py segmentation_app(run_folder, masks_folder, app=,
                     on_masks_written=): every step as one widget for any cell (the combined
                     notebook, #441), the same CellposeNotebook forms the Cellpose cells mount
+                    notebook_preprocessing_cellpose.py segmentation_step(app): cell 4 of
+                    notebooks/MorphoBricks_Preprocessing_Cellpose.ipynb (#441), segmentation_app
+                    on the Preprocessing app's finished run; cellpose_install.py installs
+                    Cellpose 4.2.1.1 only on the user's tick (restart when numpy/opencv changed);
+                    notebook_mask_register.py register_step(app, segmentation): cell 5, a
+                    declaration to tick per mask type, then the app's own check, Masks answer,
+                    save, run and Describe the masks
                     notebook_cellpose_preview.py MaskResult, preview_figures: the example result as
                     ZeroCostDL4Mic draws it (cellpose.plot.show_segmentation), one result per mask
                     notebook_cellpose_channels.py ChannelPicker, MaskTarget: the output's masks (Both:

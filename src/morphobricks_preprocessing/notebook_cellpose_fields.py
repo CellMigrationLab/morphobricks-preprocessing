@@ -282,7 +282,8 @@ def model_cards(fields: dict[str, widgets.Widget], status: widgets.HTML) -> list
                 fields["install_dinov3"],
                 ui.help_text(
                     "The cpdino models need DINOv3 (installed at a pinned commit). Tick to "
-                    "install it now; then <b>restart the runtime</b> and run cells 1 to 4 again."
+                    "install it now; then <b>restart the runtime</b>, run the notebook again from "
+                    "its first cell, and come back to this step."
                 ),
             ],
         ),
