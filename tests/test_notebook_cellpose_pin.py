@@ -553,6 +553,7 @@ def test_the_real_notebook_runs_the_cellpose_code_and_not_the_preprocessing_app(
 @pytest.mark.parametrize("ci", ["", "true"])
 def test_a_missing_history_skips_locally_and_fails_in_ci(monkeypatch, ci):
     monkeypatch.setenv("CI", ci)
+    monkeypatch.delenv("MORPHOBRICKS_RELEASE_RUN", raising=False)
     outcome = pytest.fail.Exception if ci else pytest.skip.Exception
     with pytest.raises(outcome, match="not in this checkout"):
         history_missing("the pinned commit is not in this checkout")

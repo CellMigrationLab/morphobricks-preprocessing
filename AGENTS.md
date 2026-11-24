@@ -566,14 +566,34 @@ functions the tests use.
    *Summary* (by module), *Decisions*, *Notes for review* (limitations, what was not
    verified), *Tests* (exact counts, e.g. "455 passed, 2 skipped").
 5. **Done means:** `python tools/check.py` passes (`ruff check .`, `ruff format --check .`,
-   `pytest` and the code rules of `docs/development.md` against their baseline), (CI runs
-   lint on Ubuntu and tests on Ubuntu, Windows and macOS with Python 3.11 and 3.13), docs
+   `pytest` and the code rules of `docs/development.md` against their baseline), docs
    updated, and local changes ready for review. Open a PR only when the user requests it.
-6. **Be honest in reports.** Say what was verified and what was not (for example: "widgets
+   **CI (owner, 24 November 2026): minimal gates, the full CI only at release.** A pull
+   request and a push to `main` run `lint`, `wheel-identity` (under a minute) and one test
+   job (Ubuntu, Python 3.13). A release run runs the full matrix (Ubuntu, Windows and macOS
+   with Python 3.11 and 3.13) with `MORPHOBRICKS_RELEASE_RUN=1`: a manual run of the CI
+   workflow (*Run workflow*), a push of a `v*` tag, or a pull request labelled `release`
+   (`.github/workflows/ci.yml`). `python tools/check.py` matches the pull request gate;
+   `python tools/check.py --release` is a release run.
+6. **Notebook pins move only in the release PR (owner, 24 November 2026).** A pull request
+   never re-pins `RELEASE_REF` in `notebooks/MorphoBricks_Cellpose.ipynb` or
+   `notebooks/MorphoBricks_Preprocessing.ipynb`, even when it changes code a notebook runs.
+   The freshness test (`test_notebook_cellpose.py::
+   test_release_only_the_preprocessing_pin_is_a_commit_with_this_code`: the pinned commit
+   holds the code the notebook runs) skips outside a release run, with the reason
+   "release-only: the notebooks are pinned in the release PR" (`tests/release_run.py`). In a
+   release run it runs, and a missing Git history fails it (`history_missing`). The
+   structural pin tests (one 40-hex commit, the pin-scope refusals of an unpinned install,
+   the cells' identity, `RELEASE_CALLS`) run in every run. The release PR moves the pins
+   with two commits: commit A is the release preparation (the code); commit B only points
+   both notebooks' `RELEASE_REF` at A (and records A's call in `RELEASE_CALLS`), so the
+   notebook-run code at `HEAD` is A's. The release PR carries the `release` label, so its
+   CI is a release run.
+7. **Be honest in reports.** Say what was verified and what was not (for example: "widgets
    tested headless; not looked at in a real JupyterLab").
-7. **Scope discipline.** Do the task asked; list unrelated problems as follow-ups instead
+8. **Scope discipline.** Do the task asked; list unrelated problems as follow-ups instead
    of fixing them silently.
-8. **Keep generated or local files out of commits.** That includes test images, outputs
+9. **Keep generated or local files out of commits.** That includes test images, outputs
    (`*_MorphoBricks_Preprocessing/`), editor/agent config and launch files.
 
 ---
@@ -1016,7 +1036,8 @@ Technical details go to `logging` (shown in the notebook's "Technical details" p
 - **Notebook widgets are tested headless:** build the pages, drive them with
   `button.click()` and `.value = …`, and assert on `.value` of HTML widgets. Tests skip
   if ipywidgets/matplotlib are missing; CI installs `.[dev,notebook,zarr]`. OME-Zarr
-  tests skip without zarr; CI's Python 3.11 jobs pin zarr 2.18 and 3.13 jobs get zarr 3.
+  tests skip without zarr; the release CI's Python 3.11 jobs pin zarr 2.18 and 3.13 jobs
+  get zarr 3.
 - **The notebook file is tested too:**
   - valid nbformat 4, with no outputs;
   - code cells hidden as Colab forms (`"cellView": "form"`) and titled `# @title <N>. …` (1. Install, 2. Mount Google Drive, 3. Run preprocessing);
@@ -1078,8 +1099,8 @@ plainer version "not interactive enough". Descriptive, guided and forgiving is t
     `zarr` extra too. Colab-only code
     (cell 2's Drive mount) stays inside `if "google.colab" in sys.modules:`; no `/content` path
     outside it, and no custom widget manager is enabled. `current_version`
-    and `notebook_name` are LabConstrictor's names; at each release the pin moves
-    (plan §10, release checklist).
+    and `notebook_name` are LabConstrictor's names; at each release the pin moves, and only
+    in the release PR (plan §10, release checklist; §3 item 6).
   - Later cells are one call each, e.g. `notebook.folder_step()`.
 - **Step 0** starts the notebook and shows a green "ready" card with the package version.
 - **Runtime callouts:** Steps 0 and 1 carry "**Colab users:**" / "**JupyterLab users:**"
