@@ -131,7 +131,11 @@ class TagMatrix:
         """
         if not self.grid.same_channels.value or not self.grid.labels:
             return False
-        units = [u for u in self.grid.layouts if not self.grid.colour(u)]
+        rows = self.grid.by_repeat
+        if rows.other_draft():  # the memory is another draft's: take this draft's record first
+            rows.restore(self.grid.layouts)
+        held = rows.standing()  # a refused unit counts only when confirmed
+        units = [u for u in self.grid.layouts if not self.grid.colour(u) and u.key not in held]
         answers, cells = trusted(self.grid.store.answers(), units, self.grid.labels, self.saved)
         if not cells:
             return False

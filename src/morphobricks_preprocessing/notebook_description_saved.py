@@ -4,12 +4,12 @@ Part of the description cards (:mod:`.notebook_description`). The saved
 ``morphobricks.draft.json`` is read as the file holds it and reconciled with the folders and the
 design's pairing as they are now (:func:`.draft_answers.carry_over`): answers for what still
 exists are kept exactly, the others are dropped and named in the card. A draft that cannot be
-read or applied at all is never overwritten: it is copied aside first.
+read or applied at all is never overwritten: the next save copies it aside first
+(:func:`.run.draft_file.save_draft` with ``keep_previous``, after its generation check).
 """
 
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
 
 from . import notebook_style as ui
@@ -19,9 +19,7 @@ from .draft import DraftError
 from .draft_answers import DraftAnswers, apply_answers, carry_over
 from .draft_format import ABSENT, SPEC_COMMIT, DraftFileError
 from .run.description_file import PublicationRefused
-from .run.draft_file import new_answers, read_answers
-
-UNUSED_PREFIX = "morphobricks.draft.unused-"
+from .run.draft_file import UNUSED_PREFIX, new_answers, read_answers
 
 
 class _SavedDraft:
@@ -96,7 +94,7 @@ class _SavedDraft:
         return self._design_pairing()
 
     def _set_aside(self, reason: str) -> str:
-        """Note that the saved draft cannot be used; it is copied aside before any save."""
+        """Note that the saved draft cannot be used; the next save copies it aside first."""
         self._keep_old_draft = True
         return ui.status(
             "warn",
@@ -107,24 +105,6 @@ class _SavedDraft:
                 f"{UNUSED_PREFIX}N.json, never overwritten.",
             ],
         )
-
-    def _keep_unused_draft(self, output: Path) -> bool:
-        """Copy the unusable draft aside under a name that is free; False if that failed."""
-        source = output / DRAFT_FILENAME
-        if source.is_symlink() or not source.exists():
-            return True
-        number = 1
-        while (copy := output / f"{UNUSED_PREFIX}{number}.json").exists():
-            number += 1
-        try:
-            shutil.copyfile(source, copy)
-        except OSError as exc:
-            self._names_refusal = ui.status(
-                "error", "Not saved: the unused draft could not be kept.", [str(exc)]
-            )
-            return False
-        self._keep_old_draft = False
-        return True
 
     def _new_answers(self, output: Path | None) -> DraftAnswers:
         """Return empty answers based on the published file (or ``absent`` with no folder)."""

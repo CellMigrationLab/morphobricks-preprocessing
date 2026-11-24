@@ -241,6 +241,15 @@ class UnitLayout:
         return self.names[index] if index < len(self.names) and self.names[index] else None
 
 
+def named(layout: UnitLayout) -> bool:
+    """Return True when the header names every channel of a usable unit (a block can hold it).
+
+    Every image of the unit must have that header: a unit whose later images differ is never
+    grouped on its first image alone.
+    """
+    return layout.usable and layout.uniform and all(layout.name(i) for i in range(layout.channels))
+
+
 def tags_of(layout: UnitLayout, answer: UnitAnswer | None) -> tuple[str | None, ...]:
     """Return the saved tags of a unit as one entry per C index; None where not tagged.
 
@@ -391,6 +400,7 @@ __all__ = [
     "is_generic",
     "label_problems",
     "look_alike",
+    "named",
     "positions",
     "propose_labels",
     "proposal_for",

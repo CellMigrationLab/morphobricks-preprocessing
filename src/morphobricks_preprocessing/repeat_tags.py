@@ -27,15 +27,68 @@ Nothing here reads a file or a widget.
 
 from __future__ import annotations
 
-from collections.abc import Collection, Sequence
+from collections.abc import Collection, Mapping, Sequence
 
 from .channel_labels import UnitLayout, tags_of
 from .channel_matrix import Difference, apart_reason, differences, eligible
 from .dataset import canonical_repeat_groups
 from .draft_answers import DraftAnswers, UnitKey
+from .repeat_review import Override
 
 GroupKey = tuple[str, int]
 """A row: the biological-repeat folder label and the channel count of its units."""
+
+
+def header_names(layout: UnitLayout) -> tuple[str | None, ...]:
+    """Return a unit's own header name at each C index (None where it has none)."""
+    return tuple(layout.name(i) for i in range(layout.channels))
+
+
+def override_holds(
+    override: Override | None, layout: UnitLayout, tags: Sequence[str | None]
+) -> bool:
+    """Return True while the user's confirmation still covers the unit as it is read now.
+
+    It covers the unit only while its tags are the confirmed ones and its own header names are
+    the ones it was confirmed for. Nothing else voids it: aliases saved later for other units
+    neither lapse it nor stand in for it. A changed header or tag lists the unit again, never
+    counted unasked.
+    """
+    return override is not None and tuple(tags) == override.tags and _names_hold(override, layout)
+
+
+def relapsed(override: Override | None, layout: UnitLayout) -> bool:
+    """Return True when the unit was confirmed for other header names than its own now.
+
+    The confirmation no longer covers it (:func:`override_holds`), and it is listed again even
+    when its new header fits its row and its tags are complete: a changed header is reviewed by
+    the user, never counted unasked.
+    """
+    return override is not None and not _names_hold(override, layout)
+
+
+def _names_hold(override: Override, layout: UnitLayout) -> bool:
+    """Return True when the unit's own header names are the ones it was confirmed for."""
+    return header_names(layout) == override.names
+
+
+def counted(tags: Sequence[str | None], layout: UnitLayout) -> bool:
+    """Return True when there is one tag per channel the unit has now (never cut or padded)."""
+    return len(tags) == layout.channels
+
+
+def recount(tags: Sequence[str | None], layout: UnitLayout) -> str | None:
+    """Return why a refusal's tags no longer fit the unit (its channel count changed), else None.
+
+    The old tags are never applied, cut or padded to the new count: every channel is chosen
+    again (the override editor opens with blank dropdowns).
+    """
+    if counted(tags, layout):
+        return None
+    return (
+        f"its channel count changed ({len(tags)} at the refusal, {layout.channels} now): "
+        "choose every channel again"
+    )
 
 
 def repeat_groups(
@@ -57,6 +110,7 @@ def repeat_fill(
     group: Sequence[UnitLayout],
     tags: Sequence[str],
     labels: Collection[str],
+    frozen: Mapping[UnitKey, Mapping] | None = None,
 ) -> tuple[dict[UnitKey, tuple[str, ...]], list[tuple[UnitKey, int]], dict]:
     """Return the tags to save for the row's units, the cells, and the units refused.
 
@@ -64,9 +118,11 @@ def repeat_fill(
     another label than the row's at its C index, or says none and is not the first unit's name
     there (:func:`.channel_matrix.differences`; the first unit is :func:`repeat_lead`). A unit
     whose images disagree (:func:`repeat_apart`) is neither filled nor listed here: the caller
-    names it separately.
+    names it separately. ``frozen`` holds, for a unit already refused, the aliases of the time of
+    its refusal: aliases saved since (by confirming or tagging other units) never clear it.
     """
     tags = tuple(tags)
+    frozen = frozen or {}
     save: dict[UnitKey, tuple[str, ...]] = {}
     cells: list[tuple[UnitKey, int]] = []
     refused: dict[UnitKey, tuple[Difference, ...]] = {}
@@ -75,7 +131,7 @@ def repeat_fill(
     for layout in group:
         if lead is None or layout.key in apart:
             continue
-        found = differences(layout, tags, lead, labels, answers.channels)
+        found = differences(layout, tags, lead, labels, frozen.get(layout.key, answers.channels))
         if found:
             refused[layout.key] = found
             continue
@@ -149,7 +205,13 @@ def pairing_collision(answers: DraftAnswers, group: Sequence[UnitLayout]) -> dic
 
 __all__ = [
     "GroupKey",
+    "Override",
+    "counted",
+    "header_names",
+    "override_holds",
     "pairing_collision",
+    "recount",
+    "relapsed",
     "repeat_fill",
     "repeat_groups",
     "repeat_lead",
