@@ -159,3 +159,27 @@ def test_a_nuclei_load_failing_with_any_error_drops_both_models(both, monkeypatc
     for step in ("preview", "segment"):
         assert press(workflow.forms[step]) == NOT_LOADED
     assert both.stub.calls == [] and nothing_written(both.run.masks)
+
+
+def test_an_interrupted_nuclei_load_drops_both_models(both, monkeypatch):
+    """External review aq, FILE 1: an interrupt (the stop button) drops both models too."""
+    workflow = both.ns["workflow"]
+    real = cp.load_model
+
+    def interrupted(name, *args, **kwargs):
+        if name == "cpsam":
+            raise KeyboardInterrupt
+        return real(name, *args, **kwargs)
+
+    monkeypatch.setattr(cp, "load_model", interrupted)
+    model = workflow.forms["model"]
+    for name, value in {"device": "cpu", **NUCLEI_MODEL}.items():
+        model.fields[name].value = value
+    with pytest.raises(KeyboardInterrupt):  # raised again, never swallowed
+        model.button.click()
+    assert workflow.loaded is None and workflow.nuclei_loaded is None
+    assert disabled(workflow)
+    monkeypatch.setattr(cp, "load_model", real)
+    for step in ("preview", "segment"):
+        assert press(workflow.forms[step]) == NOT_LOADED
+    assert both.stub.calls == [] and nothing_written(both.run.masks)
