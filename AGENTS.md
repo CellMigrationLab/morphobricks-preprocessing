@@ -331,7 +331,8 @@ src/morphobricks_preprocessing/
                     rows, outcome), modes.py (restart/full, RunMode with verify_content), recorded.py (inputs reused from
                     the earlier run, InputChange), lock.py (the output folder's O_EXCL lock,
                     remove_stale_lock), output_guard.py (the output folder against the
-                    masks folder, given or recorded, before anything is written),
+                    masks folder, given or recorded, before anything is written; for
+                    calibrate also against the experiment, output_inside_experiment, #486),
                     check_step.py (write_check_report), mask_step.py
                     (the masks step shared by CLI `masks` and the notebook: prepare_mask_step,
                     describe_masks, recorded_masks; PP-10d), result.py (RunResult),

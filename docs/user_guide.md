@@ -863,6 +863,17 @@ statement for an axis some images lack is a warning naming them
 (`calibration_axis_absent`). In Python, `write_calibration(calibration, output_folder)`
 writes the file (see §9).
 
+`calibrate` never writes inside the experiment folder: an output folder that is the experiment
+folder or inside it (also through a link) is refused with `output_inside_experiment` before
+anything is created or written, against the experiment folder you give, or, with only
+`--output`, against the experiment the run in that output folder recorded. With only `--output`
+and no run there yet, no experiment is known: give the experiment folder too
+(`calibrate /data/exp1 --output /data/exp1_out ...`) so the check can be made. The command still
+runs in that case, but says so on the error output (stderr): "Note: no experiment was given and
+none is recorded in <output folder>, so it was not checked that the output folder is outside the
+experiment (give the experiment folder to check it)." It is not an error and does not change the
+exit status; it is not printed when the experiment is given or recorded.
+
 ### Named-axis copies (`convert`)
 
 When the metadata of some images name their axes wrongly (the errors `axes_yx_swapped`,
@@ -1295,7 +1306,7 @@ continues.
 | `invalid_name` | Error | A folder or image name starts or ends with a space, or is `NA`, `nan`, `none`, `null`, `n/a` or `<NA>` (any case), which tables read as a missing value. Rename it. |
 | `duplicate_position_id` | Error | Two images in one folder have the same name apart from the extension or upper/lower case (`img_01.tif` and `img_01.ome.zarr`), so their positions cannot be told apart. Rename one, or move it out of the experiment. |
 | `folder_too_deep` | Error | Folders below the technical repeat. Move the images up, or select a lower folder as the experiment. |
-| `output_inside_experiment` | Error | The output folder is inside the experiment. Choose another. |
+| `output_inside_experiment` | Error | The output folder is inside the experiment. Choose another. `calibrate` refuses it too, before it creates the folder or writes `calibration.csv` (`OutputInsideExperimentError` from `write_calibration` and `update_calibration`). Without an experiment given or recorded in the output folder it cannot be checked: `calibrate` then prints a one-line note on stderr and goes on. |
 | `no_images` | Error | No images to analyse (or all excluded). Check the folder. |
 | `unreadable_tiff` | Error | A TIFF file cannot be opened. Export it again, or exclude it. |
 | `unreadable_ome_zarr` | Error | A `.zarr` folder is not an OME-Zarr image that can be read; the message says why. That includes an image whose metadata do not name its axes (OME-NGFF 0.3 to 0.5 require them), and every OME-NGFF 0.1 or 0.2 store (their metadata never name the axes): the axes are never guessed. Re-save an 0.1 or 0.2 store as OME-NGFF 0.4 or later. Export it again as OME-Zarr (OME-NGFF 0.4 or 0.5) with its axes, or exclude it. |
@@ -1399,7 +1410,8 @@ continues.
 | `mask_hierarchy_cycle` | Warning (mask step) | The direct parents of some mask types form a cycle (for example A inside B in some images, B inside C in others and C inside A), so no parent-child hierarchy can be inferred for them. The hierarchy lists them together as `[cycle: …]` with every link. Check those masks; nothing is guessed. |
 | `no_finite_pixels` | Warning | Some planes have a channel without finite pixels; those channels are left out of group statistics. |
 | `excluded_images`, `excluded_path_not_found` | Warning | Images excluded as requested, or an excluded path that matches no image. |
-| `masks_folder_not_found` | Error | The masks folder does not exist. Select the folder that holds one folder per kind of mask. |
+| `masks_folder_not_found` | Error | The masks folder does not exist. Select the folder that holds one folder per kind of mask. Later bricks opening a run (`RunInputs.open(..., masks_root=...)`) refuse a masks folder given that does not exist or is a file with the same code (`MasksFolderNotFoundError`); it is never read as a folder without masks. Give the folder that holds the masks, or leave `masks_root` out to use the one the run recorded. |
+| `masks_folder_unreadable` | Error | A masks folder given to a later brick (`RunInputs.open(..., masks_root=...)`) cannot be listed, for example for lack of permission, so its masks cannot be checked against the run (`MasksFolderUnreadableError`); the message names the folder and the reason. Check its permissions, or give another folder. |
 | `output_inside_masks` | Error | The output folder is inside the masks folder, where the run's files would be read as masks. Choose another output folder. |
 | `experiment_inside_masks` | Error | The experiment folder is inside the masks folder, where its images would be read as masks. Select the folder that holds only the masks, next to the experiment folder. |
 | `copies_inside_masks` | Error | The masks folder holds named-axis copies (a conversion record), which would be read as masks. Move the copies out of the masks folder. |
