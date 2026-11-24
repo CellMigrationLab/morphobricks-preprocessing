@@ -98,10 +98,12 @@ src/morphobricks_preprocessing/
                     otherwise (numpy.bool); the one helper of the writers' type refusals (#470)
   design.py         the rows of experiment_design.csv (an output only since v0.5.1): DesignTable/
                     DesignRow (read-only), the run's reconcile_design and design_issues against
-                    the folders, write_experiment_design, parse_design_bytes (the strict parser
+                    the folders, write_experiment_design (experiment_design_text: the checked
+                    text, nothing written), parse_design_bytes (the strict parser
                     of a written file; nothing reads the file to prefill a draft); no reader for other bricks (SWEEP-PP)
   design_derive.py  derive_design/write_derived_design: experiment_design.csv from a published
-                    description (Spec experiment-v1 11), written by design.write_experiment_design
+                    description (Spec experiment-v1 11), written by design.write_experiment_design;
+                    derived_design_bytes (checked, nothing written: publication, #400)
   design_values.py  the design file's header check (no column twice or unnamed, #83), booleans,
                     counts, dates and DesignFormatError (pure; re-exported by design.py)
   description_rules.py  the one table of the experiment-description rules (Stage 1, Spec

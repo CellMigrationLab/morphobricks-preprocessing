@@ -23,7 +23,7 @@ from pathlib import Path
 from morphobricks_normalization.records import SINGLE
 
 from .description import Description
-from .design import DesignRow, DesignTable, write_experiment_design
+from .design import DesignRow, DesignTable, experiment_design_text, write_experiment_design
 
 
 def derive_design(description: Description) -> DesignTable:
@@ -56,9 +56,20 @@ def derive_design(description: Description) -> DesignTable:
     return DesignTable(tuple(rows))
 
 
+def derived_design_bytes(description: Description) -> bytes:
+    """Return the bytes :func:`write_derived_design` writes, checked by the writer; write nothing.
+
+    Raises
+    ------
+    DesignFormatError
+        When the writer refuses the derived design (:func:`.design.experiment_design_text`).
+    """
+    return experiment_design_text(derive_design(description)).encode("utf-8")
+
+
 def write_derived_design(description: Description, path: str | os.PathLike) -> Path:
     """Write the derived ``experiment_design.csv`` atomically and return its path."""
     return write_experiment_design(derive_design(description), path)
 
 
-__all__ = ["derive_design", "write_derived_design"]
+__all__ = ["derive_design", "derived_design_bytes", "write_derived_design"]

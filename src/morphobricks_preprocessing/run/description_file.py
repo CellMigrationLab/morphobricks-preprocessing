@@ -14,10 +14,21 @@ the append-only ``morphobricks.records.jsonl`` next to the file (one JSON object
 of the three Spec record types, each with its fixed key set). The records are never edited or
 dropped: the new file is the old bytes plus the new lines, written in full to a temporary file and
 put in place with one atomic replace, so the live records file is never half written. A later run
-copies it unchanged into its manifest. If any step after the description was replaced fails, the
-previous description and the previous records file are put back, so the publication is whole or
-absent (a process killed in the instant between the two replaces can leave a published file
-without its records, and the records file is then the one that cannot be trusted to be complete).
+copies it unchanged into its manifest.
+
+With ``write_design`` (the notebook and CLI publications), the derived ``experiment_design.csv``
+(experiment-v1 section 11) is published with them (issue #400). It is derived and checked by the
+design writer before anything is written, so a design the writer refuses writes nothing.
+
+Every file of a publication (the description, the whole new records file, the design) is first
+written in full to a temporary file beside it and synced; only once all are on disk are they
+renamed into place, one after the other. A write that fails (a full disk, permissions) therefore
+fails before any published file changes, and the temporary files are removed. A rename
+allocates no space; if one still fails, the files already renamed are put back byte for byte
+from the bytes read at the start (with no decoding), so the publication is whole or absent.
+This holds for an exception in the process. A process killed between two renames can still
+leave them unmatched (then the records file is the one that cannot be trusted to be complete),
+and a put-back that itself fails is added as a note to the error raised.
 
 The hashes in a record are history, not a check on the file now published: later publications
 change the file without a record, so an older record rightly names a hash that is no longer the
@@ -33,7 +44,7 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from .._io import give_output_mode, write_text_atomic
+from .._io import give_output_mode
 from ..description import Description, DescriptionError, description_from_bytes
 from ..description_file import (
     DESCRIPTION_FILENAME,
@@ -52,6 +63,8 @@ from ..description_transition import (
     unwaived,
 )
 from ..description_write import canonical_bytes
+from ..design import DESIGN_FILENAME
+from ..design_derive import derived_design_bytes
 from ..records_file import CODE as RECORDS_FILE_INVALID
 from ..records_file import RecordsIssue, check_records, encode_record
 from .description_records import (
@@ -211,8 +224,11 @@ def read_records(output_folder: str | os.PathLike) -> tuple[dict, ...]:
     return records
 
 
-def _replace_file_durably(path: Path, data: bytes) -> None:
-    """Replace ``path`` with ``data``: a synced temporary file, then one atomic replace."""
+def _prepare_file(path: Path, data: bytes) -> str:
+    """Write ``data`` to a synced temporary file beside ``path``, with its mode; return its name.
+
+    On any failure the temporary file is removed and the error raised; ``path`` is untouched.
+    """
     handle, temporary = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
     try:
         with os.fdopen(handle, "wb") as stream:
@@ -220,6 +236,16 @@ def _replace_file_durably(path: Path, data: bytes) -> None:
             stream.flush()
             os.fsync(stream.fileno())
         give_output_mode(temporary, path)
+    except BaseException:
+        Path(temporary).unlink(missing_ok=True)
+        raise
+    return temporary
+
+
+def _replace_file_durably(path: Path, data: bytes) -> None:
+    """Replace ``path`` with ``data``: a synced temporary file, then one atomic replace."""
+    temporary = _prepare_file(path, data)
+    try:
         os.replace(temporary, path)
     except BaseException:
         Path(temporary).unlink(missing_ok=True)
@@ -303,6 +329,7 @@ def publish_description(
     removals: tuple[Removal, ...] = (),
     recorded_on: str | None = None,
     switch_mode: bool = False,
+    write_design: bool = False,
 ) -> Publication:
     """Publish ``candidate`` as ``morphobricks.toml``, or refuse and write nothing.
 
@@ -328,6 +355,10 @@ def publish_description(
     switch_mode
         True only for the user's recorded switch between fast and strict mode (ADR 0006); see
         :func:`check_mode_switch`.
+    write_design
+        Also publish the derived ``experiment_design.csv`` (experiment-v1 section 11) with the
+        description and records: all are written to temporary files before any is renamed into
+        place (module docstring).
 
     Returns
     -------
@@ -341,7 +372,15 @@ def publish_description(
     PublicationRefused
         With every applicable refusal: ``R_FILE_SYMLINK`` (the file or the records file),
         ``R_DRAFT_BASE_MISSING``, ``R_PUBLISHED_FILE_CHANGED``, or the changed-ID, used-ID and
-        ``confirmed_on`` refusals.
+        ``confirmed_on`` refusals; with ``write_design``, also ``R_FILE_SYMLINK`` for a
+        symbolic-link ``experiment_design.csv`` (it could not be put back as it was).
+    DesignFormatError
+        With ``write_design``, when the design writer refuses the derived design; nothing is
+        written.
+    OSError
+        When a write fails (nothing published changes; the temporary files are removed), or a
+        rename fails (the files already renamed are put back byte for byte; a put-back that
+        fails is named in a note on the error).
     DescriptionError
         When the candidate's canonical bytes, or the published file, is not a valid description.
     ValueError
@@ -360,6 +399,7 @@ def publish_description(
             removals=removals,
             recorded_on=recorded_on,
             switch_mode=switch_mode,
+            write_design=write_design,
         )
 
 
@@ -372,6 +412,7 @@ def publish_locked(
     removals: tuple[Removal, ...] = (),
     recorded_on: str | None = None,
     switch_mode: bool = False,
+    write_design: bool = False,
 ) -> Publication:
     """Publish like :func:`publish_description` for a caller that already holds the lock.
 
@@ -385,6 +426,7 @@ def publish_locked(
         published = read_file_bytes(path)
         read_records(folder)  # a symbolic or torn records file refuses before anything
         records_before = read_file_bytes(folder / RECORDS_FILENAME)
+        design_before = read_file_bytes(folder / DESIGN_FILENAME) if write_design else None
     except DescriptionError as error:
         raise PublicationRefused(error.issues) from error
     base = check_base(base_sha256, published)
@@ -402,21 +444,56 @@ def publish_locked(
         records += image_count_records(old, candidate, recorded_on, confirmations)
     elif removals:
         raise ValueError("a removal needs a published file to remove from")
-    if records:
-        _candidate_records(folder, records)  # a record the reader refuses: nothing is written
-    write_text_atomic(path, data.decode("utf-8"))
-    try:
-        _append_records(folder, records)
-    except BaseException:
-        _restore(path, published)
-        _restore(folder / RECORDS_FILENAME, records_before)
-        raise
+    files = [(path, data, published)]
+    if records:  # a record the reader refuses, or a design the writer refuses: nothing written
+        files.append(
+            (folder / RECORDS_FILENAME, _candidate_records(folder, records), records_before)
+        )
+    if write_design:
+        files.append((folder / DESIGN_FILENAME, derived_design_bytes(candidate), design_before))
+    _publish_files(tuple(files))
     return Publication(path, new_sha, base, records)
 
 
-def _restore(path: Path, before: bytes | None) -> None:
-    """Put the previous bytes of ``path`` back (or remove the file when there was none)."""
+def _publish_files(files: tuple[tuple[Path, bytes, bytes | None], ...]) -> None:
+    """Write every ``(path, new, before)`` to a synced temporary file, then rename each in place.
+
+    A failed write removes the temporary files and changes no published file. A failed rename
+    also puts back the previous bytes (``before``) of every file already renamed.
+    """
+    temporaries: list[str] = []
+    renaming = False
+    try:
+        for target, new, _ in files:
+            temporaries.append(_prepare_file(target, new))
+        renaming = True
+        for temporary, (target, _, _) in zip(temporaries, files, strict=True):
+            os.replace(temporary, target)
+    except BaseException as error:
+        for temporary in temporaries:
+            Path(temporary).unlink(missing_ok=True)
+        if renaming:
+            for target, new, before in reversed(files):
+                try:
+                    _restore(target, new, before)
+                except OSError as failure:
+                    error.add_note(f"{target.name} could not be put back: {failure}")
+        raise
+
+
+def _restore(path: Path, new: bytes, before: bytes | None) -> None:
+    """Put the previous bytes of ``path`` back, unless it was not replaced; never decode them.
+
+    The file is removed when there was none. A file whose bytes are not ``new`` was not
+    replaced and is left as it is.
+    """
+    try:
+        now = path.read_bytes()
+    except FileNotFoundError:
+        now = None
+    if now != new or new == before:
+        return
     if before is None:
-        path.unlink(missing_ok=True)
+        path.unlink()
     else:
-        write_text_atomic(path, before.decode("utf-8"))
+        _replace_file_durably(path, before)
