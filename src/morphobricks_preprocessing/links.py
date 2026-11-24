@@ -82,6 +82,23 @@ def is_link(entry: os.DirEntry) -> bool:
         return False
 
 
+def is_link_stat(found: os.stat_result) -> bool:
+    """Return True when an :func:`os.lstat` result is a link: :func:`is_link` for a path.
+
+    Parameters
+    ----------
+    found
+        The path's :func:`os.lstat` (links not followed).
+
+    Returns
+    -------
+    bool
+    """
+    if stat.S_ISLNK(found.st_mode):
+        return True
+    return _JUNCTION is not None and getattr(found, "st_reparse_tag", 0) == _JUNCTION
+
+
 def is_inside(path: Path, folder: Path) -> bool:
     """Return True when ``path`` is ``folder`` or below it (both resolved)."""
     return path == folder or folder in path.parents
