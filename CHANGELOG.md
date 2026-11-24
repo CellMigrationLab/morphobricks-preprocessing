@@ -91,6 +91,10 @@ experiment-v1, accepted by the owner on 20 November 2026, Spec #53). No format v
 PL1 and RH1), the run manifest stays version 5 (additive unit keys). Drafts written under the
 old pin are refused with `spec_commit_mismatch`, as at every re-pin.
 
+**Quick fixes A: readers, masks, publication, records, run inputs, parsers.**
+
+- **A compressed TIFF piece shorter than its byte count is refused (#377).** A strip or tile whose byte count points past the end of the file was read short and, as zlib and other streams end themselves, decoded as if complete. Window, block and channel-plane reads now refuse it with `PlaneReadError` ("Part N of a page of FILE is truncated: K of M bytes"). `tests/test_tiff_short_piece.py`.
+
 ### Added
 
 - **`check_metadata(files, *, allow_z=False)` and `inspect_images(..., allow_z=False)`: header

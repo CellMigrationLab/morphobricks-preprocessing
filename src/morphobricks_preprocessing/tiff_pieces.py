@@ -281,6 +281,12 @@ def _decode_segment(
             kwargs = {"jpegtables": page.jpegtables, "jpegheader": keyframe.jpegheader}
     except Exception as exc:  # a short or unreadable file
         raise PlaneReadError(f"Part {index} of a page of {path} cannot be read: {exc}") from exc
+    expected = int(page.databytecounts[index])
+    if len(data) != expected:  # a self-terminating stream would decode without the rest (#377)
+        raise PlaneReadError(
+            f"Part {index} of a page of {path} is truncated: {len(data)} of {expected} bytes. "
+            "The file is incomplete or its header is damaged: copy it again from the original."
+        )
     if jpeg:
         check_jpeg_piece(data, page.jpegtables, piece_decode(keyframe), index, path)
         _, where, shape = decode(None, index)  # no data: nothing is decoded
