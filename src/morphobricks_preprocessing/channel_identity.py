@@ -396,6 +396,10 @@ def _findings(
         partner = places.get(other)
         if found.mutual or found.nearest_absent or partner is None:
             continue
+        if (taken := findings.get(other)) is not None and taken.mutual:
+            # A channel has one swap partner: the first pair (sorted order) keeps it, and this
+            # channel stays a plain swap finding (#395).
+            continue
         ratio = settings.partner_ratio
         if not _leans(places[key], found.nearest, limit, ratio):
             continue
