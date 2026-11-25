@@ -69,6 +69,34 @@ before timing). Tiles are 512 px, strips 64 rows, Zarr chunks 1024 px.
 | `pair_counts` (nuclei in cells) | 41.5 ms (40.3–50.0) | 27 MiB | 245 ms (235–260) | 110 MiB |
 | scan of one position (`_scan_plane`: both masks' pieces, both pairs) | 701 ms (674–734) | 132 MiB | 4,704 ms (4,601–4,933) | 528 MiB |
 
+### `piece_counts` in one pass (#69), before and after
+
+`python tools/benchmark_kernels.py --group masks` (7 timed calls per case after one warm-up), the
+same machine, Python and libraries as above, run four times in turn on 25 November 2026:
+before (`main` at `c8c3808`), after (this change), before, after. Every case has the same
+digest in all four runs, and the inputs the same digests as the baseline above (reports:
+[before](benchmark_results/2026-11-25-kernels-masks-before-69.json) and
+[after](benchmark_results/2026-11-25-kernels-masks-after-69.json), the first round; the "after"
+report names `c8c3808` as its commit because it was run before this change was committed).
+Another job's tests were running on the machine (1-minute load 0.8 to 2.2 at the starts), so
+the absolute times are above the baseline's; the before and after runs shared that load.
+
+| Case | Before, run 1 | After, run 1 | Before, run 2 | After, run 2 | Traced, before / after | Digest (first 16) |
+|---|---:|---:|---:|---:|---:|---|
+| `piece_counts` 2048 | 343 ms (330–379) | 41.2 ms (36.7–46.2) | 413 ms (388–517) | 38.3 ms (35.8–44.8) | 132 / 12.1 MiB | `4abd144b846d176c` |
+| `piece_counts` 4096 | 2,369 ms (2,238–2,534) | 181 ms (159–210) | 2,283 ms (2,199–2,409) | 195 ms (174–233) | 528 / 48.0 MiB | `c575615afca962cf` |
+| scan of one position 2048 | 917 ms (798–1,067) | 247 ms (220–302) | 902 ms (788–1,015) | 219 ms (214–239) | 132 / 78.5 MiB | `69de16bd28281cc3` |
+| scan of one position 4096 | 5,201 ms (5,040–5,650) | 1,252 ms (1,086–1,408) | 5,603 ms (5,098–5,873) | 1,230 ms (1,102–1,291) | 528 / 314 MiB | `ec5910c05e04c1c7` |
+| `pair_counts` 4096 (unchanged) | 258 ms | 271 ms | 279 ms | 267 ms | 110 / 110 MiB | `550398e1f131c578` |
+
+Peak resident memory of the benchmark process: 841 MiB before, 631 MiB after. The former
+function spent most of its time in the sort of every pixel (`np.unique(...,
+return_inverse=True)`, about 2.5 s of the 4096 px case when timed alone), not in its loop of
+per-label `ndimage.label` (about 0.15 s on these compact cells). The loop dominates when labels
+are spread over the plane: on a 2048 px mask of 1,000 labels scattered over 20 % of the pixels
+(a check outside the tool, `tests/test_mask_pieces.py`'s reference against the new function,
+median of 3 calls) it took 15.8 s, the new function 0.25 s, with equal outputs.
+
 ## Channel identity (`check_channel_identity`, three channels)
 
 | Units | Images per unit | Time | Traced |
