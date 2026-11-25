@@ -26,6 +26,20 @@ MIN_INTERVAL = 0.1
 TICK = 1.0
 """Seconds between two redraws of a ticking wait (:meth:`Wait.ticking`) that reports nothing."""
 
+PREPARING = {
+    "folders": "Preparing: listing the folders again",
+    "headers": "Preparing: reading the image headers again",
+    "masks": "Preparing: reading the mask headers again",
+    "acquisitions": "Preparing: comparing the images and checking the description",
+}
+"""What the run's wait says in each phase of its own folder check (:data:`.run.phases.PHASES`)."""
+BUSY_NOTE = (
+    "<div class='mb-help'>The run is going: the notebook is busy until it finishes or stops. "
+    "A cell run meanwhile (this one too) waits for it; to stop the run, interrupt the "
+    "kernel (Colab: Runtime > Interrupt execution).</div>"
+)
+"""Said under the wait while the run goes (owner test of v0.9.0: a cell run again just waited)."""
+
 
 def clock_text(seconds: float) -> str:
     """Return a duration as ``m:ss`` (``h:mm:ss`` from an hour on)."""
@@ -222,8 +236,10 @@ class Wait:
 
 
 __all__ = [
+    "BUSY_NOTE",
     "MEASURABLE_SECONDS",
     "MIN_INTERVAL",
+    "PREPARING",
     "TICK",
     "Wait",
     "clock_text",

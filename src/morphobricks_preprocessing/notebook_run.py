@@ -33,7 +33,7 @@ from .notebook_options import (
     serial_note,
 )
 from .notebook_plots import IntensityPanel
-from .notebook_progress import Wait
+from .notebook_progress import BUSY_NOTE, PREPARING, Wait
 from .notebook_render import _bins_help, _label, blocked_line, change_lines, issues_html
 from .planes import DEFAULT_MEMORY_LIMIT
 from .report import issue_counts, rebuild_line
@@ -44,19 +44,6 @@ from .run_labels import recorded_labels
 from .validation import has_errors, plural
 
 READING = "Reading images"
-PREPARING = {
-    "folders": "Preparing: listing the folders again",
-    "headers": "Preparing: reading the image headers again",
-    "masks": "Preparing: reading the mask headers again",
-    "acquisitions": "Preparing: comparing the images and checking the description",
-}
-"""What the run's wait says in each phase of its own folder check (:data:`.run.phases.PHASES`)."""
-BUSY_NOTE = (
-    "<div class='mb-help'>The run is going: the notebook is busy until it finishes or stops. "
-    "A cell run meanwhile (this one too) waits for it; to stop the run, interrupt the "
-    "kernel (Colab: Runtime > Interrupt execution).</div>"
-)
-"""Said under the wait while the run goes (owner test of v0.9.0: a cell run again just waited)."""
 
 
 class _RunStep:
