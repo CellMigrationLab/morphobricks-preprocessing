@@ -20,7 +20,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import replace
 from pathlib import Path
 
@@ -68,7 +68,9 @@ def current_content(path: Path) -> str | None:
 
 
 def with_content(
-    entries: Mapping[str, FileEntry], root: Path
+    entries: Mapping[str, FileEntry],
+    root: Path,
+    progress: Callable[[int, int, str], None] | None = None,
 ) -> tuple[dict[str, FileEntry], list[str]]:
     """Record each image's content SHA-256 in its entry.
 
@@ -78,6 +80,10 @@ def with_content(
         The run's entries, ``{relative path: FileEntry}``.
     root
         The experiment folder.
+    progress
+        Called as ``progress(done, total, relative_path)`` before each image is hashed, and
+        as ``progress(total, total, "")`` at the end: each image is read whole, which takes
+        seconds for a large image on slow storage. It changes nothing about the result.
 
     Returns
     -------
@@ -86,11 +92,16 @@ def with_content(
         cannot be read keeps None, and is never reused.
     """
     found, unreadable = {}, []
-    for rel, entry in entries.items():
+    total = len(entries)
+    for done, (rel, entry) in enumerate(entries.items()):
+        if progress is not None:
+            progress(done, total, rel)
         sha = current_content(root / rel)
         if sha is None:
             unreadable.append(rel)
         found[rel] = replace(entry, content_sha256=sha)
+    if progress is not None:
+        progress(total, total, "")
     return found, unreadable
 
 

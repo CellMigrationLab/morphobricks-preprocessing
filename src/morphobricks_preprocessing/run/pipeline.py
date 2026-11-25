@@ -72,7 +72,15 @@ from .reuse import read_previous, recorded_experiment_root
 from .rows import _pixel_issues, _range_issues, _row_order
 from .staging import clear_staging
 from .state import RunOptions, RunState
-from .steps import Rows, compute_rows, counts, header_checks, outcome_of, unreadable_issue
+from .steps import (
+    Reporting,
+    Rows,
+    compute_rows,
+    counts,
+    header_checks,
+    outcome_of,
+    unreadable_issue,
+)
 from .workers import Workers
 
 logger = logging.getLogger(__name__)
@@ -268,8 +276,9 @@ def _locked_run(given: GivenInputs, output: Path, options: RunOptions) -> RunRes
         histogram=inputs.histogram_settings,
         verify_content=inputs.verify_content,
     )
+    reporting = Reporting(options.progress, options.checking)
     rows = compute_rows(
-        pre, checked, settings, output, previous, options.mode, options.progress, options.workers
+        pre, checked, settings, output, previous, options.mode, reporting, options.workers
     )
     checked.issues.extend(_read_issues(rows, settings))
     if rows.refused or rows.changed or rows.failed:

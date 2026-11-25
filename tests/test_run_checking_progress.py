@@ -21,7 +21,7 @@ from morphobricks_preprocessing import prefill_mapping
 from morphobricks_preprocessing.mask_names import _mask_owner, _stems, mask_name_issues
 from morphobricks_preprocessing.metadata import MetadataReport
 from morphobricks_preprocessing.run import RunMode
-from morphobricks_preprocessing.run.phases import PHASES
+from morphobricks_preprocessing.run.phases import CONTENTS, PHASES
 from test_notebook_check_save import answer_all, exp  # noqa: F401
 from tiff_tree import write_tiff
 
@@ -74,8 +74,28 @@ def test_the_check_is_reported_before_any_image_is_read(tmp_path, experiment):
         progress=lambda *_: events.append("read"),
     )
     first_read = events.index("read")
-    assert set(events[:first_read]) == set(PHASES)
+    # A fresh output folder verifies content by default: each image is hashed, and said so.
+    assert set(events[:first_read]) == {*PHASES, CONTENTS}
     assert set(events[first_read:]) == {"read"}
+
+
+@pytest.mark.parametrize("verify", [True, False])
+def test_each_content_sha256_is_reported_before_the_first_read(tmp_path, experiment, verify):
+    calls = []
+    run_described(
+        experiment,
+        prefill_mapping("YX"),
+        output_folder=tmp_path / "out",
+        mode=RunMode(verify_content=verify, checking=lambda *call: calls.append(call)),
+    )
+    hashed = [(done, total, path) for phase, done, total, path in calls if phase == CONTENTS]
+    if not verify:  # nothing is read whole before the pixels
+        assert hashed == []
+        return
+    assert [entry for entry in hashed if entry[2]] == [
+        (index, len(IMAGES), rel) for index, rel in enumerate(sorted(IMAGES))
+    ]
+    assert hashed[-1] == (len(IMAGES), len(IMAGES), "")
 
 
 def test_the_outputs_are_the_same_with_and_without_the_check_reported(tmp_path, experiment):
@@ -234,6 +254,10 @@ def test_the_notebook_run_shows_each_header_it_checks_again(exp):  # noqa: F811
     ), lines[:5]
     first_read = next(i for i, line in enumerate(lines) if line.startswith("Reading images"))
     assert any(line.startswith("Preparing: comparing the images") for line in lines[:first_read])
+    assert any(
+        re.match(r"Preparing: reading each image whole for its content SHA-256 · 0 of \d+", line)
+        for line in lines[:first_read]
+    ), lines
     assert "elapsed" not in lines[-1]  # the result replaced the wait, and stayed
     # While it goes, the run says that a cell run meanwhile waits for it; then that goes.
     assert "A cell run meanwhile (this one too) waits for it" in notes[0]

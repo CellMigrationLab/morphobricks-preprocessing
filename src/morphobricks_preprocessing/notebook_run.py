@@ -33,7 +33,7 @@ from .notebook_options import (
     serial_note,
 )
 from .notebook_plots import IntensityPanel
-from .notebook_progress import BUSY_NOTE, PREPARING, Wait
+from .notebook_progress import BUSY_NOTE, COUNTED_PHASES, PREPARING, Wait
 from .notebook_render import _bins_help, _label, blocked_line, change_lines, issues_html
 from .planes import DEFAULT_MEMORY_LIMIT
 from .report import issue_counts, rebuild_line
@@ -455,8 +455,8 @@ class _RunStep:
         wait = self._run_wait
         label = PREPARING[phase]
         if wait.label != label:
-            wait.phase(label, total if phase in ("headers", "masks") else 0)
-        if path and phase in ("headers", "masks"):
+            wait.phase(label, total if phase in COUNTED_PHASES else 0)
+        if path and phase in COUNTED_PHASES:
             wait.step(done, total, path)
 
     def _run_failed(self, exc: Exception) -> None:

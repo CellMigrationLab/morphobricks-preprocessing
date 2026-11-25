@@ -93,7 +93,8 @@ class RunMode:
     checking
         Called while the run checks the folder and every image header again, before any
         image is read, as :func:`.preflight.preflight`'s ``progress``:
-        ``(phase, done, total, path)``, a phase of :data:`.phases.PHASES`, once per header.
+        ``(phase, done, total, path)``, a phase of :data:`.phases.PHASES`, once per header,
+        then in a ``verify_content`` run :data:`.phases.CONTENTS`, once per image hashed.
         On a large experiment this check takes minutes (owner test of v0.9.0). Operational
         only, like ``workers``: not recorded, not compared, and the outputs are the same.
     """

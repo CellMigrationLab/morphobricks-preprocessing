@@ -31,8 +31,12 @@ PREPARING = {
     "headers": "Preparing: reading the image headers again",
     "masks": "Preparing: reading the mask headers again",
     "acquisitions": "Preparing: comparing the images and checking the description",
+    "contents": "Preparing: reading each image whole for its content SHA-256",
 }
-"""What the run's wait says in each phase of its own folder check (:data:`.run.phases.PHASES`)."""
+COUNTED_PHASES = ("headers", "masks", "contents")
+"""The phases of the run's checks shown as done of total, each with its file."""
+"""What the run's wait says in each phase of its own checks before the first read
+(:data:`.run.phases.PHASES`, then :data:`.run.phases.CONTENTS`)."""
 BUSY_NOTE = (
     "<div class='mb-help'>The run is going: the notebook is busy until it finishes or stops. "
     "A cell run meanwhile (this one too) waits for it; to stop the run, interrupt the "
@@ -237,6 +241,7 @@ class Wait:
 
 __all__ = [
     "BUSY_NOTE",
+    "COUNTED_PHASES",
     "MEASURABLE_SECONDS",
     "MIN_INTERVAL",
     "PREPARING",
