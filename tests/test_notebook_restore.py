@@ -264,7 +264,7 @@ def test_start_fresh_forgets_the_restore_and_touches_no_file(exp):
     assert not ui.is_visible(nb.restore_fresh)
     assert files_of(out) == restored and files_of(root) == before[1]
     # The restore itself rewrote only the check's report and record, as Check folder does.
-    changed = {name for name in restored if restored[name] != before[0].get(name)}
+    changed = {str(name) for name in restored if restored[name] != before[0].get(name)}
     assert changed <= {"discovery_report.json", "discovery_report.txt", CHECK_RECORD_FILENAME}
     nb.output.value = str(out)  # the same folder again: not restored behind the user's back
     assert nb.preflight is None
