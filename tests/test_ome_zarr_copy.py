@@ -33,6 +33,9 @@ from morphobricks_preprocessing.run import preflight  # noqa: E402
 from test_notebook_check_save import FOLDERS, answer_all  # noqa: E402
 from test_notebook_projection import NAMES, digests, write_stacks  # noqa: E402
 
+# the per-unit grid driven through the stepper (the guided step is pinned by its own tests)
+pytestmark = pytest.mark.usefixtures("legacy_grid")
+
 
 def _text(text):
     return re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", " ", text))).strip()
