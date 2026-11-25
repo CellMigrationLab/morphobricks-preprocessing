@@ -198,8 +198,13 @@ def test_after_the_check_the_viewer_stays_and_the_details_are_folded(exp):  # no
     assert ui.is_visible(nb.found_fold) and nb.found_fold.selected_index is None
     assert ui.is_visible(nb.report_fold) and nb.report_fold.selected_index is None
     assert _holds(nb.found_fold, nb.labels_card) and _holds(nb.report_fold, nb.check_report.widget)
-    nb.folder.value = str(exp[0]) + "/"
+    nb.folder.value = str(exp[0]) + "_other"
     assert not ui.is_visible(nb.found_fold)  # another folder: nothing found is shown
+    # The checked folder typed again (here with a slash): its output folder's earlier work is
+    # restored (v0.9.0), every header reused, nothing confirmed.
+    nb.folder.value = str(exp[0]) + "/"
+    assert ui.is_visible(nb.found_fold) and ui.is_visible(nb.restore_box)
+    assert nb.preflight.headers_reused and nb.confirmed_mapping is None
 
 
 def test_the_welcome_and_the_statistics_page_take_no_room(exp):  # noqa: F811

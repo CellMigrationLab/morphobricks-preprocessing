@@ -12,6 +12,7 @@ import os
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field, replace
 from pathlib import Path
+from types import MappingProxyType
 
 from ..axes import (
     AxisMapping,
@@ -27,7 +28,13 @@ from ..discovery import DiscoveryResult, default_output_folder, discover_experim
 from ..fingerprint import Fingerprint, current_fingerprint
 from ..mask_names import MASK_NAME_CODES, mask_name_issues
 from ..masks import MaskFile, MaskInventory, find_masks
-from ..metadata import MetadataReport, check_metadata, inspect_image, inspect_images
+from ..metadata import (
+    MetadataReport,
+    TiffMetadata,
+    check_metadata,
+    inspect_image,
+    inspect_images,
+)
 from ..name_issues import non_nfc_folders_issue
 from ..pixel_size_checks import PIXEL_SIZE_CODES, pixel_size_issues
 from ..planes import (
@@ -77,6 +84,9 @@ class Preflight:
         its header was read, or None when the two differ (or it went missing): the
         header read is then not known to describe the file as fingerprinted. Empty
         otherwise.
+    headers_reused
+        The images whose header was taken from a recorded check (``recorded`` of
+        :func:`preflight`) instead of being read again, sorted; empty otherwise.
     """
 
     discovery: DiscoveryResult
@@ -89,6 +99,7 @@ class Preflight:
     calibration: CalibrationReview = field(default_factory=CalibrationReview)
     conversion: ConversionReview | None = None
     header_fingerprints: Mapping[str, Fingerprint | None] = field(default_factory=dict)
+    headers_reused: tuple[str, ...] = ()
 
     @property
     def issues(self) -> tuple[ValidationIssue, ...]:
@@ -175,6 +186,7 @@ def preflight(
     mask_axes: Mapping[str, str] | None = None,
     bind_headers: bool = False,
     progress: Callable[[str, int, int, str], None] | None = None,
+    recorded: Mapping[str, tuple[Fingerprint, TiffMetadata]] | None = None,
 ) -> Preflight:
     """Pass 1: check the folder and the image headers without reading pixels.
 
@@ -207,6 +219,12 @@ def preflight(
         masks phase ``("masks", done, total, mask_path)`` before each mask's header, and the
         folders phase ``("folders", 0, 1, folder)`` before each folder is listed.
         :func:`.phases.progress_text` words it. It changes nothing about the result.
+    recorded
+        Headers a recorded check read, ``{relative path: (fingerprint, header)}``
+        (:mod:`.check_record`), already checked to be of this experiment and this code. An
+        image whose fingerprint now equals the recorded one keeps its recorded header and is
+        not opened (:attr:`Preflight.headers_reused`); every other image is read. Implies
+        ``bind_headers``.
 
     Returns
     -------
@@ -227,7 +245,8 @@ def preflight(
     excluded = tuple(sorted({normalise_relative_path(path) for path in exclude}))
     discovery = _without_excluded_masks(discovery, excluded)
     images = [path for path in discovery.images if path not in excluded]
-    inspected, bound = _inspected(root, images, bind_headers, progress)
+    bind_headers = bind_headers or recorded is not None
+    inspected, bound, reused = _inspected(root, images, bind_headers, progress, recorded or {})
     metadata, calibration = _calibrated(inspected, discovery.images, output)
     report("masks", 0, 1, "")
     masks = _masks(
@@ -254,6 +273,7 @@ def preflight(
             root, discovery.images, images, [(m.image, m.path) for m in _mask_files(masks)]
         ),
         header_fingerprints=bound,
+        headers_reused=reused,
     )
     report("acquisitions", 1, 1, "")
     return result
@@ -273,26 +293,38 @@ def _inspected(
     images: list[str],
     bind: bool,
     progress: Callable[[str, int, int, str], None] | None = None,
-) -> tuple[MetadataReport, dict[str, Fingerprint | None]]:
+    recorded: Mapping[str, tuple[Fingerprint, TiffMetadata]] = MappingProxyType({}),
+) -> tuple[MetadataReport, dict[str, Fingerprint | None], tuple[str, ...]]:
     """Inspect the headers; with ``bind``, fingerprint each image before and after.
 
     With ``progress``, each image is reported before its header is read (phase ``headers``).
+    An image whose fingerprint equals its ``recorded`` one keeps the recorded header.
     """
     if not bind and progress is None:
-        return inspect_images(root, images), {}
+        return inspect_images(root, images), {}, ()
     report = progress or _no_progress
-    files, bound = [], {}
+    files, bound, reused = [], {}, []
     ordered = sorted(images)
     report("headers", 0, len(ordered), "")
     for done, rel in enumerate(ordered):
         report("headers", done, len(ordered), rel)
         before = current_fingerprint(root / rel) if bind else None
+        kept = recorded.get(rel)
+        if before is not None and kept is not None and kept[0] == before:
+            files.append(kept[1])  # the header read at this very fingerprint
+            bound[rel] = before
+            reused.append(rel)
+            continue
         files.append(inspect_image(root / rel, rel))
         if bind:
             after = current_fingerprint(root / rel)
             bound[rel] = before if before is not None and before == after else None
     report("headers", len(ordered), len(ordered), "")
-    return MetadataReport(files=tuple(files), issues=tuple(check_metadata(files))), bound
+    return (
+        MetadataReport(files=tuple(files), issues=tuple(check_metadata(files))),
+        bound,
+        tuple(reused),
+    )
 
 
 def remasked(

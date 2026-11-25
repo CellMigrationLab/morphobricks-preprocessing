@@ -113,16 +113,22 @@ def _state(workflow: CellposeNotebook, index: int) -> StepState:
 def app_folders(app: object) -> tuple[str, str]:
     """Return the run folder and the masks folder a Preprocessing app holds, or blanks.
 
-    Both are blank unless the app's last run was written. The run folder is that run's output
-    folder; the masks folder is the app's own rule, ``_runs_masks_folder()`` (the masks folder
-    the app checked, else the one the run recorded; blank for none), never what its masks box
-    says now. Nothing is guessed.
+    Both are blank unless the app's last run was written, or, before any run in this session,
+    the app restored a finished run of its output folder (``app.restored_run``,
+    :mod:`.notebook_restore`; the segmentation opens it through ``RunInputs``, which checks it
+    again). The run folder is that run's output folder; the masks folder is the app's own rule,
+    ``_runs_masks_folder()`` (the masks folder the app checked, else the one the run recorded;
+    blank for none), never what its masks box says now. Nothing is guessed.
     """
     result = getattr(app, "result", None)
-    if result is None or not getattr(result, "written", False):
+    if result is None and getattr(app, "restored_run", None) is not None:
+        folder = app.restored_run
+    elif result is None or not getattr(result, "written", False):
         return "", ""
+    else:
+        folder = result.output_folder
     masks = app._runs_masks_folder()
-    return os.fspath(result.output_folder), "" if masks is None else os.fspath(masks)
+    return os.fspath(folder), "" if masks is None else os.fspath(masks)
 
 
 def segmentation_app(

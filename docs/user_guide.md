@@ -456,6 +456,38 @@ editing, or the confirmed ones. An image that cannot be drawn gets a sentence sa
    pictures, recommended bins and confirmations are cleared, and a red message names the
    folder and the error (the full report is in **Technical details**).
    Make sure Google Drive is mounted and the folder is there, then click the button again.
+
+   **Coming back to earlier work.** As soon as the output folder is set (typed, chosen, or the
+   default next to a new experiment folder) and no check is on screen, the app looks at what
+   the folder holds and restores it with a message at the top: *Found earlier work from
+   &lt;date&gt;: restored &lt;what&gt;*, the output folder, what was reused and what was read
+   again, and the step it opened on. When the experiment folder box is empty it is filled
+   from the earlier work; a different experiment folder restores nothing. What it restores:
+   - **The folder check.** Each check keeps the headers it read in `check_headers.json`. An
+     image whose size and modification time (its fingerprint) are unchanged keeps its recorded
+     header and is not opened again; every new or changed image is read, and the message names
+     them. A record of another experiment folder, of another version of the software, or that
+     cannot be read is not used: every header is read again, and the message says why. Mask
+     headers, and the first page of each TIFF (which says whether it is a projected copy), are
+     always read again.
+   - **Your answers.** The saved answers (`morphobricks.draft.json`), the saved description
+     (`morphobricks.toml`) and the earlier run's settings are read as **Check folder** reads
+     them, and the steps open on the first step still to do. Nothing is confirmed for you: the
+     axis roles, for one, are offered for one click.
+   - **A finished run.** When the run is of this experiment and of the saved description as it
+     is, with every image unchanged, and later bricks can open it as it is (its table, design,
+     pixel sizes, masks), **Run** opens with its report,
+     its intensity checks and what to do next (in the Preprocessing and Cellpose notebook, cell
+     4 segments this run). Otherwise the message says why it is not current.
+
+   **Check folder** (after **Scan the folders** on the stepper) reads every header again.
+   **Start fresh** forgets what was restored and starts a new session: no file is changed or
+   deleted, and Check folder still reads the answers saved in the output folder (choose
+   another output folder to start without them). If the earlier work cannot be read, a red
+   message says so and nothing of it is used. The folder boxes are read when you press Enter,
+   choose with Browse or leave the box, so a folder you pass through while typing is not
+   restored. Choosing another output folder clears what was restored, until you give an
+   answer, confirm, save or run: from then on it is your work and stays.
 2. **Axes.** What the files hold, in two parts. The roles start from the proposal of step
    1 (the header's, or what you chose on the example) and can be changed here at any time;
    once confirmed, **Change axis roles** takes the confirmation back. The instant one of these
@@ -1373,6 +1405,10 @@ The default output folder is next to the experiment folder:
   pixels as stated; or `uncalibrated`), the stated calibration, the design and image type, the masks,
   every message with its action, and what the run reused, recomputed and replaced, and
   why. It is for you to read; later bricks never use it.
+- **`check_headers.json`** (notebook only): the image headers the last **Check folder** read,
+  each with the fingerprint it was read at, so that reopening the output folder restores the
+  check without reading unchanged images again (§4, *Coming back to earlier work*). It is a
+  cache: delete it and the next restore reads every header; later bricks never read it.
 - **`calibration.csv`** (only when you state pixel sizes): your statements (§5, Stating
   pixel sizes). Runs read it and never change it.
 - **`ome_zarr/`**: written only by v0.3 runs that converted TIFF images to OME-Zarr. That

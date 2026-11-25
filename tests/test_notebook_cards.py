@@ -84,7 +84,8 @@ def hold_lock(output, pid, host=None):
 def test_the_check_writes_its_report_and_no_design(experiment):
     nb = checked(experiment)
     output = output_of(experiment)
-    assert check_outputs(output)  # the report, beside the published description
+    assert check_outputs(output, notebook=True)  # the report and the headers record, beside
+    # the published description
     assert "The check wrote its report" in nb.check_report.where.value
     assert "discovery_report.txt" in nb.check_report.where.value
     assert ui.is_visible(nb.check_report.box)

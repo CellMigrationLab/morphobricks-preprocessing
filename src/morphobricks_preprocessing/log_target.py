@@ -31,6 +31,7 @@ from pathlib import Path
 from morphobricks_normalization.csv_io import OUTPUT_FILENAME
 
 from .calibration import CALIBRATION_FILENAME
+from .check_record import CHECK_RECORD_FILENAME
 from .conversion_record import RECORD_FILENAME
 from .design import DESIGN_FILENAME
 from .discovery_report import REPORT_FILENAME, REPORT_TEXT_FILENAME
@@ -56,6 +57,7 @@ PROTECTED_OUTPUTS = frozenset(
         MASK_REPORT_FILENAME,
         LOCK_FILENAME,
         RECORD_FILENAME,
+        CHECK_RECORD_FILENAME,
         PUBLISH_FOLDER,
         STAGING_FOLDER,
     }
