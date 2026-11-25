@@ -108,6 +108,10 @@ def _json(data: bytes) -> dict:
         raise _Malformed("it is not UTF-8 text") from exc
     except json.JSONDecodeError as exc:
         raise _Malformed(f"it is not valid JSON ({exc.msg}, line {exc.lineno})") from exc
+    except _Malformed:
+        raise  # a duplicate key or a non-JSON number, refused by the hooks
+    except ValueError as exc:  # an integer over Python's digit limit (#455)
+        raise _Malformed("it holds a number too long to read") from exc
     if not isinstance(report, dict):
         raise _Malformed("it is not a JSON object")
     return report

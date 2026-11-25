@@ -233,6 +233,7 @@ def _read_segment(
     offset, count = int(page.dataoffsets[index]), int(page.databytecounts[index])
     if offset == 0 or count == 0:
         return None
+    _check_piece_extent(page, index, path)
     a, b = rows
     if blocking.partial_rows:
         fh = page.parent.filehandle
@@ -281,6 +282,12 @@ def _decode_segment(
             kwargs = {"jpegtables": page.jpegtables, "jpegheader": keyframe.jpegheader}
     except Exception as exc:  # a short or unreadable file
         raise PlaneReadError(f"Part {index} of a page of {path} cannot be read: {exc}") from exc
+    expected = int(page.databytecounts[index])
+    if len(data) != expected:  # a self-terminating stream would decode without the rest (#377)
+        raise PlaneReadError(
+            f"Part {index} of a page of {path} is truncated: {len(data)} of {expected} bytes. "
+            "The file is incomplete or its header is damaged: copy it again from the original."
+        )
     if jpeg:
         check_jpeg_piece(data, page.jpegtables, piece_decode(keyframe), index, path)
         _, where, shape = decode(None, index)  # no data: nothing is decoded
@@ -328,8 +335,31 @@ def check_jpeg_piece(
     )
 
 
+def _check_piece_extent(
+    page: tifffile.TiffPage | tifffile.TiffFrame, index: int, path: str | os.PathLike
+) -> None:
+    """Refuse a strip or tile whose header places it past the end of the file (#377).
+
+    A self-terminating stream (zlib and others) read short decodes as if complete, so the
+    header is checked before any read: offset + byte count must lie within the file.
+    """
+    offset, count = int(page.dataoffsets[index]), int(page.databytecounts[index])
+    size = int(page.parent.filehandle.size)
+    if offset == 0 or count == 0 or offset + count <= size:
+        return
+    raise PlaneReadError(
+        f"Part {index} of a page of {path} is truncated: {max(0, size - offset)} of {count} "
+        "bytes. The file is incomplete or its header is damaged: copy it again from the original."
+    )
+
+
 def page_array(page: tifffile.TiffPage | tifffile.TiffFrame, path: str | os.PathLike) -> np.ndarray:
-    """Decode a whole page: a JPEG page with :func:`read_jpeg_page`, any other by tifffile."""
+    """Decode a whole page: a JPEG page with :func:`read_jpeg_page`, any other by tifffile.
+
+    Every strip or tile of the page is first checked to lie within the file (#377).
+    """
+    for index in range(len(page.dataoffsets)):
+        _check_piece_extent(page, index, path)
     if page.keyframe.compression == JPEG:
         return read_jpeg_page(page, path)
     return page.asarray()

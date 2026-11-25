@@ -89,13 +89,23 @@ def xyc_plane_memory(
 
     ``channel_count`` defaults to the image's channel count (1 without a channel axis). For
     TIFF the bound is of the pages holding the plane at ``z`` and ``t``, sized from their own
-    strip or tile byte counts (pages can compress very differently).
+    strip or tile byte counts (pages can compress very differently). The request is checked
+    as :func:`read_xyc_plane` checks it, for OME-Zarr as for TIFF.
+
+    Raises
+    ------
+    IndexError
+        If ``channel_count`` is not 1 to the image's channels, or a coordinate is outside the
+        image or given for an axis it lacks.
     """
     if is_zarr_store(path):
         layout = _zarr_layout(
             _open_zarr(path), mapping, path, Binning(histogram=False), memory_limit
         )
-        return _zarr_memory(layout, _count(layout, channel_count))
+        count = _checked(layout, channel_count, path)
+        for c in range(count):  # the coordinates the read would refuse, refused here (#379)
+            _position(layout, mapping, _wanted({"Z": z, "T": t}, mapping, c))
+        return _zarr_memory(layout, count)
     with _open(path) as tif:
         series = tif.series[0]
         layout = _layout(series, mapping, path, Binning(histogram=False), memory_limit)

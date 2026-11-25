@@ -251,10 +251,10 @@ class _StepsFlow(
         super()._refresh_run_step()
         self._refresh_steps()
 
-    def check_folder(self) -> Preflight | None:
-        """Check the folder; a reopened experiment opens on its first step still to do."""
-        pre = super().check_folder()
-        if pre is not None and getattr(self, "_stepper", None) is not None:
+    def _show_check(self, folder: str, pre: Preflight) -> None:
+        """Show the check; a reopened experiment opens on its first step still to do."""
+        super()._show_check(folder, pre)
+        if getattr(self, "_stepper", None) is not None:
             # The headers are read: the viewer now shows the images as the check read them.
             self._show_checked_viewer()
             self._show_scan_axes()
@@ -263,7 +263,31 @@ class _StepsFlow(
             self.scan_status.value = ""
             self._refresh_folds()
             self._go_first_open()
-        return pre
+
+    def _clear_check_views(self) -> None:
+        """Show nothing on the steps of a check no longer on screen (#101).
+
+        No line, offer or picture of it, and no enabled *Confirm these axes*; the scan's
+        folders stay listed while they are of the folders typed.
+        """
+        super()._clear_check_views()
+        if getattr(self, "_stepper", None) is None:
+            return
+        for viewer in (self.scan_viewer, self.axes_viewer):
+            viewer.clear()
+        self.scan_example.children = []
+        ui.set_visible(self.scan_tree, True)
+        found = self._scan if self._scan_current() else None
+        ui.set_visible(self.scan_box, found is not None and bool(found.leaves))
+        self._show_scan_axes()  # empty without a check
+        self._show_copy_note()
+        self.axis_status.value = ""
+        self.quick_text.value = self.quick_caption.value = ""
+        self.quick_confirm.disabled = True
+        self._refresh_quick_axes()  # nothing to offer: hidden
+        self._refresh_projection_card(None)
+        self._refresh_zarr_card()
+        self._refresh_confirmed_viewers()
 
     def _go_first_open(self) -> None:
         """Open a reopened experiment's first step still to do (Run when none is)."""

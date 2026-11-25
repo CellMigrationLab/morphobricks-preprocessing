@@ -165,3 +165,15 @@ def test_every_path_needs_its_axes_and_identity(run):
         check_sources(manifest, root, IMAGES, image_axes=dict.fromkeys(IMAGES[:2], "TYX"))
     with pytest.raises(ValueError, match="identities has no entry"):
         check_sources(manifest, root, IMAGES, identities={})
+
+
+@pytest.mark.parametrize("given", ["YYX", "yYX", "YXX", "XYX"])
+def test_a_repeated_letter_is_refused_even_on_an_axis_without_a_role(run, given):
+    # #485: a dimension without a role fits any letter, but not one the axes name again.
+    root, manifest = run
+    files = tuple(replace(f, roles=(None, "Y", "X")) for f in manifest.files)
+    axes = {**dict.fromkeys(IMAGES, "TYX"), IMAGES[1]: given}
+    with pytest.raises(ValueError, match=rf"image_axes .* {IMAGES[1]} .*more than once"):
+        check_sources(replace(manifest, files=files), root, IMAGES, image_axes=axes)
+    axes[IMAGES[1]] = "ZYX"  # distinct letters still fit
+    assert check_sources(replace(manifest, files=files), root, IMAGES, image_axes=axes) == []

@@ -23,6 +23,7 @@ from morphobricks_preprocessing.manifest import (
     package_versions,
     parse_manifest,
 )
+from morphobricks_preprocessing.recorded_sizes import SIZE_ROLES, RecordedSize
 from tiff_tree import write_tiff
 
 
@@ -38,6 +39,7 @@ def entry(path="cond/rep/a.tif", **kwargs):
         "axes_from": "header",
         "position_id": position_id(path),
         "channel_ids": ("DNA",),
+        "pixel_sizes": tuple(RecordedSize(role) for role in SIZE_ROLES),  # one per role (#389)
     }
     return FileEntry(**{**values, **kwargs})
 
