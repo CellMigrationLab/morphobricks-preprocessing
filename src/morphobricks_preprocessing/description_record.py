@@ -234,7 +234,7 @@ def recorded_description(value: object) -> dict | None:
         where = f"{KEY}.units[{index}]"
         _checked_unit_fields(unit, where)
         if FIELD in unit:
-            checked_items(unit[FIELD], where)
+            checked_items(unit[FIELD], where, len(unit["channels"]))
         if DECLARED in unit and not isinstance(unit[DECLARED], bool):
             raise ValueError(f"{where}.{DECLARED} is not true or false")
         if OVERRIDE_IMAGES in unit:
