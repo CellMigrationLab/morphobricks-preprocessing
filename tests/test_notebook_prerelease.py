@@ -35,6 +35,9 @@ from morphobricks_preprocessing import notebook_check_save  # noqa: E402
 from morphobricks_preprocessing import notebook_style as ui  # noqa: E402
 from test_notebook_axes_quick import stepper  # noqa: E402
 
+# the per-unit grid driven through the stepper (the guided step is pinned by its own tests)
+pytestmark = pytest.mark.usefixtures("legacy_grid")
+
 UNIT = UnitFolders("ctrl", "rep1", "single")
 KEY = ("ctrl", "rep1", "single")
 

@@ -18,6 +18,9 @@ pytest.importorskip("matplotlib")
 from morphobricks_preprocessing import notebook_style as ui  # noqa: E402
 from morphobricks_preprocessing.notebook_ui import PreprocessingNotebook  # noqa: E402
 
+# the per-unit grid driven through the stepper (the guided step is pinned by its own tests)
+pytestmark = pytest.mark.usefixtures("legacy_grid")
+
 
 def stepper(root, masks, out):
     nb = PreprocessingNotebook(str(root), output_folder=str(out))

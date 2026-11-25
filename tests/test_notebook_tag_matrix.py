@@ -33,6 +33,9 @@ pytest.importorskip("matplotlib")
 
 from test_notebook_row_fold import stepper  # noqa: E402
 
+# the per-unit grid driven through the stepper (the guided step is pinned by its own tests)
+pytestmark = pytest.mark.usefixtures("legacy_grid")
+
 TAGS = ("DNA", "ACTIN", "PHASE")
 UNITS = [(c, b, t) for c in ("ctrl", "drug") for b in ("rep1", "rep2") for t in ("t1", "t2")]
 LEAD = UNITS[0]

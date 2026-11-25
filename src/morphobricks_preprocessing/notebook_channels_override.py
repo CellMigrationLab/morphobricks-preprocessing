@@ -74,10 +74,12 @@ class OverrideEditor:
         self.confirm_button: widgets.Button | None = None
         self.cancel_button: widgets.Button | None = None
         self.cells: dict[tuple[UnitKey, int], widgets.Dropdown] = {}
+        self.notes: dict[tuple[UnitKey, int], widgets.HTML] = {}
 
     def build(self, width: int) -> list[widgets.Widget]:
         """Return the widgets: a button per listed unit with a reference, and the open editor."""
         self.buttons, self.cells, self.same_buttons, self.all_buttons = {}, {}, {}, {}
+        self.notes = {}
         self.confirm_button = self.cancel_button = None
         current = {u.key: u for u in self.rows.grid.layouts}
         offered = self._offered(current)
@@ -198,28 +200,52 @@ class OverrideEditor:
         self.rows.grid.refresh()
 
     def _picked(self, key: UnitKey, index: int, value: str | None) -> None:
-        """Note one tag of the draft and redraw its highlights; nothing is saved."""
+        """Note one tag of the draft and update its highlights in place; nothing is saved.
+
+        Only the notes under the dropdowns change (no redraw of the page, owner 25 November
+        2026: a choice never lags or resets the other choices).
+        """
         self.drafts[key][index] = value
-        self.rows.grid.refresh()
+        layout = next((u for u in self.rows.grid.layouts if u.key == key), None)
+        if layout is None:
+            return
+        for (unit, at), text in zip(
+            [(key, i) for i in range(layout.channels)], self._notes(key, layout), strict=True
+        ):
+            if (unit, at) in self.notes:
+                self.notes[(unit, at)].value = text
+
+    def _notes(self, key: UnitKey, layout: UnitLayout) -> list[str]:
+        """Return the note under each dropdown of the editor: disagreement, as the row, changed."""
+        rows = self.rows
+        grid, refusal = rows.grid, rows.refused[key]
+        draft = self.drafts[key]
+        moved = recount(refusal.tags, layout)
+        found = {  # read against the aliases of the refusal, as before any confirmation
+            d.index: d
+            for d in differences(layout, draft, refusal.lead, grid.labels, refusal.channels)
+            if moved is None
+        }
+        return [
+            self._note(index, draft, refusal.tags, found, grid.labels)
+            for index in range(layout.channels)
+        ]
 
     def _editor(self, key: UnitKey, layout: UnitLayout, width: int) -> widgets.Widget:
         """Build the editor: a dropdown per C index, the header and its disagreement under it."""
         rows = self.rows
         grid, refusal = rows.grid, rows.refused[key]
-        lead = refusal.lead
         draft = self.drafts[key] = self._known(self.drafts[key], layout)  # labels may change
         moved = recount(refusal.tags, layout)
-        found = {  # read against the aliases of the refusal, as before any confirmation
-            d.index: d
-            for d in differences(layout, draft, lead, grid.labels, refusal.channels)
-            if moved is None
-        }
+        notes = self._notes(key, layout)
         options = [(CHOOSE, None), *((label, label) for label in grid.labels)]
-        info = f"<b>{html.escape(unit_name(key))}</b>: " + (
-            html.escape(moved)
-            if moved
-            else "the row's tags are the start; change only what is different"
-        )
+        if moved:
+            said = html.escape(moved)
+        elif not refusal.tags:  # refused while its images disagreed: no row's tags recorded
+            said = "no row's tags were recorded for it: choose every channel"
+        else:
+            said = "the row's tags are the start; change only what is different"
+        info = f"<b>{html.escape(unit_name(key))}</b>: {said}"
         cells: list[widgets.Widget] = [widgets.HTML(info)]
         for index in range(width):
             if index >= layout.channels:
@@ -230,12 +256,13 @@ class OverrideEditor:
             )
             drop.observe(lambda c, k=key, i=index: self._picked(k, i, c["new"]), "value")
             self.cells[(key, index)] = drop
+            self.notes[(key, index)] = widgets.HTML(notes[index])
             cells.append(
                 widgets.VBox(
                     [
                         drop,
                         widgets.HTML(f"<b>C{index}</b> {quoted(layout.name(index))}"),
-                        widgets.HTML(self._note(index, draft, refusal.tags, found, grid.labels)),
+                        self.notes[(key, index)],
                     ]
                 )
             )

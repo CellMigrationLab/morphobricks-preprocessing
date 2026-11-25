@@ -116,6 +116,9 @@ class _StepsFlow(
         if getattr(self, "_stepper", None) is not None:
             return self._stepper.widget
         self.channel_grid.place_types = False  # the image type has its own card on Channels
+        self.channel_grid.guided = self.channel_grid.GUIDED  # a question, rows, Submit (25 Nov)
+        # the image type too: choices change a form, Validate saves them in one write (25 Nov)
+        self.channel_types.form = {} if self.channel_grid.guided else None
         if ui.is_visible(self.channel_grid.widget):
             self.channel_grid.refresh()
         for box in (self.folder_next, self.axis_next):

@@ -510,8 +510,22 @@ editing, or the confirmed ones. An image that cannot be drawn gets a sentence sa
      imaging unit…**.
 3. **Channels.** First the **image type**: what the channel dimension holds, *separate
    stains or markers* or *colour (RGB)*. It is proposed from the image headers (only when
-   they all agree) and recorded when you click **Use for all folders**. **Set per folder…**
-   holds one row per folder, with its picture; it opens when the headers differ. An
+   they all agree) and recorded when you click **Validate** (the pages of the Python
+   interface call it **Use for all folders** and save each folder's choice at once): choosing,
+   in the box or for a folder under **Set per folder…**, only changes the form, with no save
+   and no redraw; **Validate** checks every folder has a type and saves every folder's type
+   (and the RGB header override box below) in one write of the draft, then the channel step
+   opens, and the button reads **Validated ✓** until a choice changes. A folder chosen on its
+   own keeps its choice; the others take the box's. One answer for every
+   folder, whatever their numbers of channels or images, also when the headers differ (then
+   nothing is pre-filled: choose the type in the box). **Set per folder…** holds one row per
+   folder, with its picture; it opens when your answers differ. After the answer, every folder
+   whose header does not fit it is listed under the line with its next step (a header that
+   says colour answered *separate stains*: the run refuses it, `R_IMAGE_TYPE_CONTRADICTS_HEADER`,
+   so answer it colour or correct its header; three interleaved samples under a header that
+   does not say colour, answered colour: the RGB header override below), while the other
+   folders go on. *Colour (RGB)* for all folders is recorded only when every folder has three
+   channels; otherwise nothing is written and the folders that cannot be colour are named. An
    experiment that mixes colour and separate-channel folders is refused in this version.
    When a folder's images store three values per pixel side by side but their header does
    not say colour (some scanners save colour this way), the card explains it and offers
@@ -523,7 +537,54 @@ editing, or the confirmed ones. An image that cannot be drawn gets a sentence sa
    stays unticked and the card names the folders that have it.
    Colour folders have the channels R, G and B. Otherwise name what you stained and confirm the list; then tag each folder's channels
    with those names, looking at any image in the viewer (each channel shows its header name
-   and the tag chosen for it). **Fast mode** is the default: **Every imaging unit has the same
+   and the tag chosen for it).
+   **Tagging the channels (the notebook, since v0.9.0; owner design of 25 November 2026).**
+   The step asks one question first: **Is the channel order the same for the whole
+   dataset?** When the images do not all have the same number of channels it says which
+   counts there are (for example *3 and 4 channels*).
+   - **Yes** opens **one row of dropdowns per channel count**: one row when every image has
+     the same number of channels, else one row for each count (one for the 3-channel images,
+     one for the 4-channel images). Each row tags every imaging unit with that many channels.
+   - **No** asks **Then how far does one channel order go?**: **Same order within each
+     biological repeat folder** opens one row per biological-repeat folder (and channel count), for
+     every condition's acquisitions in that folder; **Tag every imaging unit** opens one row
+     per imaging unit.
+
+   Under each dropdown are the channel index (C0, C1, …) and the header name, as evidence. A
+   row is pre-filled only from what you chose in this session (switching from *Yes* to a row
+   per repeat starts each repeat from your choice for its channel count), from tags already
+   saved for every acquisition of the row, or from header names equal to your labels exactly
+   ("from the header names: check them before Submit"). **Choosing in a dropdown saves
+   nothing and redraws nothing**: switch the answers, change your mind, the choices stay.
+   **Submit** is the one save: every channel of every row must be tagged, each label once (else
+   nothing is saved and the rows at fault are named); then each acquisition's header names are
+   checked against its row, and the tags, the header names they confirm and the review of the
+   acquisitions it refused are saved in one write of the draft. An acquisition whose header names
+   contradict its row (another label at a channel, or other names than the row's first
+   acquisition) is not tagged: it is listed with the contradiction, and the override below
+   (**Override this unit**, **Confirm the same tags**, **Confirm all N like it**) or a row of
+   its own (*Tag every imaging unit*) whose tags fit its header releases it; nothing is
+   reordered or guessed, and the description is not saved while any acquisition is listed. An
+   acquisition whose own images disagree is in no row and is listed at Submit. **Saved tags**
+   then shows what every acquisition holds; to change them, change the rows and Submit again.
+   A row filled from your choice in a broader row says so ("check it before Submit"); a row
+   whose acquisitions already hold one saved list shows that list instead ("as saved"). With
+   *Tag every imaging unit*, a row left blank is no answer for that acquisition now: it keeps
+   what it holds, so the others can be saved while a listed one waits. When the notebook is
+   opened again on a saved draft, the step answers the question as the draft already is
+   (*Yes* for fast mode; for a per-unit draft, the broadest answer whose rows reproduce every
+   acquisition's saved tags exactly, said as "Pre-answered from your saved tags"; otherwise
+   "Saved per-unit tags are kept; answer the question to change them"; "Pre-answered" goes
+   as soon as you change the answer or a row), and opening it writes
+   nothing: a strict draft is never turned into fast mode without your Submit.
+   What is recorded: *Yes* with one channel count is fast mode (`channel_layout`, every
+   acquisition `channels_from = "experiment"`, Spec ADR 0006); every other answer is a strict
+   per-unit file in which each acquisition holds its row's list (several channel counts cannot be
+   one `channel_layout`). The image type is asked before the rows; when every folder is colour
+   there is nothing to tag.
+
+   The pages of the Python interface (`channels_step()`, not the shipped notebook) keep the
+   per-unit grid, which saves at each choice. **Fast mode** is its default: **Every imaging unit has the same
    channels in the same order** is ticked, your declared assumption (never a guess). A folder
    whose image header names every channel with one of your labels, exactly as written (or with
    a header name already saved for that label), is tagged from its header with no click. Tag the

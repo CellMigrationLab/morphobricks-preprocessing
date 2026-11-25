@@ -51,6 +51,8 @@ class RgbOverrideOffer:
     def __init__(self, types: ImageTypeColumn) -> None:
         self.types = types
         self._building = False
+        self.pending: bool | None = None
+        """With the image-type form (the stepper): the box's state not validated yet."""
         self.text = widgets.HTML()
         self.box = widgets.Checkbox(
             value=False, description=LABEL, indent=False, layout=widgets.Layout(width="99%")
@@ -67,13 +69,20 @@ class RgbOverrideOffer:
         return [u for u in self.types.layouts if u.usable and u.three_samples]
 
     def colour(self) -> list[UnitLayout]:
-        """Return the offered folders the user answered colour (RGB): the box applies to them."""
+        """Return the offered folders the user answered colour (RGB): the box applies to them.
+
+        With the image-type form (the stepper), the ones the form says colour.
+        """
+        if self.types.form is not None:
+            return [u for u in self.offered() if self.types.chosen(u) == "rgb"]
         return [u for u in self.offered() if self.types.saved(u.key) == "rgb"]
 
     def recorded(self) -> list[UnitLayout]:
         """Return the folders the box applies to that have the override recorded."""
         units = self.types.store.answers().units
-        return [u for u in self.colour() if units[u.key].rgb_header_override is True]
+        return [
+            u for u in self.colour() if u.key in units and units[u.key].rgb_header_override is True
+        ]
 
     def ticked(self) -> bool:
         """Return True when every folder the box applies to has the override recorded."""
@@ -94,7 +103,7 @@ class RgbOverrideOffer:
             raw=True,
         )
         self._building = True
-        self.box.value = self.ticked()
+        self.box.value = self.ticked() if self.pending is None else self.pending
         self._building = False
         self.box.disabled = not colour
         self.blocker.value = blocked_line([] if colour else [CHOOSE_COLOUR])
@@ -119,6 +128,10 @@ class RgbOverrideOffer:
     def _clicked(self, value: bool) -> None:
         """Record or take back the override of the colour folders; say a refusal."""
         if self._building:
+            return
+        if self.types.form is not None:  # the form: recorded by Validate, with the types
+            self.pending = value
+            self.types.on_form()
             return
         store, colour, layouts = self.types.store, self.colour(), self.types.layouts
 
