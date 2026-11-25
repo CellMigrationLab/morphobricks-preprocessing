@@ -244,6 +244,10 @@ class _FolderStep:
 
     def check_folder(self) -> Preflight | None:
         """Run the folder and header check (pass 1) and show its results."""
+        return self._run_check()
+
+    def _run_check(self, recorded: object = None) -> Preflight | None:
+        """Run the check; ``recorded`` headers are reused where unchanged (a restore)."""
         folder = ui.clean_path(self.folder.value)
         if not folder:
             self.folder_status.value = ui.status(
@@ -268,6 +272,7 @@ class _FolderStep:
                         # the save are of the images as this check read them (audit batch 33).
                         bind_headers=True,
                         progress=check_progress(wait),
+                        recorded=recorded,
                     )
                     pre = unit_checked(pre)  # a described run checks inside each unit
                     self._note_edits()  # a check fills only what the user left as filled
@@ -419,14 +424,14 @@ class _FolderStep:
             folder = ui.clean_path(self.folder.value)
             self._fail_check(folder, exc, "The folder changed, and could not be read.")
             return
-        if self.preflight is None or ui.clean_path(self.folder.value) == self._checked_folder:
-            return
-        # A different folder makes every later choice stale.
-        self._clear_checked(
-            ui.status(
-                "info", "The folder changed.", ["Press Check folder to check the new folder."]
+        if self.preflight is not None and ui.clean_path(self.folder.value) != self._checked_folder:
+            # A different folder makes every later choice stale.
+            self._clear_checked(
+                ui.status(
+                    "info", "The folder changed.", ["Press Check folder to check the new folder."]
+                )
             )
-        )
+        self._restore_earlier_work()  # the earlier work of the output folder it now has
 
     def _fail_check(self, folder: str, exc: BaseException, heading: str) -> None:
         """Clear the earlier check for ``exc``; return only if it is an expected failure.
@@ -494,10 +499,15 @@ class _FolderStep:
     def _clear_check_views(self) -> None:
         """Clear what other views show of the checked folder (the stepper's, #101)."""
 
+    def _restore_earlier_work(self) -> None:
+        """Restore the output folder's earlier work (:mod:`.notebook_restore`); here nothing."""
+
     def _output_edited(self) -> None:
         self._update_output_hint()
         # The inputs start from the earlier run in the new output folder (audit I4).
         self._prefill_from_output()
+        # Its earlier work is restored when no check is on screen (owner, 25 November 2026).
+        self._restore_earlier_work()
         # The answers belong to their output folder (issue #98): another folder's draft is
         # read, or the questions asked again; nothing is carried over or written here.
         if self.pairing is not None and self._design_folder() != self._design_output:

@@ -1701,3 +1701,16 @@ Raised during review; to be decided before the milestones that need them:
     would refuse it, and the user is told the run will stop. *Encoding choices of this
     brick:* `CandidateCheck.fast_refusals` and `can_publish`; the notebook's save button
     follows `can_publish`; `describe --publish` refuses the same cases.
+85. When the notebook's output folder already holds earlier work, should it be restored?
+    *Decided (owner, 25 November 2026, v0.9.0):* yes, as soon as the output folder is set, with
+    a message ("Found earlier work from <date>: restored <what>. Check folder again to
+    rescan.") and a button to start fresh. Restored: (1) the folder check, reusing each
+    image's recorded header while its fingerprint is unchanged and reading only what changed;
+    (2) every answer so far (the draft, the published description, the run's settings),
+    reopening at the first step still to do; (3) a finished run, with its results and the
+    next steps (Cellpose in the combined notebook). *Encoding choices of this brick:* the
+    headers are recorded in `check_headers.json` (`check_record`); nothing is reused across
+    another experiment folder, other software versions or an unreadable record; a restore
+    happens only while no check is on screen and only for the experiment folder the earlier
+    work records; mask headers and projection markers are read as always; *Start fresh*
+    writes and deletes nothing (`notebook_restore`, contract §9.2).

@@ -72,6 +72,10 @@ src/morphobricks_preprocessing/
   folder_rules.py   which of the experiment, masks, copies and output folders may hold which:
                     experiment_inside_masks, copies_inside_masks, masks_inside_experiment,
                     output_inside_masks (audit B1/I1, plan §12 question 70)
+  check_record.py   check_headers.json: the headers a notebook check read, each with its
+                    fingerprint, for a restore (read_check_record, write_check_record)
+  earlier_work.py   an output folder's earlier work (earlier_work) and whether its run is
+                    finished and current (run_mismatch); reads only
   metadata.py       TIFF header inspection (tifffile, no pixel reads), dtype/dimension/series checks,
                     OME channel names + significant bits, physical sizes (TiffMetadata.physical_sizes);
                     header consistency warnings (width/height, plane counts, pixel sizes);
@@ -453,6 +457,9 @@ src/morphobricks_preprocessing/
                     ngff_label_names/open_ngff_labels (label images, for later bricks),
                     zarr 2/3 helpers, canonical_dtype; needs the `zarr` extra
   notebook_style.py notebook look and feel: cards, status cards, tiles, tables, ConfirmToggle, Browse dialogs
+  notebook_restore.py the restore of an output folder's earlier work when it is set (owner,
+                    25 November 2026): the recorded check, the answers, a finished run; the
+                    message and Start fresh
   notebook_axes.py  the notebook's axis-check card and the marks under the role dropdowns
   notebook_masks.py step 1's masks folder, Masks card and mask-axis statements (PP-10c)
   notebook_mask_conversion.py the optional Convert a mask card under Describe the masks (Spec
