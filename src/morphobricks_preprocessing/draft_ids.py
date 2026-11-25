@@ -27,7 +27,9 @@ REUSED = "R_USED_ID_REUSED"
 """Reported for a value that is already in ``used_ids``: it names a retired or declared ID."""
 
 
-def id_problems(kind: IdKind, value: str, used: Collection[str] = ()) -> tuple[str, ...]:
+def id_problems(
+    kind: IdKind, value: str, used: Collection[str] = (), listed: Collection[str] = ()
+) -> tuple[str, ...]:
     """Return the codes under which ``value`` is refused as an ID of ``kind``, empty if allowed.
 
     The Label rules, NFC and the ``single`` rule for every kind; the forbidden names (section
@@ -35,7 +37,10 @@ def id_problems(kind: IdKind, value: str, used: Collection[str] = ()) -> tuple[s
     reserved list for channels; for masks the Token rule and the reserved list with the object-set
     part ``in`` (section 3.2). ``used`` holds the IDs of that kind the lineage already lists
     (``used_ids``): a value equal ignoring case to one is ``E_ID_CASE_COLLISION``, and equal
-    exactly is ``R_USED_ID_REUSED`` (section 4.9).
+    exactly is ``R_USED_ID_REUSED`` (section 4.9). ``listed`` holds the IDs of the published
+    registry, which may still be in use: the same spelling is allowed (a folder keeps its ID),
+    but another spelling equal ignoring case is ``E_ID_CASE_COLLISION`` (a spelling of an ID
+    removed in the same save, issue #542).
 
     The ``single`` rule that ties a condition or technical-repeat ID to its folder is not
     checked here: it compares the ID with a folder, which this function does not know.
@@ -56,20 +61,24 @@ def id_problems(kind: IdKind, value: str, used: Collection[str] = ()) -> tuple[s
         codes.append(REUSED)
     elif any(nfc(other).casefold() == nfc(value).casefold() for other in used):
         codes.append(Code.E_ID_CASE_COLLISION.value)
+    elif any(other != value and nfc(other).casefold() == nfc(value).casefold() for other in listed):
+        codes.append(Code.E_ID_CASE_COLLISION.value)
     return tuple(dict.fromkeys(codes))
 
 
-def propose_id(kind: IdKind, label: str, used: Collection[str] = ()) -> str | None:
+def propose_id(
+    kind: IdKind, label: str, used: Collection[str] = (), listed: Collection[str] = ()
+) -> str | None:
     """Return the folder ``label`` as the proposed ID of ``kind``, or None when it is not allowed.
 
     Applies to conditions, technical repeats and, as the owner decided (Q6), biological repeats:
     for ``control``, ``files`` or ``z`` there is no proposal; and to masks, whose ID is the mask
     type's folder name when it is a valid mask ID (``nuclei``, not ``nuclei-mask`` or ``cell``).
-    Never a repaired spelling.
+    Never a repaired spelling. ``listed`` is as in :func:`id_problems`.
     """
     if kind == "channels":
         raise ValueError("a channel ID is proposed from a header name: use propose_channel_ids")
-    return None if id_problems(kind, label, used) else label
+    return None if id_problems(kind, label, used, listed) else label
 
 
 @dataclass(frozen=True)

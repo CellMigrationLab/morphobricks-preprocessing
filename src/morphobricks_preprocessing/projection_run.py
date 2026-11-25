@@ -172,7 +172,8 @@ class RunProjection:
         ------
         ValueError
             For missing or extra keys, an unknown method, a bad range or SHA-256, or a
-            warning list that does not match the masks listed.
+            warning list that does not match the masks listed, or an image list that is not
+            unique and sorted by path (as every writer wrote it).
         """
         if not isinstance(data, Mapping) or set(data) != _KEYS:
             raise ValueError(f"{KEY} must hold exactly {', '.join(sorted(_KEYS))}")
@@ -193,6 +194,9 @@ class RunProjection:
         if not isinstance(data["images"], list):
             raise ValueError(f"{KEY}.images is not a list")
         images = tuple(ProjectedImage.from_dict(i) for i in data["images"])
+        paths = [i.relative_path for i in images]
+        if paths != sorted(set(paths)):
+            raise ValueError(f"{KEY}.images must list each image once, unique and sorted by path")
         for image in images:
             _check_types(data["method"], image)
         return cls(
