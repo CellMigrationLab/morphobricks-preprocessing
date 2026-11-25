@@ -20,6 +20,7 @@ pytest.importorskip("matplotlib")
 
 from morphobricks_preprocessing import notebook_description  # noqa: E402
 from morphobricks_preprocessing import notebook_style as ui  # noqa: E402
+from morphobricks_preprocessing.notebook_ui import PreprocessingNotebook  # noqa: E402
 from test_notebook_channel_step_acceptance import (  # noqa: E402
     LABELS4,
     TAGS3,
@@ -220,3 +221,40 @@ def test_opening_channels_on_a_reopened_draft_writes_no_byte(tmp_path, monkeypat
     assert writes == []  # no draft write at all, not even of the same bytes
     assert draft(exp[2]) == before
     assert nb.channel_grid.guided and ui.is_visible(nb.channel_grid.widget)
+
+
+def test_a_restored_per_repeat_draft_opens_strict_with_no_draft_write(tmp_path, monkeypatch):
+    """The restore of #547 (output folder set, nothing clicked) reopens the same way."""
+    exp = experiment(tmp_path)
+    _per_repeat(exp)
+    before = draft(exp[2])
+    writes = []
+    real = notebook_description.save_draft
+
+    def counted(*args, **kwargs):
+        writes.append(args)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(notebook_description, "save_draft", counted)
+    nb = PreprocessingNotebook()
+    nb.steps()
+    nb.results_step()
+    nb.folder.value = str(exp[0])
+    nb.output.value = str(exp[2])  # the restore: the check, the saved answers
+    assert nb.preflight is not None and nb.confirmed_mapping is None
+    nb.masks_folder.value = str(exp[1])
+    nb.preview_checked.set(True)
+    nb.show_preview()
+    nb.confirm_button.click()  # the axes: the user's one click
+    nb._stepper.go(2)  # Channels
+    assert writes == [] and draft(exp[2]) == before
+    assert not nb.channel_grid.same_channels.value
+    guide = nb.channel_grid.guide
+    assert (guide.same.value, guide.narrow.value) == ("no", "repeat")
+    assert shown(nb) == {("repeat", rep, 3): tags for rep, tags in ORDERS.items()}
+    monkeypatch.undo()
+    finish(nb)
+    assert nb.save_experiment()
+    doc = published(exp[2])
+    assert "channel_layout" not in doc
+    assert unit_channels(doc) == {folder(k): (ORDERS[k[1]], None) for k in UNITS}
