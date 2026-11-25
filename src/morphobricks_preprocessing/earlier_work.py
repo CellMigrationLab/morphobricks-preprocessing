@@ -20,8 +20,11 @@ from pathlib import Path
 
 from .check_record import CHECK_RECORD_FILENAME, CheckRecord, CheckRecordError, read_check_record
 from .description_file import DESCRIPTION_FILENAME, DRAFT_FILENAME
+from .draft_format import DraftFileError
 from .fingerprint import Fingerprint
 from .manifest import MANIFEST_FILENAME, ManifestFormatError, RunManifest
+from .run.description_file import PublicationRefused
+from .run.draft_file import read_answers
 from .run.preflight import Preflight
 from .run.reuse import read_previous
 from .run_inputs import RunInputs, RunInputsError
@@ -33,6 +36,8 @@ WHAT = {
     MANIFEST_FILENAME: "a run",
 }
 """What each file of earlier work is, in the notebook's words."""
+OTHER_VERSION_CODES = ("unknown_version", "unknown_key", "spec_commit_mismatch")
+"""The refusals of saved answers that mean another version of the software wrote them."""
 
 
 @dataclass(frozen=True)
@@ -54,6 +59,9 @@ class EarlierWork:
         The run manifest, or None.
     manifest_problem
         Why there is no usable manifest ("" when there is one, or no file at all).
+    old_answers
+        Why the saved answers are of another version of the software ("" when they are not):
+        they are never used, so they are not in ``found`` (no earlier work to restore).
     """
 
     output: Path
@@ -62,6 +70,7 @@ class EarlierWork:
     record_problem: str = ""
     manifest: RunManifest | None = None
     manifest_problem: str = ""
+    old_answers: str = ""
 
     @property
     def exists(self) -> bool:
@@ -105,9 +114,12 @@ def earlier_work(output: Path) -> EarlierWork:
     output = Path(output).resolve()
     if not output.is_dir():
         return EarlierWork(output)
+    old_answers = _old_answers(output)
     found = []
     for name in WHAT:
         path = output / name
+        if name == DRAFT_FILENAME and old_answers:
+            continue  # answers of another version are never used: nothing to restore
         if path.is_file():
             stamp = datetime.fromtimestamp(path.stat().st_mtime)
             found.append((name, stamp.strftime("%Y-%m-%d %H:%M")))
@@ -117,7 +129,26 @@ def earlier_work(output: Path) -> EarlierWork:
     except CheckRecordError as exc:
         record_problem = str(exc)
     manifest, why = read_previous(output) if (output / MANIFEST_FILENAME).is_file() else (None, "")
-    return EarlierWork(output, tuple(found), record, record_problem, manifest, why or "")
+    return EarlierWork(
+        output, tuple(found), record, record_problem, manifest, why or "", old_answers
+    )
+
+
+def _old_answers(output: Path) -> str:
+    """Return why the saved answers are of another version of the software ("" otherwise).
+
+    Any other refusal (a malformed file, a changed description) is left to the check, which
+    says it on Design as it always does.
+    """
+    if not (output / DRAFT_FILENAME).is_file():
+        return ""
+    try:
+        read_answers(output)
+    except DraftFileError as exc:
+        return str(exc) if exc.code in OTHER_VERSION_CODES else ""
+    except (OSError, PublicationRefused):  # the check reads the file again and says why
+        return ""
+    return ""
 
 
 def run_mismatch(
