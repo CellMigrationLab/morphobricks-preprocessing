@@ -12,8 +12,10 @@ elapsed time is shown. Nothing here reads a file or decides anything.
 from __future__ import annotations
 
 import html
+import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 
 import ipywidgets as widgets
 
@@ -21,6 +23,8 @@ MEASURABLE_SECONDS = 1.0
 """No estimate of the time left before this much time was spent on at least one item."""
 MIN_INTERVAL = 0.1
 """Seconds between two redraws of a wait (the first and the last are always drawn)."""
+TICK = 1.0
+"""Seconds between two redraws of a ticking wait (:meth:`Wait.ticking`) that reports nothing."""
 
 
 def clock_text(seconds: float) -> str:
@@ -129,6 +133,7 @@ class Wait:
         self.drawn = 0
         self._started = self._phase_started = self._last = 0.0
         self._state: tuple[int, int, str] = (0, 0, "")
+        self._drawing = threading.Lock()
 
     @property
     def elapsed(self) -> float:
@@ -159,10 +164,40 @@ class Wait:
             self._draw(done, total, item)
 
     def _draw(self, done: int, total: int, item: str) -> None:
-        self._state = (done, total, item)
-        self._last = self.clock()
-        self.drawn += 1
-        self.target.value = self.html(done, total, item)
+        with self._drawing:  # the ticking thread draws too
+            self._state = (done, total, item)
+            self._last = self.clock()
+            self.drawn += 1
+            self.target.value = self.html(done, total, item)
+
+    @contextmanager
+    def ticking(self, interval: float = TICK) -> Iterator[None]:
+        """Redraw the line every ``interval`` seconds in a thread while the block runs.
+
+        For work that reports no progress for a long time (the run's checks before its first
+        image, on a large experiment): the elapsed time goes on in the line instead of
+        staying at ``0:00``. The thread only redraws what was last reported; it is stopped,
+        and has drawn its last, before the block returns, so whatever replaces the line
+        afterwards stays.
+        """
+        stop = threading.Event()
+
+        def tick() -> None:
+            while not stop.wait(interval):
+                with self._drawing:
+                    if stop.is_set():
+                        return
+                    done, total, item = self._state
+                    self.drawn += 1
+                    self.target.value = self.html(done, total, item)
+
+        thread = threading.Thread(target=tick, name="morphobricks-wait-tick", daemon=True)
+        thread.start()
+        try:
+            yield
+        finally:
+            stop.set()
+            thread.join()
 
     def html(self, done: int, total: int, item: str) -> str:
         """Return the line as it would be drawn now.
@@ -186,4 +221,12 @@ class Wait:
         return clock_text(self.elapsed)
 
 
-__all__ = ["MEASURABLE_SECONDS", "MIN_INTERVAL", "Wait", "clock_text", "progress_html", "time_left"]
+__all__ = [
+    "MEASURABLE_SECONDS",
+    "MIN_INTERVAL",
+    "TICK",
+    "Wait",
+    "clock_text",
+    "progress_html",
+    "time_left",
+]

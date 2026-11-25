@@ -44,6 +44,19 @@ from .run_labels import recorded_labels
 from .validation import has_errors, plural
 
 READING = "Reading images"
+PREPARING = {
+    "folders": "Preparing: listing the folders again",
+    "headers": "Preparing: reading the image headers again",
+    "masks": "Preparing: reading the mask headers again",
+    "acquisitions": "Preparing: comparing the images and checking the description",
+}
+"""What the run's wait says in each phase of its own folder check (:data:`.run.phases.PHASES`)."""
+BUSY_NOTE = (
+    "<div class='mb-help'>The run is going: the notebook is busy until it finishes or stops. "
+    "A cell run meanwhile (this one too) waits for it; to stop the run, interrupt the "
+    "kernel (Colab: Runtime > Interrupt execution).</div>"
+)
+"""Said under the wait while the run goes (owner test of v0.9.0: a cell run again just waited)."""
 
 
 class _RunStep:
@@ -244,7 +257,13 @@ class _RunStep:
         """Return the run's mode with the workers chosen; the memory cap only with Auto."""
         workers = self.workers.value
         cap = round(self.max_ram_gib.value * 2**30) if workers == AUTO else 0
-        return RunMode(self.mode.value, verify_content, workers=workers, max_ram=cap or None)
+        return RunMode(
+            self.mode.value,
+            verify_content,
+            workers=workers,
+            max_ram=cap or None,
+            checking=self._checking,
+        )
 
     def _build_histogram_range(self) -> list[widgets.Widget]:
         """Build the histogram range choice and its robust quantiles; return the widgets."""
@@ -396,12 +415,16 @@ class _RunStep:
             return None
         self._start_run()
         try:
-            with self.log.attached():
+            # The run checks every header again before its first image, with no image read to
+            # report: the line says which header, and its elapsed time goes on (owner, v0.9.0).
+            with self.log.attached(), self._run_wait.ticking():
                 self.result = self._call_run(histogram_settings)
         except Exception as exc:  # unexpected failures still get a readable message
             self._run_failed(exc)
             return None
         finally:
+            if self.run_next.value == BUSY_NOTE:
+                self.run_next.value = ""
             self._idle(self.run_button, " Compute histograms", "play")
         self._finish_run(self.result)
         return self.result
@@ -409,7 +432,7 @@ class _RunStep:
     def _start_run(self) -> None:
         """Clear the results of an earlier run and show that this one is starting."""
         self._busy(self.run_button, "Computing…")
-        self.run_next.value = ""
+        self.run_next.value = BUSY_NOTE
         self.run_checks.clear()
         self.run_lock.hide()
         self.run_report.clear()
@@ -439,6 +462,15 @@ class _RunStep:
             intensity_settings=given.intensity_settings,
             histogram_settings=histogram_settings,
         )
+
+    def _checking(self, phase: str, done: int, total: int, path: str) -> None:
+        """Show the run's own folder check: its phase, and each header of how many."""
+        wait = self._run_wait
+        label = PREPARING[phase]
+        if wait.label != label:
+            wait.phase(label, total if phase in ("headers", "masks") else 0)
+        if path and phase in ("headers", "masks"):
+            wait.step(done, total, path)
 
     def _run_failed(self, exc: Exception) -> None:
         """Show an unexpected failure in plain words, with the traceback in the details."""

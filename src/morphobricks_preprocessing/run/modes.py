@@ -23,7 +23,8 @@ And it says how many images the run reads at once (``workers``, ``max_ram``; iss
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from typing import Literal
 
 from ..lab_links import LabLinks
@@ -89,6 +90,12 @@ class RunMode:
         for byte the same with any value; it is not recorded.
     max_ram
         With ``workers="auto"``, the bytes of memory the run may use; None: no RAM cap.
+    checking
+        Called while the run checks the folder and every image header again, before any
+        image is read, as :func:`.preflight.preflight`'s ``progress``:
+        ``(phase, done, total, path)``, a phase of :data:`.phases.PHASES`, once per header.
+        On a large experiment this check takes minutes (owner test of v0.9.0). Operational
+        only, like ``workers``: not recorded, not compared, and the outputs are the same.
     """
 
     name: str = RESTART
@@ -96,6 +103,7 @@ class RunMode:
     lab_links: LabLinks | None = None
     workers: int | Literal["auto"] = 1
     max_ram: int | None = None
+    checking: Callable[[str, int, int, str], None] | None = field(default=None, compare=False)
 
 
 def run_mode(mode: object) -> RunMode:
@@ -127,7 +135,16 @@ def run_mode(mode: object) -> RunMode:
     if links is not None and not isinstance(links, LabLinks):
         raise ValueError(f"lab_links must be LabLinks or None; found {type(links).__name__}")
     check_workers(mode.workers, mode.max_ram)
-    return RunMode(check_mode(mode.name), mode.verify_content, links, mode.workers, mode.max_ram)
+    if mode.checking is not None and not callable(mode.checking):
+        raise ValueError(f"checking must be callable or None; found {mode.checking!r}")
+    return RunMode(
+        check_mode(mode.name),
+        mode.verify_content,
+        links,
+        mode.workers,
+        mode.max_ram,
+        mode.checking,
+    )
 
 
 def check_workers(workers: object, max_ram: object) -> None:
