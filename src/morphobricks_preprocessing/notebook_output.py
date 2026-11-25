@@ -19,6 +19,7 @@ from pathlib import Path
 import ipywidgets as widgets
 
 from . import notebook_style as ui
+from .check_record import write_check_record
 from .discovery import default_output_folder
 from .discovery_report import REPORT_FILENAME, REPORT_TEXT_FILENAME
 from .report_view import report_html
@@ -31,6 +32,7 @@ from .run import (
     write_check_report,
 )
 from .run.check_step import suggested_review
+from .run.lock import output_lock
 
 DRIVE_LIMIT = (
     "On Google Drive the lock cannot guard an output folder across computers or Colab "
@@ -254,3 +256,21 @@ class _OutputCards:
             self.folder_lock.show(output)
         elif report is not None:
             self.check_report.show(output, "The check")
+            _record_headers(pre, output)
+
+
+def _record_headers(pre: Preflight, output: Path) -> None:
+    """Keep the headers the check read, so a later restore reuses them (:mod:`.check_record`).
+
+    Only a check whose headers are bound to their fingerprints is recorded. The record is a
+    cache: when it cannot be written, a restore reads every header again.
+    """
+    if not pre.header_fingerprints:
+        return
+    try:
+        with output_lock(output):
+            write_check_record(
+                output, pre.discovery.root, pre.header_fingerprints, pre.metadata.files
+            )
+    except (OSError, OutputLockedError):
+        logging.getLogger(__name__).warning("Cannot record the check's headers", exc_info=True)

@@ -22,7 +22,7 @@ from dataclasses import dataclass
 
 from .axes import AxisMapping
 from .fingerprint import Fingerprint
-from .header_preview import CHANNELS_SHOWN
+from .header_preview import CHANNELS_SHOWN, checked_shown
 from .planes import DEFAULT_MEMORY_LIMIT
 from .preview import THUMBNAIL_SIDE, ReducedPlane, check_unchanged, read_plane
 from .preview_render import colour_composite, display_panel, png_bytes
@@ -100,6 +100,11 @@ def middle_slice(length: int) -> int:
 class ViewRequest:
     """Which plane of an image to draw, and how.
 
+    Raises
+    ------
+    ValueError
+        When ``shown`` is not a whole number of at least 1.
+
     Attributes
     ----------
     z, t
@@ -124,6 +129,10 @@ class ViewRequest:
     colour: bool = False
     memory_limit: int = DEFAULT_MEMORY_LIMIT
     expected: Fingerprint | None = None
+
+    def __post_init__(self) -> None:
+        # Refused before any read: no channel to draw is not a picture (#433).
+        object.__setattr__(self, "shown", checked_shown(self.shown))
 
 
 def read_view(

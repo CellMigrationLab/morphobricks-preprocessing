@@ -232,11 +232,17 @@ class _ChannelsStep:
         self._refresh_masks_screen()
 
     def _types_changed(self) -> None:
-        """Redraw the grid after an image type (its rows hold the type cells)."""
-        self.channel_grid.matrix.sync_statement()  # the statement's type is the lead's (ADR 0006)
-        if self._stains_not_applicable != self.channel_labels.not_applicable:
+        """Redraw the grid after an image type (its rows hold the type cells).
+
+        The statement follows the user's type answer (ADR 0006: its type is the lead's; every
+        folder colour states R, G, B), once the grid is open on the units: the guided step
+        writes nothing when it opens (review of #546, F1), so the type click is what states it.
+        """
+        switched = self._stains_not_applicable != self.channel_labels.not_applicable
+        if switched:
             self._channel_labels_changed()  # every folder became colour, or no longer is
-        else:
+        self.channel_grid.matrix.sync_statement()
+        if not switched:
             self.channel_grid.refresh()
         self._channels_changed()
 

@@ -31,6 +31,9 @@ from morphobricks_preprocessing.description_candidate import check_candidate  # 
 from morphobricks_preprocessing.notebook_check_view import checks_html  # noqa: E402
 from test_notebook_axes_quick import stepper  # noqa: E402
 
+# the per-unit grid driven through the stepper (the guided step is pinned by its own tests)
+pytestmark = pytest.mark.usefixtures("legacy_grid")
+
 
 def test_a_read_failure_names_the_image_relative_to_the_experiment_folder(tmp_path):
     write_rgb(tmp_path / "ctrl" / "rgb.tif")

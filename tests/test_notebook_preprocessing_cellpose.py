@@ -43,6 +43,9 @@ from morphobricks_preprocessing.notebook_preprocessing_cellpose import (  # noqa
 from morphobricks_preprocessing.notebook_ui import PreprocessingNotebook  # noqa: E402
 from morphobricks_preprocessing.run_inputs import RunInputs  # noqa: E402
 
+# the per-unit grid driven through the stepper (the guided step is pinned by its own tests)
+pytestmark = pytest.mark.usefixtures("legacy_grid")
+
 
 def ran_app(tmp_path, *, with_masks=False):
     """Return the app of cell 3 after a finished run of four 3-channel images."""
@@ -140,15 +143,12 @@ def test_cell_4_refuses_changed_images_even_when_the_run_has_no_masks_folder(tmp
     assert step.notice.value.count(RUN_REFUSED) == 1
 
 
-def test_what_to_do_next_in_cell_4_names_cell_5_and_no_cell_of_the_cellpose_notebook(
-    tmp_path, stub
-):
+def test_the_line_after_the_batch_in_cell_4_names_cell_5_and_no_form_is_left(tmp_path, stub):
     step = segmentation_step(ran_app(tmp_path))
     segment(step, tmp_path / "masks")
-    step.workflow.forms["next"].button.click()
+    assert "next" not in step.workflow.forms  # no What to do next form (owner, 25 Nov 2026)
     shown = step.workflow.shown[-1]
-    assert "Run cell 5, Register the masks: it declares the new mask type" in shown
-    assert "[masks.Cells]" in shown and "MorphoFeature" in shown
+    assert "Next: run cell 5 (Register the masks) to declare [masks.Cells]" in shown
     assert "step 4" not in shown and "Save the description" not in shown
 
 

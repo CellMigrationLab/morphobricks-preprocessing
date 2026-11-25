@@ -30,8 +30,14 @@ from .fingerprint import Fingerprint, current_fingerprint
 from .manifest import file_sha256
 from .projection import Projection
 from .projection_marker import marked_images, marker_issue
-from .projection_record import ProjectionEntry, projection_from_data, projection_to_data
+from .projection_record import (
+    ProjectionEntry,
+    check_z_axis,
+    projection_from_data,
+    projection_to_data,
+)
 from .projection_run import RunProjection, masks_issue, run_projection
+from .record_values import _bits, _choice, _flag, repeated
 from .recorded_sizes import RecordedSize, sizes_from_data, sizes_to_data
 from .validation import ValidationIssue, error, plural, warning
 
@@ -137,6 +143,8 @@ class CopyEntry:
         named = None if self.projection is None else self.projection.source_relative_path
         if named is not None and named != self.source_path:  # one checked, the other recorded
             raise ValueError(f"{self.relative_path!r}: its projection names the source {named!r}")
+        if self.projection is not None:
+            check_z_axis(self.projection, self.source_axes, self.roles)
 
     def same_plan(self, other: CopyEntry) -> bool:
         """Return True if ``other`` copies the same source the same way (copies aside).
@@ -199,16 +207,17 @@ class CopyEntry:
         if copy is None or not isinstance(data.get("copy_sha256"), str):
             raise ValueError(f"{data.get('relative_path')!r} has no copy fingerprint or SHA-256")
         _check_source_path(data)
+        action = _choice(data["action"], (CONVERTED, PROJECTED, COPIED), "action")
         return cls(
             relative_path=str(data["relative_path"]),
-            action=_choice(data["action"], (CONVERTED, PROJECTED, COPIED), "action"),
+            action=action,
             reason=None if data.get("reason") is None else str(data["reason"]),
             source=Fingerprint.recorded(data["source"]),
             copy=None if copy is None else Fingerprint.recorded(copy),
             source_axes=str(data.get("source_axes", "")),
             roles=None if roles is None else tuple(None if r is None else str(r) for r in roles),
             copy_axes=None if data.get("copy_axes") is None else str(data["copy_axes"]),
-            pixel_sizes=sizes_from_data(data["pixel_sizes"]),
+            pixel_sizes=sizes_from_data(data["pixel_sizes"], none=action == COPIED),  # #389
             unknown_sizes={str(k): str(v) for k, v in (data.get("unknown_sizes") or {}).items()},
             copy_sha256=str(data["copy_sha256"]),
             channel_names=tuple(None if n is None else str(n) for n in data["channel_names"]),
@@ -258,7 +267,20 @@ class ConversionRecord:
     projection: Projection | None = None
 
     def __post_init__(self) -> None:
-        """Refuse entries that do not fit the record's projection (or its absence)."""
+        """Refuse an image listed twice (#387), or entries that do not fit the projection.
+
+        Raises
+        ------
+        ConversionRecordError
+            If two entries have the same ``relative_path``: which one describes the copy is
+            not known, so neither is chosen.
+        """
+        twice = repeated(entry.relative_path for entry in self.files)
+        if twice:
+            raise ConversionRecordError(
+                f"the record lists {', '.join(map(repr, twice))} more than once, so it is not "
+                f"known which entry describes the copy; {_CONVERT_AGAIN}"
+            )
         for entry in self.files:
             _check_projection(self.projection, entry)
 
@@ -573,26 +595,3 @@ def _check_source_path(data: Mapping) -> None:
 def _fingerprint_data(fingerprint: Fingerprint) -> dict:
     """Return a fingerprint as JSON-compatible data."""
     return fingerprint.to_data()
-
-
-def _choice(value: object, allowed: tuple[str, ...], name: str) -> str:
-    """Return ``value`` when it is one of ``allowed``; raise otherwise."""
-    if value not in allowed:
-        raise ValueError(f"{name} {value!r} is not one of {', '.join(allowed)}")
-    return str(value)
-
-
-def _bits(value: object) -> int | None:
-    """Return recorded significant bits: a whole number, or None."""
-    if value is None:
-        return None
-    if isinstance(value, bool) or not isinstance(value, int):
-        raise ValueError(f"significant_bits {value!r} is not a whole number")
-    return value
-
-
-def _flag(value: object) -> bool:
-    """Return a JSON boolean; raise for anything else."""
-    if not isinstance(value, bool):
-        raise ValueError(f"{value!r} is not true or false")
-    return value

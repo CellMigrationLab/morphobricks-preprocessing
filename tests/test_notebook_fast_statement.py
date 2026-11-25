@@ -23,6 +23,9 @@ pytest.importorskip("matplotlib")
 
 from test_notebook_row_fold import stepper  # noqa: E402
 
+# the per-unit grid driven through the stepper (the guided step is pinned by its own tests)
+pytestmark = pytest.mark.usefixtures("legacy_grid")
+
 
 def _published(out):
     return description_from_bytes((out / DESCRIPTION_FILENAME).read_bytes())

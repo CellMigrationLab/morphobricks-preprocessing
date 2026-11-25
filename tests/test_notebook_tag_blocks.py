@@ -13,7 +13,8 @@ from channel_images import write_rgb
 from morphobricks_preprocessing.description_file import DRAFT_FILENAME
 from test_notebook_channels import ACTIN, DNA, PHASE, open_screen, set_labels, tree
 
-pytestmark = pytest.mark.usefixtures("statement_off")  # the blocks: the statement unticked
+# the blocks: the statement unticked, the per-unit grid also in the stepper
+pytestmark = pytest.mark.usefixtures("statement_off", "legacy_grid")
 
 pytest.importorskip("ipywidgets")
 pytest.importorskip("matplotlib")

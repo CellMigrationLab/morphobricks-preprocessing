@@ -277,8 +277,9 @@ banner then says "commit unknown" and that the override is on). Then:
   needs both channels. The two are separate mask types (`Cells` and `Nuclei` by default, both
   editable and different), each with its own `segmentation_record.json`, its own skip, overwrite
   and rollback and its own table; a batch that stops does not stop the other. One model and
-  one set of settings serve both unless, under **Advanced Cellpose settings**, you tick a
-  different model or settings for the nuclei. The preview shows both results. The notebook
+  one set of settings serve both unless, in the box **Output Both: the nuclei** (shown on
+  the model step once Both is chosen), you tick a different model or settings for the nuclei.
+  What each output writes and reads is listed next to the choice. The preview shows both results. The notebook
   never pairs a cell with a nucleus by label number: relate them downstream from the geometry
   (MorphoRelate, containment or overlap).
 - **Channels by number.** Tags (channel IDs) are the default. You may instead choose **By
@@ -304,8 +305,14 @@ banner then says "commit unknown" and that the override is on). Then:
   the device you chose. Cellpose may still move its flow-threshold quality step to the CPU when
   GPU memory is short, and always computes the masks on the CPU on `mps`; that is Cellpose's
   behaviour, it is not refused, and the record notes it.
-- **Advanced Cellpose settings** (a closed section of the model form): the diameter, the flow
-  and cell probability thresholds (0.4 and 0) and the batch size (8).
+- **Cellpose settings** (shown on the model form, each with one line saying which way to move
+  it, from Cellpose 4.2.1.1's own documentation): the diameter (increase if objects are split,
+  decrease if merged), the flow threshold (0.4; increase to keep more objects, decrease if they
+  are badly shaped), the cell probability threshold (0; decrease to find more and larger
+  objects, increase for fewer) and the batch size (8; lower it if the GPU runs out of memory).
+- **Download display.** While a model loads, a weights download shows as one progress bar and
+  Cellpose's log lines are not printed; its warnings are shown in one card. What is loaded is
+  unchanged: the same file, no download without the tick, no substitution, no device fallback.
 - **Diameter** is in pixels. Blank means the model's own native scale (Cellpose 4.2.1.1 does
   not estimate a diameter); 0 is refused.
 - **Normalisation** is always Cellpose's own, per image (each channel to its 1st to 99th
@@ -318,6 +325,9 @@ banner then says "commit unknown" and that the override is on). Then:
   unless you tick overwrite, and `<masks>/<type>/segmentation_record.json` with the model's
   file name and SHA-256, every setting (the full normalisation and the flow iterations included), whether the weights were downloaded now and from where, the channels, the device and each image as written,
   skipped or failed. The final table lists every image, with the error of a failed one.
+- **The masks folder is checked when the run is opened.** **Open the run** refuses a masks
+  folder that is the run's output folder or the experiment folder, or inside or around either,
+  with the same rule the writes use, before anything else.
 - **A mask type is its exact name.** A mask type whose name differs from a folder already in
   the masks folder only in upper/lower case (`Cells` when `cells/` is there, even empty) is
   refused when you choose it, on every computer, naming both (`mask_type_differs_in_case`): on
@@ -325,9 +335,11 @@ banner then says "commit unknown" and that the override is on). Then:
   existing folder's exact name (`cells`) to add to its masks, or choose another mask type.
   Nothing is renamed or merged.
 
-Afterwards declare the mask type (both mask types for **Both**) in the experiment description (for example `[masks.Cells]`
-with `source_type = "Cells"` and `representation = "instances"`), save it, run preprocessing
-again with the masks folder, **Describe the masks**, then continue with MorphoFeature.
+When the batch finishes, one line says what comes next (there is no separate *What to do next*
+step): declare the mask type (both mask types for **Both**) in the experiment description (for
+example `[masks.Cells]` with `source_type = "Cells"` and `representation = "instances"`), save
+it, run preprocessing again with the masks folder, **Describe the masks**, then continue with
+MorphoFeature.
 
 ### Preprocessing, Cellpose and the masks in one notebook (optional)
 
@@ -344,9 +356,15 @@ run the experiment in the app of cell 3. Then:
   Cellpose 4.2.1.1 and PyTorch are installed, only when you tick **Install Cellpose 4.2.1.1
   (with PyTorch) now** and press the button; if the installation changes `numpy` or `opencv`
   while they are loaded, restart the runtime, run cells 1 to 3 again (run preprocessing again
-  in cell 3: the histograms are reused), then cell 4. Then the same steps as the Cellpose
-  notebook above, one under the other; their messages name the step (for example *Press Load
-  the model first*), and **What to do next** points to cell 5.
+  in cell 3: the histograms are reused), then cell 4. Then four steps, one on screen at a
+  time as in the preprocessing app (a strip of steps, **Back** and **Next**; answers are kept
+  when you move): **Folders** (the run and the masks folder, checked there, and the run's
+  images in the preprocessing image viewer), **Output and channels**, **Model and preview**
+  (no separate load button: **Preview** loads the model the first time, and again only when
+  the model, its file (also the same file changed on disk) or the device changed; another image
+  reuses it) and **Segment** (it reuses the loaded model, and says in one line exactly which
+  model and settings it will use, in amber with what differs when the last Preview used
+  others). One line after the batch points to cell 5.
 - **5. Register the masks** shows, for each mask type cell 4 wrote, the declaration it would
   add (`[masks.Cells]` with `source_type = "Cells"` and `representation = "instances"`). Tick
   each one and press **Register the masks**: the app of cell 3 then checks the folders again
@@ -433,6 +451,43 @@ editing, or the confirmed ones. An image that cannot be drawn gets a sentence sa
    shows the images as the check read them; the folders found, the check's
    report (formatted: a summary, then tables with the details folded) and **Exclude images**
    are collapsed below.
+   If the check itself fails or is interrupted (for example Google Drive stopped answering),
+   nothing of an earlier check stays shown as valid on any step: its labels, roles, offers,
+   pictures, recommended bins and confirmations are cleared, and a red message names the
+   folder and the error (the full report is in **Technical details**).
+   Make sure Google Drive is mounted and the folder is there, then click the button again.
+
+   **Coming back to earlier work.** As soon as the output folder is set (typed, chosen, or the
+   default next to a new experiment folder) and no check is on screen, the app looks at what
+   the folder holds and restores it with a message at the top: *Found earlier work from
+   &lt;date&gt;: restored &lt;what&gt;*, the output folder, what was reused and what was read
+   again, and the step it opened on. When the experiment folder box is empty it is filled
+   from the earlier work; a different experiment folder restores nothing. What it restores:
+   - **The folder check.** Each check keeps the headers it read in `check_headers.json`. An
+     image whose size and modification time (its fingerprint) are unchanged keeps its recorded
+     header and is not opened again; every new or changed image is read, and the message names
+     them. A record of another experiment folder, of another version of the software, or that
+     cannot be read is not used: every header is read again, and the message says why. Mask
+     headers, and the first page of each TIFF (which says whether it is a projected copy), are
+     always read again.
+   - **Your answers.** The saved answers (`morphobricks.draft.json`), the saved description
+     (`morphobricks.toml`) and the earlier run's settings are read as **Check folder** reads
+     them, and the steps open on the first step still to do. Nothing is confirmed for you: the
+     axis roles, for one, are offered for one click.
+   - **A finished run.** When the run is of this experiment and of the saved description as it
+     is, with every image unchanged, and later bricks can open it as it is (its table, design,
+     pixel sizes, masks), **Run** opens with its report,
+     its intensity checks and what to do next (in the Preprocessing and Cellpose notebook, cell
+     4 segments this run). Otherwise the message says why it is not current.
+
+   **Check folder** (after **Scan the folders** on the stepper) reads every header again.
+   **Start fresh** forgets what was restored and starts a new session: no file is changed or
+   deleted, and Check folder still reads the answers saved in the output folder (choose
+   another output folder to start without them). If the earlier work cannot be read, a red
+   message says so and nothing of it is used. The folder boxes are read when you press Enter,
+   choose with Browse or leave the box, so a folder you pass through while typing is not
+   restored. Choosing another output folder clears what was restored, until you give an
+   answer, confirm, save or run: from then on it is your work and stays.
 2. **Axes.** What the files hold, in two parts. The roles start from the proposal of step
    1 (the header's, or what you chose on the example) and can be changed here at any time;
    once confirmed, **Change axis roles** takes the confirmation back. The instant one of these
@@ -455,8 +510,22 @@ editing, or the confirmed ones. An image that cannot be drawn gets a sentence sa
      imaging unit…**.
 3. **Channels.** First the **image type**: what the channel dimension holds, *separate
    stains or markers* or *colour (RGB)*. It is proposed from the image headers (only when
-   they all agree) and recorded when you click **Use for all folders**. **Set per folder…**
-   holds one row per folder, with its picture; it opens when the headers differ. An
+   they all agree) and recorded when you click **Validate** (the pages of the Python
+   interface call it **Use for all folders** and save each folder's choice at once): choosing,
+   in the box or for a folder under **Set per folder…**, only changes the form, with no save
+   and no redraw; **Validate** checks every folder has a type and saves every folder's type
+   (and the RGB header override box below) in one write of the draft, then the channel step
+   opens, and the button reads **Validated ✓** until a choice changes. A folder chosen on its
+   own keeps its choice; the others take the box's. One answer for every
+   folder, whatever their numbers of channels or images, also when the headers differ (then
+   nothing is pre-filled: choose the type in the box). **Set per folder…** holds one row per
+   folder, with its picture; it opens when your answers differ. After the answer, every folder
+   whose header does not fit it is listed under the line with its next step (a header that
+   says colour answered *separate stains*: the run refuses it, `R_IMAGE_TYPE_CONTRADICTS_HEADER`,
+   so answer it colour or correct its header; three interleaved samples under a header that
+   does not say colour, answered colour: the RGB header override below), while the other
+   folders go on. *Colour (RGB)* for all folders is recorded only when every folder has three
+   channels; otherwise nothing is written and the folders that cannot be colour are named. An
    experiment that mixes colour and separate-channel folders is refused in this version.
    When a folder's images store three values per pixel side by side but their header does
    not say colour (some scanners save colour this way), the card explains it and offers
@@ -468,7 +537,54 @@ editing, or the confirmed ones. An image that cannot be drawn gets a sentence sa
    stays unticked and the card names the folders that have it.
    Colour folders have the channels R, G and B. Otherwise name what you stained and confirm the list; then tag each folder's channels
    with those names, looking at any image in the viewer (each channel shows its header name
-   and the tag chosen for it). **Fast mode** is the default: **Every imaging unit has the same
+   and the tag chosen for it).
+   **Tagging the channels (the notebook, since v0.9.0; owner design of 25 November 2026).**
+   The step asks one question first: **Is the channel order the same for the whole
+   dataset?** When the images do not all have the same number of channels it says which
+   counts there are (for example *3 and 4 channels*).
+   - **Yes** opens **one row of dropdowns per channel count**: one row when every image has
+     the same number of channels, else one row for each count (one for the 3-channel images,
+     one for the 4-channel images). Each row tags every imaging unit with that many channels.
+   - **No** asks **Then how far does one channel order go?**: **Same order within each
+     biological repeat folder** opens one row per biological-repeat folder (and channel count), for
+     every condition's acquisitions in that folder; **Tag every imaging unit** opens one row
+     per imaging unit.
+
+   Under each dropdown are the channel index (C0, C1, …) and the header name, as evidence. A
+   row is pre-filled only from what you chose in this session (switching from *Yes* to a row
+   per repeat starts each repeat from your choice for its channel count), from tags already
+   saved for every acquisition of the row, or from header names equal to your labels exactly
+   ("from the header names: check them before Submit"). **Choosing in a dropdown saves
+   nothing and redraws nothing**: switch the answers, change your mind, the choices stay.
+   **Submit** is the one save: every channel of every row must be tagged, each label once (else
+   nothing is saved and the rows at fault are named); then each acquisition's header names are
+   checked against its row, and the tags, the header names they confirm and the review of the
+   acquisitions it refused are saved in one write of the draft. An acquisition whose header names
+   contradict its row (another label at a channel, or other names than the row's first
+   acquisition) is not tagged: it is listed with the contradiction, and the override below
+   (**Override this unit**, **Confirm the same tags**, **Confirm all N like it**) or a row of
+   its own (*Tag every imaging unit*) whose tags fit its header releases it; nothing is
+   reordered or guessed, and the description is not saved while any acquisition is listed. An
+   acquisition whose own images disagree is in no row and is listed at Submit. **Saved tags**
+   then shows what every acquisition holds; to change them, change the rows and Submit again.
+   A row filled from your choice in a broader row says so ("check it before Submit"); a row
+   whose acquisitions already hold one saved list shows that list instead ("as saved"). With
+   *Tag every imaging unit*, a row left blank is no answer for that acquisition now: it keeps
+   what it holds, so the others can be saved while a listed one waits. When the notebook is
+   opened again on a saved draft, the step answers the question as the draft already is
+   (*Yes* for fast mode; for a per-unit draft, the broadest answer whose rows reproduce every
+   acquisition's saved tags exactly, said as "Pre-answered from your saved tags"; otherwise
+   "Saved per-unit tags are kept; answer the question to change them"; "Pre-answered" goes
+   as soon as you change the answer or a row), and opening it writes
+   nothing: a strict draft is never turned into fast mode without your Submit.
+   What is recorded: *Yes* with one channel count is fast mode (`channel_layout`, every
+   acquisition `channels_from = "experiment"`, Spec ADR 0006); every other answer is a strict
+   per-unit file in which each acquisition holds its row's list (several channel counts cannot be
+   one `channel_layout`). The image type is asked before the rows; when every folder is colour
+   there is nothing to tag.
+
+   The pages of the Python interface (`channels_step()`, not the shipped notebook) keep the
+   per-unit grid, which saves at each choice. **Fast mode** is its default: **Every imaging unit has the same
    channels in the same order** is ticked, your declared assumption (never a guess). A folder
    whose image header names every channel with one of your labels, exactly as written (or with
    a header name already saved for that label), is tagged from its header with no click. Tag the
@@ -568,8 +684,8 @@ editing, or the confirmed ones. An image that cannot be drawn gets a sentence sa
    saves on its own. A saved ID cannot be changed from the notebook: only the publication API
    takes a `Reconfirmation` that names a new ID. A whole biological repeat or condition can
    be removed (every one of its folders gone from disk, or a condition folder renamed on disk,
-   which is a removed folder plus a new one): answer **Yes, remove** for each condition listed
-   and save. Its ID stays in `used_ids` as retired (experiment-v1 §4.9): it is never given to
+   which is a removed folder plus a new one): answer **Yes, remove** for each folder listed
+   (one question per condition, naming its removed folders) and save. Its ID stays in `used_ids` as retired (experiment-v1 §4.9): it is never given to
    another repeat or condition, and a folder of that name that comes back gets a new ID.
 4. **Masks.** The masks the check paired with the images (and, for masks whose files do not
    name their axes, the axes to state), then for each mask type: *separate objects*,
@@ -767,10 +883,17 @@ the channel, the image or biological repeat and the values compared, and what to
 per kind; it draws no plots (the notebook does). Then it prints the channel check: each
 imaging unit's channels compared with the same channels of the other units of its condition
 (a treatment effect is not reported when the condition has at least 3 other units), with
-`channel_unlike_others` and `possible_channel_swap` warnings (for example "channels DAPI and
-GFP look swapped") and the channels it could not check; the notebook draws them under
+`channel_unlike_others`, `possible_channel_swap` (for example "channels DAPI and GFP look
+swapped") and `ambiguous_channel_swap` warnings (channels that look swapped in more than one
+way the check cannot tell apart, the pairs being within `pair_tolerance`, 0.5 by default, of each other: it names them all and no pair; a cycle of three channels, A shows B, B shows C, C shows A, is not a swap and gives three "does not look like" warnings) and the channels it could not check; the notebook draws them under
 **Do the channels look like themselves?**. A swap made in every unit of a condition is not
 found. Warnings only: nothing is changed or blocked.
+
+The channel check's limits, `pair_tolerance` included, are recorded in `run_manifest.json`
+(`channel_identity`). They have no command-line option or notebook field: to apply others, call
+`check_channel_identity(result.intensity.summaries, ChannelIdentitySettings(pair_tolerance=0.8))`
+(Python, both from `morphobricks_preprocessing.channel_identity`), which recomputes nothing. A manifest whose limits lack `pair_tolerance` (written
+before it was recorded) is read with 0.5, the value that code used.
 
 Read the warnings as prompts to look, not as verdicts. With very noisy data (units that differ
 by about 30 % per channel) false warnings are frequent: in a simulation, 171 of 300 runs
@@ -942,12 +1065,19 @@ morphobricks-preprocessing calibrate /data/exp1 --remove treated Z
 ```
 
 The target is `.` (the whole experiment), a folder (a condition or repeat) or an image,
-relative to the experiment folder with `/`, spelled exactly as on disk. The most specific
-statement applies: an image's own over its folder's, a folder's over the whole
-experiment's. Each axis is stated on its own (`XY` states both with the same size), so Y
-and X never trade sizes. Units are pm, Å, nm, µm (um, micron), mm, cm or m. You may also
-edit the file in a spreadsheet; its columns are `target,axis,size,unit`, with an empty size
-and the unit `pixels` for a pixel statement:
+relative to the experiment folder with `/`, spelled exactly as on disk. Only `.` and `./`
+are the whole experiment: a target of only slashes, backslashes and `.` steps (`/`, `//`,
+`\`, `.\`, `./.`, `.//`, `././`) names no folder and is refused (reason
+`calibration_target_root`), never read as the whole experiment; `.\` and `./.` were read as
+the whole experiment before and are no longer accepted. `calibrate` and the notebook change
+nothing; a line of `calibration.csv` edited by hand to such a target (for example `/`, read
+as the whole experiment before) now stops the run with `calibration_unreadable`, naming the
+line (`calibrate` and the notebook always write `.`). The most specific statement applies:
+an image's own over its folder's, a folder's over the whole experiment's. Each axis is
+stated on its own (`XY` states both with the same size), so Y and X never trade sizes. Units
+are pm, Å, nm, µm (um, micron), mm, cm or m. You may also edit the file in a spreadsheet;
+its columns are `target,axis,size,unit`, with an empty size and the unit `pixels` for a
+pixel statement:
 
 ```text
 target,axis,size,unit
@@ -1277,6 +1407,10 @@ The default output folder is next to the experiment folder:
   pixels as stated; or `uncalibrated`), the stated calibration, the design and image type, the masks,
   every message with its action, and what the run reused, recomputed and replaced, and
   why. It is for you to read; later bricks never use it.
+- **`check_headers.json`** (notebook only): the image headers the last **Check folder** read,
+  each with the fingerprint it was read at, so that reopening the output folder restores the
+  check without reading unchanged images again (§4, *Coming back to earlier work*). It is a
+  cache: delete it and the next restore reads every header; later bricks never read it.
 - **`calibration.csv`** (only when you state pixel sizes): your statements (§5, Stating
   pixel sizes). Runs read it and never change it.
 - **`ome_zarr/`**: written only by v0.3 runs that converted TIFF images to OME-Zarr. That
@@ -1403,6 +1537,7 @@ continues.
 | `E_FAST_LAYOUT_MISMATCH`, `E_FAST_MARKER_WITHOUT_LAYOUT` | Error | The description is refused by the reader: an acquisition marked `channels_from = "experiment"` lists other channels or another image type than `channel_layout` (`E_FAST_LAYOUT_MISMATCH`), or an acquisition has `channels_from` in a description without `channel_layout` (`E_FAST_MARKER_WITHOUT_LAYOUT`). In a description with `channel_layout` every acquisition must say `channels_from` (`E_MISSING_FIELD`). |
 | `description_unreadable` | Error | `morphobricks.toml` or `morphobricks.records.jsonl` cannot be read. A description the reader refuses is reported with its own code (`E_*`, `R_FILE_SYMLINK`) and table path. |
 | `unreadable_folder` | Error | A folder could not be opened. Check permissions. |
+| `store_unreadable` | Error | A folder inside an OME-Zarr image could not be listed, so whether it holds links or mount points leading outside the selected folder is not known. Check the folder's permissions (and that the drive is connected), then check again. |
 | `link_outside_folder` | Error | A link in the experiment or masks folder leads outside it (the message names each link and its target), and nothing outside the selected folder is read. Copy or move the files in, or select a folder that holds them, then remove the link. |
 | `link_loop` | Error | A link leads back to a folder that holds it. Remove it. |
 | `mounted_folder` | Error | A folder (or file) in the experiment or masks folder is a mount point: another disk or share, or a bind mount of another folder, so its files come from outside the selected folder. It is named and not entered. Copy the files in, or select the mounted folder itself. Where the system's mount table cannot be read (macOS, Windows), only a mount of another device is seen. |
@@ -1494,6 +1629,7 @@ continues.
 | `calibration_axis_absent` | Warning | `calibration.csv` states a size for an axis some images do not have (for example a Z size for 2D images or projections); the message names them. No size is recorded for an axis an image does not have. Give the statement a narrower target, or no action if it is meant for the other images. |
 | `calibration_differs_from_header` | Warning | `calibration.csv` states a pixel size (or `pixels`) that differs from an image's metadata; the message names each image and axis with both sizes. The stated size is used. Correct or remove the statement if the metadata are right. |
 | `calibration_target_not_found` | Error | `calibration.csv` names a folder or image that is not in the experiment (names are compared exactly, case included). Correct the target, or remove the line. |
+| `calibration_target_root` | Error (reason) | Not a message of its own: the reason given inside the refusal of a pixel-size target of only slashes, backslashes and `.` steps (`/`, `//`, `\`, `.\`, `./.`, `.//`, `././`), which names no folder and is never read as the whole experiment. In `calibration.csv` the message is `calibration_unreadable` (below), naming the line and this reason, and the run stops, the file kept; `calibrate` and the notebook's calibration card refuse it and change nothing. For the whole experiment give the target `.` (in the notebook, **Use for all images**); otherwise give the folder or image. |
 | `calibration_unreadable` | Error | `calibration.csv` cannot be read; the message names the line and what is wrong. The file is left as it is: correct it, or remove it to use the sizes in the metadata. |
 | `unbalanced_images` | Warning | A condition and biological repeat has fewer than half or more than twice the median number of images. Check for missing, misplaced or duplicated images. |
 | `repeat_missing_conditions` | Warning | A biological repeat is not found in every condition. It is still used. If it has another folder name in some condition, pair it in the experiment design (step 1). |
@@ -1511,7 +1647,8 @@ continues.
 | `saturated_image` | Warning (intensity check) | More than the limit (default 1 %) of an image's pixels in a channel are at the largest value of its pixel type, so their true intensity is lost. Check the exposure, gain or laser power. |
 | `no_intensity_spread` | Warning (intensity check) | An image's channel has the same 1st and 99.8th percentile (empty or blank), so it cannot be normalised on its own. Check the channel, or exclude the image. |
 | `channel_unlike_others` | Warning (channel check) | One imaging unit's channel does not look like the same channel in the other units of its condition: its level, brightness or contrast differ by about 1.8 times or more and by much more than the units usually differ. The message names the nearest other channel, or says it looks like a channel this unit does not have (for example a fourth channel only other repeats have). Look at that unit's images in that channel: check its channel tag and how the images were exported, and whether the stain, exposure or acquisition differed. Nothing is changed or blocked. With very noisy data (units differing by about 30 % per channel) false warnings are frequent (171 of 300 simulated runs without a swap warned); floats converted from whole numbers with medians near zero can warn falsely, and 16-bit and 0-1 float images agree only above the integer floor (a high percentile above about 333 counts). |
-| `possible_channel_swap` | Warning (channel check) | Two channels of one imaging unit look like each other's channel in the other units (for example "DAPI and GFP look swapped"), or one channel clearly looks like another channel of the same unit: its channel tags may be in the wrong order. Check the unit's channels against how its images were acquired; if they are swapped, correct them in the experiment description and run again. Nothing is changed or blocked. A swap made in every unit of a condition is not found: the check compares each unit with the other units of its condition. |
+| `possible_channel_swap` | Warning (channel check) | Two channels of one imaging unit look like each other's channel in the other units (for example "DAPI and GFP look swapped"), or one channel clearly looks like another channel of the same unit: its channel tags may be in the wrong order. Check the unit's channels against how its images were acquired; if they are swapped, correct them in the experiment description and run again. Nothing is changed or blocked. A swap made in every unit of a condition is not found: the check compares each unit with the other units of its condition. When a channel could be swapped with two others, the pair whose two channels look most like each other is named, and the third channel gets its own "does not look like ... but like ..." warning; channel names never decide. |
+| `ambiguous_channel_swap` | Warning (channel check) | Channels of one imaging unit look swapped in more than one way that the check cannot tell apart (for example "channels A, B and C look swapped in more than one way": its B looks like A or C), so no pair is named. Check the channel tags of every channel named against how the images were acquired, and correct the unit's channels in the experiment description only once you know which are swapped; run again. Nothing is changed or blocked. |
 | `channel_without_finite_pixels` | Warning (intensity check) | An image's channel has no finite pixels (every value NaN or infinite), so its intensities were not checked and it cannot be normalised from its own pixels. Exclude the image, or fix the channel in the source data and run again. |
 | `channel_names_differ` | Error | Channel names differ between images at the same channel number, so different stains would be pooled as one channel. Spaces at the start or end of a name are ignored (and noted in the manifest); otherwise names must match exactly, and names that differ only in inner spaces are quoted and reported as such. Check the channel order; export the images again with the same channel order and names, or exclude the images whose channels differ. |
 | `non_finite_pixels` | Warning | NaN or infinite pixels are left out of the histograms and counted. |
@@ -1540,6 +1677,7 @@ continues.
 | `mask_planes_mismatch` | Error (`run`) | A mask does not have the time points and depth slices of its image under the confirmed axis roles: the masks of a time-lapse must have the same T as their image, one plane per time point, and a 2D mask fits only an image with one plane, whatever its metadata names (it is never shared by several planes). Save one mask plane per time point, with the axes named (`TYX`) or stated (`--mask-axes Cells=TYX`), or check the axis roles. |
 | `mask_size_mismatch` | Error | A mask does not have the width and height of its image. Check that it was made from that image at full resolution. |
 | `mask_pixel_type` | Error | A mask's pixels are not whole numbers (for example decimals). Save it as an integer label image. |
+| `mask_lossy_codec` | Error | A TIFF mask is stored with a lossy codec (JPEG, JPEG 2000, WebP, JPEG XL or JPEG XR), which changes pixel values, so its labels may not be the ones written. The message names each mask and its codec; nothing is read. Save the mask again from the segmentation, uncompressed or with a lossless codec (zlib, LZW or Zstandard). |
 | `mask_missing` | Warning | Some images have no mask of a kind that other images have; their objects of that kind cannot be measured. Add the masks, or exclude the images. |
 | `ambiguous_mask` | Error | A mask's name could belong to two images (one image name starts another's) or fit both layouts. Rename the masks or the images so each names one image and one kind. |
 | `mask_without_image`, `mask_outside_type_folder`, `mask_of_excluded_image` | Warning | Files in the masks folder that match no image of the experiment (check the folder and file names), other files directly in the masks folder, or masks of excluded images. They are not used. |

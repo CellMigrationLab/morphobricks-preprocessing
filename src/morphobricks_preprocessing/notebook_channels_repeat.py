@@ -209,6 +209,9 @@ class RepeatRows(ReviewMemory):
                 kept[key] = Refusal(html.escape(why), layout, None, old.tags, old.channels)
                 continue
             lead = repeat_lead(group) or layout  # the unit itself is not apart
+            if old.lead is None:  # its images agree again: no confirmation came with that
+                kept[key] = Refusal(AGREED, layout, lead, old.tags, old.channels)
+                continue  # before the count: it was refused with no row's tags to recount
             if (moved := recount(old.tags, layout)) is not None:
                 kept[key] = Refusal(moved, layout, lead, old.tags, old.channels)
                 continue  # never compared, cut or padded: every channel is chosen again
@@ -216,9 +219,6 @@ class RepeatRows(ReviewMemory):
             confirmed = self.override.confirmed.get(key)
             if relapsed(confirmed, layout):  # checked before anything may drop the refusal
                 kept[key] = Refusal(RELAPSED, layout, lead, old.tags, old.channels)
-                continue
-            if old.lead is None:  # its images agree again: no confirmation came with that
-                kept[key] = Refusal(AGREED, layout, lead, old.tags, old.channels)
                 continue
             found = self.contradictions(layout, old, lead)
             found = found or differences(layout, own, lead, grid.labels, answers.channels)
@@ -293,7 +293,8 @@ class RepeatRows(ReviewMemory):
     def build(self, width: int) -> None:
         """Draw one row per offered repeat folder and channel count, and the current state."""
         self.drops, self.buttons = {}, {}
-        groups = self._offered() if self.grid.labels else {}
+        # the guided step has its own rows (one per repeat when asked) and Submit
+        groups = self._offered() if self.grid.labels and not self.grid.guided else {}
         lines = [f"{html.escape(unit_name(k))}: {text}" for k, text in self.listed().items()]
         listed = ui.status(
             "error",

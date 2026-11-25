@@ -25,6 +25,9 @@ from morphobricks_preprocessing.notebook_design_step import (  # noqa: E402
 )
 from morphobricks_preprocessing.notebook_ui import PreprocessingNotebook  # noqa: E402
 
+# the per-unit grid driven through the stepper (the guided step is pinned by its own tests)
+pytestmark = pytest.mark.usefixtures("legacy_grid")
+
 CONDITIONS, REPEATS, TECHNICAL, FOVS = 4, 4, 2, 2
 BUDGET = 2.0
 """Seconds for the click on 64 images; it took about 1.5 s here before the fix, 0.15 s after.

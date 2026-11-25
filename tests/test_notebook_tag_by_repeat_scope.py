@@ -32,6 +32,9 @@ from test_notebook_tag_by_repeat_drafts import _review  # noqa: E402
 from test_notebook_tag_by_repeat_oneclick import GONE, OTHER, _fast, _strict  # noqa: E402
 from test_notebook_tag_by_repeat_recheck import _recheck  # noqa: E402
 
+# the per-unit grid driven through the stepper (the guided step is pinned by its own tests)
+pytestmark = pytest.mark.usefixtures("legacy_grid")
+
 
 def _visible(widget):
     """Return the text on screen: a closed accordion's contents are not."""

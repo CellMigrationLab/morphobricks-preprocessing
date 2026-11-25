@@ -22,6 +22,9 @@ from morphobricks_preprocessing.notebook_ui import PreprocessingNotebook  # noqa
 from morphobricks_preprocessing.validation import error  # noqa: E402
 from test_notebook_axes_quick import stepper  # noqa: E402
 
+# the per-unit grid driven through the stepper (the guided step is pinned by its own tests)
+pytestmark = pytest.mark.usefixtures("legacy_grid")
+
 
 def _text(html):
     return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", html)).strip()

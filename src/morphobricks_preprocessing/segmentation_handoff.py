@@ -51,16 +51,13 @@ from .metadata import OME_ZARR, TiffMetadata
 from .run_inputs import Fov, RunInputs
 from .run_inputs_request import FovSelection, Request
 from .segmentation_record import (
+    WRITE_LOCK_FILENAME,
     SegmentationError,
     check_mask_type,
     check_mask_type_folder,
     hold_lock,
 )
 from .zarr_input import is_zarr_name
-
-WRITE_LOCK_FILENAME = ".segmentation_write.lock"
-"""The lock a writer holds in a type folder from the twin check to the published mask. A
-dot-file, so the run's masks discovery skips it like the record's lock."""
 
 INT32_MAX = 2_147_483_647
 """The largest label every brick accepts (contract §15, §16)."""
@@ -98,7 +95,7 @@ def images_to_segment(
         (:func:`.segmentation_record.check_mask_type_folder`; #459).
     """
     check_mask_type(mask_type)
-    _check_folders(inputs, masks_root)
+    check_masks_folder(inputs, masks_root)
     made = {m.image for m in _paired(inputs, masks_root, mask_type)}
     check_mask_type_folder(masks_root, mask_type)  # cells/ beside Cells (#459)
     return tuple(fov for fov in inputs.fovs() if fov.relative_path not in made)
@@ -279,7 +276,7 @@ def write_mask(
         holder; or a rollback that could not restore or remove the mask (naming the files).
     """
     target = mask_path(masks_root, mask_type, fov)
-    _check_folders(inputs, masks_root)
+    check_masks_folder(inputs, masks_root)
     _check_2d(fov)
     data = _checked_labels(labels, inputs.plane_shape(fov), fov.relative_path)
     type_folder = Path(masks_root) / mask_type
@@ -560,7 +557,7 @@ def _check_2d(fov: Fov) -> None:
         )
 
 
-def _check_folders(inputs: RunInputs, masks_root: str | os.PathLike) -> None:
+def check_masks_folder(inputs: RunInputs, masks_root: str | os.PathLike) -> None:
     """Refuse a masks folder inside the experiment or the output folder (or holding them)."""
     issues = masks_folder_issues(masks_root, inputs.experiment_root, inputs.output_folder)
     if not issues and relative_inside(Path(masks_root).resolve(), inputs.output_folder):

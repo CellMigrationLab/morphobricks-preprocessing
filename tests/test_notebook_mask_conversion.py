@@ -93,3 +93,19 @@ def test_the_notebook_shows_the_card_under_describe_the_masks():
     assert isinstance(nb.mask_conversion, cards.MaskConversionCard)
     page = nb.run_step()
     assert nb.mask_conversion.card in page.children[1].children
+
+
+def test_a_declared_mask_without_recorded_files_is_refused_not_converted(tmp_path):
+    """#481: a source the run recorded no file of is a red card, never a green one."""
+    run, _, masks = run_with(tmp_path, declared=(("Unfiled", "unfiled", "binary"),))
+    card = cards.MaskConversionCard()
+    card.refresh(run.output_folder)
+    card.source.value = "Unfiled"
+    card.name.value = "UnfiledObjects"
+    before = tree(masks)
+    card.button.click()
+    assert "The mask was not converted." in card.status.value
+    assert "The run recorded no Unfiled mask file (source type unfiled)" in card.status.value
+    assert "converted." not in card.status.value.replace("not converted.", "")
+    assert card.result.value == "" and tree(masks) == before  # no output, no lineage line
+    assert not card.button.disabled  # the click reads the manifest again: retry after the run

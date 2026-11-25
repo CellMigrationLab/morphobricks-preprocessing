@@ -10,6 +10,7 @@ records every call (the stack and the keywords) and returns a fixed label image,
 exactly what Cellpose was given.
 """
 
+import logging
 import sys
 import types
 from pathlib import Path
@@ -23,6 +24,11 @@ from test_segmentation_handoff import EXTRA_FIRST
 from test_stage3_channels import described_run, extra_stain
 
 BUILTINS = ("cpsam_v2", "cpsam", "cpdino", "cpdino-vitb")
+CPDINO_WARNING = (
+    "Could not import CPDINO, run `pip install git+https://github.com/facebookresearch/dinov3` "
+    "to use CPDINO model"
+)
+"""Cellpose 4.2.1.1's own words (``cellpose/models.py``, line 23)."""
 PLOT_TITLES = ("original image", "predicted outlines", "predicted masks", "predicted cell pose")
 """The titles of ``cellpose.plot.show_segmentation``'s four panels in 4.2.1.1."""
 
@@ -57,6 +63,22 @@ class Net:
         return iter(SimpleNamespace(device=d) for d in self._buffers)
 
 
+class TextBar:
+    """Stands for ``tqdm.tqdm``, the plain text bar ``cellpose.utils`` imports."""
+
+    def __init__(self, *args, **kwargs):
+        self.kwargs, self.done = kwargs, 0
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def update(self, n):
+        self.done += n
+
+
 def model_class(state):
     """Return the stand-in ``CellposeModel`` class bound to ``state``."""
 
@@ -65,6 +87,8 @@ def model_class(state):
             state.constructed.append(
                 SimpleNamespace(gpu=gpu, pretrained_model=pretrained_model, device=device, **kwargs)
             )
+            if state.cpdino_log:  # 4.2.1.1 logs this when cellpose.models cannot import DINOv3
+                logging.getLogger("cellpose.models").warning(CPDINO_WARNING)
             self.pretrained_model = state.substitute or self._resolve(pretrained_model)
             self.device = device  # as in Cellpose: only what was passed in
             self.net = None if state.no_net else Net(state, device.type)
@@ -77,10 +101,20 @@ def model_class(state):
                 return requested
             path = state.models_dir / requested
             if requested not in BUILTINS:
+                logging.getLogger("cellpose.models").warning(
+                    "pretrained model %s not found, using default model", requested
+                )
                 return str(state.models_dir / "cpsam_v2")  # the silent substitution
             if not path.exists():
                 state.downloaded.append(requested)
-                path.write_bytes(weights_bytes(requested))
+                data = weights_bytes(requested)
+                # As cellpose.utils.download_url_to_file: a bar of cellpose.utils.tqdm.
+                bar_class = sys.modules["cellpose.utils"].tqdm
+                state.bars.append(bar_class)
+                with bar_class(total=len(data), unit="B", unit_scale=True) as bar:
+                    bar.update(len(data))
+                logging.getLogger("cellpose.models").info("Downloading: %s", requested)
+                path.write_bytes(data)
             return str(path)
 
         def eval(self, x, **kwargs):
@@ -112,13 +146,21 @@ def modules(state):
             fig.add_subplot(1, 4, n).set_title(title)
 
     plot.show_segmentation = show_segmentation
+    utils = types.ModuleType("cellpose.utils")
+    utils.tqdm = TextBar  # Cellpose's own: tqdm's plain text bar
     package = types.ModuleType("cellpose")
-    package.models, package.plot = models, plot
+    package.models, package.plot, package.utils = models, plot, utils
     torch = types.ModuleType("torch")
     torch.device = Device
     torch.cuda = SimpleNamespace(is_available=lambda: state.cuda)
     torch.backends = SimpleNamespace(mps=SimpleNamespace(is_available=lambda: state.mps))
-    return {"cellpose": package, "cellpose.models": models, "cellpose.plot": plot, "torch": torch}
+    return {
+        "cellpose": package,
+        "cellpose.models": models,
+        "cellpose.plot": plot,
+        "cellpose.utils": utils,
+        "torch": torch,
+    }
 
 
 def install(monkeypatch, tmp_path, **options):
@@ -136,6 +178,7 @@ def install(monkeypatch, tmp_path, **options):
         calls=[],
         plotted=[],
         constructed=[],
+        bars=[],
         downloaded=[],
         models_dir=models_dir,
         cuda=False,
@@ -148,6 +191,7 @@ def install(monkeypatch, tmp_path, **options):
         version="4.2.1.1",
         dinov3_commit=model_module.DINOV3_COMMIT,
         has_cpdino=True,
+        cpdino_log=False,
         normalize_default={
             "lowhigh": None,
             "percentile": None,

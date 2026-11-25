@@ -14,7 +14,8 @@ from channel_images import write_channels, write_masks, write_rgb
 from morphobricks_preprocessing.description_file import DRAFT_FILENAME
 from test_notebook_check_save import KINDS, TAGS, add_folder, answer_all, decode
 
-pytestmark = pytest.mark.usefixtures("statement_off")  # the blocks: the statement unticked
+# the blocks: the statement unticked, the per-unit grid also in the stepper
+pytestmark = pytest.mark.usefixtures("statement_off", "legacy_grid")
 
 pytest.importorskip("ipywidgets")
 pytest.importorskip("matplotlib")

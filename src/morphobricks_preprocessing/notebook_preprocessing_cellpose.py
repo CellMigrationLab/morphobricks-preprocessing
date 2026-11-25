@@ -50,9 +50,9 @@ RUN_REFUSED = (
     "Run), then run this cell again."
 )
 """What cell 4 says, with the refusal, when the app's run cannot be opened."""
-REGISTER_WITH = "Run cell 5, Register the masks"
-"""What the component's **What to do next** names in this notebook: its cell 5 registers the
-masks (:mod:`.notebook_mask_register`)."""
+REGISTER_WITH = "run cell 5 (Register the masks)"
+"""What the line shown once the masks are written names in this notebook: its cell 5 registers
+the masks (:mod:`.notebook_mask_register`)."""
 INSTALL_TEXT = (
     "Cellpose {version} is not installed in this environment. It is installed only here, only "
     "when you tick the box: it brings PyTorch, a download of a few gigabytes. Preprocessing "
@@ -135,7 +135,8 @@ class SegmentationStep(widgets.VBox):
         self.install_box.children = [self.segmentation]
         opener = self.segmentation.workflow.forms["open"]
         if self.run_folder and self.masks_folder and opener.stopped is not None:
-            if not self.refused:  # opened with its masks folder, the run is refused
+            # A refused masks folder is said under Open the run; the run itself is not refused.
+            if not self.refused and not self.segmentation.workflow.folders_refused:
                 self.refused = opener.refusal
                 self.notice.value += _refused_card(self.refused)
 

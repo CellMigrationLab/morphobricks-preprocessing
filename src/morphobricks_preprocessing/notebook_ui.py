@@ -32,6 +32,7 @@ Needs the ``notebook`` extra (``ipywidgets`` and ``matplotlib``).
 from __future__ import annotations
 
 import logging
+from collections import deque
 from pathlib import Path
 
 from morphobricks_normalization.ranges import HistogramSettings
@@ -91,6 +92,7 @@ from .notebook_render import (
     preview_caption,
     role_effect,
 )
+from .notebook_restore import _RestoreEarlier
 from .notebook_results import _ResultsStep
 from .notebook_run import _RunStep
 from .notebook_run_plan import _RunPlan
@@ -98,6 +100,9 @@ from .notebook_steps import _StepsFlow
 from .notebook_values import display_range
 from .planes import PlaneLayout
 from .run import Preflight, RunResult
+
+_LOG_LINES = 500
+"""The log lines the "Technical details" panel shows and keeps."""
 
 __all__ = [
     "EXCLUDABLE_CODES",
@@ -125,6 +130,7 @@ __all__ = [
 
 
 class PreprocessingNotebook(
+    _RestoreEarlier,
     _StepsFlow,
     _DescribedRun,
     _CheckSaveScreen,
@@ -200,6 +206,7 @@ class PreprocessingNotebook(
         self._show_design = True
         self._layouts_cache: tuple[tuple, dict[str, PlaneLayout]] | None = None
         self._init_prefill()
+        self._build_restore()
         self._build_check_save()
         self._build_channel_moves()
         self._build_output_cards()
@@ -306,6 +313,7 @@ class PreprocessingNotebook(
                 *([ui.intro(intro)] if intro else []),
                 self.folder_card,
                 self.output_card,
+                *([self.restore_box] if show_output else []),
                 *([self.masks_input_card] if show_output else []),
                 self.exclude_box,
                 self.check_button,
@@ -470,15 +478,19 @@ class PreprocessingNotebook(
             return None
 
     def _show_log(self) -> None:
-        self.details.value = "\n".join(self.log.lines[-500:])
+        self.details.value = "\n".join(self.log.lines)
 
 
 class _LogCapture(logging.Handler):
-    """Collects the package's log messages for the "Technical details" panel."""
+    """Collects the package's log messages for the "Technical details" panel.
+
+    Only the latest ``_LOG_LINES`` are kept, the ones the panel shows: older ones are dropped,
+    not held for the whole session (#523).
+    """
 
     def __init__(self):  # noqa: ANN204
         super().__init__(logging.DEBUG)
-        self.lines: list[str] = []
+        self.lines: deque[str] = deque(maxlen=_LOG_LINES)
         self.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
 
     def emit(self, record: logging.LogRecord) -> None:

@@ -21,6 +21,7 @@ from morphobricks_preprocessing.notebook_row_fold import (
     CHANGED,
     NEW,
     UNCHANGED,
+    RowFold,
     reopen_units,
     row_status,
 )
@@ -31,6 +32,9 @@ pytest.importorskip("matplotlib")
 
 from morphobricks_preprocessing import notebook_style as ui  # noqa: E402
 from morphobricks_preprocessing.notebook_ui import PreprocessingNotebook  # noqa: E402
+
+# the per-unit grid driven through the stepper (the guided step is pinned by its own tests)
+pytestmark = pytest.mark.usefixtures("legacy_grid")
 
 
 def test_a_row_folds_only_when_every_folder_is_as_saved_and_it_is_answered():
@@ -58,6 +62,20 @@ def test_a_row_folds_only_when_every_folder_is_as_saved_and_it_is_answered():
     assert row_status(units, [("ctrl", "rep2", "single"), ("drug", "rep2", "single")], True) == NEW
     assert row_status(units, [("other", "x", "single")], True) == NEW  # unknown: never folded
     assert row_status(None, rep1, True) == "" and reopen_units(None) is None
+
+
+def test_a_fold_with_nothing_unchanged_keeps_no_earlier_row():
+    """#514: unchanged rows, then all changed: the fold holds none of the old rows."""
+    import ipywidgets as widgets
+
+    fold = RowFold("folder")
+    rows = [widgets.HTML("a"), widgets.HTML("b")]
+    shown = fold.arrange([(row, UNCHANGED) for row in rows])
+    assert fold.folded.children == tuple(rows) and "2 unchanged folders" in fold.line.value
+    shown = fold.arrange([(row, CHANGED) for row in rows])
+    assert fold.count == 0 and fold.bar not in shown and fold.folded not in shown
+    assert fold.folded.children == () and fold.line.value == ""
+    assert fold.arrange([]) == [] and fold.folded.children == ()
 
 
 def stepper(root, masks, out):

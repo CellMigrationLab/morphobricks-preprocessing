@@ -170,3 +170,15 @@ def test_the_published_registry_stays_listed_and_its_ids_in_use_are_not_reuse(ex
         "rep1",
         "rep2",
     )
+
+
+def test_a_listed_id_removed_now_blocks_a_case_variant_but_not_itself(exp):
+    # Follow-up of #542: rep3 is listed in the published file and no folder keeps it. A folder
+    # REP3 must not be proposed it, nor take it; the listed spelling stays allowed.
+    listed = {"repeats": ["rep1", "rep2", "rep3"]}
+    base = draft_from_discovery(exp, listed_ids=listed)
+    assert base.repeats["rep1"].id.proposed == "rep1"  # listed and in use: kept as it is
+    with pytest.raises(DraftError) as refused:
+        base.confirm_id("repeats", "rep1", "REP3")
+    assert "E_ID_CASE_COLLISION" in refused.value.codes
+    assert base.confirm_id("repeats", "rep1", "rep3").repeats["rep1"].id.confirmed == "rep3"

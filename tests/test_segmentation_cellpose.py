@@ -529,12 +529,14 @@ def test_masks_of_the_batch_pass_preprocessings_own_mask_checks_on_a_rerun(run, 
 # what the preview shows, and the next steps ---------------------------------------------------
 
 
-def test_next_steps_tell_how_to_declare_the_mask_type(tmp_path):
-    text = "\n".join(cp.next_steps_lines("Cells", tmp_path / "masks"))
-    assert "[masks.Cells]" in text and 'representation = "instances"' in text
-    assert str(tmp_path / "masks") in text and "MorphoFeature" in text
+def test_the_next_step_line_tells_how_to_declare_the_mask_type(tmp_path):
+    text = cp.next_step_line("Cells", tmp_path / "masks")
+    assert "\n" not in text and text.startswith("Next: declare [masks.Cells]")
+    assert 'representation = "instances"' in text and str(tmp_path / "masks") in text
+    both = cp.next_step_line(("Cells", "Nuclei"), tmp_path, register_with="run cell 5")
+    assert both.startswith("Next: run cell 5 to declare [masks.Cells], [masks.Nuclei]")
     with pytest.raises(SegmentationError):
-        cp.next_steps_lines("NA", tmp_path)
+        cp.next_step_line("NA", tmp_path)
 
 
 def test_open_run_refuses_a_blank_folder_and_opens_a_run(run):

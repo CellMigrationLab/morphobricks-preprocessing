@@ -133,7 +133,9 @@ def test_a_manifest_that_disagrees_with_the_record_is_refused(tmp_path):
         lambda d: d.pop("projection"),  # projected copies read as plain images
     ):
         edit(manifest, change)
-        with pytest.raises(RunInputsError):  # (the table is checked first: same file bytes)
+        # (the table is checked first: same file bytes); an image range other than the
+        # projection's is refused already when the manifest is read (#445)
+        with pytest.raises((RunInputsError, ManifestFormatError)):
             RunInputs.open(out)
         manifest.write_bytes(original)
     assert RunInputs.open(out).projection.method == "max"
@@ -174,3 +176,24 @@ def test_a_malformed_projection_in_the_manifest_is_a_format_error(tmp_path, chan
     edit(out / "run_manifest.json", change)
     with pytest.raises(ManifestFormatError):
         read_manifest(out / "run_manifest.json")
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        lambda d: d["projection"]["images"].reverse(),
+        lambda d: d["projection"]["images"].append(dict(d["projection"]["images"][-1])),
+        lambda d: d["projection"]["images"].insert(0, dict(d["projection"]["images"][0])),
+    ],
+    ids=["reversed", "last twice", "first twice"],
+)
+def test_projection_images_must_be_unique_and_sorted_in_the_manifest(tmp_path, change):
+    # Issue #445 remainder: the writers (v0.5.0 to v0.8.0) sort the entries by path, one per
+    # image, so a duplicated or reversed list is an edit or a corruption.
+    _, out, _, _ = projected_run(tmp_path)
+    path = out / "run_manifest.json"
+    assert len(json.loads(path.read_text(encoding="utf-8"))["projection"]["images"]) >= 2
+    read_manifest(path)  # as written, it reads
+    edit(path, change)
+    with pytest.raises(ManifestFormatError, match="unique and sorted"):
+        read_manifest(path)

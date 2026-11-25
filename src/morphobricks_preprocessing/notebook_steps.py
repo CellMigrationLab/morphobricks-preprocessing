@@ -116,6 +116,9 @@ class _StepsFlow(
         if getattr(self, "_stepper", None) is not None:
             return self._stepper.widget
         self.channel_grid.place_types = False  # the image type has its own card on Channels
+        self.channel_grid.guided = self.channel_grid.GUIDED  # a question, rows, Submit (25 Nov)
+        # the image type too: choices change a form, Validate saves them in one write (25 Nov)
+        self.channel_types.form = {} if self.channel_grid.guided else None
         if ui.is_visible(self.channel_grid.widget):
             self.channel_grid.refresh()
         for box in (self.folder_next, self.axis_next):
@@ -138,6 +141,9 @@ class _StepsFlow(
         self.consistency_slot = widgets.VBox([self.consistency_card])
         self._build_design_step()
         self._stepper = Stepper(self._step_list(), self._step_shown)
+        # The restore's message stays above every step: it says where the steps opened.
+        head, strip, *rest = self._stepper.widget.children
+        self._stepper.widget.children = (head, strip, self.restore_box, *rest)
         self.overview_box.children = [self._stepper.overview(OVERVIEW_STEPS)]
         if self.draft is not None:
             self._refresh_description()  # the comparisons show their proposal
@@ -248,10 +254,10 @@ class _StepsFlow(
         super()._refresh_run_step()
         self._refresh_steps()
 
-    def check_folder(self) -> Preflight | None:
-        """Check the folder; a reopened experiment opens on its first step still to do."""
-        pre = super().check_folder()
-        if pre is not None and getattr(self, "_stepper", None) is not None:
+    def _show_check(self, folder: str, pre: Preflight) -> None:
+        """Show the check; a reopened experiment opens on its first step still to do."""
+        super()._show_check(folder, pre)
+        if getattr(self, "_stepper", None) is not None:
             # The headers are read: the viewer now shows the images as the check read them.
             self._show_checked_viewer()
             self._show_scan_axes()
@@ -260,19 +266,46 @@ class _StepsFlow(
             self.scan_status.value = ""
             self._refresh_folds()
             self._go_first_open()
-        return pre
+
+    def _clear_check_views(self) -> None:
+        """Show nothing on the steps of a check no longer on screen (#101).
+
+        No line, offer or picture of it, and no enabled *Confirm these axes*; the scan's
+        folders stay listed while they are of the folders typed.
+        """
+        super()._clear_check_views()
+        if getattr(self, "_stepper", None) is None:
+            return
+        for viewer in (self.scan_viewer, self.axes_viewer):
+            viewer.clear()
+        self.scan_example.children = []
+        ui.set_visible(self.scan_tree, True)
+        found = self._scan if self._scan_current() else None
+        ui.set_visible(self.scan_box, found is not None and bool(found.leaves))
+        self._show_scan_axes()  # empty without a check
+        self._show_copy_note()
+        self.axis_status.value = ""
+        self.quick_text.value = self.quick_caption.value = ""
+        self.quick_confirm.disabled = True
+        self._refresh_quick_axes()  # nothing to offer: hidden
+        self._refresh_projection_card(None)
+        self._refresh_zarr_card()
+        self._refresh_confirmed_viewers()
 
     def _go_first_open(self) -> None:
         """Open a reopened experiment's first step still to do (Run when none is)."""
         stepper = getattr(self, "_stepper", None)
         if stepper is None or self._published() is None:
             return
-        states = stepper.states()
-        first = next(
+        stepper.go(self._first_open())
+
+    def _first_open(self) -> int:
+        """Return the first step still to do (0-based; Run when every answer is given)."""
+        states = self._stepper.states()
+        return next(
             (i for i, s in enumerate(states[: OVERVIEW_STEPS + 1]) if not s.done),
             OVERVIEW_STEPS + 1,
         )
-        stepper.go(first)
 
     def _confirm_quick_axes(self) -> bool:
         """Confirm the offered axes; a reopened experiment then opens its next open step."""

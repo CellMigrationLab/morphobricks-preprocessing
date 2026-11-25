@@ -4,6 +4,7 @@ import json
 import subprocess
 import sys
 
+from morphobricks_preprocessing.check_record import CHECK_RECORD_FILENAME
 from morphobricks_preprocessing.discovery_report import REPORT_FILENAME, REPORT_TEXT_FILENAME
 from morphobricks_preprocessing.run.staging import STAGING_FOLDER
 
@@ -24,10 +25,15 @@ def only_the_report(folder, *, staged=False):
     return json.loads((folder / REPORT_FILENAME).read_text(encoding="utf-8"))["status"] == "stopped"
 
 
-def check_outputs(folder):
-    """True when ``check`` wrote its report, and nothing else (beside the description)."""
+def check_outputs(folder, *, notebook=False):
+    """True when ``check`` wrote its report, and nothing else (beside the description).
+
+    With ``notebook``, the notebook's check: its record of the headers it read
+    (``check_headers.json``, v0.9.0) is there too.
+    """
     names = {p.name for p in folder.iterdir()} if folder.is_dir() else set()
-    return names == {*REPORT_FILES, *DESCRIPTION_FILES}
+    record = {CHECK_RECORD_FILENAME} if notebook else set()
+    return names == {*REPORT_FILES, *DESCRIPTION_FILES, *record}
 
 
 def without_report(files):
