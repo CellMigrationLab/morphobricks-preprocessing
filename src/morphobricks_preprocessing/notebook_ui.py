@@ -92,6 +92,7 @@ from .notebook_render import (
     preview_caption,
     role_effect,
 )
+from .notebook_restore import _RestoreEarlier
 from .notebook_results import _ResultsStep
 from .notebook_run import _RunStep
 from .notebook_run_plan import _RunPlan
@@ -129,6 +130,7 @@ __all__ = [
 
 
 class PreprocessingNotebook(
+    _RestoreEarlier,
     _StepsFlow,
     _DescribedRun,
     _CheckSaveScreen,
@@ -204,6 +206,7 @@ class PreprocessingNotebook(
         self._show_design = True
         self._layouts_cache: tuple[tuple, dict[str, PlaneLayout]] | None = None
         self._init_prefill()
+        self._build_restore()
         self._build_check_save()
         self._build_channel_moves()
         self._build_output_cards()
@@ -310,6 +313,7 @@ class PreprocessingNotebook(
                 *([ui.intro(intro)] if intro else []),
                 self.folder_card,
                 self.output_card,
+                *([self.restore_box] if show_output else []),
                 *([self.masks_input_card] if show_output else []),
                 self.exclude_box,
                 self.check_button,

@@ -138,6 +138,9 @@ class _StepsFlow(
         self.consistency_slot = widgets.VBox([self.consistency_card])
         self._build_design_step()
         self._stepper = Stepper(self._step_list(), self._step_shown)
+        # The restore's message stays above every step: it says where the steps opened.
+        head, strip, *rest = self._stepper.widget.children
+        self._stepper.widget.children = (head, strip, self.restore_box, *rest)
         self.overview_box.children = [self._stepper.overview(OVERVIEW_STEPS)]
         if self.draft is not None:
             self._refresh_description()  # the comparisons show their proposal
@@ -291,12 +294,15 @@ class _StepsFlow(
         stepper = getattr(self, "_stepper", None)
         if stepper is None or self._published() is None:
             return
-        states = stepper.states()
-        first = next(
+        stepper.go(self._first_open())
+
+    def _first_open(self) -> int:
+        """Return the first step still to do (0-based; Run when every answer is given)."""
+        states = self._stepper.states()
+        return next(
             (i for i, s in enumerate(states[: OVERVIEW_STEPS + 1]) if not s.done),
             OVERVIEW_STEPS + 1,
         )
-        stepper.go(first)
 
     def _confirm_quick_axes(self) -> bool:
         """Confirm the offered axes; a reopened experiment then opens its next open step."""
