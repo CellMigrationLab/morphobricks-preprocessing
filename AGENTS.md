@@ -286,7 +286,7 @@ src/morphobricks_preprocessing/
                     eval_arguments (channel_axis=0), segment_image, run_batch (every image written, skipped
                     or failed in a SegmentationBatch, with each channel's role, cell or nuclear:
                     channel_roles_entry), Settings refuses normalize off (always Cellpose's own);
-                    segmentation_cellpose_run.py open_run, channel_coverage, next_steps_lines (the
+                    segmentation_cellpose_run.py open_run, channel_coverage, next_step_line (the
                     preview reuses preview_render's display_panel and outline), channel_layouts and
                     channel_by_number (a channel number only when every image has the same channel
                     IDs at the same C positions, translated once to the ID; #440);

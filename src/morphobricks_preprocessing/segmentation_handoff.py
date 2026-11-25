@@ -95,7 +95,7 @@ def images_to_segment(
         (:func:`.segmentation_record.check_mask_type_folder`; #459).
     """
     check_mask_type(mask_type)
-    _check_folders(inputs, masks_root)
+    check_masks_folder(inputs, masks_root)
     made = {m.image for m in _paired(inputs, masks_root, mask_type)}
     check_mask_type_folder(masks_root, mask_type)  # cells/ beside Cells (#459)
     return tuple(fov for fov in inputs.fovs() if fov.relative_path not in made)
@@ -276,7 +276,7 @@ def write_mask(
         holder; or a rollback that could not restore or remove the mask (naming the files).
     """
     target = mask_path(masks_root, mask_type, fov)
-    _check_folders(inputs, masks_root)
+    check_masks_folder(inputs, masks_root)
     _check_2d(fov)
     data = _checked_labels(labels, inputs.plane_shape(fov), fov.relative_path)
     type_folder = Path(masks_root) / mask_type
@@ -557,7 +557,7 @@ def _check_2d(fov: Fov) -> None:
         )
 
 
-def _check_folders(inputs: RunInputs, masks_root: str | os.PathLike) -> None:
+def check_masks_folder(inputs: RunInputs, masks_root: str | os.PathLike) -> None:
     """Refuse a masks folder inside the experiment or the output folder (or holding them)."""
     issues = masks_folder_issues(masks_root, inputs.experiment_root, inputs.output_folder)
     if not issues and relative_inside(Path(masks_root).resolve(), inputs.output_folder):

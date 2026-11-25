@@ -34,14 +34,15 @@ from test_segmentation_handoff import MASKS_SECTION
 ROOT = Path(__file__).parents[1]
 NOTEBOOK = ROOT / "notebooks/MorphoBricks_Cellpose.ipynb"
 VERSIONS = ROOT / "notebooks/notebook_latest_versions.yaml"
-INSTALL, DRIVE, OPEN, CHANNELS, MODEL, PREVIEW, BATCH, NEXT = range(8)
+INSTALL, DRIVE, OPEN, CHANNELS, MODEL, PREVIEW, BATCH = range(7)
+LAST = BATCH
+"""The last code cell: the closing *What to do next* cell was removed (owner, 25 Nov 2026)."""
 FORMS = {
     OPEN: "open",
     CHANNELS: "channels",
     MODEL: "model",
     PREVIEW: "preview",
     BATCH: "segment",
-    NEXT: "next",
 }
 """The form each step's cell shows (:class:`notebook_cellpose_form.CellposeNotebook`)."""
 TITLES = (
@@ -52,7 +53,6 @@ TITLES = (
     "# @title 5. Choose the model and the settings, then load the model",
     "# @title 6. Preview one example result",
     "# @title 7. Segment the whole experiment",
-    "# @title 8. What to do next",
 )
 HEADINGS = (
     "## **1. Install Cellpose and MorphoBricks preprocessing**",
@@ -62,7 +62,6 @@ HEADINGS = (
     "## **5. Choose the model and the settings, then load the model**",
     "## **6. Preview one example result**",
     "## **7. Segment the whole experiment**",
-    "## **8. What to do next**",
 )
 
 
@@ -100,11 +99,11 @@ def run_cell(namespace, number, **fields):
 # the file ---------------------------------------------------------------------------------------
 
 
-def test_the_notebook_is_an_introduction_and_eight_explained_code_cells():
+def test_the_notebook_is_an_introduction_and_seven_explained_code_cells():
     nb = notebook()
     assert nb["nbformat"] == 4
     cells = nb["cells"]
-    assert [c["cell_type"] for c in cells] == ["markdown", *("markdown", "code") * 8, "markdown"]
+    assert [c["cell_type"] for c in cells] == ["markdown", *("markdown", "code") * 7, "markdown"]
     intro = "".join(cells[0]["source"])
     for text in (
         "Cellpose 4.2.1.1",
@@ -126,13 +125,13 @@ def test_the_notebook_is_an_introduction_and_eight_explained_code_cells():
 
 
 def test_the_cells_stay_thin_the_logic_is_in_the_package():
-    for number in range(OPEN, NEXT + 1):
+    for number in range(OPEN, LAST + 1):
         text = source(number)
         assert len(text.splitlines()) < 45
         for other in ("import cellpose", "from cellpose", "import torch", "tifffile", "np."):
             assert other not in text  # nothing here reads, computes or writes pixels
-    steps = ("open", "channels", "model", "preview", "segment", "next")
-    for number, step in zip(range(OPEN, NEXT + 1), steps, strict=True):
+    steps = ("open", "channels", "model", "preview", "segment")
+    for number, step in zip(range(OPEN, LAST + 1), steps, strict=True):
         assert source(number).rstrip().endswith(f"workflow.{step}_step()")
 
 
@@ -258,8 +257,9 @@ def test_the_cells_segment_a_mixed_run_end_to_end(cells):
         "failed": 0,
     }
     assert len(cells.stub.calls) == 1 + len(fovs)
-    table = workflow.shown[-1]
+    table, line = workflow.shown[-2:]  # the table, then the one line of what comes next
     assert all(f.relative_path in table for f in fovs) and "written" in table
+    assert "Next: declare [masks.Cells]" in line
     batch = read_record(run.masks, "Cells").batches[0]
     assert batch.channel_ids == ("TUB", "DNA") and batch.parameters["diameter"] == 30.0
     assert batch.parameters["batch_size"] == 4 and batch.device == "cpu"
@@ -390,7 +390,7 @@ def test_failures_are_in_the_final_table_and_the_batch_goes_on(cells):
         "needs_attention": 0,
         "failed": 1,
     }
-    table = cells.ns["workflow"].shown[-1]
+    table = cells.ns["workflow"].shown[-2]
     assert "RuntimeError: out of memory" in table and "failed" in table
     run_cell(cells.ns, BATCH)  # again: the written images are skipped, the failed one is redone
     assert cells.ns["workflow"].result.counts() == {
@@ -432,7 +432,7 @@ def test_a_cell_run_too_early_says_what_to_do_first(cells):
     run_cell(cells.ns, OPEN, run_folder=str(cells.run.out), masks_folder=str(cells.run.masks))
     # The component names the step's button, never a cell number (#463 review).
     with pytest.raises(RuntimeError, match="Press Choose the channels first"):
-        run_cell(cells.ns, NEXT)
+        run_cell(cells.ns, MODEL)
     with pytest.raises(RuntimeError, match="Press Load the model first"):
         run_cell(cells.ns, BATCH)
 
@@ -460,7 +460,9 @@ def test_a_mask_type_preprocessing_would_refuse_stops_the_cell(cells):
         run_cell(cells.ns, CHANNELS, mask_type="NA")
 
 
-def test_the_closing_cell_gives_the_next_steps_and_the_masks_pass_a_rerun(cells):
+def test_one_line_after_the_batch_says_what_comes_next_and_the_masks_pass_a_rerun(cells):
+    # The closing "What to do next" cell is gone (owner, 25 November 2026): one line under the
+    # batch keeps what is essential, the declaration and the rerun with the masks folder.
     from described_tree import check_masks, run_described
     from description_tree import MAPPING
     from morphobricks_preprocessing.run_inputs import RunInputs
@@ -470,18 +472,10 @@ def test_the_closing_cell_gives_the_next_steps_and_the_masks_pass_a_rerun(cells)
     open_and_choose(cells)
     run_cell(cells.ns, MODEL, device="cpu")
     run_cell(cells.ns, BATCH)
-    run_cell(cells.ns, NEXT)
-    text = cells.ns["workflow"].shown[-1]
-    for needle in (
-        "[masks.Cells]",
-        "representation = ",
-        "Save the description",
-        "Run preprocessing again",
-        "Describe the masks",
-        "MorphoFeature",
-        str(run.masks),
-    ):
+    text = html.unescape(cells.ns["workflow"].shown[-1])
+    for needle in ("Next: declare [masks.Cells]", "representation = ", str(run.masks)):
         assert needle in text
+    assert "What to do next" not in text
     (run.out / "morphobricks.toml").write_bytes(run.data + MASKS_SECTION)
     again = run_described(run.experiment, MAPPING, output_folder=run.out, masks_folder=run.masks)
     assert again.written, [(i.code, i.message) for i in again.issues]

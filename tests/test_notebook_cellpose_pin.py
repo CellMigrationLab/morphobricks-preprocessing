@@ -546,8 +546,12 @@ def test_the_real_notebook_runs_the_cellpose_code_and_not_the_preprocessing_app(
     for module in ("__init__", "notebook_cellpose", "segmentation_cellpose", "run_inputs"):
         assert f"{PKG}/{module}.py" in used
     assert f"{PKG}/segmentation_cellpose_model.py" in used  # imported inside a function
-    for module in ("notebook_ui", "cli", "notebook_stepper"):  # the other notebook, the CLI
+    for module in ("notebook_ui", "notebook_steps", "cli"):  # the other notebook, the CLI
         assert f"{PKG}/{module}.py" not in used
+    # The Cellpose widget reuses the app's layout pieces (owner, 25 November 2026): the
+    # stepper and its field rows, and the one image viewer; never the app itself.
+    for module in ("notebook_stepper", "notebook_viewer"):
+        assert f"{PKG}/{module}.py" in used
 
 
 @pytest.mark.parametrize("ci", ["", "true"])
