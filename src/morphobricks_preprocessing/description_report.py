@@ -16,10 +16,39 @@ from .description_rules import Code, Refusal
 BARE_KEY = re.compile(r"[A-Za-z0-9_-]+")
 
 
+_ESCAPES = {
+    '"': '\\"',
+    "\\": "\\\\",
+    "\b": "\\b",
+    "\t": "\\t",
+    "\n": "\\n",
+    "\f": "\\f",
+    "\r": "\\r",
+}
+"""What a TOML basic string escapes by name; other control characters are escaped by number."""
+
+
 def key_path(base: str, key: str) -> str:
-    """Return the table path of ``key`` under ``base``, quoting a key TOML would quote."""
-    name = key if BARE_KEY.fullmatch(key) else f'"{key}"'
+    """Return the table path of ``key`` under ``base``, quoting a key TOML would quote.
+
+    A quoted key is escaped as the canonical writer escapes it (:func:`toml_string`, #406), so
+    a key holding a quote, a backslash or a newline gives one unambiguous path.
+    """
+    name = key if BARE_KEY.fullmatch(key) else toml_string(key)
     return f"{base}.{name}" if base else name
+
+
+def toml_string(text: str) -> str:
+    """Return a TOML basic string, escaping only what must be (control characters by number)."""
+    out = []
+    for char in text:
+        if char in _ESCAPES:
+            out.append(_ESCAPES[char])
+        elif ord(char) < 0x20 or ord(char) == 0x7F:
+            out.append(f"\\u{ord(char):04X}")
+        else:
+            out.append(char)
+    return '"' + "".join(out) + '"'
 
 
 @dataclass(frozen=True)

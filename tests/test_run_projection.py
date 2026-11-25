@@ -133,7 +133,9 @@ def test_a_manifest_that_disagrees_with_the_record_is_refused(tmp_path):
         lambda d: d.pop("projection"),  # projected copies read as plain images
     ):
         edit(manifest, change)
-        with pytest.raises(RunInputsError):  # (the table is checked first: same file bytes)
+        # (the table is checked first: same file bytes); an image range other than the
+        # projection's is refused already when the manifest is read (#445)
+        with pytest.raises((RunInputsError, ManifestFormatError)):
             RunInputs.open(out)
         manifest.write_bytes(original)
     assert RunInputs.open(out).projection.method == "max"

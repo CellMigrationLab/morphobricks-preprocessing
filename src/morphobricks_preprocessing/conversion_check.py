@@ -53,6 +53,7 @@ def conversion_problem(
     str or None
         The message for the user, or None.
     """
+    paths = list(paths)  # read twice below: a one-shot iterable must not run dry (#386)
     path = root / RECORD_FILENAME
     if expected is None:
         return None if projection is None else _no_record(path, root)
@@ -72,7 +73,7 @@ def conversion_problem(
         )
     changed = changed_copies(root, found[0], paths) if found is not None else []
     if not changed:
-        return _projection_problem(found[0], expected, list(paths), projection, masks)
+        return _projection_problem(found[0], expected, paths, projection, masks)
     them = agree(changed, "it", "them")
     return (
         f"{plural(len(changed), 'named-axis copy', 'named-axis copies')} changed since the "

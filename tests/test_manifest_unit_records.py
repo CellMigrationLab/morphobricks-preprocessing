@@ -161,7 +161,12 @@ def test_a_unit_not_declared_rgb_with_the_declared_key_is_refused_at_open(plain_
 
 
 def test_channels_other_than_the_units_are_refused_at_open(plain_run):
-    _edit(plain_run, lambda units: units[0].__setitem__("channels", ["NotAChannel"]))
+    # As many channels as the unit has: a unit listing unnamed positions beyond its channels
+    # is refused already when the manifest is read (#506).
+    def other(units):
+        units[0]["channels"] = [f"NotAChannel{i}" for i in range(len(units[0]["channels"]))]
+
+    _edit(plain_run, other)
     with pytest.raises(RunInputsError, match=r"units\[0\]\.channels") as refused:
         RunInputs.open(plain_run.output)
     assert refused.value.code == MISMATCH

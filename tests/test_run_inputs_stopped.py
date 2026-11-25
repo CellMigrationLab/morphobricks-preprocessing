@@ -267,6 +267,8 @@ def _issue_change(report, **change):
         lambda report: json.dumps(report).replace(
             '"provisional": false', '"x": NaN, "provisional": false'
         ),
+        lambda report: json.dumps(report)[:-1] + ', "junk": ' + "9" * 5000 + "}",  # #455
+        lambda report: json.dumps(report).replace('"1"', "1" * 5000, 1),  # a required field
     ],
     ids=[
         "not-utf8",
@@ -283,6 +285,8 @@ def _issue_change(report, **change):
         "no-error",
         "duplicate-key",
         "nan",
+        "huge-integer",
+        "huge-version",
     ],
 )
 def test_an_unreadable_report_is_refused_naming_the_file(tmp_path, damage):
