@@ -123,6 +123,12 @@ class Draft:
     against. The draft is always derived from the folders; no file of the output folder
     (``experiment_design.csv`` included) is read to propose or prefill it (experiment-v1
     section 7).
+
+    ``used_ids`` are the IDs the lineage retired: never proposed or confirmed again.
+    ``listed_ids`` is the whole ``used_ids`` registry of the published file the draft reopens
+    (section 4.9, append-only): every ID in it stays listed in the description built from the
+    draft, so the ID of a repeat or condition the user confirms removed is retired, never
+    dropped (issue #283). The IDs it lists that are still in use are not refused as reuse.
     """
 
     conditions: Mapping[str, IdSlot]
@@ -130,6 +136,7 @@ class Draft:
     repeats: Mapping[str, DraftRepeat]
     references: Mapping[str, str] = field(default_factory=dict)
     used_ids: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
+    listed_ids: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
 
     def open_questions(self) -> tuple[OpenQuestion, ...]:
         """Return every question still open; a draft with any cannot be published."""
@@ -327,17 +334,21 @@ def draft_from_discovery(
     excluded: Iterable[str] = (),
     *,
     used_ids: Mapping[str, Iterable[str]] | None = None,
+    listed_ids: Mapping[str, Iterable[str]] | None = None,
 ) -> Draft:
     """Build the draft of a folder before any answer: proposed IDs, units, counts, pairing.
 
     Biological-repeat folders with the same name are one repeat (the default pairing, which the
     notebook's pairing card starts from); nothing is confirmed. IDs are proposed as the folder
     labels where allowed (Q6: the same rule for conditions, technical repeats and repeats), and
-    ``used_ids`` (the IDs a published file of this lineage lists) are never proposed again.
+    ``used_ids`` (the IDs the lineage retired) are never proposed again, and ``listed_ids``
+    (the published file's whole registry) are kept listed (:attr:`Draft.listed_ids`).
     No image is opened, no folder renamed and no file written.
     """
     used = {kind: tuple(values) for kind, values in (used_ids or {}).items()}
-    return _draft(_members(discovery, set(excluded)), {}, used)
+    listed = {kind: tuple(values) for kind, values in (listed_ids or {}).items()}
+    draft = _draft(_members(discovery, set(excluded)), {}, used)
+    return replace(draft, listed_ids=MappingProxyType(listed))
 
 
 __all__ = [
