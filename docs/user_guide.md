@@ -494,8 +494,8 @@ editing, or the confirmed ones. An image that cannot be drawn gets a sentence sa
    folders are scanned and one image is shown as soon as it is entered; if it is your
    experiment, click **Looks right: read all image headers**, which reads the saved answers.
    Answers saved by another version of the software (an older draft format or Spec) are never
-   used, and one line says so; the file is left as it is and the folders are scanned as for a
-   new experiment.
+   used, and one line says so; the file is left as it is, and the experiment folder entered is
+   scanned and shown in the same way.
 2. **Axes.** What the files hold, in two parts. The roles start from the proposal of step
    1 (the header's, or what you chose on the example) and can be changed here at any time;
    once confirmed, **Change axis roles** takes the confirmation back. The instant one of these

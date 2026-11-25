@@ -491,13 +491,53 @@ def test_saved_answers_of_an_older_version_are_ignored_and_never_block_a_scan(ex
     assert text.startswith("The saved answers in this output folder")
     assert "another version" in text and "Found earlier work" not in text
     assert not ui.is_visible(nb.restore_fresh) and files_of(out) == before
-    nb.folder.value = str(root)
-    assert nb._scanned is None  # nothing to restore: the scan is the user's, as always
-    nb.scan_button.click()
+    assert "Scan the folders" in text and "Check folder" not in text
+    nb.folder.value = str(root)  # the owner's case: the folder entered is scanned and shown
     scanned_and_shown(nb, root)
+    assert f"The folders of {root} are scanned below" in _text(nb.restore_status.value)
+    assert files_of(out) == before  # the scan writes nothing
     nb.check_button.click()
     assert nb.preflight is not None and not nb._draft_saved
     assert nb.reference_boxes["drug"].value != "ctrl"  # nothing of the old answers is used
+
+
+def old_answers_only(out):
+    out.mkdir()
+    (out / DRAFT_FILENAME).write_text(json.dumps(OLD_DRAFT), encoding="utf-8")
+
+
+def test_an_early_scan_click_is_made_good_with_older_answers_too(exp):
+    root, out = exp
+    old_answers_only(out)
+    nb = stepper()
+    nb.output.value = str(out)
+    nb.scan_button.click()  # the click reached the kernel before the typed folder
+    assert "Enter the experiment folder first" in _text(nb.scan_status.value)
+    nb.folder.value = str(root)
+    scanned_and_shown(nb, root)
+
+
+def test_the_older_answers_line_names_the_pages_check_folder_button(exp):
+    root, out = exp
+    old_answers_only(out)
+    nb = PreprocessingNotebook()
+    nb.folder_step()
+    nb.output.value = str(out)
+    text = _text(nb.restore_status.value)
+    assert "another version" in text and "Scan the folders" not in text
+    assert "click Check folder." in text
+
+
+def test_older_answers_beside_a_recorded_check_restore_the_check_without_a_scan_hint(exp):
+    root, out = exp
+    checked(root, out)
+    (out / DRAFT_FILENAME).write_text(json.dumps(OLD_DRAFT), encoding="utf-8")
+    nb = stepper()
+    nb.output.value = str(out)
+    text = _text(nb.restore_status.value)
+    assert "restored the folder check" in text and "another version" in text
+    assert "scan the folders" not in text.lower() and "again reads" not in text
+    assert "Click Looks right: read all image headers again to read every header again" in text
 
 
 def test_the_stacked_pages_name_their_check_folder_button(exp):
