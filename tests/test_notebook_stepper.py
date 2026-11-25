@@ -24,6 +24,9 @@ from morphobricks_preprocessing.notebook_stepper import (  # noqa: E402
 )
 from morphobricks_preprocessing.notebook_ui import PreprocessingNotebook  # noqa: E402
 
+# the per-unit grid driven through the stepper (the guided step is pinned by its own tests)
+pytestmark = pytest.mark.usefixtures("legacy_grid")
+
 ORDER = ["Images", "Axes", "Channels", "Masks", "Design", "Check and save", "Run"]
 """What the files hold first (images, axes, channels, masks), what it means after (design)."""
 AXES, CHANNELS, MASKS, DESIGN, SAVE, RUN = range(1, 7)

@@ -25,6 +25,9 @@ from morphobricks_preprocessing.channel_labels import UnitLayout  # noqa: E402
 from morphobricks_preprocessing.draft_answers import UnitAnswer  # noqa: E402
 from morphobricks_preprocessing.notebook_ui import PreprocessingNotebook  # noqa: E402
 
+# the per-unit grid driven through the stepper (the guided step is pinned by its own tests)
+pytestmark = pytest.mark.usefixtures("legacy_grid")
+
 FOLDERS = ["ctrl/rep1", "ctrl/rep2", "drug/rep1", "drug/rep2"]
 CHANNELS = 2  # step 3, 0-based: the stains and the tags
 STAINS = TAGS = CHANNELS

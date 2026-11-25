@@ -293,7 +293,8 @@ class RepeatRows(ReviewMemory):
     def build(self, width: int) -> None:
         """Draw one row per offered repeat folder and channel count, and the current state."""
         self.drops, self.buttons = {}, {}
-        groups = self._offered() if self.grid.labels else {}
+        # the guided step has its own rows (one per repeat when asked) and Submit
+        groups = self._offered() if self.grid.labels and not self.grid.guided else {}
         lines = [f"{html.escape(unit_name(k))}: {text}" for k, text in self.listed().items()]
         listed = ui.status(
             "error",

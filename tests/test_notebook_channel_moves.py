@@ -40,6 +40,9 @@ pytest.importorskip("matplotlib")
 
 from morphobricks_preprocessing import notebook_style as ui  # noqa: E402
 
+# the per-unit grid driven through the stepper (the guided step is pinned by its own tests)
+pytestmark = pytest.mark.usefixtures("legacy_grid")
+
 
 def _retag_swapped(exp, monkeypatch, gone=None):  # noqa: F811
     """Save on 2026-01-01, swap ctrl/rep1's first two header channels, re-tag them to match.

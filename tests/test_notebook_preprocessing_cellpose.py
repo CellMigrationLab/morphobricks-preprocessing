@@ -43,6 +43,9 @@ from morphobricks_preprocessing.notebook_preprocessing_cellpose import (  # noqa
 from morphobricks_preprocessing.notebook_ui import PreprocessingNotebook  # noqa: E402
 from morphobricks_preprocessing.run_inputs import RunInputs  # noqa: E402
 
+# the per-unit grid driven through the stepper (the guided step is pinned by its own tests)
+pytestmark = pytest.mark.usefixtures("legacy_grid")
+
 
 def ran_app(tmp_path, *, with_masks=False):
     """Return the app of cell 3 after a finished run of four 3-channel images."""

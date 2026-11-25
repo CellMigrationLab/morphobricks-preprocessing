@@ -25,6 +25,9 @@ from morphobricks_preprocessing import notebook_style as ui  # noqa: E402
 from test_notebook_axes_quick import stepper  # noqa: E402
 from test_notebook_prerelease import _tag, _text  # noqa: E402
 
+# the per-unit grid driven through the stepper (the guided step is pinned by its own tests)
+pytestmark = pytest.mark.usefixtures("legacy_grid")
+
 GONE = "drug/rep2"
 NO_NAMES = object()
 """The rewritten header states no channel name at all (not one empty name)."""

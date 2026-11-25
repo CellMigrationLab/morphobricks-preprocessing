@@ -43,6 +43,9 @@ from morphobricks_preprocessing.notebook_image_type_line import ImageTypeLine  #
 from morphobricks_preprocessing.notebook_rgb_override import CHOOSE_COLOUR, LABEL  # noqa: E402
 from morphobricks_preprocessing.notebook_ui import PreprocessingNotebook  # noqa: E402
 
+# the per-unit grid driven through the stepper (the guided step is pinned by its own tests)
+pytestmark = pytest.mark.usefixtures("legacy_grid")
+
 FOLDERS = ["ctrl/rep1", "ctrl/rep2", "drug/rep1", "drug/rep2"]
 OVERRIDE = b'image_type = "rgb"\nrgb_header_override = true\n'
 CONTRADICTS = "R_IMAGE_TYPE_CONTRADICTS_HEADER"

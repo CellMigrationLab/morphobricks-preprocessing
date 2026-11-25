@@ -56,7 +56,7 @@ from .channel_matrix import (
     set_template,
     trusted,
 )
-from .draft_answers import ChannelAnswer, UnitKey
+from .draft_answers import ChannelAnswer, DraftAnswers, UnitKey
 from .fast_statement import published_fast, statement_changed, with_statement
 from .notebook_channels_view import (
     CHOOSE,
@@ -151,13 +151,7 @@ class TagMatrix:
         published = published_fast(answers)
         if published is None:
             return
-        mode = published != answers.switch_mode
-        if self.grid.same_channels.value != mode:
-            self.setting_tick = True
-            try:
-                self.grid.same_channels.value = mode
-            finally:
-                self.setting_tick = False
+        self.set_tick(published != answers.switch_mode)
 
     def sync_statement(self, cells: Sequence[tuple[UnitKey, int]] = ()) -> bool:
         """Save the statement and the units' markers the tick and the tags give (ADR 0006).
@@ -169,24 +163,46 @@ class TagMatrix:
         """
         self.clicked.update(key for key, _ in cells)
         answers = self.grid.store.answers()
+        new = self.stated(answers)
+        if not statement_changed(answers, new):
+            return False
+        return save_unattended(self.grid.store, new)
+
+    def stated(
+        self, answers: DraftAnswers, cells: Sequence[tuple[UnitKey, int]] = ()
+    ) -> DraftAnswers:
+        """Return ``answers`` with the statement and markers the tick and the tags give.
+
+        The one computation of :meth:`sync_statement`; the guided step's Submit puts it in its
+        one draft write (:mod:`.notebook_channels_submit`), so the save after it changes
+        nothing. ``cells`` are the cells that write tags: their units are the user's tags.
+        """
         groups, _ = self.groups()
         lead = groups[0][0] if groups else None
-        new = with_statement(
+        clicked = self.clicked | {key for key, _ in cells}
+        return with_statement(
             answers,
             self.grid.layouts,
             lead,
             self.template(groups[0]) if groups else (),
             (
                 self.own | self.marked_own,
-                self.clicked | user_units(self.grid.store, "tags"),
+                clicked | user_units(self.grid.store, "tags"),
                 user_units(self.grid.store, "type"),
             ),
             ticked=bool(self.grid.same_channels.value),
             day=date.today().isoformat(),
         )
-        if not statement_changed(answers, new):
-            return False
-        return save_unattended(self.grid.store, new)
+
+    def set_tick(self, value: bool) -> None:
+        """Set the statement's tick without the redraw and save of a user's switch."""
+        if self.grid.same_channels.value == value:
+            return
+        self.setting_tick = True
+        try:
+            self.grid.same_channels.value = value
+        finally:
+            self.setting_tick = False
 
     def take_back(self) -> None:
         """Write the strict page's draft back (the statement unticked).

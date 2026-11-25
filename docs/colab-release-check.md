@@ -103,18 +103,53 @@ again on the tagged commit.
       `rgb_header_override = true` for those folders, and it is never pre-ticked.
     - [ ] Then name the stains, then tag each folder's channels; the extra-stain folder gets
       its own list. The viewer shows each channel with its header name and its folder's tag.
-    - [ ] v0.7.0 (fast mode, owner decisions of 16 November 2026): **Every imaging unit
-      has the same channels in the same order** is ticked. On a tree whose headers name every
-      channel with the labels exactly, every folder is tagged on opening with no click. On the
-      2 x 2 x 2 tree without header names, tagging the row *Tags of every imaging unit* once
-      fills every unit (rows grouped by condition / biological repeat, then technical repeat;
-      one column per C index), each *same as the first tagged unit*; changing one cell of one
-      unit marks only that unit *edited*. The extra-stain folder (another channel count) and a
-      folder whose header names are swapped are not filled: *Stopped* lists both with the fix,
-      and **Tag this unit on its own** gives the swapped one its own dropdowns. Unticking the
-      statement gives the blocks of identical headers exactly as before: the folders tagged
-      from their headers with no click are untagged again and their header is a proposal to
-      confirm.
+    - [ ] v0.9.0 (guided step, owner design of 25 November 2026). After the labels, one
+      question: **Is the channel order the same for the whole dataset?** No row of dropdowns
+      before it is answered, and never one row per folder unless asked. Choosing in a dropdown
+      saves nothing (the draft file's time in the Files panel does not change) and nothing
+      jumps or lags; only **Submit** saves. Check these on small trees (the acceptance tests
+      `tests/test_notebook_channel_step_acceptance.py` click the same):
+      1. *Owner's layout*: 3 channels everywhere, a 4th in some biological repeats. The
+         question says "3 and 4 channels". **Yes**: two rows, *3 channels* and *4 channels*.
+         Tag both, **Submit**: "Saved". Finish and **Check and save** publishes; each folder
+         has its own list (3 or 4 labels), no `channel_layout`.
+      2. *One count, same order*: **Yes**: one row. Tag it, **Submit**, publish: one
+         `channel_layout` and every unit `channels_from = "experiment"`.
+      3. *One count, order per repeat*: **No**, then **Same order within each biological
+         repeat**: one row per repeat folder. Give `rep2` another order, **Submit**, publish:
+         each folder of a repeat has that repeat's order.
+      4. *One count, every unit*: **No**, **Tag every imaging unit**: one row per folder;
+         **Submit**, publish: each folder has its own list.
+      5. *Mixed counts, per repeat*: **No**, **Same order within each biological repeat**: one
+         row per repeat folder and channel count. **Submit**, publish.
+      6. *A swapped header*: one folder's header names in another order. **Yes**, tag the row
+         in the order of the others, **Submit**: "Saved; 1 imaging unit(s) not tagged", the
+         folder listed with "C0: header … is …, the row says …", untagged. **Check and save**
+         refuses. **Override this unit**, set its order, **Confirm these tags**: the list is
+         empty; publish (that folder `channels_from = "unit"`).
+      7. *Colour*: every folder colour: after **Use for all folders**, "Every folder is colour
+         (RGB): nothing to tag", no question; publish with R, G, B. Colour and separate
+         channels mixed: Axes does not confirm and Channels waits for the axis roles.
+      8. *Changing your mind*: pick, change, change back; **Yes** → **No** → **Yes** before
+         Submit: the same choices come back, a row per repeat starts from the *Yes* choice of
+         its count, no stale row is left, and nothing was saved.
+      9. *One image type for all folders* (before the rows; the button is **Validate**): (a) on
+         the owner's layout (3 and 4 channels) choose *separate stains or markers, one per
+         channel* in the box, click **Validate** once: every folder is answered and the guided
+         question appears. (b) With folders holding different numbers of images: the same one
+         click. (c) Colour images whose headers differ (one says colour, the others are a
+         scanner's three samples without the colour header): nothing is pre-filled, **Set per
+         folder…** stays folded, and the line says to choose one type for all folders. Choose
+         *separate stains*, **Validate**: every folder is answered and *Another step
+         for 1 folder* names the one whose header says colour
+         (`R_IMAGE_TYPE_CONTRADICTS_HEADER`); the others go on. Or choose *colour (RGB)*:
+         *Another step for 5 folders* names the scanner folders; tick the RGB header
+         override and **Validate**: it clears and the description publishes with R, G, B.
+      10. *The image type is a form*: open **Set per folder…**, change the box, change one
+         folder to colour, back, and again: nothing jumps, the rows are not redrawn, the
+         draft file's time does not change, and each folder's note says "Not validated yet".
+         **Validate** with a folder left without a type is refused and names it; with every
+         folder answered it saves once and the labels and the channel question follow.
 11. **Masks** (step 4).
     - [ ] **Check the masks** runs with progress. *Your masks* offers separate objects,
       regions and *grouped labels (one value per parent, e.g. mitochondria by cell)*, none

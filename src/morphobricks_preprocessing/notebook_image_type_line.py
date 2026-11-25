@@ -13,8 +13,18 @@ or the user's stains; it is no longer on the Axes step. Asked in the pattern of 
 - **Set per folder…**, collapsed, holds the row of each folder
   (:class:`.notebook_channels_type.ImageTypeRows`: the same cells, answers and refusals); the
   rows, and the picture of each folder, are built only once it is opened;
-- when the headers **differ**, nothing is pre-filled, one line says how many folders say what,
-  and the per-folder part opens.
+- when the headers **differ**, nothing is pre-filled and one line says how many folders say
+  what; the one answer for all folders is still offered (owner, 25 November 2026: *separate
+  stains or markers* answered once for every folder, whatever their channel or image counts),
+  and the per-folder part opens only when the answers themselves differ.
+
+After the answer, every folder whose header does not fit it is listed under the line
+(:func:`followups`): a header that says colour answered *separate channels*, or one that does
+not say colour answered *colour* (with three interleaved samples it is the RGB header override
+below, Spec RH1; otherwise the run's ``R_IMAGE_TYPE_CONTRADICTS_HEADER``). They are listed, not
+a reason to refuse the others' answer. *Colour (RGB)* for all folders is recorded only when
+every folder has three channels; otherwise nothing is written and every folder that cannot be
+colour is named.
 
 The answers are the per-unit ``image_type`` of the draft, saved through
 :func:`.channel_answers.with_type` exactly as the per-folder radio buttons save them: clicking
@@ -35,7 +45,7 @@ from collections.abc import Sequence
 import ipywidgets as widgets
 
 from . import notebook_style as ui
-from .channel_answers import synced, with_type
+from .channel_answers import synced, with_override, with_type
 from .channel_labels import UnitLayout
 from .draft_answers import DraftAnswers
 from .notebook_channels_type import ImageTypeColumn, ImageTypeRows
@@ -53,6 +63,36 @@ MIXED = (
     "This version runs one image type per experiment: Check and save refuses folders of "
     "different types (R_HETEROGENEOUS_LAYOUT_NOT_ENABLED)."
 )
+
+
+def followups(layouts: Sequence[UnitLayout], types: ImageTypeColumn) -> list[str]:
+    """Return a line per answered folder whose header does not fit its answer (the next step).
+
+    The existing rules, said per folder: nothing here records or refuses anything.
+    """
+    out = []
+    for layout in layouts:
+        saved = types.saved(layout.key)
+        name = " / ".join(p for p in layout.key if p != "single")
+        unit = types.store.answers().units.get(layout.key)
+        if saved == "channels" and layout.rgb:
+            out.append(
+                f"{name}: its header says colour (RGB) but it is answered separate channels; "
+                "the run refuses it (R_IMAGE_TYPE_CONTRADICTS_HEADER): answer it colour under "
+                "Set per folder…, or correct its header"
+            )
+        elif saved == "rgb" and not layout.rgb and layout.three_samples:
+            if unit is None or not unit.rgb_header_override:
+                out.append(
+                    f"{name}: three interleaved samples under a header that does not say "
+                    "colour: tick the RGB header override below (RH1)"
+                )
+        elif saved == "rgb" and not layout.rgb:
+            out.append(
+                f"{name}: its header says separate channels but it is answered colour; the "
+                "run refuses it (R_IMAGE_TYPE_CONTRADICTS_HEADER)"
+            )
+    return out
 
 
 def counted(values: Sequence[str]) -> str:
@@ -93,6 +133,7 @@ class ImageTypeLine:
         )
         ui.set_visible(self.replace_box, False)
         self.message = widgets.HTML()
+        self.followups = widgets.HTML()
         self.override = RgbOverrideOffer(types)
         self.per_folder = ui.accordion("Set per folder…", [rows.widget])
         # The rows of each folder are built, and their pictures read, only once opened.
@@ -106,11 +147,14 @@ class ImageTypeLine:
                 self.blocker,
                 self.replace_box,
                 self.message,
+                self.followups,
                 self.override.widget,
                 self.per_folder,
             ],
         )
-        self.apply.on_click(lambda _: self._use_for_all())
+        self.apply.on_click(lambda _: self._clicked())
+        types.default = lambda: self.choice.value
+        types.on_form = self._form_changed
         self.replace_yes.on_click(lambda _: self._replace())
         self.replace_no.on_click(lambda _: self._cancel())
         self.choice.observe(lambda _: self._choice_changed(), names="value")
@@ -153,7 +197,7 @@ class ImageTypeLine:
         self.override.refresh(shown)
         if not shown:
             self.line.value = ui.status("info", WAITING) if not self.opened else ""
-            self.blocker.value = self.message.value = ""
+            self.blocker.value = self.message.value = self.followups.value = ""
             self._shown_for = None
             return
         saved, suggestion = self.saved(), self.suggestion()
@@ -164,8 +208,14 @@ class ImageTypeLine:
             self._shown_for = key
             self.choice.value = one or (suggestion if not answered else None)
         self.line.value = self._line(saved, answered, one, suggestion)
-        if suggestion is None or len(set(answered)) > 1 or self.types.message:
-            self.per_folder.selected_index = 0  # they differ: each folder is shown
+        later = followups(usable, self.types)
+        self.followups.value = (
+            ui.status("warn", f"Another step for {plural(len(later), 'folder')}:", later)
+            if later
+            else ""
+        )
+        if len(set(answered)) > 1 or self.types.message:
+            self.per_folder.selected_index = 0  # the answers differ: each folder is shown
         self._choice_changed()
 
     def _line(
@@ -190,7 +240,10 @@ class ImageTypeLine:
             return ui.status(
                 "warn",
                 f"The image headers differ: {counted(said)}.",
-                ["Nothing is proposed: choose the type of each folder below. " + MIXED],
+                [
+                    "Nothing is proposed: choose one type for all folders in the box and click "
+                    "Use for all folders, or each folder's type under Set per folder…. " + MIXED
+                ],
             )
         return ui.status(
             "info",
@@ -198,8 +251,16 @@ class ImageTypeLine:
             ["Not saved until you click Use for all folders."],
         )
 
+    @property
+    def deferred(self) -> bool:
+        """True with the form of the stepper: choices change the form, Validate saves."""
+        return self.types.form is not None
+
     def _choice_changed(self) -> None:
         """Offer the click for a type that is not already every folder's answer."""
+        if self.deferred:
+            self._form_changed(cells=True)
+            return
         self._cancel()
         value, saved = self.choice.value, self.saved()
         everywhere = value is not None and all(s == value for s in saved)
@@ -209,7 +270,122 @@ class ImageTypeLine:
             ["choose a type in the box, or set each folder below"] if value is None else []
         )
 
+    # The form (the stepper: owner, 25 November 2026) -----------------------------------
+
+    def final(self) -> dict:
+        """Return the type Validate would record for each usable folder (None: not chosen)."""
+        return {u.key: self.types.chosen(u) for u in self._usable()}
+
+    def _form_changed(self, cells: bool = False) -> None:
+        """Update what the form shows in place after a choice: no save, no redraw.
+
+        ``cells``: the box changed, so the folders without their own choice show it too.
+        """
+        self._cancel()
+        types = self.types
+        if cells:
+            types._building = True
+            try:
+                for layout in self._usable():
+                    radio = types.radios.get(layout.key)
+                    if radio is not None and layout.key not in types.form:
+                        radio.value = types.chosen(layout)
+            finally:
+                types._building = False
+            for layout in self._usable():
+                if layout.key in types.notes:
+                    types.notes[layout.key].value = types.note(layout)
+        self.apply.description = " Validate"
+        ui.set_visible(self.apply, True)
+        missing = [k for k, v in self.final().items() if v is None]
+        self.apply.disabled = bool(missing)
+        self.blocker.value = blocked_line(
+            [f"choose a type in the box, or set each folder below ({len(missing)} left)"]
+            if missing
+            else []
+        )
+        self.override.refresh(True)
+
+    def _validate(self, replace_ok: bool = False) -> bool:
+        """Check the form and save every image-type answer in one draft write.
+
+        Every folder needs a type; colour only for folders with three channels (all or none,
+        naming each); replacing answers already saved asks first. The folders whose header does
+        not fit their answer are listed afterwards (:func:`followups`), never a refusal here.
+        """
+        final, usable = self.final(), self._usable()
+        missing = [u for u in usable if final[u.key] is None]
+        if missing:
+            self.message.value = ui.status(
+                "error", "Not saved: choose the type of every folder.", self._names(missing)
+            )
+            return False
+        not3 = [u for u in usable if final[u.key] == "rgb" and u.channels != 3]
+        if not3:
+            self.message.value = ui.status(
+                "error",
+                "Nothing was changed: a colour image has 3 channels (RGB).",
+                [
+                    f"{n} ({u.channels} channels)"
+                    for n, u in zip(self._names(not3), not3, strict=True)
+                ],
+            )
+            return False
+        others = [u for u in usable if self.types.saved(u.key) not in (None, final[u.key])]
+        if others and not replace_ok:
+            self._pending = "form"
+            self.replace_text.value = ui.status(
+                "warn",
+                f"Change the type of {plural(len(others), 'folder')} already answered? "
+                "Nothing is written until you click Replace them.",
+                ["Their channel tags are cleared: a channel is tagged again after its type."],
+            )
+            ui.set_visible(self.replace_box, True)
+            return False
+        return self._write_form(final)
+
+    @staticmethod
+    def _names(layouts: Sequence[UnitLayout]) -> list[str]:
+        return [" / ".join(p for p in u.key if p != "single") for u in layouts]
+
+    def _write_form(self, final: dict) -> bool:
+        """Save the form's types (and the override box) in one draft write."""
+        store, layouts, usable = self.types.store, self.types.layouts, self._usable()
+        override = self.override.pending
+        offered = {u.key for u in self.override.offered()}
+
+        def change(answers: DraftAnswers) -> DraftAnswers:
+            for layout in usable:
+                if self.types.saved(layout.key) != final[layout.key]:
+                    answers = with_type(answers, layout, final[layout.key])
+            if override is not None:
+                for layout in usable:
+                    if layout.key in offered and final[layout.key] == "rgb":
+                        answers = with_override(answers, layout, override)
+            return synced(answers, layouts)
+
+        try:
+            ok = save_change(store, change)
+        except ValueError as exc:
+            self.message.value = ui.status("error", "Nothing was changed.", [str(exc)])
+            return False
+        if not ok:
+            self.message.value = ui.status("error", "Not saved.", [store.refusal()])
+            return False
+        self.types.form.clear()
+        self.override.pending = None
+        self.message.value = self.types.message = ""
+        self.types._on_change()  # the channel step opens on the saved types
+        return True
+
     # The click ---------------------------------------------------------------------------
+
+    def _clicked(self) -> None:
+        """Validate the form (the stepper), or record the box's type for every folder."""
+        if self.deferred:
+            self._validate()
+        else:
+            self._use_for_all()
 
     def _use_for_all(self) -> None:
         """Record the chosen type for every folder, asking first when it replaces answers."""
@@ -232,7 +408,9 @@ class ImageTypeLine:
     def _replace(self) -> None:
         pending = self._pending
         self._cancel()
-        if pending is not None:
+        if pending == "form":
+            self._validate(replace_ok=True)
+        elif pending is not None:
             self._write(pending)
 
     def _cancel(self) -> None:
@@ -242,6 +420,19 @@ class ImageTypeLine:
     def _write(self, value: str) -> bool:
         """Save ``value`` as the type of every usable folder, all or none; say a refusal."""
         store, usable, layouts = self.types.store, self._usable(), self.types.layouts
+        if value == "rgb":
+            other = [u for u in usable if u.channels != 3]
+            if other:  # all or none: every folder that cannot be colour is named
+                names = [
+                    f"{' / '.join(p for p in u.key if p != 'single')} ({u.channels} channels)"
+                    for u in other
+                ]
+                self.message.value = ui.status(
+                    "error",
+                    "Nothing was changed: a colour image has 3 channels (RGB).",
+                    names,
+                )
+                return False
 
         def change(answers: DraftAnswers) -> DraftAnswers:
             for layout in usable:

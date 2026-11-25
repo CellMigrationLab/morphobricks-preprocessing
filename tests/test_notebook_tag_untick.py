@@ -22,6 +22,9 @@ pytest.importorskip("matplotlib")
 from test_notebook_row_fold import stepper  # noqa: E402
 from test_notebook_tag_matrix import SAVED, TAGS, _add  # noqa: E402
 
+# the per-unit grid driven through the stepper (the guided step is pinned by its own tests)
+pytestmark = pytest.mark.usefixtures("legacy_grid")
+
 
 def _stale_aliases(tmp_path):
     """Save DAPI, Actin, Ch3 as aliases, then drop the saved units' header names.

@@ -31,6 +31,9 @@ from morphobricks_preprocessing.notebook_viewers import header_roles  # noqa: E4
 from test_notebook_axes_quick import stepper  # noqa: E402
 from test_notebook_check_save import answer_all, exp  # noqa: E402, F401
 
+# the per-unit grid driven through the stepper (the guided step is pinned by its own tests)
+pytestmark = pytest.mark.usefixtures("legacy_grid")
+
 
 def _text(text):
     return re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", " ", text))).strip()

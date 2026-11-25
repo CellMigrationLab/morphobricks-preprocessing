@@ -35,6 +35,9 @@ from morphobricks_preprocessing.notebook_projection import (  # noqa: E402
 from morphobricks_preprocessing.notebook_ui import PreprocessingNotebook  # noqa: E402
 from test_notebook_check_save import FOLDERS, answer_all  # noqa: E402
 
+# the per-unit grid driven through the stepper (the guided step is pinned by its own tests)
+pytestmark = pytest.mark.usefixtures("legacy_grid")
+
 NAMES = ["DAPI", "Actin", "Ch3"]
 
 

@@ -32,6 +32,9 @@ pytest.importorskip("matplotlib")
 from morphobricks_preprocessing import notebook_style as ui  # noqa: E402
 from morphobricks_preprocessing.notebook_ui import PreprocessingNotebook  # noqa: E402
 
+# the per-unit grid driven through the stepper (the guided step is pinned by its own tests)
+pytestmark = pytest.mark.usefixtures("legacy_grid")
+
 
 def test_a_row_folds_only_when_every_folder_is_as_saved_and_it_is_answered():
     rec = Reconciliation(

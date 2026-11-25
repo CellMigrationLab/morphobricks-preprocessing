@@ -118,3 +118,18 @@ def statement_off(monkeypatch):
     from morphobricks_preprocessing.notebook_channels_grid import TagGrid
 
     monkeypatch.setattr(TagGrid, "SAME_CHANNELS", False)
+
+
+@pytest.fixture
+def legacy_grid(monkeypatch):
+    """Show the per-unit tag grid in the stepper too, instead of the guided step (25 Nov 2026).
+
+    The shipped notebook's stepper shows the guided channel step (a question, a few rows, one
+    Submit; ``tests/test_notebook_channel_step_acceptance.py``). The pages of the Python
+    interface keep the per-unit grid, and the tests that drive that grid through the stepper
+    (its blocks, matrix and repeat rows, and the #376 refusal machinery they share with the
+    guided Submit) pin it with this fixture.
+    """
+    from morphobricks_preprocessing.notebook_channels_grid import TagGrid
+
+    monkeypatch.setattr(TagGrid, "GUIDED", False)

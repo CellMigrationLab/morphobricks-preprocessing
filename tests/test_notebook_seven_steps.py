@@ -41,6 +41,9 @@ from morphobricks_preprocessing.notebook_image_type_line import (  # noqa: E402
 from morphobricks_preprocessing.notebook_ui import PreprocessingNotebook  # noqa: E402
 from test_notebook_axes_quick import stepper  # noqa: E402
 
+# the per-unit grid driven through the stepper (the guided step is pinned by its own tests)
+pytestmark = pytest.mark.usefixtures("legacy_grid")
+
 FOLDERS = ["ctrl/rep1", "ctrl/rep2", "drug/rep1", "drug/rep2"]
 
 
@@ -157,13 +160,15 @@ def _line(colour):
     return line
 
 
-def test_headers_that_differ_propose_nothing_and_open_each_folder():
+def test_headers_that_differ_propose_nothing_and_still_offer_one_answer_for_all():
     line = _line({("drug", "rep2")})
     assert line.suggestion() is None and line.choice.value is None
     said = _text(line.line.value)
     assert "The image headers differ: separate channels in 3 folders, colour (RGB) in 1" in said
     assert "Nothing is proposed" in said and "R_HETEROGENEOUS_LAYOUT_NOT_ENABLED" in said
-    assert line.per_folder.selected_index == 0  # the menu is open
+    # owner, 25 November 2026: one answer for all folders, the folders on demand
+    assert "choose one type for all folders in the box" in said
+    assert line.per_folder.selected_index is None and ui.is_visible(line.apply)
     assert line.apply.disabled and "choose a type in the box" in _text(line.blocker.value)
     assert not line.types.store.saved.units  # nothing was applied
 

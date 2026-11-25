@@ -40,17 +40,17 @@ from .channel_answers import tagged
 from .channel_labels import (
     UnitLayout,
     named,
-    positions,
     proposal_for,
     remaining,
     tags_of,
-    usage,
 )
 from .draft_answers import DraftAnswers, UnitKey
 from .notebook_channel_thumbs import COLOUR_TEXT, CONTRAST_TEXT, Thumbnails
+from .notebook_channels_guide import ChannelGuide
 from .notebook_channels_matrix import STATEMENT, TagMatrix
 from .notebook_channels_repeat import RepeatRows
 from .notebook_channels_rows import FolderRows
+from .notebook_channels_summary import _GridSummary
 from .notebook_channels_type import ImageTypeColumn
 from .notebook_channels_view import (
     CHOOSE,
@@ -65,6 +65,17 @@ from .notebook_channels_view import (
 from .notebook_row_fold import UNCHANGED, RowFold, row_status
 from .notebook_values import natural_key
 
+GRID_HELP = (
+    "Ticked (fast mode): a unit whose header names every channel with one of "
+    "your labels is tagged from it; tag the row of tags once and it fills every "
+    "unit without header names, then tune any cell; a unit that contradicts it "
+    "is refused and tagged on its own. Unticked: folders whose image headers are "
+    "identical are one block: say once which label each channel is, looking at "
+    "the pictures. The same label should be in the same column in every block; a "
+    "label used in only some folders is shown in orange. Every channel and every "
+    "image type must be answered."
+)
+"""The help of the per-unit grid (the pages; the stepper shows the guided step)."""
 FOLDERS_LISTED = 3
 """Folders of a block listed at once where the page has the image viewer; more are folded."""
 
@@ -74,12 +85,17 @@ def folder_order(layout: UnitLayout) -> tuple:
     return tuple(natural_key(part) for part in layout.key)
 
 
-class TagGrid:
+class TagGrid(_GridSummary):
     """The tag grid: blocks of folders with identical headers, one answer per block."""
 
     SAME_CHANNELS = True
     """The statement's default for a new description: ticked (owner, 16 November 2026, FC1).
     A published description reopens in its own mode (ADR 0006): only the user switches it."""
+
+    GUIDED = True
+    """Whether the stepper (the shipped notebook) shows the guided step (owner, 25 November
+    2026, :mod:`.notebook_channels_guide`): a question, a few rows of dropdowns, one Submit.
+    The stacked pages keep the per-unit grid."""
 
     def __init__(
         self,
@@ -112,6 +128,9 @@ class TagGrid:
         self.same_channels.observe(lambda _: self._statement_changed(), "value")
         self.matrix = TagMatrix(self)
         self.by_repeat = RepeatRows(self)
+        self.guided = False
+        """True while the guided step is shown instead of the blocks (:attr:`GUIDED`)."""
+        self.guide = ChannelGuide(self)
         self.blocks = widgets.VBox()
         self.usage_html = widgets.HTML()
         self.status = widgets.HTML()
@@ -120,22 +139,15 @@ class TagGrid:
         self.rows = FolderRows(self.detail)
         self.contrast = widgets.HTML(f"<div class='mb-help'>{CONTRAST_TEXT}</div>")
         self.plane = widgets.HTML()
+        self.legacy_help = ui.help_text(GRID_HELP)
         self.widget = ui.card(
             "Tag each channel",
             [
                 self.same_channels,
-                ui.help_text(
-                    "Ticked (fast mode): a unit whose header names every channel with one of "
-                    "your labels is tagged from it; tag the row of tags once and it fills every "
-                    "unit without header names, then tune any cell; a unit that contradicts it "
-                    "is refused and tagged on its own. Unticked: folders whose image headers are "
-                    "identical are one block: say once which label each channel is, looking at "
-                    "the pictures. The same label should be in the same column in every block; a "
-                    "label used in only some folders is shown in orange. Every channel and every "
-                    "image type must be answered."
-                ),
+                self.legacy_help,
                 self.contrast,
                 self.plane,
+                self.guide.widget,
                 self.blocks,
                 self.detail,
                 self.matrix.stopped,
@@ -162,11 +174,14 @@ class TagGrid:
             self.matrix.opening()
             self.matrix.tick_for_mode()
             self.by_repeat.restore(layouts)  # refused units stay refused
+            self.guide.reset()
         self.layouts, self.labels, self.rows.thumbs = layouts, labels, thumbs
         if self.place_types:
             self.types.open(layouts)
         self.detail.children = []
-        changed = self.matrix.trust_headers() | self.matrix.sync_statement()  # fast mode
+        # guided: nothing is tagged before Submit, not even from the header names
+        trusted = False if self.guided else self.matrix.trust_headers()
+        changed = trusted | self.matrix.sync_statement()  # fast mode
         self.by_repeat.reconcile()  # refusals of units removed or changed by a re-check
         self.refresh()
         if changed:
@@ -368,6 +383,10 @@ class TagGrid:
 
     def refresh(self) -> None:
         """Rebuild the blocks from the saved answers (pictures are kept, not read again)."""
+        self._show_mode()
+        if self.guided:
+            self._refresh_guided()
+            return
         self.building = True
         try:
             self.cells, self.confirm_buttons, self.split_buttons = {}, [], {}
@@ -395,6 +414,27 @@ class TagGrid:
             ]
             self.blocks.children = [header, *self.fold.arrange(built)]
             self.by_repeat.build(width)
+        finally:
+            self.building = False
+        self._summary()
+
+    def _show_mode(self) -> None:
+        """Show the guided step or the per-unit grid, never both."""
+        legacy = not self.guided
+        for part in (self.same_channels, self.legacy_help, self.blocks, self.detail):
+            ui.set_visible(part, legacy)
+        ui.set_visible(self.guide.widget, self.guided)
+
+    def _refresh_guided(self) -> None:
+        """Rebuild the guided step, the listed units and the summary (no per-unit dropdown)."""
+        self.building = True
+        try:
+            self.cells, self.confirm_buttons, self.split_buttons = {}, [], {}
+            self.like_buttons, self.blocks.children = [], []
+            self.matrix.stopped.value = ""
+            self.guide.render()
+            width = max((u.channels for u in self.layouts if u.usable), default=3)
+            self.by_repeat.build(width)  # the listed units and their override, no repeat rows
         finally:
             self.building = False
         self._summary()
@@ -538,63 +578,6 @@ class TagGrid:
         if proposed:
             mark += " <span class='mb-help'>proposed, not confirmed</span>"
         return mark
-
-    # Summary -----------------------------------------------------------------------------
-
-    def _summary(self) -> None:
-        """Say where each label is used and whether tagging is finished."""
-        answers = self.store.answers()
-        total = len(self.layouts)
-        found = usage(self.layouts, answers.units, self.labels)
-        lines = [self._usage_line(label, len(found[label]), total) for label in self.labels]
-        for label, places in positions(self.layouts, answers.units, self.labels).items():
-            if len(places) > 1:
-                where = ", ".join(
-                    f"channel {i + 1} in {n} folder(s)" for i, n in sorted(places.items())
-                )
-                lines.append(
-                    f"<div class='mb-help'>{html.escape(label)} is not always in the same "
-                    f"column: {where}.</div>"
-                )
-        self.usage_html.value = (
-            "<div class='mb-help'><b>Where each label is used</b></div>" + "".join(lines)
-        )
-        self.problem.value = self.message
-        self.status.value = self._progress(total)
-
-    def shown_as(self, label: str) -> str | None:
-        """Return the shown-as name of a saved label (the chip's tooltip), if it has one."""
-        return getattr(self.store.answers().channels.get(label), "display_name", None)
-
-    def _usage_line(self, label: str, used: int, total: int) -> str:
-        """Return the usage line of a label; one used in only some units is orange."""
-        mark = chip(label, self.labels, self.shown_as(label))
-        if used == total:
-            return f"<div>{mark} used in all {total} folders</div>"
-        if used == 0:
-            return (
-                f"<div>{mark} <span style='color:#92400E'>not used in any folder yet</span></div>"
-            )
-        return (
-            "<div style='background:#FFFBEB;border-left:3px solid #D97706;padding:2px 8px;"
-            f"margin:2px 0'>{mark} <span style='color:#92400E'>"
-            f"{partial_text(label, used, total)} (A_SCOPE_INCOMPLETE)</span></div>"
-        )
-
-    def _progress(self, total: int) -> str:
-        """Return the status: what is still to answer, or that every channel is tagged."""
-        answers = self.store.answers()
-        left = remaining(self.layouts, answers.units, self.labels)
-        if left.done:
-            return ui.status("ok", f"Every channel of every one of the {total} folders is tagged.")
-        parts = []
-        if left.cells:
-            parts.append(f"{left.cells} channel(s) still to tag")
-        if left.types:
-            parts.append(f"{left.types} image type(s) still to choose")
-        if left.blocked:
-            parts.append(f"{left.blocked} folder(s) cannot be tagged")
-        return ui.status("warn", "Not finished: " + ", ".join(parts) + ".")
 
 
 __all__ = ["TagGrid", "folder_order", "named", "partial_text"]

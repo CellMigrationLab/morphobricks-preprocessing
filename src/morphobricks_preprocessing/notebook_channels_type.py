@@ -39,11 +39,35 @@ class ImageTypeColumn:
         self.notes: dict[UnitKey, widgets.HTML] = {}
         self.message = ""
         self._building = False
+        self.form: dict[UnitKey, str] | None = None
+        """The per-folder choices not validated yet; None: each choice saves at once (pages).
+
+        The stepper (owner, 25 November 2026) sets it: a choice only changes the form and
+        :class:`.notebook_image_type_line.ImageTypeLine`'s **Validate** saves every answer in
+        one draft write.
+        """
+        self.default: Callable[[], str | None] = lambda: None
+        """The type chosen for all folders in the form (the line's box), when there is one."""
+        self.on_form: Callable[[], None] = lambda: None
+        """Called after a choice changed the form (no save, no redraw)."""
 
     def open(self, layouts: Sequence[UnitLayout]) -> None:
         """Take the units; cells are built by :meth:`cell`."""
+        if self.form is not None and layouts is not self.layouts:
+            self.form.clear()  # other folders: the form was for the ones before
         self.layouts = layouts
         self.radios, self.notes = {}, {}
+
+    def chosen(self, layout: UnitLayout) -> str | None:
+        """Return what the cell shows: the form's choice, else the box's, else :meth:`shown`.
+
+        Without a form (the pages), the saved answer or the header's colour pre-tick.
+        """
+        if self.form is None:
+            return self.shown(layout)
+        if not layout.usable:
+            return None
+        return self.form.get(layout.key) or self.default() or self.shown(layout)
 
     def saved(self, key: UnitKey) -> str | None:
         """Return the type the user answered for a unit (``channels``, ``rgb``), else None."""
@@ -61,7 +85,7 @@ class ImageTypeColumn:
     def cell(self, layout: UnitLayout) -> widgets.Widget:
         """Build the radio buttons and the note of one unit."""
         radio = widgets.RadioButtons(
-            options=OPTIONS, value=self.shown(layout), layout=widgets.Layout(width="99%")
+            options=OPTIONS, value=self.chosen(layout), layout=widgets.Layout(width="99%")
         )
         radio.disabled = not layout.usable
         note = widgets.HTML(self.note(layout))
@@ -70,10 +94,23 @@ class ImageTypeColumn:
         return widgets.VBox([radio, note])
 
     def note(self, layout: UnitLayout) -> str:
-        """Return what is said under a unit's radio buttons."""
+        """Return what is said under a unit's radio buttons (the form's choice, if any)."""
         saved, shown = self.saved(layout.key), self.shown(layout)
         if not layout.usable:
             return ""
+        if self.form is not None and self.chosen(layout) != saved:
+            saved = shown = self.chosen(layout)  # what Validate would record
+            if saved is None:
+                return blank_chip("choose one")
+            if saved == "rgb" and not layout.rgb and layout.three_samples:
+                return (
+                    "<span class='mb-help' style='color:#92400E'>Not validated yet. The header "
+                    "does not say colour: tick <i>Read these folders as colour</i> under Image "
+                    "type.</span>"
+                )
+            warn = (saved == "channels" and layout.rgb) or (saved == "rgb" and not layout.rgb)
+            said = " The header does not agree: the run refuses it." if warn else ""
+            return f"<span class='mb-help'>Not validated yet.{said}</span>"
         if saved is None and shown == "rgb":
             return (
                 "<span class='mb-help'>Pre-ticked: the image header says colour. Not saved "
@@ -110,8 +147,19 @@ class ImageTypeColumn:
         return unit is not None and unit.rgb_header_override is True
 
     def _chosen(self, layout: UnitLayout, value: str | None) -> None:
-        """Save the type the user ticked; a refusal is said and the tick is taken back."""
-        if self._building or value is None or value == self.saved(layout.key):
+        """Save the type the user ticked; a refusal is said and the tick is taken back.
+
+        With a form (the stepper) the choice only changes the form and the note under it.
+        """
+        if self._building or value is None:
+            return
+        if self.form is not None:
+            self.form[layout.key] = value
+            if layout.key in self.notes:
+                self.notes[layout.key].value = self.note(layout)
+            self.on_form()
+            return
+        if value == self.saved(layout.key):
             return
         layouts = self.layouts
         try:
@@ -275,7 +323,7 @@ class ImageTypeRows:
             [(self._row(u), row_status(units, [u.key], self._settled(u))) for u in ordered]
         )
         proposed = [u.key for u in self.types.layouts if self.types.proposed(u)]
-        if proposed:
+        if proposed and self.types.form is None:  # with a form, Validate records what is shown
             button = ui.button(
                 f" Yes, colour (RGB) is right for these {len(proposed)} folder(s)",
                 style="success",
