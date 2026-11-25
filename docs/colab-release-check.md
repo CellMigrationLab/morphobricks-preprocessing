@@ -94,9 +94,9 @@ again on the tagged commit.
      `different_channel_counts` across folders).
 10. **Channels** (step 3).
     - [ ] First the image type in one line, pre-filled only when every header agrees and
-      recorded only by **Use for all folders** (or each folder under **Set per folder…**, whose
-      pictures appear once it is opened; folders of different types are refused,
-      `R_HETEROGENEOUS_LAYOUT_NOT_ENABLED`).
+      recorded only by **Validate** (formerly *Use for all folders*; or each folder under
+      **Set per folder…**, whose pictures appear once it is opened; folders of different types
+      are refused, `R_HETEROGENEOUS_LAYOUT_NOT_ENABLED`).
     - [ ] v0.6.1 (#313, Spec RH1): with a folder whose images have three interleaved samples
       under a header that does not say colour, answered colour (RGB), the Image type card shows
       one unticked box for the RGB header override; ticking it records
@@ -127,7 +127,7 @@ again on the tagged commit.
          folder listed with "C0: header … is …, the row says …", untagged. **Check and save**
          refuses. **Override this unit**, set its order, **Confirm these tags**: the list is
          empty; publish (that folder `channels_from = "unit"`).
-      7. *Colour*: every folder colour: after **Use for all folders**, "Every folder is colour
+      7. *Colour*: every folder colour: after **Validate**, "Every folder is colour
          (RGB): nothing to tag", no question; publish with R, G, B. Colour and separate
          channels mixed: Axes does not confirm and Channels waits for the axis roles.
       8. *Changing your mind*: pick, change, change back; **Yes** → **No** → **Yes** before
@@ -159,7 +159,11 @@ again on the tagged commit.
          With a folder still listed: "Saved per-unit tags are kept; answer the question to
          change them". A row pre-filled from a broader choice says so ("check it before
          Submit"); per unit, a row left blank keeps that folder as it is. After **Validate**
-         the button reads **Validated ✓** until a choice changes.
+         the button reads **Validated ✓** until a choice changes. A folder whose own images
+         name their channels differently is in no row: **Submit** lists it untagged ("its
+         images disagree") and records no other folder's tags for it; once its images agree
+         and the folder is checked again, **Override this unit** opens with every dropdown
+         blank ("no row's tags were recorded for it").
 11. **Masks** (step 4).
     - [ ] **Check the masks** runs with progress. *Your masks* offers separate objects,
       regions and *grouped labels (one value per parent, e.g. mitochondria by cell)*, none
