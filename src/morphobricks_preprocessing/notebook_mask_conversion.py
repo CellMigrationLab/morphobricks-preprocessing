@@ -192,11 +192,31 @@ class MaskConversionCard:
             self._update_button()
         return None
 
-    def _convert(self, operation: str, mask_id: str, name: str) -> list[MaskConversionResult]:
-        """Run the helper on every image with a file of the mask; show the outputs."""
+    def _convert(
+        self, operation: str, mask_id: str, name: str
+    ) -> list[MaskConversionResult] | None:
+        """Run the helper on every image with a file of the mask; show the outputs.
+
+        A declared mask the run recorded no file of is refused: nothing converted is not a
+        conversion (#481). The run's manifest is read at the click, so it is never stale.
+        """
         run = RunInputs.open(self.output_folder)
+        images = images_with_mask(run, mask_id)
+        if not images:
+            declared = run.description().masks.get(mask_id)
+            what = f"source type {declared.source_type}" if declared else "not declared"
+            self.status.value = ui.status(
+                "error",
+                "The mask was not converted.",
+                [
+                    f"The run recorded no {mask_id} mask file ({what}); nothing was written.",
+                    "Put this mask's files in the masks folder, run the masks step again, "
+                    "then convert.",
+                ],
+            )
+            return None
         results = []
-        for image in images_with_mask(run, mask_id):
+        for image in images:
             if operation == BINARY_TO_INSTANCES:
                 results.append(run.binary_to_instances(image, mask_id, output_mask_id=name))
             else:

@@ -91,3 +91,23 @@ def test_choosing_another_table_resets_the_answer_without_calculating(tmp_path):
     assert not ui.is_visible(nb.partial_box)
     assert nb.stats_status.value == ""
     assert not ui.is_visible(nb.statistics_card)
+
+
+def test_a_rerun_to_the_same_table_forgets_the_statistics_and_the_answer(tmp_path):
+    """#524: the path is the same, the table is new: nothing of the earlier one stays."""
+    nb, out = extra_stain_notebook(tmp_path)
+    assert nb.run().written
+    nb.level.value = "condition"
+    nb.show_statistics()
+    nb.partial_choice.value = SUBSET
+    assert ui.is_visible(nb.statistics_card) and "Your choice" in nb.stats_status.value
+    before = nb.csv_file.value
+    assert nb.run().written
+    assert nb.csv_file.value == before == str(out / "plane_histograms.csv")
+    assert nb.partial_choice.value == REFUSE and not ui.is_visible(nb.partial_box)
+    assert not ui.is_visible(nb.statistics_card) and not ui.is_visible(nb.distribution_card)
+    assert nb.statistics.value == nb.stats_tiles.value == ""
+    assert "The table the run just wrote is selected" in nb.stats_status.value
+    nb.show_statistics()  # asked again, never answered with the earlier table's choice
+    assert "Partial channel presence" in nb.stats_status.value
+    assert ui.is_visible(nb.partial_box) and nb.partial_choice.value == REFUSE

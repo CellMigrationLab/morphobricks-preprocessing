@@ -220,6 +220,26 @@ def test_the_cache_serves_the_same_content_and_rereads_a_changed_file(tmp_path, 
     assert reads == [0, 1, 2, 0, 1, 2] and len(options.cache) == 6
 
 
+def test_the_cache_keeps_planes_read_through_other_roles_apart(tmp_path, monkeypatch):
+    """#428: one file, two unnamed dimensions read as ZC or CZ, one shared cache."""
+    data = np.arange(4, dtype=np.uint16).reshape(2, 2, 1, 1) * 10 + np.zeros((2, 2, 8, 8), "u2")
+    path = tmp_path / "qq.tif"
+    tifffile.imwrite(path, data, photometric="minisblack", metadata={"axes": "QQYX"})
+    reads = []
+    original = preview.read_source_plane
+    monkeypatch.setattr(
+        preview, "read_source_plane", lambda *a, **k: reads.append(k["c"]) or original(*a, **k)
+    )
+    options = StripOptions(cache=PreviewCache())
+    shown = {}
+    for roles in ("ZCYX", "CZYX", "ZCYX"):
+        mapping = AxisMapping("QQYX", roles)
+        strip = channel_strip(path, "qq.tif", review_for("qq.tif", mapping), options)
+        shown[roles] = [int(panel.plane.pixels[0, 0]) for panel in strip.panels]
+    assert shown == {"ZCYX": [20, 30], "CZYX": [10, 30]}  # middle Z is 1: a[1, c] or a[c, 1]
+    assert reads == [0, 1, 0, 1]  # the same roles again read nothing
+
+
 def test_the_cache_drops_the_least_recently_used_plane():
     plane = preview.ReducedPlane(np.zeros((2, 2), np.uint8), 1, (2, 2), None, None, None)
     cache = PreviewCache(size=2)

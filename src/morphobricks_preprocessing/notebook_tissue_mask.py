@@ -35,6 +35,7 @@ from .fingerprint import current_fingerprint
 from .manifest import MANIFEST_FILENAME
 from .mask_conversion import _check_case_collision, _check_output_id
 from .notebook_render import blocked_line
+from .plane_errors import PlaneReadError
 from .run_inputs import RunInputs
 from .run_inputs_tissue import NOT_REUSED, PROVISIONAL_NOTE, tissue_next_steps
 
@@ -43,6 +44,8 @@ TINTS = (("background", (150, 150, 150)), ("red_cells", (255, 140, 0)), ("nuclei
 """The preview's tint of each excluded component, drawn in this order (the proof of concept's)."""
 PREVIEW_SIDE = 512
 """The largest side of the preview picture; the numbers come from the full-resolution mask."""
+REFUSALS = (ValueError, ImportError, PlaneReadError, OSError)
+"""The refusals a preview or a write shows as its message: a plane that cannot be read too."""
 
 
 def unusable_reason(fov: object) -> str | None:
@@ -263,9 +266,10 @@ class TissueMaskCard:
         if self._run is None or not self.preview_image.value:
             return None
         self.numbers.value = ui.working("Computing the preview…")
+        ui.set_visible(self.picture, False)  # an earlier image's preview is not this one's
         try:
             found = self._run.preview_he_tissue_mask(self.preview_image.value)
-        except (ValueError, ImportError) as exc:
+        except REFUSALS as exc:
             self.numbers.value = ui.status("error", "No preview.", [str(exc)])
             return None
         self.picture.value = png_bytes(tinted(found.rgb, found.components))
@@ -293,7 +297,7 @@ class TissueMaskCard:
         try:
             for image in self.positions.value:
                 results.append(self._run.he_tissue_mask(image, output_mask_id=self.name.value))
-        except (ValueError, ImportError) as exc:
+        except REFUSALS as exc:
             self.status.value = ui.status(
                 "error",
                 f"No tissue mask was written for {image}.",
