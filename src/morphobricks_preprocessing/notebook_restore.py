@@ -106,8 +106,9 @@ class _RestoreEarlier:
                 "Earlier work was found, but it could not be restored.",
                 [
                     f"{type(exc).__name__}: {exc}",
-                    "Nothing of it is used, and no file was changed. Click Check folder to "
-                    "check the folder; open Technical details for the full report.",
+                    "Nothing of it is used, and no file was changed. Click "
+                    f"{self._check_words()} to check the folder; open Technical details for "
+                    "the full report.",
                 ],
                 fresh=False,
             )
@@ -123,7 +124,10 @@ class _RestoreEarlier:
             self._say("error", "The output folder could not be read.", [str(exc)], fresh=False)
             return
         if not work.exists:
-            ui.set_visible(self.restore_box, False)
+            if work.old_answers:  # never restored, and never in the way of a fresh scan
+                self._say("info", _old_answers_line(work), [], fresh=False)
+            else:
+                ui.set_visible(self.restore_box, False)
             return
         root = self._restore_root(work, folder)
         if root is None:
@@ -160,20 +164,28 @@ class _RestoreEarlier:
                 f"Found earlier work from {work.latest}, but it names two experiment folders.",
                 [
                     f"The recorded check is of {work.roots[0]}; the run is of {work.roots[1]}. "
-                    "They disagree, so nothing was restored. Enter the experiment folder and "
-                    "click Check folder.",
+                    "They disagree, so nothing was restored. " + self._enter_folder_words(),
+                    *_old_answers_lines(work),
                 ],
                 fresh=False,
             )
             return None
         if root is None:
+            scanned = self._scan_unrecorded(folder)
+            if scanned:
+                then = (
+                    f"The folders of {folder} are scanned below: if this is the experiment, "
+                    f"click {self._check_words()}. The check reads the saved answers."
+                )
+            else:
+                then = "Nothing was restored yet. " + self._enter_folder_words()
             self._say(
                 "info",
                 f"Found earlier work from {work.latest}: {found}.",
                 [
                     *([work.record_problem] if work.record_problem else []),
-                    "The experiment folder it is of is not recorded, so nothing was restored "
-                    "yet. Enter the experiment folder and click Check folder to read it.",
+                    f"The experiment folder it is of is not recorded. {then}",
+                    *_old_answers_lines(work),
                 ],
                 fresh=False,
             )
@@ -200,6 +212,33 @@ class _RestoreEarlier:
                 return None
             self.folder.value = str(root)  # from the record; the box can be changed
         return root
+
+    def _check_words(self) -> str:
+        """Return the folder check button's label as shown (the stepper names it otherwise)."""
+        return self.check_button.description.strip()
+
+    def _enter_folder_words(self) -> str:
+        """Say what to do once the experiment folder is entered, with the buttons shown."""
+        if getattr(self, "_stepper", None) is not None:
+            return (
+                "Enter the experiment folder: its folders are scanned as soon as it is entered "
+                f"(or click Scan the folders), then click {self._check_words()}."
+            )
+        return f"Enter the experiment folder and click {self._check_words()}."
+
+    def _scan_unrecorded(self, folder: str) -> bool:
+        """Scan the experiment folder the user entered for earlier work of no recorded folder.
+
+        The earlier work cannot say which experiment it is of, so nothing of it is used: the
+        stepper's quick scan (folder walk and one picture; nothing is written) shows the folder
+        entered, and the user's click starts the check, which reads the saved answers as always.
+        Returns True when the folders shown are of ``folder`` as typed now.
+        """
+        if not folder or getattr(self, "_stepper", None) is None or not Path(folder).is_dir():
+            return False
+        if not self._scan_current():
+            self._quick_scan()
+        return self._scan_current()
 
     # What a restored check shows ---------------------------------------------------------
 
@@ -284,9 +323,10 @@ class _RestoreEarlier:
             lines.append(f"Opened on {opened}: the run is complete; its results are there.")
         elif opened:
             lines.append(f"Opened on {opened}, the first step still to do.")
+        lines.extend(_old_answers_lines(work))
         lines.append(
-            "Check folder again to read every header again. Start fresh forgets what was "
-            "restored; no file is changed or deleted."
+            f"{self._check_words()} again reads every header again. Start fresh forgets what "
+            "was restored; no file is changed or deleted."
         )
         what = ", ".join(restored) or "nothing but the folder walk"
         kind = "warn" if again or why_not else "ok"
@@ -327,7 +367,8 @@ class _RestoreEarlier:
             "Started fresh: nothing restored is used.",
             [
                 "No file was changed or deleted.",
-                "Check folder reads every image header again. As always, it reads the answers "
+                f"{self._check_words()} reads every image header again. As always, it reads "
+                "the answers "
                 "saved in this output folder; to start without them, choose another output "
                 "folder.",
             ],
@@ -397,6 +438,19 @@ class _RestoreEarlier:
         if self.restored_run is not None and self.result is None:
             return StepState(True, "the earlier run is complete")
         return super()._run_state()
+
+
+def _old_answers_line(work: EarlierWork) -> str:
+    """Say in one line that the saved answers are of another version and are not used."""
+    return (
+        f"The saved answers in this output folder ({DRAFT_FILENAME}) were written by another "
+        "version of MorphoBricks preprocessing and are not used: scan the folders to start "
+        f"afresh; the file is left as it is ({work.old_answers})."
+    )
+
+
+def _old_answers_lines(work: EarlierWork) -> list[str]:
+    return [_old_answers_line(work)] if work.old_answers else []
 
 
 __all__ = ["FRESH_HELP", "RUN_NEXT", "_RestoreEarlier"]
