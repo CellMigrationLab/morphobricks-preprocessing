@@ -20,7 +20,7 @@ from ..zarr_input import (
     NgffError,
     ZarrUnavailableError,
 )
-from .header import _mask_header
+from .header import MASK_LOSSY_CODEC, MaskLossyCodecError, _mask_header
 from .layout import _yx
 from .model import FOLDER, PLANE_AXES, MaskFile, MaskInventory
 from .stated import SHARED_REMOVED_CODE, mask_named_axes, mask_roles, size_code
@@ -102,6 +102,8 @@ def _check_header(
     try:
         axes, shape, dtype = _mask_header(mask, folder, root)
         named = mask_named_axes(axes, Path(folder) / mask.path if mask.source == FOLDER else None)
+    except MaskLossyCodecError as exc:
+        return None, [(MASK_LOSSY_CODEC, mask.path, exc.codec)]
     except (OSError, ValueError, tifffile.TiffFileError, NgffError, ZarrUnavailableError) as exc:
         logger.info("Mask %s could not be opened: %s", mask.path, exc)
         return None, [("unreadable_mask", mask.path, "")]
@@ -146,6 +148,13 @@ _TEXTS = {
         "Check that they are TIFF files (or OME-Zarr label images, listed in the image's "
         "labels group) with one image each and not damaged; the technical details are in the "
         "log.",
+    ),
+    MASK_LOSSY_CODEC: (
+        "Some masks are stored with a lossy codec (JPEG, JPEG 2000, WebP, JPEG XL or JPEG XR), "
+        "which changes pixel values, so their labels may not be the ones written. They are "
+        "not read.",
+        "Save each such mask again from the segmentation, uncompressed or with a lossless "
+        "codec (zlib, LZW or Zstandard).",
     ),
     "mask_not_2d": (
         "Some masks have dimensions other than Y and X that their metadata does not name as "

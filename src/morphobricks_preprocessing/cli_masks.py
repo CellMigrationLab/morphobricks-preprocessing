@@ -115,6 +115,9 @@ def masks_command(args: argparse.Namespace) -> int:
     if result.refusal is not None:  # refused before any mask is read
         print(format_issues([result.refusal]))
         return 1
+    if result.report is None:  # the description is gone or unreadable: nothing read (#418)
+        print(format_issues(result.issues))
+        return 1
     print()
     print(mask_report_summary(result.report))
     print()
