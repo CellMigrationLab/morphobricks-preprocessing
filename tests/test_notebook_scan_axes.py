@@ -82,6 +82,35 @@ def test_a_role_changed_at_the_scan_redraws_the_pictures_right_there(tmp_path):
     assert nb.confirmed_mapping is None and nb.preflight is None  # still only a proposal
 
 
+def test_another_shape_with_the_same_axes_shows_its_own_lengths_and_keeps_the_roles(tmp_path):
+    """#521: CYX (2, 8, 8), then CYX (4, 16, 16): the labels follow, the chosen roles stay."""
+    root = tmp_path / "exp"
+    for folder, shape in (("ctrl/rep1", (2, 8, 8)), ("drug/rep1", (4, 16, 16))):
+        (root / folder).mkdir(parents=True)
+        data = np.zeros(shape, np.uint16) + np.arange(shape[0], dtype=np.uint16)[:, None, None]
+        tifffile.imwrite(
+            root / folder / "a.tif", data, photometric="minisblack", metadata={"axes": "CYX"}
+        )
+    nb = PreprocessingNotebook(str(root), output_folder=str(tmp_path / "out"))
+    nb.steps()
+    nb.scan_button.click()
+
+    def lengths():
+        text = _text(" ".join(cell.children[0].value for cell in nb.scan_roles_row.children))
+        return re.findall(r"length (\d+)", text)
+
+    nb.scan_viewer.select("ctrl/rep1/a.tif")
+    assert lengths() == ["2", "8", "8"]
+    nb._scan_boxes[0].value = "Z"  # chosen for the CYX arrangement
+    nb.scan_viewer.select("drug/rep1/a.tif")
+    assert lengths() == ["4", "16", "16"]
+    assert [box.value for box in nb._scan_boxes] == ["Z", "Y", "X"]
+    boxes = list(nb._scan_boxes)
+    nb.scan_viewer.refresh()  # the same image again: the row is not rebuilt
+    assert nb._scan_boxes == boxes
+    assert nb.confirmed_mapping is None  # still only a proposal
+
+
 def test_a_plain_stack_gets_its_picture_once_the_user_says_what_its_dimensions_are(tmp_path):
     nb = scanned(tmp_path, shape=(3, 16, 16), named=False)
     viewer = nb.scan_viewer

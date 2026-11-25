@@ -183,7 +183,9 @@ class Draft:
         }.get(kind)
         if table is None or key not in table:
             raise DraftError(f"the draft has no {kind} entry {key!r}", ("unknown_key",))
-        codes = list(id_problems(kind, value, self.used_ids.get(kind, ())))
+        codes = list(
+            id_problems(kind, value, self.used_ids.get(kind, ()), self.listed_ids.get(kind, ()))
+        )
         for name, slot in table.items():  # another entry of this draft already has the ID
             if name != key and slot.confirmed is not None:
                 if slot.confirmed == value:
@@ -242,7 +244,9 @@ class Draft:
         for key, group in sorted(current.items()):
             member = next(m for m in self.repeats[group].members if m.key == key)
             grouped.setdefault(pairing.get(key, group), []).append(member)
-        slots = _slots("repeats", grouped, self.used_ids.get("repeats", ()))
+        slots = _slots(
+            "repeats", grouped, self.used_ids.get("repeats", ()), self.listed_ids.get("repeats", ())
+        )
         repeats = {g: DraftRepeat(slots[g], tuple(found)) for g, found in sorted(grouped.items())}
         return replace(self, repeats=MappingProxyType(repeats))
 
@@ -267,12 +271,18 @@ class Draft:
         )
 
 
-def _slots(kind: IdKind, labels: Iterable[str], used: Collection[str]) -> dict[str, IdSlot]:
-    """Propose each label as its own ID where allowed, never twice for one case-folded name."""
+def _slots(
+    kind: IdKind, labels: Iterable[str], used: Collection[str], listed: Collection[str] = ()
+) -> dict[str, IdSlot]:
+    """Propose each label as its own ID where allowed, never twice for one case-folded name.
+
+    ``listed`` (the published registry) blocks only another spelling of a listed ID: a folder
+    that still has the ID keeps it, one that does not never takes a spelling of it (#542).
+    """
     slots: dict[str, IdSlot] = {}
     taken = list(used)
     for label in sorted(set(labels)):
-        proposal = propose_id(kind, label, taken)
+        proposal = propose_id(kind, label, taken, listed)
         if proposal is not None:
             taken.append(proposal)
         slots[label] = IdSlot(proposal)
@@ -302,21 +312,28 @@ def _draft(
     members: list[DraftMember],
     groups: Mapping[tuple[str, str], str],
     used: Mapping[str, tuple[str, ...]],
+    listed: Mapping[str, tuple[str, ...]] = MappingProxyType({}),
 ) -> Draft:
     """Build a draft from members and the repeat group of each (default: the folder name)."""
     paired: dict[str, list[DraftMember]] = {}
     for member in members:
         paired.setdefault(groups.get(member.key, member.source_repeat), []).append(member)
-    repeat_slots = _slots("repeats", paired, used.get("repeats", ()))
+    repeat_slots = _slots("repeats", paired, used.get("repeats", ()), listed.get("repeats", ()))
     return Draft(
         MappingProxyType(
-            _slots("conditions", (m.condition for m in members), used.get("conditions", ()))
+            _slots(
+                "conditions",
+                (m.condition for m in members),
+                used.get("conditions", ()),
+                listed.get("conditions", ()),
+            )
         ),
         MappingProxyType(
             _slots(
                 "technical_repeats",
                 (u.source_folder for m in members for u in m.units),
                 used.get("technical_repeats", ()),
+                listed.get("technical_repeats", ()),
             )
         ),
         MappingProxyType(
@@ -326,6 +343,7 @@ def _draft(
             }
         ),
         used_ids=MappingProxyType(dict(used)),
+        listed_ids=MappingProxyType(dict(listed)),
     )
 
 
@@ -343,12 +361,16 @@ def draft_from_discovery(
     labels where allowed (Q6: the same rule for conditions, technical repeats and repeats), and
     ``used_ids`` (the IDs the lineage retired) are never proposed again, and ``listed_ids``
     (the published file's whole registry) are kept listed (:attr:`Draft.listed_ids`).
+    A caller that reopens a published description and publishes the draft (``publish_draft``)
+    must pass both, ``used_ids=retired_ids(description)`` and
+    ``listed_ids=description.used_ids``: without ``listed_ids`` the ID of a repeat or condition
+    removed in the save is dropped from ``used_ids`` and the publication is refused with
+    ``R_USED_ID_DROPPED`` (it fails safe; issue #283).
     No image is opened, no folder renamed and no file written.
     """
     used = {kind: tuple(values) for kind, values in (used_ids or {}).items()}
     listed = {kind: tuple(values) for kind, values in (listed_ids or {}).items()}
-    draft = _draft(_members(discovery, set(excluded)), {}, used)
-    return replace(draft, listed_ids=MappingProxyType(listed))
+    return _draft(_members(discovery, set(excluded)), {}, used, listed)
 
 
 __all__ = [

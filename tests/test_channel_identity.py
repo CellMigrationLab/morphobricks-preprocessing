@@ -14,6 +14,7 @@ from morphobricks_preprocessing.channel_identity import (
     Unit,
     channel_identity_text,
     check_channel_identity,
+    describe_settings,
     recorded_settings,
     settings_entry,
 )
@@ -288,6 +289,11 @@ def test_the_limits_are_typed_and_recorded_exactly():
         outlier_limit=5, min_reference=4, mad_floor=0.1, min_log_difference=1, swap_limit=1.5
     )
     assert recorded_settings(settings_entry(settings)) == settings
+    tolerant = ChannelIdentitySettings(pair_tolerance=0.8)
+    assert settings_entry(tolerant)["pair_tolerance"] == 0.8
+    assert recorded_settings(settings_entry(tolerant)) == tolerant
+    assert settings_entry(ChannelIdentitySettings())["pair_tolerance"] == 0.5
+    assert "pairs within 0.8 of each other in strength" in describe_settings(tolerant)
     assert settings_entry(None) is None and recorded_settings(None) is None
     with pytest.raises(ValueError, match="channel identity limits"):
         ChannelIdentitySettings.from_dict({"outlier_limit": 3.5})  # never defaulted
@@ -298,6 +304,12 @@ def test_the_limits_are_typed_and_recorded_exactly():
         {"min_log_difference": -1},
         {"swap_ratio": 0.5},
         {"partner_ratio": 0.9},
+        {"pair_tolerance": -0.1},
+        {"pair_tolerance": float("nan")},
+        {"pair_tolerance": float("inf")},
+        {"pair_tolerance": True},
+        {"pair_tolerance": "0.5"},
+        {"pair_tolerance": None},
     )
     for bad in bad_limits:
         with pytest.raises(ValueError):
@@ -306,6 +318,31 @@ def test_the_limits_are_typed_and_recorded_exactly():
     found = experiment(edit=swap_dapi_gfp)
     loose = ChannelIdentitySettings(outlier_limit=1000)
     assert check_channel_identity(found, loose).findings == ()
+
+
+def test_limits_recorded_without_pair_tolerance_read_as_the_earlier_constant():
+    """Owner decision of 24 November 2026: absent ``pair_tolerance`` is 0.5, documented.
+
+    Earlier code used 0.5 as a constant and no released version recorded these limits, so the
+    absent key is read as that constant; every other key is still required, and an unknown or
+    invalid one is refused.
+    """
+    entry = settings_entry(ChannelIdentitySettings(outlier_limit=4))
+    assert entry is not None
+    del entry["pair_tolerance"]
+    read = recorded_settings(entry)
+    assert read == ChannelIdentitySettings(outlier_limit=4, pair_tolerance=0.5)
+    assert read.pair_tolerance == 0.5 and isinstance(read.pair_tolerance, float)
+    assert ChannelIdentitySettings(pair_tolerance=0).pair_tolerance == 0.0  # exact ties only
+    for bad in (
+        {k: v for k, v in entry.items() if k != "partner_ratio"},  # only pair_tolerance may lack
+        {**entry, "pair_tolerance": 0.5, "pair_rule": 1},
+        {**entry, "pair_tolerance": -1},
+        {**entry, "pair_tolerance": float("nan")},
+        {**entry, "pair_tolerance": None},
+    ):
+        with pytest.raises(ValueError):
+            recorded_settings(bad)
 
 
 # Mutation checks: the tests above fail when the reference is not the other units.

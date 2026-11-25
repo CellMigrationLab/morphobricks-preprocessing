@@ -18,14 +18,22 @@ from .validation import ValidationIssue
 
 CHANNEL_UNLIKE_OTHERS = "channel_unlike_others"
 POSSIBLE_CHANNEL_SWAP = "possible_channel_swap"
-CHANNEL_IDENTITY_CODES = (POSSIBLE_CHANNEL_SWAP, CHANNEL_UNLIKE_OTHERS)
+AMBIGUOUS_CHANNEL_SWAP = "ambiguous_channel_swap"
+CHANNEL_IDENTITY_CODES = (POSSIBLE_CHANNEL_SWAP, AMBIGUOUS_CHANNEL_SWAP, CHANNEL_UNLIKE_OTHERS)
+PAIR_TOLERANCE = 0.5
+"""The default of :attr:`ChannelIdentitySettings.pair_tolerance` (#395), and the value read
+for a recorded ``channel_identity`` without ``pair_tolerance`` (see
+:meth:`ChannelIdentitySettings.from_dict`). Half a robust deviation (root mean square), below
+the spread of the references themselves (``mad_floor``, ``swap_limit``)."""
 KEY = "channel_identity"
 """The manifest key of the limits, beside ``intensity_checks``."""
 COMPONENTS = ("level", "bright", "spread")
 _FLOATS = ("outlier_limit", "mad_floor", "min_log_difference", "swap_limit", "swap_ratio")
 _FLOATS += ("partner_ratio",)
 _KEYS = ("outlier_limit", "min_reference", "mad_floor", "min_log_difference")
-_KEYS += ("swap_limit", "swap_ratio", "partner_ratio")
+_KEYS += ("swap_limit", "swap_ratio", "partner_ratio", "pair_tolerance")
+_UNTIL_PAIR_TOLERANCE = frozenset(_KEYS) - {"pair_tolerance"}
+"""The keys recorded before ``pair_tolerance`` was (owner decision of 24 November 2026)."""
 
 
 @dataclass(frozen=True)
@@ -61,6 +69,12 @@ class ChannelIdentitySettings:
         For a mutual swap, how many times nearer the other channel's reference than its own
         each of the two channels must be, so a normal channel close to a failed one is not
         named half of a swap; default 2.0.
+    pair_tolerance
+        Two candidate mutual pairs of a unit sharing a channel whose strengths (the larger of a
+        pair's two cross distances) differ by at most this much cannot be told apart: their
+        channels are one ``ambiguous_channel_swap``, never one pair picked (#395); a finite
+        number of at least 0, default 0.5 (:data:`PAIR_TOLERANCE`). At 0 only exact ties are
+        ambiguous.
 
     Raises
     ------
@@ -75,6 +89,7 @@ class ChannelIdentitySettings:
     swap_limit: float = 1.0
     swap_ratio: float = 3.0
     partner_ratio: float = 2.0
+    pair_tolerance: float = PAIR_TOLERANCE
 
     def __post_init__(self) -> None:
         for name in _FLOATS:
@@ -91,6 +106,14 @@ class ChannelIdentitySettings:
         if isinstance(count, bool) or not isinstance(count, (int, np.integer)) or count < 1:
             raise ValueError(f"min_reference must be a whole number of at least 1; got {count!r}.")
         object.__setattr__(self, "min_reference", int(count))
+        tolerance = self.pair_tolerance
+        if isinstance(tolerance, bool) or not isinstance(tolerance, (int, float, np.number)):
+            raise ValueError(f"pair_tolerance must be a number; got {tolerance!r}.")
+        if not (math.isfinite(tolerance) and tolerance >= 0):
+            raise ValueError(
+                f"pair_tolerance must be a finite number of at least 0; got {tolerance!r}."
+            )
+        object.__setattr__(self, "pair_tolerance", float(tolerance))
 
     def to_dict(self) -> dict[str, Any]:
         """Return the limits as JSON-compatible data, for the manifest."""
@@ -100,15 +123,26 @@ class ChannelIdentitySettings:
     def from_dict(cls, data: Mapping[str, Any]) -> ChannelIdentitySettings:
         """Read limits written by :meth:`to_dict`; every key is required, none is defaulted.
 
+        One documented exception: limits recorded without ``pair_tolerance`` (written before
+        it was recorded, owner decision of 24 November 2026) are read with ``pair_tolerance``
+        0.5 (:data:`PAIR_TOLERANCE`), because earlier code used 0.5 as a constant. No released
+        version wrote such limits with a pair rule (the check is not in v0.8.0 or earlier, whose
+        manifests have no ``channel_identity`` at all), and none produced
+        ``ambiguous_channel_swap``: the rule is new with the tolerance, so the absent key means
+        only that no ambiguity rule was recorded. Every other key stays required.
+
         Raises
         ------
         ValueError
             For a missing or unknown key, or a value outside its range.
         """
-        if not isinstance(data, Mapping) or set(data) != set(_KEYS):
+        keys = set(data) if isinstance(data, Mapping) else None
+        if keys is None or keys not in (set(_KEYS), _UNTIL_PAIR_TOLERANCE):
             found = sorted(data) if isinstance(data, Mapping) else data
             raise ValueError(f"Expected the channel identity limits {list(_KEYS)}; got {found!r}.")
-        return cls(**{name: data[name] for name in _KEYS})
+        values = {name: data[name] for name in _KEYS if name in data}
+        values.setdefault("pair_tolerance", PAIR_TOLERANCE)  # absent: the earlier constant
+        return cls(**values)
 
 
 def settings_entry(settings: ChannelIdentitySettings | None) -> dict[str, Any] | None:
@@ -180,7 +214,7 @@ class ChannelFinding:
     Attributes
     ----------
     code
-        ``possible_channel_swap`` or ``channel_unlike_others``.
+        ``possible_channel_swap``, ``ambiguous_channel_swap`` or ``channel_unlike_others``.
     unit, channel
         Where.
     distance
@@ -201,6 +235,10 @@ class ChannelFinding:
     across_conditions
         True when a reference used was taken across conditions (too few units in the
         condition).
+    alternatives
+        For an ``ambiguous_channel_swap``: ``(channel, distance)`` for each other channel of
+        the unit it could be swapped with, the distance being to that channel's reference,
+        sorted by channel; empty otherwise.
     """
 
     code: str
@@ -215,6 +253,7 @@ class ChannelFinding:
     clear: bool = False
     mutual: bool = False
     across_conditions: bool = False
+    alternatives: tuple[tuple[str, float], ...] = ()
 
     @property
     def resembles(self) -> str | None:

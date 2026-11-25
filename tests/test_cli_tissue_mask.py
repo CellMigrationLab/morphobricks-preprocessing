@@ -95,3 +95,24 @@ def test_without_scikit_image_it_names_the_extra_and_writes_nothing(tmp_path, ca
     assert main(args) == 1
     assert 'pip install "morphobricks-preprocessing[he-mask]"' in capsys.readouterr().out
     assert tree(run.masks_root) == before
+
+
+def test_a_plane_that_cannot_be_read_exits_1_with_its_message(tmp_path, capsys, monkeypatch):
+    """#469: a PlaneMemoryError is a refusal of that image, not a traceback."""
+    from morphobricks_preprocessing.plane_errors import PlaneMemoryError
+    from morphobricks_preprocessing.run_inputs import RunInputs
+
+    def refuse(self, *args, **kwargs):
+        raise PlaneMemoryError("the plane needs 9 GiB; the limit is 2 GiB")
+
+    # What RunInputs.read_plane raises when the plane does not fit the memory limit.
+    for name in ("he_tissue_mask", "preview_he_tissue_mask"):
+        monkeypatch.setattr(RunInputs, name, refuse)
+    run = rgb_run(tmp_path)
+    before = tree(run.masks_root)
+    assert main(["tissue-mask", "--output", str(run.output_folder), "--to", "HETissue"]) == 1
+    printed = capsys.readouterr().out
+    assert printed.splitlines()[-1] == (
+        f"{IMAGE}: no tissue mask written. the plane needs 9 GiB; the limit is 2 GiB"
+    )
+    assert tree(run.masks_root) == before
