@@ -125,6 +125,18 @@ recorded in the report quoted with the numbers, and identical output digests in 
 (contract §19) against a checkout without them (`--baseline-src`), whole and in blocks, and
 exits 1 unless every run writes the same `plane_histograms.csv`.
 
+`tools/benchmark_kernels.py` times the kernels under a run one call at a time (#106): the
+plane histogram per pixel type (whole plane and over a region), plane and window reads from
+TIFF (tiled or stripped, zlib or uncompressed) and OME-Zarr, the mask step's kernels
+(`check_labels`, `piece_counts`, `pair_counts`, one position's scan) and the channel-identity
+check. `tools/benchmark_description_read.py` times the strict description reader by number of
+repeats, phase by phase, with a `cProfile` of its top functions (#505). Both use
+`tools/benchmark_harness.py`: fixed seeded inputs (`tools/benchmark_inputs.py`), the median of
+N timed calls, the peak of the traced memory, and a SHA-256 of each output, so an optimisation
+of one kernel is comparable only with the digest of the baseline. `--quick` is their smoke mode
+(`tests/test_benchmark_kernels.py` runs it), never a result. Baselines recorded on one machine
+are in [benchmarks.md](benchmarks.md); they are not claims.
+
 ## Spec conformance tests
 
 The experiment-description reader is tested against the fixtures of

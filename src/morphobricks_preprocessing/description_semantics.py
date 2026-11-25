@@ -190,14 +190,23 @@ def _repeat_membership(doc: Table, out: Issues) -> None:
         if len(by_repeat) > 1:
             for path in by_repeat.values():
                 out.add(Code.E_SOURCE_REPEAT_REUSED, path, source)
+    # Each key is computed once, and the members are grouped by key in their listed order:
+    # linear in the members, with the issues in the order of the repeat-by-member scan (#505).
+    by_key: dict[str, list[tuple[str, str, Table]]] = {}
+    for other, condition, member in listed:
+        by_key.setdefault(_source_key(member["source_repeat"]), []).append(
+            (other, condition, member)
+        )
     for repeat in doc["repeats"]:
-        for other, condition, member in listed:
-            if (
-                other != repeat
-                and nfc(member["source_repeat"]).casefold() == nfc(repeat).casefold()
-            ):
+        for other, condition, member in by_key.get(_source_key(repeat), ()):
+            if other != repeat:
                 value = (repeat, member["source_repeat"])
                 out.add(Code.E_REPEAT_ID_SHADOWS_SOURCE, member_path(other, condition), value)
+
+
+def _source_key(name: str) -> str:
+    """Return the key a repeat ID and a source repeat are compared by, the NFC case fold."""
+    return nfc(name).casefold()
 
 
 def _mask_types(doc: Table, out: Issues) -> None:

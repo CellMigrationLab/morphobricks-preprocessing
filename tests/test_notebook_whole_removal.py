@@ -71,7 +71,9 @@ def check_with_the_spec(out, before):
     report, doc = refval().validate(data)
     assert report.errors == []
     codes = refval().transition(tomllib.loads(before.decode("utf-8")), doc)
-    assert not codes & {"R_USED_ID_DROPPED", "R_USED_ID_REUSED"}
+    # The exact set: the removal's retired ID shows as the one confirmed change, and nothing
+    # else (an extra code would be a transition this save must not make).
+    assert codes == {"R_CONFIRMED_ID_CHANGED"}
     records = refrecords().validate_records((out / RECORDS_FILENAME).read_bytes())
     assert records.errors == []
 
@@ -160,3 +162,23 @@ def test_a_retired_repeat_id_is_not_proposed_or_taken_again(exp):  # noqa: F811
     with pytest.raises(DraftError) as refused:
         again._draft_base.confirm_id("repeats", "rep2", "rep2")
     assert "R_USED_ID_REUSED" in refused.value.codes
+
+
+def test_a_proposal_never_collides_in_case_with_an_id_removed_in_the_same_save(exp):  # noqa: F811
+    # Follow-up of #542: rep2 is removed and a folder REP2 is added in the same save. The ID
+    # rep2 is not retired yet (the published file still uses it), but REP2 would collide with it
+    # at Save (E_ID_CASE_COLLISION, pointing at morphobricks.toml): no proposal, and typing it
+    # is refused on the candidate itself.
+    root, masks, out = exp
+    saved_nb(exp)
+    remove_folder(root, masks, "ctrl/rep2")
+    remove_folder(root, masks, "drug/rep2")
+    add_folder(root, masks, "ctrl/REP2", 7)
+    nb = opened(root, masks, out)
+    base = nb._draft_base
+    assert "rep2" in base.listed_ids["repeats"]
+    assert base.repeats["REP2"].id.proposed is None
+    with pytest.raises(DraftError) as refused:
+        base.confirm_id("repeats", "REP2", "REP2")
+    assert "E_ID_CASE_COLLISION" in refused.value.codes
+    assert "'REP2'" in str(refused.value) and "morphobricks.toml" not in str(refused.value)
