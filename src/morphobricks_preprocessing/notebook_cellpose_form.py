@@ -32,15 +32,20 @@ from .notebook_cellpose_fields import (
     FIELD,
     SEPARATE_NUCLEI,
     STYLE,
+    full_help,
     model_cards,
     model_choice,
     model_fields,
     output_cards,
     output_fields,
     path_row,
+    show_nuclei_box,
     text_field,
 )
 from .notebook_cellpose_guard import check_current, check_folders, take_over
+from .notebook_cellpose_summary import summary_html, summary_widget, used
+from .notebook_cellpose_view import run_entries, run_viewer
+from .notebook_stepper import field_rows
 
 __all__ = [
     "ADVANCED",
@@ -103,7 +108,11 @@ class StepForm:
         self.output = widgets.Output(layout=FIELD)
         self.stopped: CellStop | None = None
         self.notice = widgets.HTML()  # says when the workflow was replaced (cell 3 run again)
-        self.widget = ui.page(title, purpose, [*cards, self.button, self.notice, self.output])
+        self.title, self.purpose = title, purpose
+        # The step's controls without the page: the stepper of segmentation_app shows these
+        # under its own one-line title; a notebook cell shows them on the page (``widget``).
+        self.body = widgets.VBox([*cards, self.button, self.notice, self.output], layout=FIELD)
+        self.widget = ui.page(title, purpose, [self.body])
         self.button.on_click(lambda _: self.submit())
 
     @property
@@ -137,7 +146,7 @@ class CellposeNotebook(CellposeWorkflow):
     """:class:`.CellposeWorkflow` with a form per step; each cell calls one ``*_step`` method.
 
     ``forms`` holds each step's :class:`StepForm` by name (``open``, ``channels``, ``model``,
-    ``preview``, ``segment``, ``next``) once its cell has shown it.
+    ``preview``, ``segment``) once its cell has shown it.
     """
 
     def __init__(self) -> None:
@@ -147,6 +156,11 @@ class CellposeNotebook(CellposeWorkflow):
         self._loaded_with: tuple[str, ...] | None = None
         self._nuclei_failed = False  # the last Load the model loaded the cells', not the nuclei's
         self.replaced = False
+        self.load_on_preview = False  # segmentation_app: Preview and Segment load the model
+        self._previewed_with: tuple[tuple[str, str], ...] | None = None  # the last Preview's
+        self._summary: widgets.HTML | None = None
+        self.on_change: list[Callable[[], object]] = []  # called after every step's button
+        self.viewer = run_viewer(lambda: self.inputs)
         take_over(self)  # the forms of an earlier workflow in this kernel stop working
 
     def _keep(self, name: str, form: StepForm) -> StepForm:
@@ -177,33 +191,29 @@ class CellposeNotebook(CellposeWorkflow):
         """Show cell 7's form: segment the whole experiment."""
         display(self.segment_form().widget)
 
-    def next_step(self) -> None:
-        """Show the closing cell's form: what to do next."""
-        display(self.next_form().widget)
-
     def open_form(self) -> StepForm:
-        """Show the form of cell 3: the run's output folder and the masks folder."""
+        """Show the form of cell 3: the run's output folder and the masks folder.
+
+        Under the button, once the run is open, its images in the preprocessing viewer
+        (:mod:`.notebook_cellpose_view`).
+        """
         status = widgets.HTML()
         run = text_field(placeholder="e.g. /content/drive/MyDrive/run_output")
         masks = text_field(placeholder="e.g. /content/drive/MyDrive/masks")
         cards = [
             ui.card(
-                "Run folder",
+                "Folders",
                 [
-                    path_row(run, status),
-                    ui.help_text(
-                        "The run's <b>output folder</b>: the folder that holds "
-                        "<b>run_manifest.json</b>. Paste the path or use <b>Browse…</b>."
+                    field_rows(
+                        [
+                            ("Run folder", [path_row(run, status)]),
+                            ("Masks folder", [path_row(masks, status)]),
+                        ]
                     ),
-                ],
-            ),
-            ui.card(
-                "Masks folder",
-                [
-                    path_row(masks, status),
-                    ui.help_text(
-                        "Where the masks are written: <b>outside</b> the experiment folder and "
-                        "the run's output folder."
+                    full_help(
+                        "The run folder is the preprocessing run's <b>output folder</b> (it holds "
+                        "<b>run_manifest.json</b>). The masks folder is where the masks are "
+                        "written: not the run folder or the experiment, and not inside either."
                     ),
                     status,
                 ],
@@ -216,10 +226,18 @@ class CellposeNotebook(CellposeWorkflow):
             cards,
             "Open the run",
             "folder-open",
-            lambda: self.open(ui.clean_path(run.value), ui.clean_path(masks.value)),
+            lambda: self._open_and_show(ui.clean_path(run.value), ui.clean_path(masks.value)),
             {"run_folder": run, "masks_folder": masks},
         )
+        form.body.children = [*form.body.children, self.viewer.widget]
         return self._keep("open", form)
+
+    def _open_and_show(self, run_folder: str, masks_folder: str) -> None:
+        """Open the run, then show its images (or none, when it was refused)."""
+        try:
+            self.open(run_folder, masks_folder)
+        finally:
+            self.viewer.set_entries(run_entries(self.inputs))
 
     def channels_form(self) -> StepForm:
         """Show the form of cell 4: the output and the mask type(s); the channels come after it.
@@ -268,25 +286,34 @@ class CellposeNotebook(CellposeWorkflow):
         if self.picker is not None and (self.mask_types, self.picker.output) != shown:
             self.drop_choice()
             self._after_step()
+            then = "load the model"
+            if self.load_on_preview:  # no Load button: Preview loads it
+                then = "press Preview (it loads the model)"
             changed.value = ui.status(
-                "warn", "Changed: press Choose the channels again, then load the model."
+                "warn", f"Changed: press Choose the channels again, then {then}."
             )
 
     def drop_choice(self) -> None:
         """Forget the channels, the mask types and every loaded model (the choice changed)."""
         super().drop_choice()
         self._loaded_with, self._nuclei_failed = None, False
+        self._previewed_with = None  # a preview of other channels says nothing of these
 
     def model_form(self) -> StepForm:
         """Show the form of cell 5: the model, the device, the settings; the button loads."""
         fields, status = model_fields(), widgets.HTML()
         found, line = cp.device_status()  # seen before loading; it chooses nothing
         device = widgets.HTML(ui.status("ok" if found else "warn", "Device", [line]))
+        cards = model_cards(fields, status)
+        self._nuclei_box = cards[-1]
+        fields[SEPARATE_NUCLEI].observe(lambda _: self._show_nuclei_box(), names="value")
+        for field in fields.values():  # display only: the summary and the strip, nothing kept
+            field.observe(lambda _: self._model_fields_changed(), names="value")
         form = StepForm(
             self,
             "Choose the model and the settings, then load the model",
             "Load the model you choose, on the device you choose, and check it.",
-            [device, *model_cards(fields, status)],
+            [device, *cards],
             "Load the model",
             "download",
             lambda: self._load_from(fields),
@@ -373,7 +400,7 @@ class CellposeNotebook(CellposeWorkflow):
             cards,
             "Preview",
             "eye",
-            lambda: self._with_form_settings(lambda: self.preview(image.value or "")),
+            lambda: self._with_form_settings(lambda: self._preview_and_note(image.value or "")),
             {"preview_image": image},
         )
         return self._keep("preview", form)
@@ -381,7 +408,9 @@ class CellposeNotebook(CellposeWorkflow):
     def segment_form(self) -> StepForm:
         """Show the form of cell 7: overwrite (off by default) and the button that segments."""
         overwrite = widgets.Checkbox(value=False, description="Replace masks that already exist")
+        self._summary = summary_widget()
         cards = [
+            self._summary,
             ui.card(
                 "Existing masks",
                 [
@@ -391,7 +420,7 @@ class CellposeNotebook(CellposeWorkflow):
                         "already have a mask are skipped."
                     ),
                 ],
-            )
+            ),
         ]
         form = StepForm(
             self,
@@ -406,6 +435,26 @@ class CellposeNotebook(CellposeWorkflow):
         )
         return self._keep("segment", form)
 
+    def _preview_and_note(self, image: str) -> None:
+        """Preview ``image``, then keep what it used, for the Segment step's line."""
+        self.preview(image)
+        model = self.forms.get("model")
+        self._previewed_with = None if model is None else used(model.fields)
+        self._refresh_summary()
+
+    def _model_fields_changed(self) -> None:
+        """Update what shows the model form's values: Segment's line and the step strip."""
+        self._refresh_summary()
+        for callback in self.on_change:
+            callback()
+
+    def _refresh_summary(self) -> None:
+        """Write the Segment step's line of what it will use (and what differs from Preview)."""
+        model = self.forms.get("model")
+        if model is None or getattr(self, "_summary", None) is None:
+            return
+        self._summary.value = summary_html(used(model.fields), self._previewed_with)
+
     def _segment(self, overwrite: bool) -> None:
         """Segment the whole experiment; each batch goes to :attr:`on_masks_written`."""
         self.run(overwrite)
@@ -418,26 +467,67 @@ class CellposeNotebook(CellposeWorkflow):
         run and masks folders in cell 3 other than those opened (``RUN_CHANGED``).
         """
         check_folders(self)
+        model = self.forms.get("model")
+        if self.load_on_preview and model is not None:
+            self._load_if_needed(model.fields)
+            step()
+            return
         if self._nuclei_failed:  # the cells' model loaded, the nuclei's did not: both dropped
             raise CellStop("The nuclei model did not load: press Load the model again.")
-        model = self.forms.get("model")
         if model is not None and self.loaded is not None:
             if model_choice(model.fields) != self._loaded_with:
                 raise CellStop(MODEL_CHANGED)
             self._set_form_settings(model.fields)
         step()
 
+    def _load_if_needed(self, fields: dict[str, widgets.Widget]) -> None:
+        """Load the model(s) the form shows unless exactly those are loaded (``segmentation_app``).
+
+        The model is loaded at the first Preview (or Segment), then reused: another image, or
+        another diameter or threshold, never reloads it. It is loaded again only when what
+        loading depends on changed (:func:`.notebook_cellpose_fields.model_choice`: the model,
+        its file, the device, the nuclei's own model), or when the last load did not finish.
+        The device is the one chosen; nothing falls back or is substituted (``load_model``).
+        """
+        if self.model_is_current():
+            self._set_form_settings(fields)
+            return
+        self._load_from(fields)
+
+    def model_is_current(self) -> bool:
+        """Return True when the model loaded is the one the model form shows now (file included)."""
+        model = self.forms.get("model")
+        if self.loaded is None or self._nuclei_failed or model is None:
+            return False
+        return model_choice(model.fields) == self._loaded_with
+
     def _after_step(self) -> None:
-        """Keep the later forms in step: the image list, and the buttons that need a model."""
+        """Keep the later forms in step: the image list, and the buttons that need a model.
+
+        With :attr:`load_on_preview` Preview and Segment need the channels only: they load the
+        model themselves.
+        """
         if self.replaced:
             for form in self.forms.values():
                 form.button.disabled = True
             return
+        ready = self.picker is not None if self.load_on_preview else self.loaded is not None
         for name in ("preview", "segment"):
             if name in self.forms:
-                self.forms[name].button.disabled = self.loaded is None
+                self.forms[name].button.disabled = not ready
         if "preview" in self.forms:
             self._fill_images(self.forms["preview"].fields["preview_image"])
+        self._show_nuclei_box()
+        self._refresh_summary()
+        for callback in self.on_change:
+            callback()
+
+    def _show_nuclei_box(self) -> None:
+        """Show the nuclei's own model and settings for the output Both (or while ticked)."""
+        model = self.forms.get("model")
+        if model is not None:
+            both = self.picker is not None and self.picker.output == cp.BOTH_OUTPUT
+            show_nuclei_box(self._nuclei_box, model.fields, both)
 
     def _fill_images(self, dropdown: widgets.Dropdown) -> None:
         """List the run's images in the preview's dropdown, on the first without a mask."""
@@ -450,17 +540,3 @@ class CellposeNotebook(CellposeWorkflow):
             first = todo.relative_path if todo else first
         dropdown.options = paths
         dropdown.value = first
-
-    def next_form(self) -> StepForm:
-        """Show the closing cell's button: what to do now that the masks are made."""
-        form = StepForm(
-            self,
-            "What to do next",
-            "Declare the new mask type, then run preprocessing again with the masks folder.",
-            [],
-            "Show the next steps",
-            "arrow-right",
-            self.next_steps,
-            {},
-        )
-        return self._keep("next", form)

@@ -19,7 +19,7 @@ from morphobricks_preprocessing import notebook_cellpose
 from morphobricks_preprocessing import segmentation_cellpose as cp
 from morphobricks_preprocessing.notebook_cellpose_form import MODEL_CHANGED
 from morphobricks_preprocessing.segmentation_record import read_record, record_path
-from test_notebook_cellpose import BATCH, CHANNELS, MODEL, NEXT, OPEN, PREVIEW, run_cell
+from test_notebook_cellpose import BATCH, CHANNELS, MODEL, OPEN, PREVIEW, run_cell
 
 
 @pytest.fixture
@@ -235,13 +235,12 @@ def test_the_preview_shows_both_masks_and_writes_nothing(cells):
     assert "Cell mask: 2 objects" in shown and "Nuclei mask: 2 objects" in shown
 
 
-def test_the_next_steps_list_both_mask_types_and_pair_nothing(cells):
+def test_the_line_after_both_batches_names_both_mask_types(cells):
     choose_both(cells, mask_type="MyCells")
-    run_cell(cells.ns, NEXT)
+    run_cell(cells.ns, MODEL, device="cpu")
+    run_cell(cells.ns, BATCH)
     text = cells.ns["workflow"].shown[-1]
-    assert "[masks.MyCells]" in text and "[masks.Nuclei]" in text
-    assert "the 2 new mask types" in text and "never pairs a cell with a nucleus" in text
-    assert "MorphoRelate" in text
+    assert "[masks.MyCells]" in text and "[masks.Nuclei]" in text and text.count("Next:") == 1
 
 
 @pytest.mark.parametrize(

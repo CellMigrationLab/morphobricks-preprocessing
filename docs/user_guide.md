@@ -277,8 +277,9 @@ banner then says "commit unknown" and that the override is on). Then:
   needs both channels. The two are separate mask types (`Cells` and `Nuclei` by default, both
   editable and different), each with its own `segmentation_record.json`, its own skip, overwrite
   and rollback and its own table; a batch that stops does not stop the other. One model and
-  one set of settings serve both unless, under **Advanced Cellpose settings**, you tick a
-  different model or settings for the nuclei. The preview shows both results. The notebook
+  one set of settings serve both unless, in the box **Output Both: the nuclei** (shown on
+  the model step once Both is chosen), you tick a different model or settings for the nuclei.
+  What each output writes and reads is listed next to the choice. The preview shows both results. The notebook
   never pairs a cell with a nucleus by label number: relate them downstream from the geometry
   (MorphoRelate, containment or overlap).
 - **Channels by number.** Tags (channel IDs) are the default. You may instead choose **By
@@ -304,8 +305,14 @@ banner then says "commit unknown" and that the override is on). Then:
   the device you chose. Cellpose may still move its flow-threshold quality step to the CPU when
   GPU memory is short, and always computes the masks on the CPU on `mps`; that is Cellpose's
   behaviour, it is not refused, and the record notes it.
-- **Advanced Cellpose settings** (a closed section of the model form): the diameter, the flow
-  and cell probability thresholds (0.4 and 0) and the batch size (8).
+- **Cellpose settings** (shown on the model form, each with one line saying which way to move
+  it, from Cellpose 4.2.1.1's own documentation): the diameter (increase if objects are split,
+  decrease if merged), the flow threshold (0.4; increase to keep more objects, decrease if they
+  are badly shaped), the cell probability threshold (0; decrease to find more and larger
+  objects, increase for fewer) and the batch size (8; lower it if the GPU runs out of memory).
+- **Download display.** While a model loads, a weights download shows as one progress bar and
+  Cellpose's log lines are not printed; its warnings are shown in one card. What is loaded is
+  unchanged: the same file, no download without the tick, no substitution, no device fallback.
 - **Diameter** is in pixels. Blank means the model's own native scale (Cellpose 4.2.1.1 does
   not estimate a diameter); 0 is refused.
 - **Normalisation** is always Cellpose's own, per image (each channel to its 1st to 99th
@@ -318,6 +325,9 @@ banner then says "commit unknown" and that the override is on). Then:
   unless you tick overwrite, and `<masks>/<type>/segmentation_record.json` with the model's
   file name and SHA-256, every setting (the full normalisation and the flow iterations included), whether the weights were downloaded now and from where, the channels, the device and each image as written,
   skipped or failed. The final table lists every image, with the error of a failed one.
+- **The masks folder is checked when the run is opened.** **Open the run** refuses a masks
+  folder that is the run's output folder or the experiment folder, or inside or around either,
+  with the same rule the writes use, before anything else.
 - **A mask type is its exact name.** A mask type whose name differs from a folder already in
   the masks folder only in upper/lower case (`Cells` when `cells/` is there, even empty) is
   refused when you choose it, on every computer, naming both (`mask_type_differs_in_case`): on
@@ -325,9 +335,11 @@ banner then says "commit unknown" and that the override is on). Then:
   existing folder's exact name (`cells`) to add to its masks, or choose another mask type.
   Nothing is renamed or merged.
 
-Afterwards declare the mask type (both mask types for **Both**) in the experiment description (for example `[masks.Cells]`
-with `source_type = "Cells"` and `representation = "instances"`), save it, run preprocessing
-again with the masks folder, **Describe the masks**, then continue with MorphoFeature.
+When the batch finishes, one line says what comes next (there is no separate *What to do next*
+step): declare the mask type (both mask types for **Both**) in the experiment description (for
+example `[masks.Cells]` with `source_type = "Cells"` and `representation = "instances"`), save
+it, run preprocessing again with the masks folder, **Describe the masks**, then continue with
+MorphoFeature.
 
 ### Preprocessing, Cellpose and the masks in one notebook (optional)
 
@@ -344,9 +356,15 @@ run the experiment in the app of cell 3. Then:
   Cellpose 4.2.1.1 and PyTorch are installed, only when you tick **Install Cellpose 4.2.1.1
   (with PyTorch) now** and press the button; if the installation changes `numpy` or `opencv`
   while they are loaded, restart the runtime, run cells 1 to 3 again (run preprocessing again
-  in cell 3: the histograms are reused), then cell 4. Then the same steps as the Cellpose
-  notebook above, one under the other; their messages name the step (for example *Press Load
-  the model first*), and **What to do next** points to cell 5.
+  in cell 3: the histograms are reused), then cell 4. Then four steps, one on screen at a
+  time as in the preprocessing app (a strip of steps, **Back** and **Next**; answers are kept
+  when you move): **Folders** (the run and the masks folder, checked there, and the run's
+  images in the preprocessing image viewer), **Output and channels**, **Model and preview**
+  (no separate load button: **Preview** loads the model the first time, and again only when
+  the model, its file (also the same file changed on disk) or the device changed; another image
+  reuses it) and **Segment** (it reuses the loaded model, and says in one line exactly which
+  model and settings it will use, in amber with what differs when the last Preview used
+  others). One line after the batch points to cell 5.
 - **5. Register the masks** shows, for each mask type cell 4 wrote, the declaration it would
   add (`[masks.Cells]` with `source_type = "Cells"` and `representation = "instances"`). Tick
   each one and press **Register the masks**: the app of cell 3 then checks the folders again
