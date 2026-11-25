@@ -96,8 +96,9 @@ class _DescribedRun:
     def _base_draft(self) -> Draft:
         state = self._published()
         used = retired_ids(state.description) if state is not None else None
+        listed = state.description.used_ids if state is not None else None
         pre = self.preflight
-        return draft_from_discovery(pre.discovery, pre.excluded, used_ids=used)
+        return draft_from_discovery(pre.discovery, pre.excluded, used_ids=used, listed_ids=listed)
 
     def _resume_pairing(self, saved: DraftAnswers) -> dict[tuple[str, str], str]:
         """Return the saved pairing of the folders that still exist."""

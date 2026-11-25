@@ -500,6 +500,49 @@ editing, or the confirmed ones. An image that cannot be drawn gets a sentence sa
    before the pairing: if you pair the `rep2` folders of different conditions with different
    biological repeats, every row of that folder (whatever its channel count) says so and
    fills nothing; tag those conditions on their own.
+   From a listed acquisition, **Override this unit (start from the row's tags)** opens that
+   acquisition's tags with the row's tags filled in. Under each channel the header name is
+   shown, and an orange box marks where it disagrees, so you change only what is different.
+   Nothing is saved while you edit; the acquisition counts as tagged only after **Confirm these
+   tags** (every channel tagged, each label once). If the acquisition's own header or its
+   tags change later, it is listed again.
+   A listed acquisition is counted only when you confirm *that* acquisition (**Confirm these
+   tags**, **Confirm the same tags**, or its own folder tagged on the grid). Confirming one
+   acquisition never counts another, and fast mode does not tag a listed acquisition from the
+   header names saved by confirming another: it stays listed with the same contradiction and
+   the same orange boxes. When a listed acquisition has the same header names, at every
+   channel, as one you confirmed, it says "same headers as *that one*, which you confirmed as
+   *tags*" and offers **Confirm the same tags**; when several listed acquisitions have them it
+   also offers **Confirm all N like it**. Nothing is counted until you click; the buttons save
+   exactly as **Confirm these tags** does (all N or none).
+   Tagging a listed acquisition by hand on the grid (every channel, fitting its header) is
+   saved as your confirmation of it, so it counts and can be offered as the source of **Confirm
+   the same tags**. With the statement unticked, a tag chosen for a block of folders is your
+   confirmation of every listed acquisition in that block: the block names them under its
+   dropdowns ("A tag chosen here also confirms the refused unit(s) ..."), also when its folder
+   list is folded; take an acquisition out of the block first to leave it listed. Tags that fit
+   only because you confirmed *another* acquisition with the same header names, or because the
+   header changed, never count it. If you rename or remove a label after an acquisition was listed, its
+   override opens with that channel left blank: choose a label that still exists. What is
+   listed and what you confirmed is saved with your answers: after you close and reopen the
+   notebook, a listed acquisition is still listed, and still not counted, until you confirm it.
+   This holds also when you stop the kernel (Interrupt) during a tag save: what is listed and
+   confirmed is then read again from the saved answers, in the same session too, so an
+   interrupted save never drops a listed acquisition or a confirmation.
+   Two notebooks open on the same output folder never write over each other's answers: each
+   notebook saves only over the draft it read or last saved. When the other one saved since,
+   the change is refused with `R_DRAFT_CHANGED` ("Not saved: the draft changed"), nothing is
+   written and the other notebook's listed acquisitions, confirmations and tags stay as they
+   are; press **Check folder** in step 1 to read them, then give your change again.
+   In fast mode this holds also when you correct the acquisition's image header so that it fits
+   its row: it is not tagged from its header but stays listed ("a refused unit is never tagged
+   from its header, even one that fits now; confirm its tags") until you confirm it. In fast
+   mode a listed acquisition you have not confirmed also keeps its tags when you edit a
+   layout's row of tags, fill new acquisitions like the first, tag several acquisitions with one
+   dropdown, or use **Tag like the saved group** or a header pre-tag: only an action on it alone
+   (its override, a one-click confirmation, or its own dropdowns) changes them. An
+   acquisition you set to colour (RGB) keeps its listing for later: it is not listed while it is
+   colour, and is listed again if you set it back to channels.
    In fast mode a row offers only the acquisitions that do not fit the layout, and those it
    fills are tagged on their own (checked as in the strict mode); unticked, a row is offered
    for every repeat folder. On a reopen, a row shows the tags every acquisition of its folder
@@ -528,7 +571,11 @@ editing, or the confirmed ones. An image that cannot be drawn gets a sentence sa
    change of the same entity (a folder renamed or removed) is never paired with it: the save
    is refused with `folder_and_id_changed` (#475); undo the ID edit and the folder change
    saves on its own. A saved ID cannot be changed from the notebook: only the publication API
-   takes a `Reconfirmation` that names a new ID.
+   takes a `Reconfirmation` that names a new ID. A whole biological repeat or condition can
+   be removed (every one of its folders gone from disk, or a condition folder renamed on disk,
+   which is a removed folder plus a new one): answer **Yes, remove** for each condition listed
+   and save. Its ID stays in `used_ids` as retired (experiment-v1 §4.9): it is never given to
+   another repeat or condition, and a folder of that name that comes back gets a new ID.
 4. **Masks.** The masks the check paired with the images (and, for masks whose files do not
    name their axes, the axes to state), then for each mask type: *separate objects*,
    *regions* or *grouped labels (one value per parent, e.g. mitochondria by cell)*. Nothing is
@@ -878,7 +925,9 @@ header is checked against the list first: an image with other channels, names in
 order, other names or another image type is listed (`R_FAST_LAYOUT_CONTRADICTION`) and nothing
 is written. Experiments where some acquisitions differ are described in the notebook, tagging
 those acquisitions on their own. `--strict` keeps the per-acquisition mode, answered in the
-notebook. A published description is never switched between modes by `describe`.
+notebook. A published description is never switched between modes by `describe`. While the
+output folder holds answers saved in the notebook (`morphobricks.draft.json`), the command
+publishes nothing (`R_DRAFT_EXISTS`): they are finished and published in the notebook.
 
 ### Stating pixel sizes (`calibrate`)
 
@@ -1359,6 +1408,8 @@ continues.
 | `R_IMAGE_TYPE_CONTRADICTS_HEADER` for colour scanner files, `R_RGB_OVERRIDE_NOT_THREE_SAMPLES`, `E_RGB_OVERRIDE_WITHOUT_RGB` | Error | Some scanners store colour (RGB) images with a header that does not say RGB (for example TIFF photometric *minisblack* with three samples per pixel). The acquisition declared `image_type = "rgb"` is then refused, and the message says so and names `rgb_header_override`. If the three samples are red, green and blue in this order, add `rgb_header_override = true` to that acquisition in `morphobricks.toml` (beside `image_type = "rgb"`; in the notebook, tick **Read these folders as colour (RGB) although their header does not say colour** on the Image type card of the Channels step) and publish again: the run then accepts the header and records the acquisition in the manifest as declared RGB with the header overridden (`image_type_header_overridden`, `header_photometric`). Every image whose header does not say RGB must have exactly three interleaved samples per pixel, else `R_RGB_OVERRIDE_NOT_THREE_SAMPLES` names the image (reported before `R_UNIT_NOT_HOMOGENEOUS`); the key on an acquisition that is not declared `rgb` is `E_RGB_OVERRIDE_WITHOUT_RGB`. Images of the acquisition that differ only in colour interpretation (some *minisblack*, some RGB) are then one layout. Images whose header already says RGB, or whose format states no colour interpretation (OME-Zarr), do not use the key; the manifest records, per image, whether it was used (`rgb_header_override_images`). Adding, removing or changing the key reopens the "same way" confirmation of that replicate. Only headers are read, never pixels. |
 | `R_FAST_LAYOUT_CONTRADICTION` | Error | The published description is in **fast mode** (it has a `channel_layout` table: "every imaging unit has the same channels in the same order", Spec ADR 0006) and some images of the acquisitions that follow it (`channels_from = "experiment"`) contradict that list. One message lists **every** contradicting image, with its FOV key (condition, repeat and acquisition folders, then the image name) and path, and every contradiction found in it: `image_type` (the header says colour where the list is not, or the reverse), `channel_count` (another number of channels), `header_order` (header names of the list in another order) or `header_names` (a header name that is no confirmed name of any channel of the list), each with its C index and what was expected and found. It is decided from the image headers only, before any pixel is read; nothing is reordered, dropped or guessed, and nothing was processed. Tag the acquisitions of these images on their own (`channels_from = "unit"`, confirmed per acquisition), publish again and run again. An image whose header gives no channel names (or an empty name) needs no evidence and follows the list; the manifest records each image of a fast acquisition in `fast_layout_images` (`header_verified` true only when every channel was confirmed by its header name). In such acquisitions this one code replaces `R_CHANNEL_COUNT_MISMATCH`, `R_HEADER_CONTRADICTION`, `R_IMAGE_TYPE_CONTRADICTS_HEADER` and `R_UNIT_NOT_HOMOGENEOUS` (which stays for the other axes); `R_RGB_OVERRIDE_NOT_THREE_SAMPLES` keeps its priority. An acquisition tagged on its own is checked as in a description without fast mode. Experiments with extra channels in some acquisitions are refused here: tag those acquisitions on their own. |
 | `folder_and_id_changed` | Error | *Check and save* (and publication) found an ID changed in the same save as a folder change of the same entity: for example a repeat ID `Day1 -> DayX` while one of its folders was renamed or removed, a condition ID changed while its folder was renamed, or a removed folder's ID typed for the new folder. Neither change is guessed from the other, so the message names the entity, its saved ID and its folders. Undo the ID edit: put the saved ID back (the folder change then saves on its own). A removed folder's ID stays used and is not given to another folder (experiment-v1 4.9). Nothing was published. |
+| `R_DRAFT_CHANGED` | Error | Notebook: `morphobricks.draft.json` was changed since this notebook read or saved it (another notebook, or a program, saved its own answers in the same output folder). Nothing was saved or published, and the answers saved there are kept. Press **Check folder** in step 1 to read them, then give your change again. |
+| `R_DRAFT_EXISTS` | Error | Command line (`describe --publish`): the output folder holds `morphobricks.draft.json`, answers saved in the notebook that the command does not read. Nothing was published or written. Finish those answers and publish them in the notebook (step 1, **Check folder**, then **Check and save**), or, if they are not wanted, remove or archive that file yourself and run the command again. |
 | `removal_mismatch` | Error | A saved folder is no longer in the description (neither under its folder nor under its IDs) and no **Yes, remove** confirms it, or a removal names a folder the description still holds. Confirm the removal of a folder that is gone, or undo the change; withdraw the removal of a folder that is still there, or check the folder again. Nothing was published. |
 | `mode_switch_unconfirmed` | Error | The description would change between fast mode (one channel list for the experiment) and the strict per-acquisition mode, but you did not switch it: a published description keeps its mode when it is reopened. Tick or untick **Every imaging unit has the same channels in the same order** on *Tag channels* yourself, then save again. Nothing was published. |
 | `E_FAST_LAYOUT_MISMATCH`, `E_FAST_MARKER_WITHOUT_LAYOUT` | Error | The description is refused by the reader: an acquisition marked `channels_from = "experiment"` lists other channels or another image type than `channel_layout` (`E_FAST_LAYOUT_MISMATCH`), or an acquisition has `channels_from` in a description without `channel_layout` (`E_FAST_MARKER_WITHOUT_LAYOUT`). In a description with `channel_layout` every acquisition must say `channels_from` (`E_MISSING_FIELD`). |

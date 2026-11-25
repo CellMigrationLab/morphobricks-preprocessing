@@ -186,6 +186,14 @@ def unit_name(key: tuple[str, str, str]) -> str:
     return " / ".join(part for part in key if part != "single") or "single"
 
 
+def partial_text(label: str, used: int, total: int) -> str:
+    """Return the sentence for a label used in only some units, with its consequence."""
+    return (
+        f"used in {used} of {total} folders: an analysis of {html.escape(label)} will be "
+        "refused for the other folders"
+    )
+
+
 __all__ = [
     "CHOOSE",
     "AnswerStore",
@@ -197,6 +205,7 @@ __all__ = [
     "chip",
     "colour",
     "columns",
+    "partial_text",
     "quoted",
     "restore_strict",
     "rgb_chip",

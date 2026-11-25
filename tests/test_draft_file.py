@@ -1,5 +1,6 @@
 """Saving, resuming and publishing ``morphobricks.draft.json`` (experiment-v1 10 and 12)."""
 
+from dataclasses import replace
 from datetime import date
 
 import pytest
@@ -44,6 +45,11 @@ from morphobricks_preprocessing.run.description_file import (
     publish_description,
 )
 from morphobricks_preprocessing.run.draft_file import (
+    NO_DRAFT,
+    UNREAD,
+    DraftChanged,
+    answers_generation,
+    draft_generation,
     load_draft,
     new_answers,
     publish_draft,
@@ -383,3 +389,61 @@ def test_publication_without_a_draft_is_refused(exp, out):
         publish_draft(out, draft_from_discovery(exp), channel_counts=COUNTS)
     assert refusal.value.code == "no_draft"
     assert list(out.iterdir()) == []
+
+
+# The draft file's generation (external re-check av, 24 November 2026) ------------------------
+# Two notebooks on one output folder each hold the whole draft as they read it. A writer names
+# the generation it holds (``expected``) and the file is replaced, or published, only while it
+# is still that generation, checked under the same hold of the output folder's lock.
+
+
+def _other(answers):
+    conditions = dict(answers.conditions)
+    conditions["DrugA"] = replace(conditions.get("DrugA", ConditionAnswer()), reference="")
+    return replace(answers, conditions=conditions)
+
+
+def test_a_write_over_the_generation_held_succeeds_and_is_the_answers_generation(exp, out):
+    base = draft_from_discovery(exp)
+    assert draft_generation(out) == NO_DRAFT
+    save_draft(out, base, complete(), expected=NO_DRAFT)
+    assert draft_generation(out) == answers_generation(complete())
+    save_draft(out, base, _other(complete()), expected=answers_generation(complete()))
+    assert draft_generation(out) == answers_generation(_other(complete()))
+
+
+@pytest.mark.parametrize("held", ["older", NO_DRAFT, UNREAD])
+def test_a_write_over_another_generation_is_refused_and_writes_nothing(exp, out, held):
+    base = draft_from_discovery(exp)
+    save_draft(out, base, complete())  # the generation B read
+    older = draft_generation(out)
+    save_draft(out, base, _other(complete()), expected=older)  # A saved since
+    before = snapshot(out)
+    expected = older if held == "older" else held
+    with pytest.raises(DraftChanged) as caught:
+        save_draft(out, base, complete(), expected=expected)
+    assert caught.value.code == "R_DRAFT_CHANGED"
+    assert snapshot(out) == before  # A's answers kept, no temporary file left
+
+
+def test_a_new_draft_never_replaces_one_written_since(exp, out):
+    base = draft_from_discovery(exp)
+    save_draft(out, base, complete())
+    with pytest.raises(DraftChanged):
+        save_draft(out, base, _other(complete()), expected=NO_DRAFT)
+    assert draft_generation(out) == answers_generation(complete())
+
+
+def test_a_publication_of_another_generation_is_refused_and_writes_nothing(exp, out):
+    base = draft_from_discovery(exp)
+    save_draft(out, base, complete())
+    checked = draft_generation(out)
+    save_draft(out, base, _other(complete()), expected=checked)  # another notebook's save
+    before = snapshot(out)
+    with pytest.raises(DraftChanged):
+        publish_draft(out, base, channel_counts=COUNTS, expected=checked)
+    assert snapshot(out) == before and not (out / DESCRIPTION_FILENAME).exists()
+    now = draft_generation(out)
+    publish_draft(out, base, channel_counts=COUNTS, expected=now)
+    assert (out / DESCRIPTION_FILENAME).exists() and not (out / DRAFT_FILENAME).exists()
+    assert draft_generation(out) == NO_DRAFT
