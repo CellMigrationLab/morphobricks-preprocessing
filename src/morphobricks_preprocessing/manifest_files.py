@@ -221,6 +221,7 @@ def file_dict(entry: FileEntry) -> dict:
         "axes_from": entry.axes_from,
         "pixel_sizes": sizes_to_data(entry.pixel_sizes),
     }
+    sizes_from_data(data["pixel_sizes"])  # one positive finite size per role, as read (#389)
     if entry.inventory_sha256 is not None:
         data[INVENTORY_KEY] = entry.inventory_sha256
     if entry.content_sha256 is not None:

@@ -263,11 +263,17 @@ class SemanticInputs:
             ``A_SCOPE_INCOMPLETE``: the image does not have that channel (nothing is
             defaulted); the message names the image.
         RunInputsError
-            When the image is not one of the run's.
+            When the image is not one of the run's, or a :class:`.run_inputs.Fov` gives other
+            channel IDs than this run's for its image (a FOV of another run, #394).
         """
-        ids = getattr(fov, "channel_ids", None)
-        if ids is None:
-            ids = self._channel_ids(fov)
+        ids = self._channel_ids(fov)  # always this run's, never the FOV's own (#394)
+        given = getattr(fov, "channel_ids", None)
+        if given is not None and tuple(given) != ids:
+            raise RunInputsError(
+                f"The FOV {getattr(fov, 'relative_path', fov)} gives the channels "
+                f"{', '.join(given)}, but this run's image has {', '.join(ids)}: it is a FOV of "
+                "another run (or was changed). Take the FOV from this run's fovs()."
+            )
         if channel_id not in ids:
             raise ChannelNotFoundError(
                 f"The channel {channel_id!r} is not in the image "

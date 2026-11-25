@@ -31,19 +31,26 @@ description, runs preprocessing and the mask step again, and reads it like any m
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Callable, Iterable, Mapping
+from contextlib import ExitStack
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
 
-from .description_identity import Identities, nfc
-from .description_report import Issues
 from .discovery import discover_experiment
 from .fingerprint import Fingerprint
 from .image_names import position_id
 from .mask_binding import MaskChangedError
+from .mask_conversion_ids import (
+    BINARY_TO_INSTANCES,
+    CLASSES_TO_BINARY,
+    _check_case_collision,
+    _check_output_id,
+    _check_representation,
+)
 from .mask_lineage import (
     LINE_KEYS,
     LineageLine,
@@ -62,17 +69,16 @@ from .masks.labels import LARGEST_LABEL
 from .masks.read import read_mask_plane
 from .run_inputs_error import MaskUncheckedError
 from .run_inputs_request import unchecked_refusal
+from .segmentation_record import WRITE_LOCK_FILENAME, hold_lock
 
 if TYPE_CHECKING:
-    from .description import Mask
     from .manifest import RunManifest
     from .run_inputs import Fov
 
-BINARY_TO_INSTANCES = "binary_to_instances"
-CLASSES_TO_BINARY = "classes_to_binary"
 NO_CLASS_PRESENT = "no class present"
 """The note of a ``classes_to_binary`` result whose image holds no class (all zero)."""
 _HELPER = "morphobricks_preprocessing.RunInputs."
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -473,8 +479,30 @@ class ConversionInputs:
     def _publish(self, operation: str, planned: list) -> tuple[ConvertedMask, ...]:
         """Publish each planned output in order, reusing the ones already published.
 
-        Every collision is refused before the first output is written.
+        Every collision is refused before the first output is written. The whole publication
+        holds the write lock of each output mask type (``<masks>/<type>/.segmentation_write
+        .lock``, the Cellpose writer's, #382): another writer holding one is refused at once,
+        naming it, so two writers never read and rewrite one lineage file together. A type
+        folder made for its lock is removed again when nothing was published in it.
         """
+        folders = [
+            self.masks_root / output_id
+            for output_id in sorted({record["output"]["mask_id"] for _, _, record in planned})
+        ]
+        made = [folder for folder in folders if not folder.exists()]
+        try:
+            with ExitStack() as locks:
+                for folder in folders:
+                    what = f"The {folder.name} masks in {self.masks_root}"
+                    locks.enter_context(hold_lock(folder / WRITE_LOCK_FILENAME, what))
+                return self._publish_locked(planned)
+        finally:
+            for folder in made:
+                if folder.is_dir() and not any(folder.iterdir()):  # nothing published in it
+                    _remove_empty(folder)
+
+    def _publish_locked(self, planned: list) -> tuple[ConvertedMask, ...]:
+        """Publish the planned outputs, the type locks held (:meth:`_publish`)."""
         reused = [self._published_before(relative, record) for relative, _, record in planned]
         outputs = []
         for (relative, pixels, record), line in zip(planned, reused, strict=True):
@@ -513,57 +541,12 @@ class ConversionInputs:
         )
 
 
-def _check_representation(operation: str, mask_id: str, path: str, declared: Mask) -> None:
-    """Refuse a declared representation the helper does not convert."""
-    representation = declared.representation
-    if operation == BINARY_TO_INSTANCES and representation != "binary":
-        raise ValueError(
-            f"{mask_id!r} ({path}) is declared {representation}; binary_to_instances converts "
-            "a mask declared binary (an instances mask holds objects already, and a "
-            "parent_labels mask is never split into objects)"
-        )
-    if operation == CLASSES_TO_BINARY and representation == "binary":
-        raise ValueError(
-            f"{mask_id!r} ({path}) is declared binary: it has one class already; declare or "
-            "use it as it is"
-        )
-
-
-def _check_output_id(value: object, what: str) -> None:
-    """Refuse an output mask ID (or prefix) the mask ID rules of experiment-v1 3.2 refuse."""
-    if not isinstance(value, str):
-        raise ValueError(f"The {what} must be text, not {type(value).__name__}")
-    issues = Issues()
-    ids = Identities(issues)
-    ids.token(value, what)
-    ids.nfc(value, what)
-    ids.single(value, what)
-    ids.reserved(value, what, object_set=True)
-    if issues:
-        codes = ", ".join(dict.fromkeys(str(item.code.value) for item in issues.items))
-        raise ValueError(
-            f"The {what} {value!r} breaks the mask ID rules of experiment-v1 section 3.2 "
-            f"({codes}); choose another one"
-        )
-
-
-def _check_case_collision(output_id: str, declared: Mapping[str, Mask]) -> None:
-    """Refuse an output mask ID spelled like a declared mask ID or source type but for case.
-
-    experiment-v1 section 3.2 makes two mask IDs, or two mask source types, of one description
-    that differ only in case ``E_ID_CASE_COLLISION``; the output is both, so it could never be
-    declared next to them.
-    """
-    folded = nfc(output_id).casefold()
-    names = [("mask ID", mask_id) for mask_id in sorted(declared)]
-    names += [("source type", t) for t in sorted({m.source_type for m in declared.values()})]
-    for kind, name in names:
-        if nfc(name) != nfc(output_id) and nfc(name).casefold() == folded:
-            raise ValueError(
-                f"The output mask ID {output_id!r} differs only in case from the declared "
-                f"{kind} {name!r}; experiment-v1 section 3.2 refuses such a pair "
-                "(E_ID_CASE_COLLISION), so the output could never be declared: choose another ID"
-            )
+def _remove_empty(folder: Path) -> None:
+    """Remove an empty folder made for a lock; one that cannot be removed is logged, kept."""
+    try:
+        folder.rmdir()
+    except OSError as exc:  # another writer made something in it meanwhile: it is theirs
+        logger.info("The empty folder %s was kept: %s", folder, exc)
 
 
 def _per_plane(pixels: np.ndarray, label: Callable[[np.ndarray], np.ndarray]) -> np.ndarray:

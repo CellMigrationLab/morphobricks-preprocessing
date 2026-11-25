@@ -10,6 +10,7 @@ guessed. Bricks read these, never the headers.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 
@@ -67,10 +68,12 @@ class RecordedSize:
         ------
         ValueError
             For an unknown role or source, a header or stated size without a value, or a
-            value without a source or with ``"pixels"``.
+            value without a source or with ``"pixels"``; a value that is not a positive,
+            finite number (text, a boolean, NaN, infinity, 0 or below) or has no unit
+            (#389). Nothing is converted.
         """
         role, source = str(data["role"]), data.get("source")
-        value = data.get("value")
+        value, unit = data.get("value"), data.get("unit")
         if role not in SIZE_ROLES or (source is not None and source not in SOURCES):
             raise ValueError(f"the pixel size {dict(data)!r} has an unknown role or source")
         if (value is None) != (source in (None, PIXELS)):
@@ -78,8 +81,18 @@ class RecordedSize:
                 f"the pixel size {dict(data)!r} needs a value with the source header or "
                 "stated, and none otherwise"
             )
-        unit = data.get("unit")
+        if value is not None and not (_positive(value) and isinstance(unit, str) and unit):
+            raise ValueError(
+                f"the pixel size {dict(data)!r} is not a positive, finite number with a unit"
+            )
         return cls(role, None if value is None else float(value), unit and str(unit), source)
+
+
+def _positive(value: object) -> bool:
+    """Return True for a positive, finite JSON number (a boolean or text is not one)."""
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return False
+    return math.isfinite(value) and value > 0
 
 
 def header_sizes(sizes: PhysicalSizes) -> tuple[RecordedSize, ...]:
@@ -121,14 +134,30 @@ def sizes_to_data(sizes: Iterable[RecordedSize]) -> list[dict]:
     return [size.to_dict() for size in sizes]
 
 
-def sizes_from_data(data: object) -> tuple[RecordedSize, ...]:
+def sizes_from_data(data: object, *, none: bool = False) -> tuple[RecordedSize, ...]:
     """Read recorded sizes: a list, one entry per role (always written; never absent).
+
+    Parameters
+    ----------
+    data
+        The list as written by :func:`sizes_to_data`.
+    none
+        Accept an empty list too: only for a conversion record's plain copy (``COPIED``), which
+        records no sizes; a converted or projected copy records one per role (#389).
 
     Raises
     ------
     ValueError
-        If the data is not a list of sizes.
+        If the data is not a list of sizes, or does not hold exactly one size for each of
+        :data:`SIZE_ROLES` (#389): a role twice or missing is refused, never resolved.
     """
     if not isinstance(data, list):
         raise ValueError(f"the pixel sizes {data!r} are not a list")
-    return tuple(RecordedSize.from_dict(item) for item in data)
+    sizes = tuple(RecordedSize.from_dict(item) for item in data)
+    roles = sorted(size.role for size in sizes)
+    if roles != sorted(SIZE_ROLES) and not (none and not sizes):
+        raise ValueError(
+            f"the pixel sizes give the roles {', '.join(roles) or 'none'}: a record holds one "
+            f"size per role, {', '.join(SIZE_ROLES)}"
+        )
+    return sizes

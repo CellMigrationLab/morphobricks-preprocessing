@@ -583,8 +583,8 @@ def _relations(
     pairs = []
     for (child, parent), relation in sorted(found.items()):
         low, high = group[child], group[parent]
-        between = any((low, g) in links and (g, high) in links for g in group.values())
-        direct = (child, parent) in nested and (low == high or not between)
+        others = {a: [h for b, h in links - {(low, high)} if b == a] for a, _ in links}
+        direct = (child, parent) in nested and (low == high or high not in _ancestors(others, low))
         evidence = MappingProxyType(dict(totals[(child, parent)]))
         pairs.append(PairRelation(child, parent, relation, direct, evidence))
     return tuple(pairs)

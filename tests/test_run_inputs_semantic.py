@@ -121,6 +121,9 @@ def test_a_unit_that_does_not_match_its_image_is_refused(tmp_path):
             "single",
         ):
             record["channels"] = list(short.channels)
+            # and its unnamed positions, which must be its channels' (#506)
+            for item in record.get("images_without_header_channel_names", []):
+                item.update(header_names="none", channel_positions=[0])
     (out / "run_manifest.json").write_text(json.dumps(manifest))
     (out / "morphobricks.toml").write_bytes(data)
     inputs = RunInputs.open(out)
