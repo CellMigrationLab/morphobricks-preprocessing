@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import html
+import traceback
 from collections.abc import Callable
 from pathlib import Path
 
@@ -59,6 +60,20 @@ def check_progress(wait: Wait) -> Callable[[str, int, int, str], None]:
             wait.step(done, total, path)
 
     return report
+
+
+def expected_check_failure(exc: BaseException) -> bool:
+    """Return True for a failure the folder check reports and survives (issue #101).
+
+    A storage error (``OSError``: a Google Drive that stopped answering, a folder gone) or
+    one of this package's coded refusals (an ``Exception`` with a ``code``); anything else is
+    a programming error or an interrupt, raised after the earlier check is cleared.
+    ``SystemExit("message")`` has a str ``code`` too, but it is not an ``Exception``: it
+    propagates.
+    """
+    return isinstance(exc, OSError) or (
+        isinstance(exc, Exception) and isinstance(getattr(exc, "code", None), str)
+    )
 
 
 class _FolderStep:
@@ -239,29 +254,40 @@ class _FolderStep:
         self.folder_next.value = ""
         wait = self._folder_wait = Wait(self.folder_status)
         wait.start(CHECK_PHASES["folders"])
-        try:
-            with self.log.attached():
-                masks, mask_axes = self._check_masks_arguments(Path(folder).resolve())
-                pre = preflight(
-                    folder,
-                    self._output_folder(),
-                    exclude=self._excluded(),
-                    masks_folder=masks,
-                    mask_axes=mask_axes,
-                    # Each header is bound to the file's fingerprint: every picture and the
-                    # save are of the images as this check read them (audit batch 33).
-                    bind_headers=True,
-                    progress=check_progress(wait),
-                )
-                pre = unit_checked(pre)  # a described run checks inside each unit
-                self._note_edits()  # a check fills only what the user left as filled
-                self.missing_as_singleton.set(self._recorded_missing_as_singleton(), notify=False)
-                # The report reads images lacking some axes by that answer, as 'check
-                # --missing-as-singleton' does (F10); step 2 asks again before the run.
-                wait.phase("Writing the check report")
-                self._write_check(pre, self.missing_as_singleton.value)
-        finally:
-            self._idle(self.check_button, *getattr(self, "_check_label", CHECK_LABEL))
+        try:  # the earlier check never stays shown as valid, whatever stops this one (#101)
+            try:
+                with self.log.attached():
+                    masks, mask_axes = self._check_masks_arguments(Path(folder).resolve())
+                    pre = preflight(
+                        folder,
+                        self._output_folder(),
+                        exclude=self._excluded(),
+                        masks_folder=masks,
+                        mask_axes=mask_axes,
+                        # Each header is bound to the file's fingerprint: every picture and
+                        # the save are of the images as this check read them (audit batch 33).
+                        bind_headers=True,
+                        progress=check_progress(wait),
+                    )
+                    pre = unit_checked(pre)  # a described run checks inside each unit
+                    self._note_edits()  # a check fills only what the user left as filled
+                    self.missing_as_singleton.set(
+                        self._recorded_missing_as_singleton(), notify=False
+                    )
+                    # The report reads images lacking some axes by that answer, as 'check
+                    # --missing-as-singleton' does (F10); step 2 asks again before the run.
+                    wait.phase("Writing the check report")
+                    self._write_check(pre, self.missing_as_singleton.value)
+            finally:
+                self._idle(self.check_button, *getattr(self, "_check_label", CHECK_LABEL))
+            self._show_check(folder, pre)
+        except BaseException as exc:  # an interrupt too: cleared first, then raised
+            self._fail_check(folder, exc, "The folder could not be checked.")
+            return None
+        return pre
+
+    def _show_check(self, folder: str, pre: Preflight) -> None:
+        """Make ``pre`` the check on screen and show it on every step (a hook of the stepper)."""
         self.preflight = pre
         self._checked_folder = folder
         self.mapping = pre.suggested_mapping
@@ -272,7 +298,6 @@ class _FolderStep:
         self._refresh_axis_step()
         self._refresh_run_step()
         self._show_log()
-        return pre
 
     def _show_folder_results(self, pre: Preflight) -> None:
         """Show the labels, messages and pixel sizes of a new check; the pairing starts over."""
@@ -387,17 +412,64 @@ class _FolderStep:
 
     def _folder_edited(self) -> None:
         """Make every later choice stale when the folder differs from the one checked."""
-        self._update_output_hint()
-        self._prefill_from_output()  # the default output folder follows the experiment
+        try:
+            self._update_output_hint()
+            self._prefill_from_output()  # the default output folder follows the experiment
+        except BaseException as exc:  # nothing of the earlier check is left half-updated (#101)
+            folder = ui.clean_path(self.folder.value)
+            self._fail_check(folder, exc, "The folder changed, and could not be read.")
+            return
         if self.preflight is None or ui.clean_path(self.folder.value) == self._checked_folder:
             return
         # A different folder makes every later choice stale.
+        self._clear_checked(
+            ui.status(
+                "info", "The folder changed.", ["Press Check folder to check the new folder."]
+            )
+        )
+
+    def _fail_check(self, folder: str, exc: BaseException, heading: str) -> None:
+        """Clear the earlier check for ``exc``; return only if it is an expected failure.
+
+        Call it inside the ``except`` block. A failure that is not expected is always
+        re-raised, even if the clearing itself raised; for an expected one a clearing error is
+        raised, chained from the original.
+        """
+        expected = expected_check_failure(exc)
+        try:
+            self._check_failed(folder, exc, heading)
+        except Exception as clearing:
+            if expected:
+                raise clearing from exc
+        if not expected:
+            raise exc
+
+    def _check_failed(self, folder: str, exc: BaseException, heading: str) -> None:
+        """Clear the earlier check and say why ``heading`` happened, and what to do (#101)."""
+        self.log.lines.append(traceback.format_exc())
+        self._clear_checked(
+            ui.status(
+                "error",
+                heading,
+                [
+                    f"{type(exc).__name__}: {exc}",
+                    f"Folder: {folder}",
+                    "Nothing of the earlier check is used: the labels, axis roles and "
+                    "confirmations are cleared, and nothing was run or written.",
+                    "This can be a passing storage problem: on Google Colab, make sure Google "
+                    "Drive is mounted and the folder is there, then click Check folder again.",
+                    "Open Technical details for the full report.",
+                ],
+            )
+        )
+        self._show_log()
+
+    def _clear_checked(self, status: str) -> None:
+        """Forget the checked folder and every later choice, and show ``status``."""
         self.preflight = None
         self.mapping = self.confirmed_mapping = None
         self.result = None
-        self.folder_status.value = ui.status(
-            "info", "The folder changed.", ["Press Check folder to check the new folder."]
-        )
+        self.folder_status.value = status
         self.folder_tiles.value = ""
         self.folder_next.value = ""
         self.labels_confirmed.set(False, notify=False)
@@ -412,8 +484,15 @@ class _FolderStep:
         self._reset_masks()
         self.folder_lock.hide()
         self.check_report.clear()
+        # The bins recommended for the checked pixel type are not recommended for another.
+        self._default_bins = None
+        self.bins_hint.value = ""
         self._refresh_axis_step()
-        self._refresh_run_step()
+        self._recommended_changed()  # says the default bin count; refreshes the run step
+        self._clear_check_views()
+
+    def _clear_check_views(self) -> None:
+        """Clear what other views show of the checked folder (the stepper's, #101)."""
 
     def _output_edited(self) -> None:
         self._update_output_hint()
