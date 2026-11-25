@@ -1,19 +1,34 @@
 """Seeded synthetic inputs of the kernel benchmarks (issue #106): planes, label masks, summaries.
 
 Every input is a pure function of its arguments and seed (``numpy.random.default_rng``), so
-two runs, on any machine and any version of this package, measure the same pixels. Nothing is
-read from disk here; ``benchmark_reads.py`` writes the planes into files.
+two runs with the same NumPy version, on any machine and any version of this package, measure
+the same data; NumPy does not promise the same random streams across versions, so each input's
+SHA-256 is recorded (:data:`INPUT_DIGESTS`, the ``inputs`` of the report) and must be equal
+for two runs to be compared. Nothing is read from disk here; ``benchmark_reads.py`` writes
+the planes into files.
 """
 
 from __future__ import annotations
 
 import numpy as np
 
+from benchmark_harness import digest  # tools/, next to this script
+
+INPUT_DIGESTS: dict[str, str] = {}
+"""SHA-256 of every input generated in this process, by a name that holds its arguments."""
+
 DTYPES = ("uint8", "uint16", "float32")
 """The pixel types of the histogram and read cases."""
 
 
 def plane(side: int, dtype: str, seed: int = 0) -> np.ndarray:
+    """Return the seeded plane (:func:`_plane`) and record its digest."""
+    found = _plane(side, dtype, seed)
+    INPUT_DIGESTS[f"plane_{dtype}_{side}_seed{seed}"] = digest(found)
+    return found
+
+
+def _plane(side: int, dtype: str, seed: int) -> np.ndarray:
     """Return a ``side x side`` plane: smooth structure plus seeded noise, never constant.
 
     ``uint8`` spans about 0 to 240, ``uint16`` about 100 to 3,400 (a 12-bit camera), and
@@ -35,6 +50,13 @@ def plane(side: int, dtype: str, seed: int = 0) -> np.ndarray:
 
 
 def label_masks(side: int, objects: int, seed: int = 0) -> tuple[np.ndarray, np.ndarray]:
+    """Return the seeded masks (:func:`_label_masks`) and record their digest."""
+    found = _label_masks(side, objects, seed)
+    INPUT_DIGESTS[f"label_masks_{side}_{objects}_seed{seed}"] = digest(found)
+    return found
+
+
+def _label_masks(side: int, objects: int, seed: int) -> tuple[np.ndarray, np.ndarray]:
     """Return two int32 instance masks of one position: cells, and one nucleus inside each.
 
     The ``objects`` cells (rounded up to a square grid) are discs centred near the middle of
@@ -66,6 +88,13 @@ def label_masks(side: int, objects: int, seed: int = 0) -> tuple[np.ndarray, np.
 
 
 def summaries(units: int, images: int, seed: int = 0) -> list:
+    """Return the seeded summaries (:func:`_summaries`) and record their digest."""
+    found = _summaries(units, images, seed)
+    INPUT_DIGESTS[f"summaries_{units}x{images}_seed{seed}"] = digest(found)
+    return found
+
+
+def _summaries(units: int, images: int, seed: int) -> list:
     """Return the image summaries of ``units`` units of three channels (``uint16``).
 
     Units are spread over four conditions (fewer when there are fewer units), each a

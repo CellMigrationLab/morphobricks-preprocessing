@@ -20,10 +20,16 @@ shown to give identical outputs. The groups (``--group``, all by default):
   OME-Zarr (NGFF 0.4) store (``benchmark_reads.py``; the files are written first, untimed);
 - ``masks``: the mask step's kernels on two instance masks of one plane (cells, and one
   nucleus inside each, ``int32``, about 1,000 objects at 2048 px and 4,000 at 4096 px):
-  ``check_labels``, ``piece_counts``, ``pair_counts`` and the scan of one position
+  ``check_labels`` (on the mask, which it accepts, and on a copy with one negative pixel, which
+  it refuses: the digest is of the verdicts, the error type and its message),
+  ``piece_counts``, ``pair_counts`` and the scan of one position
   (``mask_scan._scan_plane``: the pieces of both masks and both pairs);
 - ``channel_identity``: ``check_channel_identity`` of the image summaries of 72 and 400
   units of three channels.
+
+Private names used on purpose (this repository's, not public API; update the tool when they
+change): ``mask_scan._scan_plane`` and, through ``benchmark_reads``,
+``benchmark_run_workers.write_zarr``.
 
 ``object_sides()`` and its region helpers are MorphoFeature's, not this repository's, and are
 not measured here.
@@ -32,7 +38,9 @@ not measured here.
 the benchmarks still run and still give a digest, never a result. Each case is measured by
 ``benchmark_harness.measure`` (median of ``--repeats`` timed calls after one warm-up call,
 peak of the traced memory, SHA-256 of the output), and the report holds the machine
-(``benchmark_harness.machine``) and this process's peak resident memory at the end. Reads are
+(``benchmark_harness.machine``), the digest of every generated input (``inputs``: they depend
+on NumPy's random streams, so equal input digests are the check that two runs measured the
+same data) and this process's peak resident memory at the end. Reads are
 from a warm disk cache (the warm-up call reads the file first). Timings depend on the computer
 and its load: quote them with the machine and load of the report.
 """
@@ -108,9 +116,18 @@ def mask_cases(sides: tuple[int, ...]) -> Iterator[Case]:
         cells, nuclei = inputs.label_masks(side, OBJECTS[side])
         params = {"side": side, "dtype": "int32", "objects": int(cells.max())}
 
-        def labels(cells: object = cells) -> object:
-            check_labels(cells)
-            return True
+        bad = cells.copy()
+        bad[side // 2, side // 2] = -1  # one negative pixel: a fixed, known-bad mask
+
+        def labels(cells: object = cells, bad: object = bad) -> object:
+            # check_labels returns None, so the output is what it decides on two masks: the
+            # valid one is accepted, the known-bad one is refused with this error and message
+            check_labels(cells, name="the mask")
+            try:
+                check_labels(bad, name="the mask")
+            except ValueError as error:
+                return {"valid": "accepted", "bad": (type(error).__name__, str(error))}
+            return {"valid": "accepted", "bad": "accepted"}
 
         def scan(cells: object = cells, nuclei: object = nuclei) -> object:
             masks = {"cells": cells, "nuclei": nuclei}
@@ -208,6 +225,7 @@ def main(argv: list[str] | None = None) -> dict:
             "repeats": args.repeats,
             "machine": machine(),
             "cases": run_groups(args.group, args.quick, args.repeats, folder),
+            "inputs": dict(sorted(inputs.INPUT_DIGESTS.items())),
             "process": process_peak(),
         }
     text = json.dumps(report, indent=2)

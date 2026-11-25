@@ -40,6 +40,9 @@ def test_every_kernel_case_runs_in_quick_mode_and_gives_a_digest(tmp_path, capsy
             continue
         assert SHA256.fullmatch(case["digest"]) and case["digest_stable"], case
         assert case["wall_seconds"]["median"] >= 0 and case["peak_traced_bytes"] >= 0
+    assert report["inputs"] and all(SHA256.fullmatch(v) for v in report["inputs"].values())
+    labels = [c for c in report["cases"] if c["name"].startswith("check_labels_")]
+    assert labels and all(c["digest"] != harness.digest(True) for c in labels)
     for kind in ("plane", "windows"):
         digests = {c["digest"] for c in report["cases"] if c["name"].startswith(f"{kind}_")}
         assert len(digests) == 1, kind  # every layout reads the same pixels
@@ -53,9 +56,24 @@ def test_the_description_benchmark_runs_in_quick_mode_and_profiles(capsys):
     assert [s["repeats_in_description"] for s in report["sizes"]] == [30, 100]
     for size in report["sizes"]:
         assert SHA256.fullmatch(size["digest"]) and size["digest_stable"]
-        assert "5._repeat_membership" in size["phase_seconds"]
+        assert SHA256.fullmatch(size["input_digest"])
+        # the private phases and checks the tool times by name must all still be found
+        expected = {"1_decode", "warnings"} | {
+            f"5.{name}" for name in description_read.SEMANTIC_CHECKS
+        }
+        assert expected <= set(size["phase_seconds"]), expected - set(size["phase_seconds"])
+        numbered = {k[0] for k in size["phase_seconds"] if k[0].isdigit() and k[1] == "_"}
+        assert numbered == {"1", "2", "3", "4", "5"}, size["phase_seconds"]
     assert len(report["growth"]) == 1
     assert len(report["profile"]["top"]) == 5
+
+
+def test_check_labels_digest_is_of_its_verdicts_on_a_valid_and_a_bad_mask():
+    cells, _ = kernels.inputs.label_masks(256, 64)
+    case = next(c for c in kernels.mask_cases((256,)) if c.name == "check_labels_256")
+    found = case.run()
+    assert found["valid"] == "accepted" and found["bad"][0] == "ValueError"
+    assert "negative" in found["bad"][1] and cells.min() == 0
 
 
 def test_the_description_digest_is_that_of_the_accepted_model():

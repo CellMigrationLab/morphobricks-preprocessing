@@ -22,8 +22,15 @@ for quadratic.
 ``--profile N`` also runs the reader once at ``N`` repeats under ``cProfile`` and reports the
 ``--top`` functions by own time, with their calls and cumulative time. ``--quick`` is the smoke
 mode (30 and 100 repeats, one timed call, profile at 100): it shows the benchmark still runs,
-never a result. Timings depend on the computer and its load: quote them with the machine of
+never a result. Each size records the SHA-256 of the description bytes it reads
+(``input_digest``). Timings depend on the computer and its load: quote them with the machine of
 the report.
+
+Private names used on purpose (not public API; update the tool when they change):
+``description_read.PHASES``, ``description_read.decode``,
+``description_warnings.check_warnings`` and the ``description_semantics._...`` checks of
+:data:`SEMANTIC_CHECKS`, looked up by name (a check this version lacks is skipped, and the
+test of this tool fails when one of the expected phases or checks is missing from a report).
 """
 
 from __future__ import annotations
@@ -37,7 +44,7 @@ import sys
 import time
 from pathlib import Path
 
-from benchmark_harness import machine, measure, process_peak
+from benchmark_harness import digest, machine, measure, process_peak
 
 FULL_SIZES = (100, 1000, 3000, 10000)
 QUICK_SIZES = (30, 100)
@@ -173,6 +180,7 @@ def _measured(size: int, repeats: int, trace: bool) -> dict:
     data = description_bytes(size)
     found = {"repeats_in_description": size, "members": size * len(CONDITIONS)}
     found["bytes"] = len(data)
+    found["input_digest"] = digest(data)
     found.update(measure(lambda: read(data), repeats, warmup=0, trace=trace))
     found["phase_seconds"] = phase_seconds(data)
     print(f"{size} repeats: {found['wall_seconds']['median']} s", file=sys.stderr)
