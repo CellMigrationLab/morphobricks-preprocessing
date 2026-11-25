@@ -24,6 +24,11 @@ from test_segmentation_handoff import EXTRA_FIRST
 from test_stage3_channels import described_run, extra_stain
 
 BUILTINS = ("cpsam_v2", "cpsam", "cpdino", "cpdino-vitb")
+CPDINO_WARNING = (
+    "Could not import CPDINO, run `pip install git+https://github.com/facebookresearch/dinov3` "
+    "to use CPDINO model"
+)
+"""Cellpose 4.2.1.1's own words (``cellpose/models.py``, line 23)."""
 PLOT_TITLES = ("original image", "predicted outlines", "predicted masks", "predicted cell pose")
 """The titles of ``cellpose.plot.show_segmentation``'s four panels in 4.2.1.1."""
 
@@ -82,6 +87,8 @@ def model_class(state):
             state.constructed.append(
                 SimpleNamespace(gpu=gpu, pretrained_model=pretrained_model, device=device, **kwargs)
             )
+            if state.cpdino_log:  # 4.2.1.1 logs this when cellpose.models cannot import DINOv3
+                logging.getLogger("cellpose.models").warning(CPDINO_WARNING)
             self.pretrained_model = state.substitute or self._resolve(pretrained_model)
             self.device = device  # as in Cellpose: only what was passed in
             self.net = None if state.no_net else Net(state, device.type)
@@ -184,6 +191,7 @@ def install(monkeypatch, tmp_path, **options):
         version="4.2.1.1",
         dinov3_commit=model_module.DINOV3_COMMIT,
         has_cpdino=True,
+        cpdino_log=False,
         normalize_default={
             "lowhigh": None,
             "percentile": None,

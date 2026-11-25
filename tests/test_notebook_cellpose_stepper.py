@@ -8,6 +8,7 @@ Preview loading the model once and reusing it, the download shown as one ``tqdm.
 and that no *What to do next* step is left.
 """
 
+import html
 import logging
 import sys
 import types
@@ -330,3 +331,106 @@ def test_without_tqdm_auto_cellposes_own_bar_is_left_as_it_is(stub, monkeypatch)
     monkeypatch.setitem(sys.modules, "tqdm.auto", None)  # import tqdm.auto fails
     with download.quiet_cellpose():
         assert sys.modules["cellpose.utils"].tqdm is TextBar
+
+
+# review of #548 ---------------------------------------------------------------------------------
+
+
+def test_a_model_file_overwritten_at_the_same_path_is_loaded_again(mixed_run, stub, tmp_path):
+    # M1: the path alone is not the model; its size and modification time are part of it.
+    from cellpose_stub import custom_model
+
+    path = custom_model(tmp_path)
+    app = ready(mixed_run)
+    app.workflow.forms["model"].fields["custom_model_file"].value = str(path)
+    preview(app)
+    first = app.workflow.loaded.sha256
+    preview(app)
+    assert len(stub.constructed) == 1  # the same file: reused
+    path.write_bytes(b"other weights, retrained")
+    preview(app)
+    assert len(stub.constructed) == 2 and app.workflow.loaded.sha256 != first
+    app.workflow.forms["segment"].button.click()
+    assert len(stub.constructed) == 2  # Segment uses the file as it was just loaded
+
+
+def summary(app):
+    return html.unescape(app.workflow._summary.value)
+
+
+def test_segment_says_what_it_will_use_and_what_differs_from_the_last_preview(mixed_run, stub):
+    # M2: the line on the Segment step; a difference is shown, not blocked.
+    app = ready(mixed_run)
+    assert app.workflow._summary in list(walk(app.stepper.pages[3]))
+    line = summary(app)
+    assert "Model cpsam_v2 on cpu · diameter native scale · flow 0.4 · cellprob 0 · batch 8" in line
+    assert "not previewed yet" in line
+    preview(app)
+    assert "what the last Preview used" in summary(app)
+    fields = app.workflow.forms["model"].fields
+    fields["diameter"].value, fields["cellprob_threshold"].value = "60", -1.0
+    line = summary(app)
+    assert "mb-warn" in app.workflow._summary.value and "diameter 60" in line
+    assert "diameter: native scale → 60" in line and "cellprob: 0 → -1" in line
+    segment = app.workflow.forms["segment"]
+    segment.button.click()
+    assert segment.refusal == ""  # not blocked
+    batch = read_record(mixed_run.masks, "Cells").batches[-1]
+    assert batch.parameters["diameter"] == 60 and batch.parameters["cellprob_threshold"] == -1
+
+
+def test_the_line_names_the_nuclei_model_and_settings_of_both(mixed_run, stub):
+    app = ready(mixed_run)
+    choose(app, output="both")
+    fields = app.workflow.forms["model"].fields
+    fields["separate_nuclei"].value = True
+    fields["nuclei_model"].value, fields["nuclei_diameter"].value = "cpsam", "9"
+    line = summary(app)
+    assert "nuclei model cpsam" in line and "nuclei diameter 9" in line
+
+
+def test_the_model_chip_is_not_done_once_the_model_changes(mixed_run, stub):
+    # L1: the strip says the loaded model is no longer the one shown.
+    app = ready(mixed_run)
+    preview(app)
+    assert app.stepper.states()[2].done
+    app.workflow.forms["model"].fields["model"].value = "cpsam"
+    state = app.stepper.states()[2]
+    assert not state.done and "Preview loads it" in state.text
+    assert not app.stepper.chips[2].description.startswith("✓")
+    preview(app)
+    assert app.stepper.states()[2].done and "cpsam" in app.stepper.states()[2].text
+
+
+def test_cellposes_unpinned_dinov3_advice_becomes_the_notebooks_pinned_tick(mixed_run, stub):
+    # L2: Cellpose logs "run pip install git+.../dinov3" (unpinned) when it cannot import
+    # DINOv3; the card points to the notebook's own pinned installation instead.
+    from cellpose_stub import CPDINO_WARNING
+
+    stub.cpdino_log = True
+    app = ready(mixed_run)
+    preview(app)
+    (card,) = [s for s in app.workflow.shown if "Cellpose said" in s]
+    assert "pip install" not in card and "git+" not in card
+    assert "Install DINOv3 now" in html.unescape(card) and "pinned commit" in card
+    with download.quiet_cellpose() as said:
+        logging.getLogger("cellpose.models").warning(CPDINO_WARNING)
+    assert said == ["Warning: " + download.CPDINO_NOTE]
+
+
+def test_the_stepper_never_says_to_load_the_model_by_hand(mixed_run, stub):
+    # L3: no Load button in the stepper, so a changed choice names Preview.
+    app = ready(mixed_run)
+    app.workflow.forms["channels"].fields["output"].value = "nuclei"
+    text = texts(app.workflow.forms["channels"].body)
+    assert "then press Preview (it loads the model)" in text and "then load the model" not in text
+
+
+def test_the_help_about_the_folders_the_mask_type_and_both_is_shown_in_full(mixed_run, stub):
+    # L4: the stepper's style cuts a card's help to one line; these three are never cut.
+    app = ready(mixed_run)
+    wanted = ("not the run folder or the experiment", "The mask type is the masks' folder name",
+              "writes the cells and the nuclei")  # fmt: skip
+    for needle in wanted:
+        (box,) = [w for w in walk(app) if needle in str(getattr(w, "value", ""))]
+        assert "-webkit-line-clamp:unset" in box.value and "display:block" in box.value

@@ -31,6 +31,16 @@ from . import segmentation_cellpose_model as model_module
 LOGGER = "cellpose"
 """The parent of every Cellpose logger (``cellpose.models``, ``cellpose.core``, ...)."""
 BAR_LABEL = "Downloading the weights"
+CPDINO_IMPORT = "Could not import CPDINO"
+"""How Cellpose 4.2.1.1's ``cellpose.models`` starts the warning it logs at import when DINOv3
+is not importable; the warning goes on to recommend ``pip install git+.../dinov3`` unpinned."""
+CPDINO_NOTE = (
+    "Cellpose could not import DINOv3. Only the cpdino models need it: for those, tick "
+    "Install DINOv3 now (it installs the pinned commit), then restart the runtime. The other "
+    "models do not use it."
+)
+"""What is shown instead: the notebook's pinned installation (``install_dinov3``), never an
+unpinned one."""
 
 
 class _Collect(logging.Handler):
@@ -41,7 +51,10 @@ class _Collect(logging.Handler):
         self.lines: list[str] = []
 
     def emit(self, record: logging.LogRecord) -> None:
-        self.lines.append(f"{record.levelname.title()}: {record.getMessage()}")
+        text = record.getMessage()
+        if text.startswith(CPDINO_IMPORT):
+            text = CPDINO_NOTE  # never an unpinned install: the notebook's own tick instead
+        self.lines.append(f"{record.levelname.title()}: {text}")
 
 
 def _cellpose_utils() -> ModuleType | None:
@@ -80,17 +93,17 @@ def quiet_cellpose() -> Iterator[list[str]]:
     list of str
         The warnings Cellpose logged during the block (``"Warning: ..."``), filled as it runs.
     """
-    utils = _cellpose_utils()
-    original = getattr(utils, "tqdm", None) if utils is not None else None
     logger = logging.getLogger(LOGGER)
     handler, propagate = _Collect(), logger.propagate
-    logger.addHandler(handler)
+    logger.addHandler(handler)  # first: importing Cellpose below may already log
     logger.propagate = False
-    if original is not None and _auto_bar() is None:
-        original = None  # no tqdm.auto here: Cellpose's own bar is left as it is
-    if original is not None:
-        utils.tqdm = notebook_bar
+    utils, original = None, None
     try:
+        utils = _cellpose_utils()
+        if utils is not None and _auto_bar() is not None:  # else Cellpose's own bar stays
+            original = getattr(utils, "tqdm", None)
+        if original is not None:
+            utils.tqdm = notebook_bar
         yield handler.lines
     finally:
         if original is not None:
@@ -99,4 +112,4 @@ def quiet_cellpose() -> Iterator[list[str]]:
         logger.propagate = propagate
 
 
-__all__ = ["BAR_LABEL", "LOGGER", "notebook_bar", "quiet_cellpose"]
+__all__ = ["BAR_LABEL", "CPDINO_IMPORT", "CPDINO_NOTE", "LOGGER", "notebook_bar", "quiet_cellpose"]

@@ -13,6 +13,8 @@ ticks stay shared.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import ipywidgets as widgets
 
 from . import notebook_style as ui
@@ -29,12 +31,12 @@ SETTING_HELP = {
         "Increase if objects are split, decrease if they are merged."
     ),
     "flow_threshold": (
-        "Increase to keep more objects; decrease if you get badly shaped ones "
-        "(0 turns the check off). Cellpose's default 0.4."
+        "Increase to keep more objects; decrease if you get badly shaped ones; "
+        "0 keeps every object. Cellpose's default 0.4."
     ),
     "cellprob_threshold": (
-        "Decrease to find more and larger objects, increase to find fewer and smaller "
-        "(e.g. dim background). Cellpose's default 0."
+        "Decrease to find more and larger objects, increase to find fewer and smaller; "
+        "usually between -6 and 6. Cellpose's default 0."
     ),
     "batch_size": (
         "Tiles run at once on the device: lower it if the GPU runs out of memory, raise it "
@@ -159,7 +161,7 @@ def output_cards(fields: dict[str, widgets.Widget], changed: widgets.HTML) -> li
                 ),
                 fields["mask_type"],
                 fields["nuclei_mask_type"],
-                ui.help_text(
+                full_help(
                     "The mask type is the masks' folder name; it follows the output, type "
                     "another if you like. Cells and nuclei are never paired here."
                 ),
@@ -167,6 +169,13 @@ def output_cards(fields: dict[str, widgets.Widget], changed: widgets.HTML) -> li
             ],
         ),
     ]
+
+
+def full_help(text: str) -> widgets.HTML:
+    """Return a help line shown in full: never cut to one line by the stepper's style."""
+    return widgets.HTML(
+        f"<div class='mb-help' style='display:block;-webkit-line-clamp:unset'>{text}</div>"
+    )
 
 
 def setting_row(field: widgets.Widget, name: str) -> widgets.HBox:
@@ -178,19 +187,33 @@ def setting_row(field: widgets.Widget, name: str) -> widgets.HBox:
 
 
 def model_choice(fields: dict[str, widgets.Widget]) -> tuple[str, ...]:
-    """Return the model, the model file and the device cell 5's form shows.
+    """Return the model, the model file (and its size and time) and the device cell 5 shows.
 
     With the separate nuclei model ticked, the nuclei model and its file follow: changing any
     of them, or the tick, after loading means loading again.
     """
-    chosen = (
-        fields["model"].value,
-        fields["custom_model_file"].value.strip(),
-        fields["device"].value,
-    )
+    own = fields["custom_model_file"].value.strip()
+    chosen = (fields["model"].value, own, file_identity(own), fields["device"].value)
     if not fields[SEPARATE_NUCLEI].value:
         return chosen
-    return (*chosen, fields["nuclei_model"].value, fields["nuclei_custom_model_file"].value.strip())
+    nuclei = fields["nuclei_custom_model_file"].value.strip()
+    return (*chosen, fields["nuclei_model"].value, nuclei, file_identity(nuclei))
+
+
+def file_identity(path: str) -> str:
+    """Return a model file's size and modification time (ns) now, ``""`` without a file.
+
+    Part of :func:`model_choice`: a model file overwritten at the same path is another model,
+    so the one loaded is not reused (review of #548, M1). The file is hashed only when it is
+    loaded (``load_model``); this is a ``stat``, cheap enough for every Preview.
+    """
+    if not path:
+        return ""
+    try:
+        found = Path(path).expanduser().stat()
+    except OSError:
+        return "missing"  # load_model refuses it, with its own message
+    return f"{found.st_size}:{found.st_mtime_ns}"
 
 
 def _settings_fields(prefix: str = "") -> dict[str, widgets.Widget]:
@@ -264,7 +287,7 @@ def _nuclei_box(fields: dict[str, widgets.Widget], status: widgets.HTML) -> widg
     box = ui.card(
         "Output Both: the nuclei",
         [
-            ui.help_text(
+            full_help(
                 "<b>Both</b> writes the cells and the nuclei. By default the nuclei use the "
                 "model and the settings above. Tick to give the nuclei their own model and "
                 "settings (for example a smaller diameter); the device and the download and "

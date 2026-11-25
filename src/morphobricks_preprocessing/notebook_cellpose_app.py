@@ -101,6 +101,8 @@ def _state(workflow: CellposeNotebook, index: int) -> StepState:
     if index == 2:
         if workflow.loaded is None:
             return StepState(False, "No model loaded yet.")
+        if not workflow.model_is_current():
+            return StepState(False, "The model changed: Preview loads it.")
         return StepState(True, f"{workflow.loaded.name} on {workflow.loaded.device}")
     if not workflow.results:
         return StepState(False, "Nothing segmented yet.")

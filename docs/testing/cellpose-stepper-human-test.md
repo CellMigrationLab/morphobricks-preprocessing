@@ -58,6 +58,8 @@ note anything that looks wrong next to it.
 - [ ] Choose another image and press **Preview**: no loading card appears this time (the model is
       reused); the preview is of the new image.
 - [ ] Change the diameter and press **Preview**: still no reload; the new diameter is used.
+- [ ] Change the model in the dropdown: the step 3 chip loses its check mark until the next
+      **Preview**.
 - [ ] Change the model (for example to `cpsam`) and press **Preview**: it loads again (a new
       loading card), then previews.
 - [ ] Optional, GPU check: switch to a CPU runtime and keep `cuda`: **Preview** refuses
@@ -67,6 +69,9 @@ note anything that looks wrong next to it.
 
 ## Step 4, Segment
 
+- [ ] On arriving, a line says exactly what Segment will use (model, device, diameter, flow,
+      cellprob, batch). Go back, change the diameter without previewing, come back: the line is
+      amber and names the change (Segment is still allowed).
 - [ ] Press **Segment the whole experiment**: no loading card (the preview's model is reused),
       a progress line, then the table of every image.
 - [ ] Under the table, one line: *Next: run cell 5 (Register the masks) to declare

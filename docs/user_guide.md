@@ -361,8 +361,10 @@ run the experiment in the app of cell 3. Then:
   when you move): **Folders** (the run and the masks folder, checked there, and the run's
   images in the preprocessing image viewer), **Output and channels**, **Model and preview**
   (no separate load button: **Preview** loads the model the first time, and again only when
-  the model, its file or the device changed; another image reuses it) and **Segment** (it
-  reuses the loaded model). One line after the batch points to cell 5.
+  the model, its file (also the same file changed on disk) or the device changed; another image
+  reuses it) and **Segment** (it reuses the loaded model, and says in one line exactly which
+  model and settings it will use, in amber with what differs when the last Preview used
+  others). One line after the batch points to cell 5.
 - **5. Register the masks** shows, for each mask type cell 4 wrote, the declaration it would
   add (`[masks.Cells]` with `source_type = "Cells"` and `representation = "instances"`). Tick
   each one and press **Register the masks**: the app of cell 3 then checks the folders again
