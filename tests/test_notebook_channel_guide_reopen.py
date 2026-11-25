@@ -258,3 +258,40 @@ def test_a_restored_per_repeat_draft_opens_strict_with_no_draft_write(tmp_path, 
     doc = published(exp[2])
     assert "channel_layout" not in doc
     assert unit_channels(doc) == {folder(k): (ORDERS[k[1]], None) for k in UNITS}
+
+
+def test_an_abandoned_yes_never_replaces_the_saved_repeat_orders(tmp_path):
+    """Review of #546 at e40f1ad: Yes filled with rep1's order, then back to No, per repeat.
+
+    The repeat rows showed rep1's order (a broader choice ranked above the saved tags) under
+    "Pre-answered from your saved tags", and one Submit published rep1's order everywhere.
+    """
+    exp = experiment(tmp_path)
+    _per_repeat(exp)
+    nb = _reopened(exp)
+    guide = nb.channel_grid.guide
+    assert "Pre-answered from your saved tags" in guide.draft_note.value
+    guide.same.value = "yes"
+    assert guide.draft_note.value == ""  # the answer changed: the note no longer holds
+    choose(nb, ("whole", 3), ORDERS["rep1"])
+    guide.same.value = "no"
+    assert guide.narrow.value == "repeat"
+    assert shown(nb) == {("repeat", rep, 3): tags for rep, tags in ORDERS.items()}
+    assert all("as saved" in guide.notes[("repeat", rep, 3)].value for rep in ORDERS)
+    assert "Pre-answered from your saved tags" not in guide.draft_note.value
+    assert guide.submit()
+    finish(nb)
+    assert nb.save_experiment()
+    doc = published(exp[2])
+    assert "channel_layout" not in doc
+    assert unit_channels(doc) == {folder(k): (ORDERS[k[1]], None) for k in UNITS}
+
+
+def test_a_pick_in_a_pre_answered_row_takes_the_note_back(tmp_path):
+    exp = experiment(tmp_path)
+    _per_repeat(exp)
+    nb = _reopened(exp)
+    guide = nb.channel_grid.guide
+    assert "Pre-answered from your saved tags" in guide.draft_note.value
+    choose(nb, ("repeat", "rep2", 3), ORDERS["rep3"])
+    assert guide.draft_note.value == ""

@@ -7,16 +7,17 @@ asks how far one channel order goes, then opens only the rows that answer needs:
   per channel count: one row when every image has the same number of channels, else one row
   per count (owner decision: for example one for the 3-channel and one for the 4-channel
   images).
-- *No* asks whether the order is the same **within each biological repeat** (:data:`REPEAT`,
+- *No* asks whether the order is the same **within each biological repeat folder** (:data:`REPEAT`,
   one row per repeat folder and channel count, as *Tag this repeat folder*) or whether
   **every imaging unit** is tagged (:data:`UNIT`, one row per unit).
 
 The rows are a form: choosing in a dropdown changes the form only. **Submit** checks every row
 against the image headers and saves the tags, with the tag review, in one draft write
 (:mod:`.notebook_channels_submit`). Nothing here reads a file or a widget, and nothing is
-guessed: a row is pre-filled only from what the user chose this session (:func:`seed`), from
-the tags already saved for every unit of the row, or from header names that equal the labels
-exactly (:func:`.channel_labels.proposal_for`, a suggestion shown as such).
+guessed: a row is pre-filled only from what the user chose in it this session (:func:`seed`),
+from the tags already saved for every unit of the row, from a broader row chosen this session,
+or from header names that equal the labels exactly (:func:`.channel_labels.proposal_for`, a
+suggestion shown as such).
 
 A unit whose own images disagree (another header or channel count within the unit,
 :func:`.repeat_tags.repeat_apart`) is in no row: it is listed at Submit, never filled.
@@ -35,7 +36,7 @@ from .notebook_values import natural_key
 WHOLE = "whole"
 """The order is the same for the whole dataset: one row per channel count."""
 REPEAT = "repeat"
-"""The order is the same within each biological repeat: one row per repeat folder and count."""
+"""The order is the same within each biological repeat folder: one row per folder and count."""
 UNIT = "unit"
 """Every imaging unit is tagged on its own: one row per unit."""
 SCOPES = (WHOLE, REPEAT, UNIT)
@@ -169,10 +170,15 @@ def seed(
 ) -> tuple[list[str | None], str]:
     """Return what a row shows, and where it comes from (:data:`FROM_CHOICE` and so on).
 
-    In order: what the user chose in this row; what the user chose in a broader row this
-    session (its repeat, the whole dataset), so that switching the answer keeps the choices that
-    still apply; the tags every unit of the row has saved; the labels its header names equal
+    In order: what the user chose in this row; the tags every unit of the row has saved; what
+    the user chose in a broader row this session (its repeat, the whole dataset), so that
+    switching the answer keeps the choices that still apply; the labels its header names equal
     exactly; nothing. A label no longer in the list is blank.
+
+    The row's own saved tags rank above a broader choice (review of #546 at e40f1ad): on a
+    reopened per-repeat draft, *Yes* filled with rep1's order and then back to *No, per repeat*
+    showed rep1's order in every repeat row, and one Submit replaced every saved order with it.
+    A broader choice fills only a row whose units hold no common saved list.
     """
 
     def known(tags: Sequence[str | None]) -> list[str | None]:
@@ -182,12 +188,12 @@ def seed(
 
     if row.key in pending:
         return known(pending[row.key]), FROM_CHOICE
-    for key in broader(row):
-        if key in pending and any(pending[key]):
-            return known(pending[key]), FROM_BROADER
     saved = shared_saved(row, answers)
     if saved is not None:
         return known(saved), FROM_SAVED
+    for key in broader(row):
+        if key in pending and any(pending[key]):
+            return known(pending[key]), FROM_BROADER
     proposal = shared_proposal(row, labels)
     if proposal is not None:
         return known(proposal), FROM_HEADER

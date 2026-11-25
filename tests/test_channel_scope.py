@@ -82,19 +82,21 @@ def test_colour_units_and_units_whose_images_disagree_are_in_no_row():
     assert rowed == {u.key for u in units[2:]}
 
 
-def test_a_row_shows_the_choice_then_a_broader_choice_then_saved_then_header_names():
+def test_a_row_shows_the_choice_then_saved_then_a_broader_choice_then_header_names():
     units = [layout(k, names=TAGS) for k in KEYS]
     saved = typed(units)
     row = form_rows(units, saved, UNIT)[0]
     key = row.units[0].key
     labels = list(TAGS)
     assert seed(row, {}, answers(saved), labels) == (list(TAGS), FROM_HEADER)
-    saved[key] = UnitAnswer(("ACTIN", "DNA", "PHASE"), "channels")
-    assert seed(row, {}, answers(saved), labels) == (["ACTIN", "DNA", "PHASE"], FROM_SAVED)
     pending = {(WHOLE, 3): ["PHASE", "DNA", "ACTIN"]}
     assert seed(row, pending, answers(saved), labels) == (["PHASE", "DNA", "ACTIN"], FROM_BROADER)
     pending[(REPEAT, key[1], 3)] = ["DNA", "PHASE", "ACTIN"]
     assert seed(row, pending, answers(saved), labels)[0] == ["DNA", "PHASE", "ACTIN"]
+    saved[key] = UnitAnswer(("ACTIN", "DNA", "PHASE"), "channels")
+    assert seed(row, {}, answers(saved), labels) == (["ACTIN", "DNA", "PHASE"], FROM_SAVED)
+    # the row's own saved tags rank above a broader choice (review of #546 at e40f1ad)
+    assert seed(row, pending, answers(saved), labels) == (["ACTIN", "DNA", "PHASE"], FROM_SAVED)
     pending[row.key] = ["DNA", None, None]
     assert seed(row, pending, answers(saved), labels) == (["DNA", None, None], FROM_CHOICE)
     assert seed(row, pending, answers(saved), ["DNA"])[0] == ["DNA", None, None]  # label gone

@@ -567,13 +567,15 @@ editing, or the confirmed ones. An image that cannot be drawn gets a sentence sa
    reordered or guessed, and the description is not saved while any acquisition is listed. An
    acquisition whose own images disagree is in no row and is listed at Submit. **Saved tags**
    then shows what every acquisition holds; to change them, change the rows and Submit again.
-   A row filled from your choice in a broader row says so ("check it before Submit"). With
+   A row filled from your choice in a broader row says so ("check it before Submit"); a row
+   whose acquisitions already hold one saved list shows that list instead ("as saved"). With
    *Tag every imaging unit*, a row left blank is no answer for that acquisition now: it keeps
    what it holds, so the others can be saved while a listed one waits. When the notebook is
    opened again on a saved draft, the step answers the question as the draft already is
    (*Yes* for fast mode; for a per-unit draft, the broadest answer whose rows reproduce every
    acquisition's saved tags exactly, said as "Pre-answered from your saved tags"; otherwise
-   "Saved per-unit tags are kept; answer the question to change them"), and opening it writes
+   "Saved per-unit tags are kept; answer the question to change them"; "Pre-answered" goes
+   as soon as you change the answer or a row), and opening it writes
    nothing: a strict draft is never turned into fast mode without your Submit.
    What is recorded: *Yes* with one channel count is fast mode (`channel_layout`, every
    acquisition `channels_from = "experiment"`, Spec ADR 0006); every other answer is a strict

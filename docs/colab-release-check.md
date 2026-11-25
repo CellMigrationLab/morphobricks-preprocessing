@@ -157,8 +157,12 @@ again on the tagged commit.
          does not change on opening; **Check and save** publishes each repeat's own order (no
          `channel_layout`). The same for a per-unit answer and for *Yes* with 3 and 4 channels.
          With a folder still listed: "Saved per-unit tags are kept; answer the question to
-         change them". A row pre-filled from a broader choice says so ("check it before
-         Submit"); per unit, a row left blank keeps that folder as it is. After **Validate**
+         change them". On the reopened per-repeat answer, pick **Yes**, fill its row with
+         `rep1`'s order, then go back to **No** and **Same order within each biological repeat
+         folder**: every repeat row shows its own saved order ("as saved"), not `rep1`'s, and
+         "Pre-answered from your saved tags" is gone since the first change; **Submit** and
+         publish keep each repeat's order. A row with no saved list pre-filled from a broader
+         choice says so ("check it before Submit"); per unit, a row left blank keeps that folder as it is. After **Validate**
          the button reads **Validated ✓** until a choice changes. A folder whose own images
          name their channels differently is in no row: **Submit** lists it untagged ("its
          images disagree") and records no other folder's tags for it; once its images agree

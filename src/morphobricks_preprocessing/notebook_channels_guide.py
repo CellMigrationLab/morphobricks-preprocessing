@@ -99,6 +99,8 @@ class ChannelGuide:
         self.message = widgets.HTML()
         self.saved_box = widgets.HTML()
         self.draft_note = widgets.HTML()
+        self.pre_answered = False
+        """True while the note says the answer and rows are the reopened draft's, unchanged."""
         self.widget = widgets.VBox(
             [
                 self.draft_note,
@@ -131,7 +133,8 @@ class ChannelGuide:
             self.same.value = None if found is None else (YES if found == WHOLE else NO)
         finally:
             self._building = False
-        if found is not None and answers.channel_layout is None:
+        self.pre_answered = found is not None and answers.channel_layout is None
+        if self.pre_answered:
             self.draft_note.value = ui.status(
                 "info",
                 "Pre-answered from your saved tags: the rows show them.",
@@ -158,7 +161,18 @@ class ChannelGuide:
         if self._building:
             return
         self.message.value = ""
+        self._changed_from_draft()
         self.render()
+
+    def _changed_from_draft(self) -> None:
+        """Take back "Pre-answered from your saved tags" once the answer or a row changes.
+
+        It said the rows show the saved tags: after a change some may not (review of #546 at
+        e40f1ad: it stayed while the rows showed another answer's choice).
+        """
+        if self.pre_answered:
+            self.pre_answered = False
+            self.draft_note.value = ""
 
     # Building ----------------------------------------------------------------------------
 
@@ -305,6 +319,7 @@ class ChannelGuide:
         """Note one dropdown of a row in the form; no draft write, no redraw of the page."""
         drops = self.drops.get(key, [])
         self.pending[key] = [d.value for d in drops]
+        self._changed_from_draft()
         if key in self.notes:
             self.notes[key].value = self._note(self.pending[key], FROM_CHOICE)
 
