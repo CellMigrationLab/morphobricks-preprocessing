@@ -83,7 +83,7 @@ def recount(tags: Sequence[str | None], layout: UnitLayout) -> str | None:
     The old tags are never applied, cut or padded to the new count: every channel is chosen
     again (the override editor opens with blank dropdowns).
     """
-    if counted(tags, layout):
+    if counted(tags, layout) or not tags:  # no row's tags recorded (images disagreed): none
         return None
     return (
         f"its channel count changed ({len(tags)} at the refusal, {layout.channels} now): "

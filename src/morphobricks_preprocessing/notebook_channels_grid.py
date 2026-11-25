@@ -173,15 +173,18 @@ class TagGrid(_GridSummary):
             self.matrix.reset()
             self.matrix.opening()
             self.matrix.tick_for_mode()
+            if self.guided:  # the pages' fast mode tags with no click: a draft cannot tell
+                self.matrix.tick_for_draft()  # a strict draft stays strict (review F1)
             self.by_repeat.restore(layouts)  # refused units stay refused
-            self.guide.reset()
+            self.guide.reset(layouts)
         self.layouts, self.labels, self.rows.thumbs = layouts, labels, thumbs
         if self.place_types:
             self.types.open(layouts)
         self.detail.children = []
-        # guided: nothing is tagged before Submit, not even from the header names
-        trusted = False if self.guided else self.matrix.trust_headers()
-        changed = trusted | self.matrix.sync_statement()  # fast mode
+        # guided: nothing is written on opening (no header tag, no statement): only Submit
+        changed = False
+        if not self.guided:
+            changed = self.matrix.trust_headers() | self.matrix.sync_statement()  # fast mode
         self.by_repeat.reconcile()  # refusals of units removed or changed by a re-check
         self.refresh()
         if changed:

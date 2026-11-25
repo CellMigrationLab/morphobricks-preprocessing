@@ -116,12 +116,12 @@ again on the tagged commit.
       2. *One count, same order*: **Yes**: one row. Tag it, **Submit**, publish: one
          `channel_layout` and every unit `channels_from = "experiment"`.
       3. *One count, order per repeat*: **No**, then **Same order within each biological
-         repeat**: one row per repeat folder. Give `rep2` another order, **Submit**, publish:
+         repeat folder**: one row per repeat folder. Give `rep2` another order, **Submit**, publish:
          each folder of a repeat has that repeat's order.
       4. *One count, every unit*: **No**, **Tag every imaging unit**: one row per folder;
          **Submit**, publish: each folder has its own list.
-      5. *Mixed counts, per repeat*: **No**, **Same order within each biological repeat**: one
-         row per repeat folder and channel count. **Submit**, publish.
+      5. *Mixed counts, per repeat*: **No**, **Same order within each biological repeat
+         folder**: one row per repeat folder and channel count. **Submit**, publish.
       6. *A swapped header*: one folder's header names in another order. **Yes**, tag the row
          in the order of the others, **Submit**: "Saved; 1 imaging unit(s) not tagged", the
          folder listed with "C0: header … is …, the row says …", untagged. **Check and save**
@@ -150,6 +150,16 @@ again on the tagged commit.
          draft file's time does not change, and each folder's note says "Not validated yet".
          **Validate** with a folder left without a type is refused and names it; with every
          folder answered it saves once and the labels and the channel question follow.
+      11. *Reopening* (review of #546): save a per-repeat answer (3., without publishing),
+         close and run the notebook again on the same output folder, open Channels: the
+         question shows **No** and **Same order within each biological repeat folder**, the
+         rows show your orders and "Pre-answered from your saved tags"; the draft file's time
+         does not change on opening; **Check and save** publishes each repeat's own order (no
+         `channel_layout`). The same for a per-unit answer and for *Yes* with 3 and 4 channels.
+         With a folder still listed: "Saved per-unit tags are kept; answer the question to
+         change them". A row pre-filled from a broader choice says so ("check it before
+         Submit"); per unit, a row left blank keeps that folder as it is. After **Validate**
+         the button reads **Validated ✓** until a choice changes.
 11. **Masks** (step 4).
     - [ ] **Check the masks** runs with progress. *Your masks* offers separate objects,
       regions and *grouped labels (one value per parent, e.g. mitochondria by cell)*, none

@@ -295,10 +295,18 @@ class ImageTypeLine:
             for layout in self._usable():
                 if layout.key in types.notes:
                     types.notes[layout.key].value = types.note(layout)
-        self.apply.description = " Validate"
         ui.set_visible(self.apply, True)
-        missing = [k for k, v in self.final().items() if v is None]
-        self.apply.disabled = bool(missing)
+        final = self.final()
+        missing = [k for k, v in final.items() if v is None]
+        # saved and unchanged since: said on the button, which waits for a change (review F5)
+        done = (
+            bool(final)
+            and not missing
+            and self.override.pending is None
+            and all(self.types.saved(k) == v for k, v in final.items())
+        )
+        self.apply.description = " Validated ✓" if done else " Validate"
+        self.apply.disabled = bool(missing) or done
         self.blocker.value = blocked_line(
             [f"choose a type in the box, or set each folder below ({len(missing)} left)"]
             if missing

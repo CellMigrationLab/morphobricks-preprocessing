@@ -44,6 +44,8 @@ RowKey = tuple
 """A row: ``(WHOLE, count)``, ``(REPEAT, repeat folder, count)`` or ``(UNIT, unit key)``."""
 
 FROM_CHOICE = "choice"
+FROM_BROADER = "broader"
+"""Pre-filled from the user's choice in a broader row (its repeat's, the whole dataset's)."""
 FROM_SAVED = "saved"
 FROM_HEADER = "header"
 FROM_NONE = ""
@@ -182,7 +184,7 @@ def seed(
         return known(pending[row.key]), FROM_CHOICE
     for key in broader(row):
         if key in pending and any(pending[key]):
-            return known(pending[key]), FROM_CHOICE
+            return known(pending[key]), FROM_BROADER
     saved = shared_saved(row, answers)
     if saved is not None:
         return known(saved), FROM_SAVED
@@ -202,16 +204,32 @@ def row_error(tags: Sequence[str | None]) -> str | None:
     return None
 
 
-def scope_of_draft(answers: DraftAnswers) -> str | None:
-    """Return the answer a draft already holds: :data:`WHOLE` for a fast-mode draft, else None.
+def scope_of_draft(answers: DraftAnswers, layouts: Sequence[UnitLayout] = ()) -> str | None:
+    """Return the answer that reproduces a draft's saved tags exactly, or None.
 
-    Only ``channel_layout`` (the user's statement, ADR 0006) says the order is the same for
-    the whole dataset; a strict draft does not say how far its lists go, so it is asked.
+    A fast-mode draft (``channel_layout``, the user's statement, ADR 0006) is :data:`WHOLE`.
+    A strict draft whose every taggable unit holds complete saved tags is answered with the
+    broadest strict answer whose rows each hold one list that every unit of the row has saved:
+    :data:`WHOLE` only with several channel counts (with one count, *Yes* is fast mode, another
+    record), else :data:`REPEAT`, else :data:`UNIT`. These give the same strict file. Anything
+    else (a unit not tagged yet, no unit) is None: the question is asked.
     """
-    return WHOLE if answers.channel_layout is not None else None
+    if answers.channel_layout is not None:
+        return WHOLE
+    units = answers.units
+    rowed = [u for u in taggable(layouts, units) if not apart_reason(u)]
+    if not rowed or any(None in tags_of(u, units.get(u.key)) for u in rowed):
+        return None
+    several = len(counts(layouts, units)) > 1
+    for scope in ((WHOLE,) if several else ()) + (REPEAT, UNIT):
+        rows = form_rows(layouts, units, scope)
+        if all(shared_saved(row, answers) is not None for row in rows):
+            return scope
+    return None
 
 
 __all__ = [
+    "FROM_BROADER",
     "FROM_CHOICE",
     "FROM_HEADER",
     "FROM_NONE",

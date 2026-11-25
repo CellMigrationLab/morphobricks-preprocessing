@@ -239,11 +239,13 @@ class OverrideEditor:
         moved = recount(refusal.tags, layout)
         notes = self._notes(key, layout)
         options = [(CHOOSE, None), *((label, label) for label in grid.labels)]
-        info = f"<b>{html.escape(unit_name(key))}</b>: " + (
-            html.escape(moved)
-            if moved
-            else "the row's tags are the start; change only what is different"
-        )
+        if moved:
+            said = html.escape(moved)
+        elif not refusal.tags:  # refused while its images disagreed: no row's tags recorded
+            said = "no row's tags were recorded for it: choose every channel"
+        else:
+            said = "the row's tags are the start; change only what is different"
+        info = f"<b>{html.escape(unit_name(key))}</b>: {said}"
         cells: list[widgets.Widget] = [widgets.HTML(info)]
         for index in range(width):
             if index >= layout.channels:

@@ -84,10 +84,8 @@ def submit(
     save: dict = {}
     cells: list = []
     staged = dict(memory.refused)
-    by_count: dict[int, tuple[str, ...]] = {}
     for row, tags in rows:
         tags = tuple(tags)
-        by_count.setdefault(row.count, tags)
         filled, clicked, refused = repeat_fill(answers, row.units, tags, labels, frozen)
         lead = repeat_lead(row.units)
         for key, found in refused.items():
@@ -97,10 +95,10 @@ def submit(
         save.update(filled)
         cells += clicked
     for layout in apart:  # its images disagree: listed, never filled
+        # no row's tags are recorded for it (it is in no row, review F4): only its own reason
         why = repeat_apart((layout,)).get(layout.key, "its images disagree")
-        tags = by_count.get(layout.channels, ())
         snapshot = frozen.get(layout.key, answers.channels)
-        staged[layout.key] = Refusal(html.escape(why), layout, None, tags, snapshot)
+        staged[layout.key] = Refusal(html.escape(why), layout, None, (), snapshot)
     for key in save:  # filled by this Submit: its refusal goes with the same write
         staged.pop(key, None)
     kept = {k: v for k, v in memory.override.confirmed.items() if k in staged}

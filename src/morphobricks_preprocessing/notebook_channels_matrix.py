@@ -153,6 +153,28 @@ class TagMatrix:
             return
         self.set_tick(published != answers.switch_mode)
 
+    def tick_for_draft(self) -> None:
+        """Tick the statement as an unpublished draft's mode is (the guided step, F1).
+
+        The tick is hidden in the guided step and only Submit sets it, so it is never saved
+        unless the draft was published (:meth:`tick_for_mode`). A draft whose units hold saved
+        tags of their own (not colour) and no ``channel_layout`` is a strict draft: it is
+        reopened unticked, never converted to fast mode by a statement written with no click
+        (review of #546, F1: a per-repeat draft was published with the first repeat's order).
+        A draft with ``channel_layout``, or with no such tags (new, or every folder colour),
+        keeps the tick.
+        """
+        answers = self.grid.store.answers()
+        if published_fast(answers) is not None:
+            return  # the published file's own mode (tick_for_mode)
+        tagged = any(
+            unit.image_type != "rgb" and any(unit.channels) for unit in answers.units.values()
+        )
+        if answers.channel_layout is None and tagged:
+            self.set_tick(False)
+        elif answers.channel_layout is not None:
+            self.set_tick(True)
+
     def sync_statement(self, cells: Sequence[tuple[UnitKey, int]] = ()) -> bool:
         """Save the statement and the units' markers the tick and the tags give (ADR 0006).
 

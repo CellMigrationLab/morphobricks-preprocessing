@@ -6,7 +6,7 @@ replaces the per-unit grid, where every dropdown change saved and redrew the pag
 1. **Is the channel order the same for the whole dataset?** (*Yes* / *No*), said with the
    channel counts found when the images do not all have the same number of channels.
 2. *Yes*: one row of dropdowns per channel count (one row when the count is the same
-   everywhere). *No*: **Same order within each biological repeat** (one row per repeat folder
+   everywhere). *No*: **Same order within each biological repeat folder** (one row per repeat folder
    and channel count) or **Tag every imaging unit** (one row per unit).
 3. **Submit**: the only save. The dropdowns change this form only (no draft write, no redraw of
    the page); Submit checks every row (each channel tagged, each label once) and the image
@@ -29,6 +29,7 @@ import ipywidgets as widgets
 from . import notebook_style as ui
 from .channel_labels import tags_of
 from .channel_scope import (
+    FROM_BROADER,
     FROM_CHOICE,
     FROM_HEADER,
     FROM_SAVED,
@@ -57,12 +58,14 @@ SAME_QUESTION = "Is the channel order the same for the whole dataset?"
 YES, NO = "yes", "no"
 NARROW_QUESTION = "Then how far does one channel order go?"
 NARROW_OPTIONS = [
-    ("Same order within each biological repeat", REPEAT),
+    ("Same order within each biological repeat folder", REPEAT),
     ("Tag every imaging unit", UNIT),
 ]
 SUBMIT = "Submit"
 SOURCE_TEXT = {
     FROM_CHOICE: "",
+    FROM_BROADER: "from your choice for a broader row (its repeat folder or the whole "
+    "dataset): check it before Submit",
     FROM_SAVED: "as saved",
     FROM_HEADER: "from the header names: check them before Submit",
 }
@@ -95,22 +98,51 @@ class ChannelGuide:
         self.submit_button.on_click(lambda _: self.submit())
         self.message = widgets.HTML()
         self.saved_box = widgets.HTML()
+        self.draft_note = widgets.HTML()
         self.widget = widgets.VBox(
-            [self.questions, self.rows_box, self.submit_button, self.message, self.saved_box]
+            [
+                self.draft_note,
+                self.questions,
+                self.rows_box,
+                self.submit_button,
+                self.message,
+                self.saved_box,
+            ]
         )
 
     # State -------------------------------------------------------------------------------
 
-    def reset(self) -> None:
-        """Forget the form (another draft or other units); a fast-mode draft answers *Yes*."""
+    def reset(self, layouts: Sequence = ()) -> None:
+        """Forget the form (another draft or other units) and answer as the draft already does.
+
+        A fast-mode draft answers *Yes*; a strict draft whose saved tags one answer reproduces
+        exactly is pre-answered with it (:func:`.channel_scope.scope_of_draft`), its rows
+        showing the saved tags. Otherwise a draft with saved tags says they are kept until the
+        question is answered (review of #546, F1).
+        """
         self.pending = {}
         self.message.value = ""
+        answers = self.grid.store.answers()
+        found = scope_of_draft(answers, layouts)
+        tagged = any(u.image_type != "rgb" and any(u.channels) for u in answers.units.values())
         self._building = True
         try:
-            self.narrow.value = None
-            self.same.value = YES if scope_of_draft(self.grid.store.answers()) == WHOLE else None
+            self.narrow.value = found if found in (REPEAT, UNIT) else None
+            self.same.value = None if found is None else (YES if found == WHOLE else NO)
         finally:
             self._building = False
+        if found is not None and answers.channel_layout is None:
+            self.draft_note.value = ui.status(
+                "info",
+                "Pre-answered from your saved tags: the rows show them.",
+                ["Change the answer or a row and Submit to change them."],
+            )
+        elif found is None and tagged:
+            self.draft_note.value = ui.status(
+                "info", "Saved per-unit tags are kept; answer the question to change them."
+            )
+        else:
+            self.draft_note.value = ""
 
     @property
     def scope(self) -> str | None:
@@ -313,15 +345,21 @@ class ChannelGuide:
         if scope is None:
             return self._refuse(["Answer the question above first."])
         shown = self.values()
+        # one row per unit: a row left blank is no answer for that unit now (it keeps what it
+        # holds), so the others can be saved while a refused unit waits (review F5)
+        skipped = [r for r in self.rows if scope == UNIT and not any(shown[r.key])]
+        todo = [r for r in self.rows if r not in skipped]
+        if not todo:
+            return self._refuse(["Tag at least one row."])
         problems = []
-        for row in self.rows:
+        for row in todo:
             why = row_error(shown[row.key])
             if why is not None:
                 problems.append(f"{html.escape(self._plain_title(row))}: {why}")
-        problems += collisions(grid, self.rows)
+        problems += collisions(grid, todo)
         if problems:
             return self._refuse(problems)
-        rows = [(row, [t for t in shown[row.key] if t]) for row in self.rows]
+        rows = [(row, [t for t in shown[row.key] if t]) for row in todo]
         units = grid.store.answers().units
         left = apart(taggable(grid.layouts, units))
         fast = scope == WHOLE and len(counts(grid.layouts, units)) == 1
@@ -329,6 +367,11 @@ class ChannelGuide:
         if ok:
             self.pending.update({key: list(value) for key, value in shown.items()})
             text = refused_text(grid)
+            if skipped:
+                names = ", ".join(html.escape(self._plain_title(r)) for r in skipped)
+                text += ui.status(
+                    "info", f"Left as they were (their rows are blank): {names}.", raw=True
+                )
             self.message.value = text or ui.status("ok", "Saved: every row's tags are saved.")
         else:
             self.message.value = (

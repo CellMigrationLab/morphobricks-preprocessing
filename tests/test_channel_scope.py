@@ -8,6 +8,7 @@ import pytest
 
 from morphobricks_preprocessing.channel_labels import UnitLayout
 from morphobricks_preprocessing.channel_scope import (
+    FROM_BROADER,
     FROM_CHOICE,
     FROM_HEADER,
     FROM_NONE,
@@ -91,7 +92,7 @@ def test_a_row_shows_the_choice_then_a_broader_choice_then_saved_then_header_nam
     saved[key] = UnitAnswer(("ACTIN", "DNA", "PHASE"), "channels")
     assert seed(row, {}, answers(saved), labels) == (["ACTIN", "DNA", "PHASE"], FROM_SAVED)
     pending = {(WHOLE, 3): ["PHASE", "DNA", "ACTIN"]}
-    assert seed(row, pending, answers(saved), labels) == (["PHASE", "DNA", "ACTIN"], FROM_CHOICE)
+    assert seed(row, pending, answers(saved), labels) == (["PHASE", "DNA", "ACTIN"], FROM_BROADER)
     pending[(REPEAT, key[1], 3)] = ["DNA", "PHASE", "ACTIN"]
     assert seed(row, pending, answers(saved), labels)[0] == ["DNA", "PHASE", "ACTIN"]
     pending[row.key] = ["DNA", None, None]

@@ -465,7 +465,8 @@ editing, or the confirmed ones. An image that cannot be drawn gets a sentence sa
    in the box or for a folder under **Set per folder…**, only changes the form, with no save
    and no redraw; **Validate** checks every folder has a type and saves every folder's type
    (and the RGB header override box below) in one write of the draft, then the channel step
-   opens. A folder chosen on its own keeps its choice; the others take the box's. One answer for every
+   opens, and the button reads **Validated ✓** until a choice changes. A folder chosen on its
+   own keeps its choice; the others take the box's. One answer for every
    folder, whatever their numbers of channels or images, also when the headers differ (then
    nothing is pre-filled: choose the type in the box). **Set per folder…** holds one row per
    folder, with its picture; it opens when your answers differ. After the answer, every folder
@@ -495,7 +496,7 @@ editing, or the confirmed ones. An image that cannot be drawn gets a sentence sa
      the same number of channels, else one row for each count (one for the 3-channel images,
      one for the 4-channel images). Each row tags every imaging unit with that many channels.
    - **No** asks **Then how far does one channel order go?**: **Same order within each
-     biological repeat** opens one row per biological-repeat folder (and channel count), for
+     biological repeat folder** opens one row per biological-repeat folder (and channel count), for
      every condition's acquisitions in that folder; **Tag every imaging unit** opens one row
      per imaging unit.
 
@@ -516,6 +517,14 @@ editing, or the confirmed ones. An image that cannot be drawn gets a sentence sa
    reordered or guessed, and the description is not saved while any acquisition is listed. An
    acquisition whose own images disagree is in no row and is listed at Submit. **Saved tags**
    then shows what every acquisition holds; to change them, change the rows and Submit again.
+   A row filled from your choice in a broader row says so ("check it before Submit"). With
+   *Tag every imaging unit*, a row left blank is no answer for that acquisition now: it keeps
+   what it holds, so the others can be saved while a listed one waits. When the notebook is
+   opened again on a saved draft, the step answers the question as the draft already is
+   (*Yes* for fast mode; for a per-unit draft, the broadest answer whose rows reproduce every
+   acquisition's saved tags exactly, said as "Pre-answered from your saved tags"; otherwise
+   "Saved per-unit tags are kept; answer the question to change them"), and opening it writes
+   nothing: a strict draft is never turned into fast mode without your Submit.
    What is recorded: *Yes* with one channel count is fast mode (`channel_layout`, every
    acquisition `channels_from = "experiment"`, Spec ADR 0006); every other answer is a strict
    per-unit file in which each acquisition holds its row's list (several channel counts cannot be
