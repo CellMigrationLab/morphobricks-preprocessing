@@ -32,6 +32,7 @@ Needs the ``notebook`` extra (``ipywidgets`` and ``matplotlib``).
 from __future__ import annotations
 
 import logging
+from collections import deque
 from pathlib import Path
 
 from morphobricks_normalization.ranges import HistogramSettings
@@ -98,6 +99,9 @@ from .notebook_steps import _StepsFlow
 from .notebook_values import display_range
 from .planes import PlaneLayout
 from .run import Preflight, RunResult
+
+_LOG_LINES = 500
+"""The log lines the "Technical details" panel shows and keeps."""
 
 __all__ = [
     "EXCLUDABLE_CODES",
@@ -470,15 +474,19 @@ class PreprocessingNotebook(
             return None
 
     def _show_log(self) -> None:
-        self.details.value = "\n".join(self.log.lines[-500:])
+        self.details.value = "\n".join(self.log.lines)
 
 
 class _LogCapture(logging.Handler):
-    """Collects the package's log messages for the "Technical details" panel."""
+    """Collects the package's log messages for the "Technical details" panel.
+
+    Only the latest ``_LOG_LINES`` are kept, the ones the panel shows: older ones are dropped,
+    not held for the whole session (#523).
+    """
 
     def __init__(self):  # noqa: ANN204
         super().__init__(logging.DEBUG)
-        self.lines: list[str] = []
+        self.lines: deque[str] = deque(maxlen=_LOG_LINES)
         self.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
 
     def emit(self, record: logging.LogRecord) -> None:

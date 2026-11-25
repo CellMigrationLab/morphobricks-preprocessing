@@ -161,3 +161,30 @@ def test_a_mask_id_with_spaces_keeps_the_button_disabled_and_writes_nothing(tmp_
     assert tree(run.masks_root) == before
     card.name.value = "   "
     assert card.button.disabled and "type the new mask ID" in card.blocker.value
+
+
+def test_a_plane_that_cannot_be_read_is_a_refusal_not_a_working_status(tmp_path, monkeypatch):
+    """#469: a PlaneMemoryError ends the preview and the write with its message."""
+    from morphobricks_preprocessing.plane_errors import PlaneMemoryError
+
+    def refuse(self, *args, **kwargs):
+        raise PlaneMemoryError("the plane needs 9 GiB; the limit is 2 GiB")
+
+    # What RunInputs.read_plane raises when the plane does not fit the memory limit.
+    for name in ("he_tissue_mask", "preview_he_tissue_mask"):
+        monkeypatch.setattr(cards.RunInputs, name, refuse)
+    monkeypatch.setattr(cards.importlib.util, "find_spec", lambda name: True)  # the extra
+    run = rgb_run(tmp_path)
+    card = cards.TissueMaskCard()
+    card.refresh(run.output_folder)
+    card.picture.layout.display = None  # an earlier preview on the page
+    before = tree(run.masks_root)
+    card.preview_button.click()
+    assert "No preview." in card.numbers.value and "9 GiB" in card.numbers.value
+    assert "Computing" not in card.numbers.value and card.picture.layout.display == "none"
+    card.positions.value = (IMAGE,)
+    card.name.value = "HETissue"
+    card.write()
+    assert f"No tissue mask was written for {IMAGE}." in card.status.value
+    assert "9 GiB" in card.status.value and "unexpected" not in card.status.value
+    assert tree(run.masks_root) == before

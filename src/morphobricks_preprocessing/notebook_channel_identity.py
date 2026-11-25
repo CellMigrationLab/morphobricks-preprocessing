@@ -26,6 +26,7 @@ except ImportError as exc:  # pragma: no cover - depends on the environment
 from . import notebook_style as ui
 from .channel_identity import check_channel_identity
 from .channel_identity_model import (
+    AMBIGUOUS_CHANNEL_SWAP,
     CHANNEL_IDENTITY_CODES,
     POSSIBLE_CHANNEL_SWAP,
     ChannelFinding,
@@ -45,7 +46,11 @@ from .run_labels import NO_LABELS, RunLabels
 COLOURS = ("#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6")
 MARKERS = ("o", "s", "^", "D", "v", "P", "X")
 INK = "#222222"
-_CHECK_WORDS = {POSSIBLE_CHANNEL_SWAP: "Possible swap", "channel_unlike_others": "Unlike others"}
+_CHECK_WORDS = {
+    POSSIBLE_CHANNEL_SWAP: "Possible swap",
+    AMBIGUOUS_CHANNEL_SWAP: "Swap, pair unclear",
+    "channel_unlike_others": "Unlike others",
+}
 
 
 class ChannelIdentityView:
@@ -231,7 +236,10 @@ def _draw_finding(
     axes.scatter(*point, s=70, color=look[0], marker=look[1], edgecolors=INK, zorder=5)
     axes.scatter(*point, s=320, facecolors="none", edgecolors=INK, linewidths=1.6, zorder=5)
     text = f"{signature.unit.label}\ntagged {signature.channel}"
-    if found.resembles is not None:
+    if found.code == AMBIGUOUS_CHANNEL_SWAP:
+        # No pair is named: every channel it could be swapped with (#395).
+        text += f", looks like {' or '.join(c for c, _ in found.alternatives)}"
+    elif found.resembles is not None:
         text += f", looks like {found.resembles}"
     axes.annotate(
         text,

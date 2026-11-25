@@ -45,3 +45,18 @@ def test_a_warning_still_reaches_the_last_resort_handler_without_root_handlers(m
         child.warning("loud warning")
     assert "loud warning" in stream.getvalue()
     assert "quiet detail" not in stream.getvalue()
+
+
+def test_the_capture_keeps_only_the_latest_500_lines_in_order():
+    """#523: the panel shows the latest 500 lines; older ones are not held either."""
+    capture = notebook_ui._LogCapture()
+    capture.setFormatter(logging.Formatter("%(message)s"))
+    with capture.attached():
+        child = logging.getLogger("morphobricks_preprocessing.projection_marker")
+        for number in range(600):
+            child.debug("line %d", number)
+    capture.lines.append("Traceback: a direct append still works")
+    assert len(capture.lines) == 500
+    assert list(capture.lines) == [f"line {n}" for n in range(101, 600)] + [
+        "Traceback: a direct append still works"
+    ]

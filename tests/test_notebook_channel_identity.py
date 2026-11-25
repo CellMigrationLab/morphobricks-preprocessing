@@ -3,6 +3,7 @@
 import pytest
 
 from test_channel_identity import UNITS, experiment
+from test_channel_identity_pairs import one_unit_off
 
 pytest.importorskip("ipywidgets")
 pytest.importorskip("matplotlib")
@@ -54,3 +55,13 @@ def test_the_section_shows_the_status_and_the_reasons_when_nothing_was_checked(s
 def test_the_section_with_a_plot_shows_the_plot():
     view = shown(experiment())
     assert ui.is_visible(view.box) and ui.is_visible(view.plot) and view.plot.value
+
+
+def test_an_ambiguous_swap_is_one_row_naming_every_channel():
+    """#395: tied mutual pairs are one row, with their own words and what to do."""
+    ref = {"A": (800.0, 100.0, 4000.0), "B": (4000.0, 500.0, 20000.0), "C": (800.0, 100.0, 4000.0)}
+    view = shown(one_unit_off(ref, {"A": ref["B"], "B": ref["A"], "C": ref["B"]}))
+    assert view.findings.value.count("Swap, pair unclear") == 1
+    assert "channels A, B and C look swapped in more than one way" in view.findings.value
+    assert "Channels that look swapped in more than one way" in view.findings.value
+    assert ui.is_visible(view.plot) and view.plot.value

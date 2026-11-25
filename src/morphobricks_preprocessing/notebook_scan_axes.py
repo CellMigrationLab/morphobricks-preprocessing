@@ -101,6 +101,7 @@ class _ScanAxes:
         self._scan_roles: dict[str, AxisMapping] = {}
         self._scan_boxes: list[widgets.Dropdown] = []
         self._scan_row_axes: str | None = None
+        self._scan_row_shape: tuple[int, ...] | None = None  # the lengths the labels give
         self._scan_applied: object | None = None
         self._scan_filling = False
         self.scan_roles_row = widgets.HBox(
@@ -119,7 +120,7 @@ class _ScanAxes:
 
     def _reset_scan_axes(self) -> None:
         """Forget the roles chosen at an earlier scan: a new scan proposes afresh."""
-        self._scan_roles, self._scan_row_axes = {}, None
+        self._scan_roles, self._scan_row_axes, self._scan_row_shape = {}, None, None
         self.scan_axes_line.value = self.scan_type_line.value = ""
 
     # The row -------------------------------------------------------------------------------
@@ -134,7 +135,9 @@ class _ScanAxes:
         if meta is None or not meta.readable:
             ui.set_visible(self.scan_roles_card, False)
             return
-        if meta.axes != self._scan_row_axes:
+        # The labels give the lengths: another shape with the same letters is rebuilt, the
+        # roles chosen for those letters kept (#521).
+        if (meta.axes, tuple(meta.shape)) != (self._scan_row_axes, self._scan_row_shape):
             self._build_scan_row(meta)
         self.scan_type_note.value = scan_type_html([meta], one=True)
         ui.set_visible(self.scan_roles_card, True)
@@ -142,7 +145,7 @@ class _ScanAxes:
     def _build_scan_row(self, meta: TiffMetadata) -> None:
         """Build one list per dimension of the image, holding the role proposed or chosen."""
         mapping = self._scan_roles.get(meta.axes) or prefill_mapping(meta.axes)
-        self._scan_row_axes = meta.axes
+        self._scan_row_axes, self._scan_row_shape = meta.axes, tuple(meta.shape)
         self._scan_boxes, cells = [], []
         for axis, role, length in zip(meta.axes, mapping.roles, meta.shape, strict=True):
             box = widgets.Dropdown(

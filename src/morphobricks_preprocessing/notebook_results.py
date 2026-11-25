@@ -174,15 +174,27 @@ class _ResultsStep:
 
     def _csv_changed(self) -> None:
         # Results of another table must not stay on screen next to the new path.
-        self.stats_status.value = self.stats_tiles.value = self.statistics.value = ""
-        self.stats_next.value = ""
-        ui.set_visible(self.statistics_card, False)
-        ui.set_visible(self.distribution_card, False)
+        self._forget_comparison()
+
+    def _forget_comparison(self) -> None:
+        """Clear the statistics, checks and partial-presence answer of the table shown before.
+
+        Called when another table is chosen and after a run wrote its table, even to the same
+        path (#524): the table is new either way.
+        """
+        self.stats_status.value = self.stats_next.value = ""
+        self._hide_statistics()
         self.table_checks.clear()
         # A choice about one table's planes is never carried over to another table. The
         # question is hidden first, so resetting the answer calculates nothing.
         ui.set_visible(self.partial_box, False)
         self.partial_choice.value = REFUSE
+
+    def _hide_statistics(self) -> None:
+        """Hide the statistics, the tiles and the distributions shown before."""
+        self.stats_tiles.value = self.statistics.value = ""
+        ui.set_visible(self.statistics_card, False)
+        ui.set_visible(self.distribution_card, False)
 
     def _partial_changed(self) -> None:
         """Calculate again with the user's answer to the partial-presence question."""
@@ -213,9 +225,7 @@ class _ResultsStep:
                 self.stats_status.value = ui.status(
                     "warn", "This histogram table does not exist.", [str(path)]
                 )
-            self.statistics.value = ""
-            ui.set_visible(self.statistics_card, False)
-            ui.set_visible(self.distribution_card, False)
+            self._hide_statistics()
             return
         try:
             percentiles = [float(q) for q in self.percentiles.value.replace(";", ",").split(",")]
@@ -227,13 +237,12 @@ class _ResultsStep:
                 "The percentiles cannot be read.",
                 ["Use numbers from 0 to 100 separated by commas, for example 1, 99.8."],
             )
+            self._hide_statistics()  # the earlier ones are not of these percentiles (#527)
             return
         self._busy(self.statistics_button, "Calculating…")
         self._stats_wait = Wait(self.stats_status)
         self._stats_wait.start("Reading the histogram table")
-        self.stats_tiles.value = self.statistics.value = ""
-        ui.set_visible(self.statistics_card, False)
-        ui.set_visible(self.distribution_card, False)
+        self._hide_statistics()
         try:
             self._calculate_statistics(path, percentiles)
         except Exception as exc:
