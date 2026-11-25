@@ -6,9 +6,10 @@ there (the recorded check, the saved answers, the saved description, the run man
 when each was written; nothing is changed or written. :func:`run_mismatch` says whether the
 run the manifest describes is finished and current: of this experiment folder, of the saved
 description as it is now, with exactly the images analysed now, each with its recorded
-fingerprint, and its histogram table as recorded. Anything else is named; nothing is guessed.
-Bricks that use the run still open it through :class:`.run_inputs.RunInputs`, which checks
-everything again.
+fingerprint, and it opens as a brick opens it (:meth:`.run_inputs.RunInputs.open`: the
+manifest version, the table, design, ``calibration.csv``, conversion record, images and masks
+as recorded).
+Anything else is named, with ``RunInputs``' own refusal; nothing is guessed.
 """
 
 from __future__ import annotations
@@ -17,15 +18,13 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from morphobricks_normalization.csv_io import OUTPUT_FILENAME
-
-from ._io import file_sha256
 from .check_record import CHECK_RECORD_FILENAME, CheckRecord, CheckRecordError, read_check_record
 from .description_file import DESCRIPTION_FILENAME, DRAFT_FILENAME
 from .fingerprint import Fingerprint
-from .manifest import MANIFEST_FILENAME, RunManifest
+from .manifest import MANIFEST_FILENAME, ManifestFormatError, RunManifest
 from .run.preflight import Preflight
 from .run.reuse import read_previous
+from .run_inputs import RunInputs, RunInputsError
 
 WHAT = {
     CHECK_RECORD_FILENAME: "the folder check",
@@ -75,13 +74,20 @@ class EarlierWork:
         return max((when for _, when in self.found), default="")
 
     @property
-    def experiment_root(self) -> Path | None:
-        """Return the experiment folder the check or the run recorded, or None."""
+    def roots(self) -> tuple[Path, ...]:
+        """Return the experiment folders the check and the run recorded, each once."""
+        found = []
         if self.record is not None:
-            return Path(self.record.experiment_root)
+            found.append(Path(self.record.experiment_root))
         if self.manifest is not None:
-            return Path(self.manifest.experiment_root).resolve()
-        return None
+            found.append(Path(self.manifest.experiment_root).resolve())
+        return tuple(dict.fromkeys(found))
+
+    @property
+    def experiment_root(self) -> Path | None:
+        """Return the one experiment folder recorded; None for none, or two that disagree."""
+        roots = self.roots
+        return roots[0] if len(roots) == 1 else None
 
     def has(self, name: str) -> bool:
         """Return True when the file ``name`` is there."""
@@ -145,11 +151,11 @@ def run_mismatch(
     for rel in sorted(entries):
         if pre.header_fingerprints.get(rel) != Fingerprint.recorded(entries[rel]):
             return f"{rel} changed since the run"
-    try:
-        same = file_sha256(output / OUTPUT_FILENAME) == manifest.csv_sha256
-    except OSError:
-        same = False
-    return "" if same else f"its {OUTPUT_FILENAME} is missing or changed since the run"
+    try:  # everything else is what a brick opening the run checks, and only that
+        RunInputs.open(output)
+    except (RunInputsError, ManifestFormatError, OSError) as exc:
+        return str(exc)
+    return ""
 
 
 __all__ = ["WHAT", "EarlierWork", "earlier_work", "run_mismatch"]

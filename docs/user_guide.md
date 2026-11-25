@@ -457,7 +457,8 @@ editing, or the confirmed ones. An image that cannot be drawn gets a sentence sa
      them, and the steps open on the first step still to do. Nothing is confirmed for you: the
      axis roles, for one, are offered for one click.
    - **A finished run.** When the run is of this experiment and of the saved description as it
-     is, with every image unchanged and its table as written, **Run** opens with its report,
+     is, with every image unchanged, and later bricks can open it as it is (its table, design,
+     pixel sizes, masks), **Run** opens with its report,
      its intensity checks and what to do next (in the Preprocessing and Cellpose notebook, cell
      4 segments this run). Otherwise the message says why it is not current.
 
@@ -465,7 +466,10 @@ editing, or the confirmed ones. An image that cannot be drawn gets a sentence sa
    **Start fresh** forgets what was restored and starts a new session: no file is changed or
    deleted, and Check folder still reads the answers saved in the output folder (choose
    another output folder to start without them). If the earlier work cannot be read, a red
-   message says so and nothing of it is used.
+   message says so and nothing of it is used. The folder boxes are read when you press Enter,
+   choose with Browse or leave the box, so a folder you pass through while typing is not
+   restored. Choosing another output folder clears what was restored, until you give an
+   answer, confirm, save or run: from then on it is your work and stays.
 2. **Axes.** What the files hold, in two parts. The roles start from the proposal of step
    1 (the header's, or what you chose on the example) and can be changed here at any time;
    once confirmed, **Change axis roles** takes the confirmation back. The instant one of these

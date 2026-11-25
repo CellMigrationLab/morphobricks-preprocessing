@@ -1713,4 +1713,5 @@ Raised during review; to be decided before the milestones that need them:
     another experiment folder, other software versions or an unreadable record; a restore
     happens only while no check is on screen and only for the experiment folder the earlier
     work records; mask headers and projection markers are read as always; *Start fresh*
-    writes and deletes nothing (`notebook_restore`, contract §9.2).
+    writes and deletes nothing; a finished run is one `RunInputs.open` opens (review of #547)
+    (`notebook_restore`, contract §9.2).

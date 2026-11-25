@@ -135,6 +135,9 @@ class _FolderStep:
             value=folder,
             placeholder="e.g. D:/microscopy/experiment_2026_10",
             layout=widgets.Layout(flex="1 1 auto", width="auto"),
+            # Read once typed (Enter or leaving the box), never at each key: a folder passed
+            # through on the way to another is never restored or written to.
+            continuous_update=False,
         )
         self.folder_browse = ui.button(
             "Browse…", icon="folder-open", tooltip="Choose the experiment folder in a dialog"
@@ -143,6 +146,9 @@ class _FolderStep:
             value=output,
             placeholder="leave empty to use the default folder shown below",
             layout=widgets.Layout(flex="1 1 auto", width="auto"),
+            # Read once typed (Enter or leaving the box), never at each key: a folder passed
+            # through on the way to another is never restored or written to.
+            continuous_update=False,
         )
         self.output_browse = ui.button(
             "Browse…", icon="folder-open", tooltip="Choose another output folder"

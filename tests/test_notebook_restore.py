@@ -355,3 +355,65 @@ def test_an_embedding_brick_without_the_output_folder_restores_nothing(exp):
     nb.folder_step(show_output=False)
     nb.folder.value = str(root)
     assert nb.preflight is None and not ui.is_visible(nb.restore_box)
+
+
+# Review of #547 ------------------------------------------------------------------------------
+
+
+def test_a_partial_path_typed_on_the_way_writes_and_restores_nothing(exp, tmp_path):
+    root, out = exp
+    checked(root, out)
+    nb = stepper()
+    # The boxes are read once typed (Enter or leaving them), never at each key.
+    assert nb.output.continuous_update is False and nb.folder.continuous_update is False
+    before = files_of(tmp_path)
+    nb.folder.value = str(root)
+    nb.output.value = str(out)[:-1]  # "ou": no such folder
+    assert nb.preflight is None and not ui.is_visible(nb.restore_box)
+    assert files_of(tmp_path) == before and not (tmp_path / "ou").exists()
+
+
+def test_an_answer_after_a_restore_keeps_it_when_the_output_folder_changes(exp, tmp_path):
+    root, out = exp
+    checked(root, out)
+    nb = stepper()
+    nb.output.value = str(out)
+    nb.reference_boxes["drug"].value = "ctrl"  # the user's own work on the restored check
+    nb.output.value = str(tmp_path / "other")
+    assert nb.preflight is not None  # kept, as after a manual Check folder (issue #98 rules)
+    assert "The output folder changed" not in _text(nb.restore_status.value)
+
+
+def test_a_confirmation_after_a_restore_keeps_it_too(exp, tmp_path):
+    root, out = exp
+    checked(root, out)
+    nb = stepper()
+    nb.output.value = str(out)
+    assert ui.is_visible(nb.quick_card)
+    nb.quick_confirm.click()
+    assert nb.confirmed_mapping is not None
+    nb.output.value = str(tmp_path / "other")
+    assert nb.preflight is not None and nb.confirmed_mapping is not None
+
+
+def test_a_run_started_after_a_restore_makes_it_the_user_s(exp):
+    root, out = exp
+    checked(root, out)
+    nb = stepper()
+    nb.output.value = str(out)
+    assert nb._restored_from is not None
+    nb._start_run()
+    assert nb._restored_from is None and nb.restored_run is None
+
+
+def test_a_record_and_a_run_of_different_experiment_folders_restore_nothing(exp, tmp_path):
+    from morphobricks_preprocessing.check_record import write_check_record
+
+    root, out = exp
+    run_described(root, prefill_mapping("TYX"), output_folder=out, image_type="fluorescence")
+    write_check_record(out, tmp_path / "elsewhere", {}, ())
+    nb = stepper()
+    nb.output.value = str(out)
+    assert nb.preflight is None and nb.folder.value == ""
+    text = _text(nb.restore_status.value)
+    assert "names two experiment folders" in text and "They disagree" in text

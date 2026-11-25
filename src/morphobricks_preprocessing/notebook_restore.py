@@ -17,14 +17,17 @@ already exist, then says exactly what it restored, from when, and what it read a
    the first step still to do; nothing is confirmed for the user (the axes, for one, are
    offered for one click).
 3. **A finished run.** When the run manifest is of this experiment, of the saved description
-   as it is, with every image unchanged and its table as recorded
+   as it is, with every image unchanged, and ``RunInputs.open`` opens it
    (:func:`.earlier_work.run_mismatch`), Run shows its report, its intensity checks and the
    next steps, and the combined notebook's Cellpose cell takes it
    (:func:`.notebook_cellpose_app.app_folders`, which opens it through ``RunInputs``).
 
 The experiment folder, when empty, is taken from the earlier work (its recorded root); a
-different experiment folder restores nothing. *Start fresh* forgets what was restored: no file
-is changed or deleted. Another output folder clears what was restored from the first.
+different experiment folder, or a record and a run that name different folders, restore
+nothing. *Start fresh* forgets what was restored: no file is changed or deleted. Another output
+folder clears what was restored from the first, until the user answers, confirms, saves or runs
+(:meth:`_RestoreEarlier._acted`): then it is their work, kept as after a manual check. The folder
+boxes are read once typed (``continuous_update=False``), never at each key.
 """
 
 from __future__ import annotations
@@ -151,6 +154,18 @@ class _RestoreEarlier:
         """Return the experiment folder to restore, filling an empty box; None and say why."""
         root = work.experiment_root
         found = ", ".join(WHAT[name] for name, _ in work.found)
+        if len(work.roots) > 1:
+            self._say(
+                "warn",
+                f"Found earlier work from {work.latest}, but it names two experiment folders.",
+                [
+                    f"The recorded check is of {work.roots[0]}; the run is of {work.roots[1]}. "
+                    "They disagree, so nothing was restored. Enter the experiment folder and "
+                    "click Check folder.",
+                ],
+                fresh=False,
+            )
+            return None
         if root is None:
             self._say(
                 "info",
@@ -344,6 +359,34 @@ class _RestoreEarlier:
     def _start_run(self) -> None:
         super()._start_run()
         self.restored_run = None  # this run replaces it
+        self._acted()
+
+    # The user's own work after a restore makes it theirs, as after a manual check -------
+
+    def _acted(self) -> None:
+        """Keep the restored state as the user's own: another output folder no longer clears it."""
+        if not self._restoring:
+            self._restored_from = None
+
+    def _save_answers(self, answers: object, *, rebuild: bool = True) -> bool:
+        saved = super()._save_answers(answers, rebuild=rebuild)
+        self._acted()
+        return saved
+
+    def _toggle_confirmation(self) -> None:
+        super()._toggle_confirmation()
+        self._acted()
+
+    def _confirm_quick_axes(self) -> bool:
+        confirmed = super()._confirm_quick_axes()
+        self._acted()
+        return confirmed
+
+    def save_experiment(self) -> bool:
+        """Check and save the experiment (see :meth:`._CheckSaveScreen.save_experiment`)."""
+        saved = super().save_experiment()
+        self._acted()
+        return saved
 
     def _refresh_run_step(self) -> None:
         super()._refresh_run_step()
