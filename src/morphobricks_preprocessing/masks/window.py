@@ -48,6 +48,7 @@ from ..windows import (
     check_level,
 )
 from ..zarr_input import open_ngff_labels
+from .header import refuse_lossy
 from .labels import check_labels
 from .layout import _stated_axes, _tiff_axes, _yx
 from .model import _YX, FOLDER, PLANE_AXES, MaskFile
@@ -100,7 +101,8 @@ def read_mask_window(
         If the file cannot be read as an image.
     ValueError
         If ``z`` or ``t`` is missing or outside the mask, the mask is not the 2D plane its
-        header gave, or the window holds a label outside 0 to the int32 limit.
+        header gave, the window holds a label outside 0 to the int32 limit, or a TIFF mask is
+        stored with a lossy codec (:class:`.header.MaskLossyCodecError`).
     """
     check_level(level)
     wanted = _wanted_plane(mask, z, t)
@@ -152,6 +154,7 @@ def _mask_source(
         path = Path(masks_folder) / mask.path
         with _open(path) as tif:
             series = tif.series[0]
+            refuse_lossy(series, path)
             mapping = _tiff_mapping(series, mask, path)
             yield _tiff_source(series, mapping, path, memory_limit), mapping, path
         return

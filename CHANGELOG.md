@@ -21,6 +21,9 @@ v0.5.1: no run before v0.5.1 is read.)
   - **The technical-details log keeps only the lines it shows (#523).** `_LogCapture.lines` is a `deque` of the latest 500 lines instead of every record of the session. `tests/test_notebook_log_capture.py`.
   - **A run that writes its table forgets the earlier statistics and answer, even at the same path (#524).** The statistics, tiles, plot, table checks and the partial-presence answer were cleared only when the table's path changed; a rerun to the same path kept them for a new table. `_forget_comparison()` now clears them on a path change and after every run that wrote its table. `tests/test_notebook_extra_stain.py`.
   - **Refused percentiles hide the earlier statistics (#527).** Percentiles out of 0 to 100 (or NaN, inf) left the previous table, tiles and plot on screen; they are now hidden with the refusal (also for a missing table). The table's checks and the partial-presence answer stay: the table did not change. `tests/test_notebook_statistics_refused.py`.
+- **A calibration target of only slashes is refused, never the whole experiment (#390, owner decision of 24 November 2026).** `calibration_entry` trimmed trailing separators before it checked for an absolute path, so `/`, `//`, `\` (and `.\`, `./.`, `.//`, `././`) became `.`: a line `/,X,0.5,um` in `calibration.csv`, `calibrate --size / XY 0.5 um` or the notebook's calibration card silently stated the size for every image. Such a target is now refused with `CalibrationTargetRootError` (a `ValueError`, reason `calibration_target_root`), naming the target and saying to give `.` for the whole experiment: `calibrate` and the notebook change nothing. Only `.` and `./` are the whole experiment: **`.\` and `./.`, accepted before as the whole experiment, are no longer accepted**, and **a hand-edited `calibration.csv` line whose target is `/` (or another of these), read before as the whole experiment, now stops the run with `calibration_unreadable`** naming the line, the file kept (`calibrate` and the notebook always write `.`, so only a hand edit has such a line). Other targets are unchanged. User guide §5 and §8. `tests/test_calibration_root_target.py`.
+- **A failed Check folder clears the earlier check and says what to do (#101).** `check_folder` restored the button but had no `except`: a storage error during a recheck (an `OSError` from a Google Drive that stopped answering) ended in a raw traceback, and the earlier check, its labels, roles and confirmations stayed shown as valid. It now clears them (as a changed folder does; nothing can be run), shows a red message with the error, the folder and what to do (check that Google Drive is mounted, then check again), puts the traceback in Technical details, and the button works again. The clearing also covers what the shipped `steps()` notebook shows of a check (a clearing hook, `_clear_check_views`, that the stepper overrides): the Images page's axes and image-type lines and copies note, the Axes page's *Confirm these axes* offer (hidden and disabled), its axis status, the projection and OME-Zarr cards and the viewers over the checked images; and the recommended bin count (`Recommended: … bins`) of the earlier pixel type. It covers an error while the new check is shown (the results, the settings, the axis and run steps), a storage error while a changed folder's output hint and earlier run are read, and an interrupt (`KeyboardInterrupt`: cleared, then raised); the changed-folder path clears through the same hook. Storage errors (`OSError`) and the package's coded refusals are reported. *Decided (24 November 2026, review of #528):* any other exception, `RuntimeError` included, is a programming error and is raised after the state is cleared (the red message names it), rather than shown as a readable card as the issue first asked: a card would hide a defect to report. `tests/test_check_folder_errors.py`, `tests/test_check_folder_errors_steps.py`.
+- **A whole biological repeat or condition can be removed (#283).** Removing every folder of a repeat (`ctrl/rep2` and `drug/rep2`), every folder of a condition, or renaming a condition folder on disk (`drug` to `drugB`, the new folder keeping its own ID), then answering **Yes, remove**, was refused at save with `R_USED_ID_DROPPED at used_ids.repeats` (or `.conditions`), so there was no way forward. The notebook's draft knew only the IDs the lineage had already retired, so the ID of a repeat or condition removed now fell out of `used_ids`. The draft now carries the published file's whole registry (`Draft.listed_ids`, set by `draft_from_discovery(..., listed_ids=...)` when a saved description is reopened) and every description built from it keeps it (experiment-v1 §4.9: `used_ids` is append-only; removing an entity keeps its ID listed). The removal publishes only on **Yes, remove**, as before, with its `removed` records (§4.6, §10); the removed ID stays retired, is never proposed again and is refused if typed (`R_USED_ID_REUSED`). `tests/test_notebook_whole_removal.py` checks the published file and records with the Spec's `refval.py` and `refrecords.py`.
 - **`binary_refusals` refuses unbound mask headers for the whole inventory before any read (#490, from the #502 review of #480).** It refused a file found without `bind=True` only when that file's turn came (`scan_fingerprints`), so the bound `binary` files before it were read first, the `MaskUnboundError` named one file, and an unbound file of a mask that is not `binary` passed. It now calls `refuse_unbound` on every file of the inventory first: every unbound file is named (`mask_header_unbound`) and nothing is read. Its docstring lists `MaskUnboundError` under Raises. The mask step's own inventories are found bound, so its behaviour is unchanged. `tests/test_binary_refusals_unbound.py`.
 - **The section-digest check is tested on runs of other shapes (#490).** #501's tests built runs from `v08` (with masks) only. `tests/test_manifest_section_digests.py` now also opens runs of `v01` (no masks), `v41` (fast mode) and `v43` (fast mode, RGB units with the header override), checks `section_digests()` against the published description's and that a wrong digest of each section is refused. Tests only; these runs already opened correctly.
 - **The manifest's channel coverage is checked against the published description at open (#490).** `experiment_description.channel_coverage` was checked only to be an object, so a manifest edited after the run (a status, a count or a lacking unit changed, a repeat or channel dropped or added) still opened. `RunInputs.open` now recomputes `channel_coverage(description)` from the published description whose SHA-256 it checked and refuses any other record with `ChannelCoverageMismatchError` (a `RunInputsError`, `manifest_channel_coverage_mismatch`), naming the field and each biological repeat that differs; the manifest is never repaired. Partial and unavailable channels recorded as the run wrote them open as before. No current `RunInputs` or resolver code reads the coverage; writer output and manifest version (5) unchanged. `tests/test_manifest_channel_coverage.py`.
@@ -104,8 +107,131 @@ experiment-v1, accepted by the owner on 20 November 2026, Spec #53). No format v
 PL1 and RH1), the run manifest stays version 5 (additive unit keys). Drafts written under the
 old pin are refused with `spec_commit_mismatch`, as at every re-pin.
 
+**Quick fixes A: readers, masks, publication, records, run inputs, parsers.**
+
+- **A compressed TIFF piece shorter than its byte count is refused (#377).** A strip or tile whose byte count points past the end of the file was read short and, as zlib and other streams end themselves, decoded as if complete. Window, block and channel-plane reads now refuse it with `PlaneReadError` ("Part N of a page of FILE is truncated: K of M bytes"). Review fix: the header is checked on every read path, whole pages included (`planes.read_plane`, `read_xyc_plane`, `RunInputs.read_plane`, the whole-plane histogram pass): each strip or tile of the page must end within the file before any piece is read. `tests/test_tiff_short_piece.py`.
+- **Masks stored with a lossy codec are refused (refs #360; owner decision of 24 November 2026).** A TIFF mask compressed with JPEG (codes 6, 7, 33007, 34892), JPEG 2000, WebP, JPEG XL or JPEG XR was read like any other, its labels possibly changed by the codec. The mask inventory (`check`, `run`, `preflight`, the mask step) now refuses it from the header with the error `mask_lossy_codec`, naming each mask and its codec, and `read_mask`, `read_mask_file` and the mask windows refuse it with `MaskLossyCodecError` (a `ValueError`). Masks stored uncompressed or with a lossless codec read as before. The image-read part of #360 (codes 6, 33007, 34892 on whole-plane reads) is not changed here. `tests/test_mask_lossy_codec.py`.
+- **The OME-Zarr plane plan checks the request as the read does (#379).** `xyc_plane_memory` returned an estimate for an OME-Zarr request that `read_xyc_plane` refuses (0 channels, more channels than the image, a depth slice or time point outside it or for an axis it lacks). It now checks the channel count and every coordinate as the read and the TIFF plan do, and raises the same `IndexError`. `tests/test_plane_channels_zarr_plan.py`.
+- **`LazyImage.__array__` refuses `copy=False` and fills one array (#453).** It ignored `copy`, so `numpy.asarray(image, copy=False)` silently made a copy, and it stacked the planes twice (and cast once more for another `dtype`), holding about two results at its peak. It now refuses `copy=False` with `ValueError` (the planes are read from the files: the array is always new), allocates the result once in the requested type and fills it plane by plane (cast as `astype` casts), and refuses a plane that is not the image's `(C, Y, X)` rather than broadcasting or stacking it into another shape. Values are unchanged. `tests/test_lazy_image_array.py`.
+- **The direct mask reads refuse a depth slice or time point that is not a whole number (#477).** `read_mask`, `read_mask_file`, `read_mask_plane` and `read_mask_window` compared `z` and `t` with the mask's length only, so `t=True` read the plane at T=1 and `t=1.5` failed inside tifffile. They now refuse a `bool`, a float, text or any non-integer with a `ValueError` naming the mask and the coordinate, before anything is read; NumPy integers are accepted as before. (`RunInputs.read_mask` already refused them.) `tests/test_mask_read_coordinates.py`.
+- **The direct mask reads refuse a mask whose axes are not confirmed (#478).** A mask of an inventory's `mask_not_2d` (a plain `IYX` stack with no axes stated) kept empty `axes`; `read_mask` and `read_mask_window` took it for a one-plane mask and failed with a raw `RuntimeError` (`StopIteration` in the axes statement). They now refuse it first with a `ValueError` naming the mask and its header axes and saying to state them (`--mask-axes Cells=TYX`); nothing is read and no plane is assumed. `tests/test_mask_read_unconfirmed.py`.
+- **A nesting implied by a path of any length is no longer marked direct (#381).** The hierarchy's reduction left a parent out only when a path of exactly two links led to it, so with A in B in C in D and A in D, A's parent D was still shown as direct beside B. A link between two sets of mask types is now direct only when its parent cannot be reached from its child without it (any length); links inside a cycle stay direct as before. Relations and evidence are unchanged; only `direct`, the hierarchy and its text follow. `tests/test_mask_hierarchy_long_paths.py`.
+- **A mask conversion takes the mask type's write lock, as the Cellpose writer does (#382; owner decision of 24 November 2026).** `binary_to_instances` and `classes_to_binary` read the type's `mask_lineage.jsonl`, added their line and rewrote it with no lock, so two conversions into one mask type at once could each keep only their own line. The publication (the collision check, the pending-line rollback, the lineage line and the output) now holds `<masks>/<output type>/.segmentation_write.lock` for every output type, the Cellpose writer's lock: another writer holding it is refused at once (`SegmentationError`, naming the lock), and nothing is written. A type folder made only for the lock is removed again when nothing was published in it. `WRITE_LOCK_FILENAME` moved to `segmentation_record` (still importable from `segmentation_handoff`); the output-ID checks moved to `mask_conversion_ids` to keep `mask_conversion.py` within 600 lines. `tests/test_mask_conversion_lock.py`.
+- **The mask step reads no mask and writes no report when its description is gone (#418).** `describe_masks` read the published description again under the output folder's lock and, when it had been removed or could no longer be read since the step was prepared, still scanned every mask and replaced `mask_relationships.json`, only skipping the representation check. It now returns at once with the description's issue (`A_DESCRIPTION_REQUIRED`, or the reader's error), no report and no path: no mask is read and the earlier `mask_relationships.json` and `mask_representation.json` are left as they were. The `masks` command prints the issue and exits 1; the notebook's **Describe the masks** shows a red card with it. `tests/test_mask_step_description_gone.py`.
+- **A committed publication removes only the mask report (#398).** Finishing a publication an earlier run left (`finish_publication`, run by everything that takes the output folder's lock) unlinked every name of its record's `removes` list, so a damaged or edited `.publish/publication.json` could remove any output (`plane_histograms.csv`, the manifest) or a file outside the output folder (`../outside.txt`, an absolute path). A run removes only `mask_relationships.json` (`generation.REMOVABLE`); a record naming anything else, or an entry that is not text, is now refused with `PublicationIncompleteError` naming the record and the entries, before anything is moved or removed, and the publication folder is kept for the user to look at. The writer refuses such a list too. A publication left by an unchanged writer finishes as before. `tests/test_publication_removes.py`.
+- **The conversion check reads its image paths once (#386).** `conversion_problem` passed `paths` to `changed_copies`, which consumed them, and then listed them again for the projection check: given a generator, it compared the record's projection with no images and refused a valid run on projected copies. It now lists `paths` once at the start. (`RunInputs` passes a list and was not affected.) `tests/test_conversion_check_iterables.py`.
+- **A conversion record listing one image twice is refused (#387).** `ConversionRecord` accepted two entries with the same `relative_path` and every check used the first, so a second, contradictory entry (another fingerprint, SHA-256 or projection) was never looked at. The record now refuses it when built or read (`ConversionRecordError`, naming each path listed more than once), so `read_record`, `review_conversion` and `RunInputs.open` refuse the copy tree before any copy is read; nothing is de-duplicated or chosen. The record's value checks moved to `record_values` to keep `conversion_record.py` within 600 lines. `tests/test_conversion_record_duplicates.py`.
+- **A projection entry's dtype rule and source SHA-256 are checked (#443).** `ProjectionEntry` compared the output type and rounding with the dtype table but took any `dtype_rule` text (`"sum uint16->float64"` for a max of `uint16` slices) and any text as `source_content_sha256` (`"abc"`). It now refuses a rule other than the table's for its source type, method and slices, and a source SHA-256 that is not 64 lowercase hexadecimal digits (None stays allowed for a plan, before the copy is written); `with_content` and reading the record refuse them too (`ConversionRecordError` when read). The writer always wrote the table's rule and a real SHA-256, so records it wrote read as before. Three fixtures of `tests/test_projection_record.py` that built entries with a rule other than the table's now give the table's; the reuse-key case of an edited rule is gone (such an entry cannot be built). Review fix: the source Z axis `{letter, index}` is checked against the copy entry's `source_axes` and `roles` (the header's letter at that index, read as Z; `("Q", -4)` was accepted); the writers of v0.6.0 to v0.8.0 took it from them, so their records read as before. The fixture's Z axis is now its header's (`("Q", 0)` of `QYX`), and the reuse-key case of a moved Z axis moves the header and roles with it. `tests/test_projection_record_strict.py`.
+- **The manifest's projection slice range is checked when read (#445).** `read_manifest` took any two values as `projection.z_range` (`[0.5, 2]`, `[true, 2]`, `[3, 1]`, `[-1, 2]`) and did not compare it with the slices each image used. It now refuses (`ManifestFormatError`) a range that is not null or two whole numbers `0 <= start < stop`, and one that is not each listed image's own range (with null, each image's whole stack), as the conversion record requires. A manifest edited that way was already refused by `RunInputs.open`; one test of `tests/test_run_projection.py` now accepts the earlier `ManifestFormatError` for its edited image range. Review fix: each image's `source_dtype`, `output_dtype`, `rounding` and `dtype_rule` must be the dtype table's for the method and the slices it used, and `significant_bits_dropped` the table's reason or null (a mean recorded as `uint16` with rounding `none` was read); the rule text is unchanged since v0.6.0, so written manifests read as before. `tests/test_run_projection_range.py`.
+- **Recorded pixel sizes are positive finite numbers, one per role (#389).** Reading a manifest or a conversion record took any number as a size (`NaN`, infinity, 0, -1, the text `"1.0"`, `true`), a size with no unit, and any list of sizes: a second X silently replaced the first in `RunInputs.pixel_sizes`, and a missing T disappeared. `RecordedSize.from_dict` now refuses a header or stated value that is not a positive, finite JSON number with a unit, and `sizes_from_data` a list that does not hold exactly one size for each of X, Y, Z and T (a conversion record's plain copy, which records no sizes, keeps its empty list). `read_manifest` refuses them (`ManifestFormatError`), the conversion record too (`ConversionRecordError`), and the manifest writer refuses to write them, so a written manifest always reads back. Nothing is converted or resolved. `tests/test_manifest.py`'s entry fixture now records one (unknown) size per role. Review fix: the empty list is accepted for a plain copy (`copied`) only; a converted or projected entry with none is refused (the writers of v0.6.0 to v0.8.0 recorded the four roles for them), and `tests/test_projection_record.py`'s projected fixture now records one (unknown) size per role. `tests/test_recorded_sizes_strict.py`.
+- **`channel_index` resolves a FOV through the run, never through the FOV's own channel IDs (#394).** Given a `Fov`, `RunInputs.channel_index` returned the position of the channel in the FOV's own `channel_ids`, without checking that the FOV is this run's: a FOV of another run that lists the same image's channels in another order gave another index than the image's path. It now always takes the image's channel IDs from this run (its manifest entry and published description), refuses a FOV of an image the run does not have, and refuses a FOV whose channel IDs differ from the run's (`RunInputsError`, "a FOV of another run"). A FOV and its path give the same index. `tests/test_channel_index_foreign_fov.py`.
+- **`check_sources` refuses caller axes that name a letter twice (#485).** A dimension the run gave no role (length 1) fits any letter, so `image_axes="YYX"` passed for an image whose roles are `(None, Y, X)`. Axes naming a letter more than once (case ignored) are now refused before any image is checked, with the same `ValueError` as a missing entry, naming the image and the letters. **Contract change for brick authors:** one image's repeated letters raise `ValueError` for the whole `check_sources` call (no issue list is returned for the other images), where before such axes could pass or be reported as one `axis_mapping_mismatch` issue; a brick that builds `image_axes` from user input catches `ValueError` or checks its axes first (contract §"Sources of a run"). `tests/test_check_sources.py`.
+- **A folder inside an OME-Zarr store that cannot be listed is an error (#392).** The link and mount-point check of a store (`LinkGuard.check_store`) logged a folder it could not list and went on, so the store passed as checked although its links were not known. Such a folder is now the error `store_unreadable`, naming it, so discovery is not `ok`, and `RunInputs` and `convert` refuse it with the link errors (`LINK_CODES`). Contract §1 and user guide rows added. `tests/test_links_store_unreadable.py` (its permission variant skips when run as root, which ignores file modes; the other forces the listing error).
+- **A stopped-run report holding a number too long to read is refused as unreadable (#455).** Python refuses to read an integer of more than 4,300 digits with a plain `ValueError`, which the stopped-run report reader did not catch, so `RunInputs.open` on a folder whose `discovery_report.json` held one raised it raw. It is now `RunReportUnreadableError` (`RUN_FOLDER_REPORT_UNREADABLE`, "it holds a number too long to read"), naming the report; the duplicate-key and non-JSON-number refusals are unchanged. Two cases added to `tests/test_run_inputs_stopped.py`.
+- **The manifest's unnamed-channel list is checked against the unit's channels (#506).** `images_without_header_channel_names` was checked for its shape only: a position beyond the unit's channels (C 999 of 2), `none` listing only some positions and `partial` listing all of them were read. `read_manifest` now refuses (`ManifestFormatError`) a position that is not one of the unit's recorded `channels`, `none` unless every position is listed and `partial` when every one is, as the writer tells them apart. Runs written by the writer read as before. Two existing tests that forge a unit's `channels` now forge a list that fits its unnamed positions, so they still reach the open-time check they test. Cases added to `tests/test_unnamed_header_images.py`.
+- **The description reader's table paths escape a quoted key (#406).** `key_path` put a key that is not bare between quotes as it was, so a condition ID holding a quote, a backslash or a newline gave a path that is not the key (`conditions."A"B".reference`, or a path broken over two lines). It now escapes the key as the canonical writer does (`conditions."A\"B".reference`); the one `toml_string` moved from `description_write` to `description_report`, where both use it. Bare keys are unchanged. `tests/test_description_key_path.py`.
+- **Lab-tool links refuse bidi controls (#416).** The text of the links (`repository_url`, `experiment_path`, each repeat code and its repeat ID) refused control characters (Unicode `Cc`) but took bidi controls: an override such as U+202E could show a repeat-code mapping other than the one confirmed and recorded. The bidi controls U+061C, U+200E, U+200F, U+202A–U+202E and U+2066–U+2069 are now refused too (`lab_links_invalid`, the value shown escaped). Review fix: only those; other format characters (`Cf`) that names use, such as ZWNJ and ZWJ (U+200C, U+200D), the soft hyphen (U+00AD) and U+FEFF, are accepted as before, so a manifest the reader took before still reads. Ordinary non-ASCII letters are accepted, and nothing is trimmed or normalised. `tests/test_lab_links.py`.
+
 ### Added
 
+- **Tag by repeat: another output folder is another draft** (owner requirement): pointing only the
+  output folder at another draft of the same experiment reopens the channel grid on that draft
+  (the draft is part of its reopening key), so its refused units stay listed and untagged; the
+  header trust restores the draft's own record first when the memory is another draft's
+  (`MatrixView.trust_headers`), and the save stays refused until it is.
+- **Tag by repeat: override a listed unit** (owner requirement): from the list of units whose
+  headers disagree with their repeat's row, **Override this unit (start from the row's tags)**
+  opens the unit's tags prefilled with the row's, header names shown and disagreements
+  highlighted. The unit counts as tagged only after **Confirm these tags**; the confirmation
+  holds while the unit's own tags and header names are unchanged (`repeat_tags.Override`,
+  `override_holds`; `notebook_channels_override`). A refused unit is counted only when the user
+  confirms that unit: aliases saved by confirming or tagging another unit never clear its
+  refusal, never tag it in fast mode (`RepeatRows.standing`) and never change its highlights
+  (the refusal keeps the aliases of its time, `Refusal.channels`; `repeat_fill(frozen=...)`). A
+  listed unit with the same header names, at every C index, as a confirmed one shows "same
+  headers as <unit>, which you confirmed as <tags>" with **Confirm the same tags**, and
+  **Confirm all N like it** when several are listed: one click each through the same
+  validation and save as the editor (all or none), never automatic.
+  A deliberate hand-tag of a listed unit on the grid (or a strict-mode block click on it) that
+  leaves its tags complete and fitting its header is recorded as its confirmation, in the same
+  draft write as its tags (`RepeatRows.hand_tagged`), so it counts and can be the source of
+  **Confirm the same tags** like any confirmation.
+  - A label renamed or removed after a refusal no longer breaks the editor: that cell opens blank
+    (the unit stays unconfirmed until it is tagged), and a label gone is never offered by a
+    one-click button. Before, the dropdown raised and every later redraw raised too.
+  - Refusals and confirmations are kept in the draft file (optional `tag_review`, draft version
+    still 4, `repeat_review.py`; written only while not empty; read strictly) and restored on
+    opening, before headers are trusted: after a kernel restart a refused unit is still listed,
+    untagged and unsaved until that unit is confirmed, and the one-click offer is still made.
+  - Fast mode decides which refusals stand against the row's current reference unit, as the
+    list does, and **Confirm all N like it** buttons keep a stable order.
+  - The review belongs to the draft it was made in (experiment folder and draft file): a notebook
+    pointed at another folder or output forgets the refusals, confirmations and editor state of
+    the first and restores the new draft's own (empty without one), before headers are trusted;
+    one draft's record is never written into another, and switching back restores the first
+    from its file. A failed save of the review shows a line on the tagging grid and is retried
+    at the next change.
+  - A refused unit the user has not confirmed is never tagged by fast mode's header trust,
+    whatever its row's reference is now (`RepeatRows.standing` is the refused units without a
+    holding confirmation, kept in the draft's `tag_review`): removing the units before it in its
+    row no longer lets it be tagged from aliases and cleared.
+  - **Confirm these tags**, **Confirm the same tags** and **Confirm all N like it** save the
+    tags and the draft's tag review with the new confirmations in ONE draft write
+    (`TagGrid.commit(..., then)`): a refused write saves neither and confirms nothing. The save
+    button stays disabled while the tag review is not saved in the draft, and any later saved
+    tag change retries it. A confirmation made while an earlier review write is unsaved is that
+    retry: its own write holds the whole review and is the only write (before, the retry ran
+    inside the confirmation's save, before the confirmation was in memory, and wrote the review
+    without it over the one just saved; the session counted the unit while the draft did not).
+  - A refused unit whose channel count changed (a re-check) no longer breaks the override
+    editor: it stays listed ("its channel count changed (N at the refusal, M now): choose every
+    channel again", `repeat_tags.recount`) and the editor opens with one blank dropdown per
+    channel it has now; the old tags are never cut, padded or applied, and a draft of another
+    length is refused. A refused unit fast mode no longer offers (now inside the layout) stays
+    refused.
+  - A confirmed unit whose own header changes is listed again ("its header changed since you
+    confirmed it: confirm it again", `repeat_tags.relapsed`), also when its new
+    header fits its row and its tags are complete; a re-check no longer drops the refusal of a
+    unit whose confirmation still holds, so it stays the source of **Confirm the same tags**.
+  - A refusal is never dropped while its unit is still in the folder: a refused unit set to
+    colour (RGB) or unusable keeps its refusal (and confirmation) through a re-check, and is
+    listed again once it is back in a row; only a unit removed from the folder drops it
+    (`RepeatRows.reconcile`). Before, the re-check dropped it, and set back to channels fast
+    mode tagged it from another unit's aliases with no listing or confirmation. While the unit
+    is colour (channels R, G and B) or unusable it is not listed and does not hold the save:
+    there are no channel tags to confirm (`RepeatRows.listed` reads the same rows as
+    `repeat_tags.repeat_groups`).
+  - The save button's line says "the tag review is another draft's" only when a review of
+    another draft was read; before Channels was opened it names the missing answers first, then
+    "this draft's tag review is not read yet".
+  - One authority releases a refusal: the unit's persisted confirmation (`tag_review`), read by
+    `RepeatRows.listed`, `RepeatRows.standing` and so the save (`RepeatRows._released`). Before,
+    a refused unit with complete saved tags left the list, and the save opened, when another
+    unit's confirmation saved aliases matching its header. A header or aliases that fit later
+    never release a refusal, and a re-check keeps every refusal of a unit still in the folder
+    (it says "refused by its repeat folder's row and not confirmed since" when nothing else is
+    left to say).
+  - A unit refused because its own images disagreed keeps its refusal once they agree: it takes
+    its row's reference and is listed ("its images agree again since the refusal ... confirm
+    them") with its editor; its tags are never read from the new header, also in fast mode
+    after a restart. Before, the re-check dropped it and fast mode could tag it from its header.
+  - *Check and save* is refreshed right after a confirmation: the save button opens at the last
+    confirmation (`RepeatRows.adopt`, called by `TagGrid.commit` before it refreshes).
+  - A row click that fills some units and refuses others saves their tags, aliases and the
+    resulting tag review (the new refusals, the refusals of the filled units dropped) in ONE
+    draft write (`RepeatRows.apply` passes the review as `TagGrid.commit`'s `then`; one
+    review-only write when it fills nothing), and memory takes the new refusals only once that
+    write succeeded (`RepeatRows.adopt`). Before, the tags were written first and the refusals
+    in a second write: a failure or an interruption between the two left a draft with the
+    filled units' tags and no refusal of the others, which fast mode's header trust could tag
+    after a restart. A refused write now leaves the draft and the session as before the click.
+  - A strict-mode block whose click would confirm refused units names them under its dropdowns,
+    outside the folded folder list ("A tag chosen here also confirms the refused unit(s) ...";
+    `OverrideEditor.scope`, shown exactly when `RepeatRows.hand_tagged` would record one). The
+    shipped stepper folds a block of more than three folders, so before a refused unit in it
+    could be confirmed by a shared click without its name on screen. A fast-mode block of
+    several units, a template edit, **Tag like the saved group** and a header pre-tag still
+    record no confirmation.
 - **`check_metadata(files, *, allow_z=False)` and `inspect_images(..., allow_z=False)`: header
   checks of Z-stacks for other tools (related: #438).** With `allow_z=True`,
   `z_stack_not_supported` is not reported; every other header check runs unchanged. The default
@@ -338,6 +464,67 @@ old pin are refused with `spec_commit_mismatch`, as at every re-pin.
 
 ### Fixed
 
+- **Tag by repeat: a row click's refusals are taken into memory before any further write**
+  (external re-check ao, 24 November). In fast mode the click's statement save ran before
+  memory adopted the refusals the first write had saved; an interruption there left a unit
+  refused in the draft but not in the session, whose save gate reads memory. `TagGrid.commit`
+  now adopts right after the save, and *Check and save* stays disabled while the session's tag
+  review differs from the draft's (`RepeatRows.saved`).
+- **Tag by repeat: memory behind the draft never overwrites its saved tag review** (external
+  re-check as, 24 November). After a write that set the tag review succeeded (a row click's
+  tags and refusals, an editor's or a hand-tag's tags and confirmation), an interruption before
+  memory took it left this session's refusals and confirmations behind the draft's; reopening
+  *Tag channels* in the same session then reconciled and persisted that stale memory over the
+  saved review, erasing a refusal (the unit no longer listed, and the save possible) or a
+  confirmation. A preexisting refusal in memory also kept `restore` from reading the draft.
+  Memory now remembers the review it last took or wrote (`RepeatRows.seen`, in the new
+  `notebook_channels_memory.ReviewMemory`) and takes the draft's again whenever it holds
+  another (`sync`), before anything lists, holds out, reconciles or writes; a review is written
+  only over the one memory saw. A save of the answers stopped by an interruption no longer
+  leaves memory holding answers the draft file never got: `_save_answers` keeps them only when
+  the file holds exactly their bytes (`run.draft_file.draft_holds`), else goes back to the
+  answers before, and fast mode's strict page's draft follows a save the file took
+  (unticking no longer writes back a draft without it). Uninterrupted saves are unchanged.
+- **Tag by repeat: a click that fills no unit keeps its refusals after an interruption**
+  (external re-check av, 24 November, blocker 1). A repeat folder's row that refuses every unit
+  it offers writes only the tag review (`RepeatRows._save_review`). That write marked the
+  review as seen (`ReviewMemory.seen`) before memory took the refusals (`adopt`); stopped in
+  between, memory stayed behind a draft `sync` took for the one it saw, and the same session's
+  reconcile and persist erased the refusals from the draft. A row click's write is now marked
+  seen only by `adopt`, which takes the refusals first.
+- **Two notebooks on one output folder: a stale one never writes over the other's draft**
+  (external re-check av, 24 November, blocker 2). Each notebook holds the whole draft as it
+  read it; the output folder's lock made their writes one at a time but not current, so the
+  second wrote its stale answers over the first's saved refusal, confirmation or tags. The
+  notebook now pins the draft file's generation (SHA-256 of `morphobricks.draft.json`) when it
+  reads the draft and after each save of its own; `run.draft_file.save_draft(expected=...)`
+  and `publish_draft(expected=...)` compare it with the file under the same hold of the lock
+  as the write and otherwise refuse with `R_DRAFT_CHANGED` (`DraftChanged`), writing nothing.
+  Every save of the notebook (every card, the tag review, *Check and save*) and its
+  publication pass it; a folder this notebook never read is written only while it has no
+  draft file. A save stopped by an interruption keeps the new answers only when the file holds
+  them; when it holds neither them nor the draft before (another writer in between), every
+  later save is refused until the folder is checked again. `draft_holds` is replaced by
+  `draft_generation` and `answers_generation`. The command line writes no draft.
+- **`describe --publish` never publishes over the notebook's saved draft** (external re-check
+  ay, 24 November, blocker). The command built a new fast-mode description from its flags and
+  published it with `run.description_file.publish_description` without reading
+  `morphobricks.draft.json`: a strict-mode tag review's refused units (or a draft another
+  notebook held stale) were published without the action on each unit that alone releases
+  them. `publish_description` now refuses, under the output folder's lock, while a draft file
+  exists (a symbolic link too), with `R_DRAFT_EXISTS` (`DraftExists`, a `ValueError`) naming
+  the draft and saying to finish and publish it in the notebook, or to remove or archive it
+  deliberately; nothing is written. `publish_draft`, which publishes that draft itself
+  (generation-checked), still calls `publish_locked` directly and is unchanged; the command is
+  the only other caller. An output folder with no draft is published as before.
+- **An unusable draft is copied aside only by a save that passes its generation check**
+  (external re-check ay, file item). The notebook copied it to
+  `morphobricks.draft.unused-N.json` before the locked check of `save_draft(expected=...)`, so
+  a stale save that was then refused had copied another notebook's newer draft. The copy is now
+  made by `save_draft(..., keep_previous=True)` after the check, under the same hold of the
+  lock, never over an existing copy; a copy that cannot be written (`UnusedDraftNotKept`)
+  replaces nothing. `UNUSED_PREFIX` moved to `run.draft_file`.
+
 - **Notebook installer: the installed commit, not only the version (#371).** Cell 1 of the
   Preprocessing notebook reused any installed package reporting version 0.8.0, so a 0.8.0 built
   from another commit (a development install from `main`) was taken for the release. It now
@@ -387,6 +574,21 @@ old pin are refused with `spec_commit_mismatch`, as at every re-pin.
     units it will not fill.
 
 ### Changed
+
+- **Tag by repeat, fast mode: a refused unit whose header is fixed stays refused until
+  confirmed** (behaviour change, owner decision of 22 November). A unit a repeat folder's row
+  refused, and that the user has not confirmed, is left out of fast mode's header trust
+  (`RepeatRows.standing`). So when its image header is corrected to fit its row, a re-check no
+  longer tags it from its header and releases it, as before this release: it stays refused,
+  untagged and listed, with "its own tags are incomplete: a refused unit is never tagged from
+  its header, even one that fits now; confirm its tags", until the user confirms it (**Override
+  this unit**, **Confirm the same tags**), tags it by hand, or fills it with its row.
+  Nor is it tagged by any fast-mode click that is no action on it alone (external re-check ao,
+  24 November): a layout template edit, **Tag the N new unit(s) like the first tagged unit**, a
+  dropdown shared by several units, **Tag like the saved group** or a header pre-tag leave its
+  tags unchanged (`TagGrid.held_out`); before, a blank template edited through its shared
+  dropdown wrote the new tags to it when another unit's confirmation had saved its header
+  names as aliases.
 
 - **The Cellpose notebook's pin check covers the code it runs, not all of `src/` (#421).** A change
   under `src/` no longer needs a new `RELEASE_REF` in `notebooks/MorphoBricks_Cellpose.ipynb` unless

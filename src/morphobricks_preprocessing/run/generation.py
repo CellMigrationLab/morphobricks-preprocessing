@@ -52,6 +52,7 @@ from ..design import DESIGN_FILENAME
 from ..discovery_report import REPORT_FILENAME, REPORT_TEXT_FILENAME
 from ..image_qc_record import IMAGE_QC_FILENAME
 from ..manifest import MANIFEST_FILENAME, file_sha256
+from ..mask_scan import MASK_REPORT_FILENAME
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +71,9 @@ MOVED_IN_ORDER = (
     REPORT_FILENAME,
 )
 """The files moved into place after the commit, in this order (the manifest is the commit)."""
+REMOVABLE = (MASK_REPORT_FILENAME,)
+"""The only output files a publication may remove (#398): a record naming any other entry is
+refused, never followed, so a damaged or edited record cannot remove another file."""
 
 
 class PublicationIncompleteError(RuntimeError):
@@ -141,6 +145,8 @@ def _commit(
     names = [name for name in (*MOVED_IN_ORDER, MANIFEST_FILENAME) if (staged / name).exists()]
     if MANIFEST_FILENAME not in names:
         raise ValueError("a generation needs its manifest")
+    if _not_removable(removes):
+        raise ValueError(f"a generation removes only {', '.join(REMOVABLE)}, not {removes!r}")
     for name in names:
         _flush(staged / name)
     record = {
@@ -221,8 +227,20 @@ def _committed(output: Path, staged: Path) -> bool:
 
 
 def _finish_committed(output: Path, staged: Path) -> None:
-    """Move a committed generation's files into place, remove what it removes, clean up."""
+    """Move a committed generation's files into place, remove what it removes, clean up.
+
+    A record that removes anything but :data:`REMOVABLE` is refused before anything moves.
+    """
     record = _record(staged) or {"removes": []}
+    wrong = _not_removable(record["removes"])
+    if wrong:
+        raise PublicationIncompleteError(
+            f"The new results are published ({MANIFEST_FILENAME} names them), but the record "
+            f"{staged / PUBLICATION_RECORD} cannot remove {', '.join(map(repr, wrong))}: a run "
+            f"removes only {', '.join(REMOVABLE)}. Nothing was moved or removed. The record was "
+            "damaged or edited: look at it, then delete the folder "
+            f"{staged} yourself and run again."
+        )
     try:
         for name in MOVED_IN_ORDER:
             if (staged / name).exists():
@@ -357,6 +375,11 @@ def _record(staged: Path) -> dict | None:
     if not isinstance(files, dict) or not isinstance(removes, list):
         return None
     return data
+
+
+def _not_removable(removes: Iterable[object]) -> list[object]:
+    """Return the entries of a removal list that are not names of :data:`REMOVABLE`."""
+    return [name for name in removes if not isinstance(name, str) or name not in REMOVABLE]
 
 
 def _flush(path: Path) -> None:

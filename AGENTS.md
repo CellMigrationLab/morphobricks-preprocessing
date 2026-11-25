@@ -137,7 +137,9 @@ src/morphobricks_preprocessing/
                     Reconfirmation (the user's recorded acceptance of a changed ID)
   description_file.py   read_description(path): symlink refusal (R_FILE_SYMLINK), bytes -> Description
   run/description_file.py publish_description: lock, base SHA-256, strict re-read, transitions,
-                    atomic write, append-only morphobricks.records.jsonl (Spec experiment-v1 4.6, 10)
+                    atomic write, append-only morphobricks.records.jsonl (Spec experiment-v1 4.6, 10);
+                    refuses while morphobricks.draft.json exists (R_DRAFT_EXISTS, DraftExists, ay):
+                    only run/draft_file.py publish_draft publishes a saved draft (publish_locked)
   records_file.py   pure checker of morphobricks.records.jsonl (Spec experiment-v1 4.6): check_records
                     (bytes -> records + E_RECORDS_* issues), encode_record, RECORD_KEYS; read_records
                     in run/description_file.py refuses with R_RECORDS_FILE_INVALID
@@ -525,6 +527,21 @@ src/morphobricks_preprocessing/
                             tuned per unit (edited), contradictions refused and tagged on their
                             own; channel_matrix.py (pure) its rules (trusted, layout_groups,
                             matrix_rows, set_template, fill)
+  notebook_channels_override.py the per-unit override of a unit the repeat rows list: an editor
+                            that starts from the row's tags, shows each header name and
+                            highlights the C indices where it disagrees; nothing is saved or
+                            counted until Confirm (repeat_tags.Override, override_holds: the
+                            confirmation holds while the unit's tags and own header names are
+                            unchanged; one-click Confirm the same tags / Confirm all N like it for
+                            listed units with a confirmed unit's headers; a refusal keeps the
+                            aliases of its time)
+  notebook_channels_memory.py the rows' memory of the draft's tag review (ReviewMemory: restore,
+                            adopt, persist; Refusal); memory remembers the review it last took or
+                            wrote (seen) and takes the draft's again when it holds another (sync,
+                            review as), so stale memory never writes over a saved refusal
+  repeat_review.py          the refusals and confirmations kept in the draft file (pure: Override,
+                            RefusedUnit, TagReview; draft_format's optional tag_review, restored
+                            on opening by RepeatRows.restore before headers are trusted)
   strict_draft.py           fast mode unticked (pure): StrictShadow, the strict page's draft kept
                             beside the draft; every user save applies the same change to both
                             (channel_answers.tagged, patched), no-click tags the draft only;

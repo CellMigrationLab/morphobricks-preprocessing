@@ -37,6 +37,7 @@ from .description import (
 )
 from .description_transition import DATE
 from .draft import Draft, DraftError, OpenQuestion
+from .repeat_review import TagReview
 
 CHANNELS = "channels"
 """The answer "an ordinary channel image": published as an absent ``image_type`` (§4.4b)."""
@@ -146,6 +147,7 @@ class DraftAnswers:
     pairing: Mapping[tuple[str, str], str] = field(default_factory=dict)
     channel_layout: LayoutAnswer | None = None  # the fast-mode statement; None: strict
     switch_mode: bool = False  # only the user's switch of a published file's mode (section 10)
+    tag_review: TagReview | None = None  # refused/confirmed units of Tag by repeat (draft only)
 
 
 class DraftIncomplete(DraftError):
@@ -464,7 +466,7 @@ def missing_confirmations(
 
 
 def _used(draft: Draft, answers: DraftAnswers) -> dict[str, tuple[str, ...]]:
-    """Return ``used_ids``: the IDs the lineage retired plus every ID confirmed now."""
+    """Return ``used_ids``: the published registry and retired IDs plus every ID confirmed now."""
     now = {
         "channels": list(answers.channels),
         "conditions": [s.confirmed for s in draft.conditions.values()],
@@ -472,8 +474,8 @@ def _used(draft: Draft, answers: DraftAnswers) -> dict[str, tuple[str, ...]]:
         "repeats": [r.id.confirmed for r in draft.repeats.values()],
     }
     return {
-        kind: tuple(sorted(set(draft.used_ids.get(kind, ())) | set(now.get(kind, []))))
-        for kind in USED_KINDS
+        k: tuple(sorted({*now[k], *draft.listed_ids.get(k, ()), *draft.used_ids.get(k, ())}))
+        for k in USED_KINDS
     }
 
 
@@ -514,8 +516,8 @@ def description_from_draft(
     """Build the description of a draft whose every science decision the user confirmed.
 
     Pure: no file is read or written and no clock is read. Each ID and ``confirmed_on`` is the
-    user's, from ``answers``; ``used_ids`` is the draft's
-    retired IDs plus every ID confirmed now. ``channel_counts`` are as
+    user's, from ``answers``; ``used_ids`` is the draft's listed and retired IDs plus every ID
+    confirmed now (never one dropped, section 4.9). ``channel_counts`` are as
     :func:`missing_confirmations` takes them.
 
     Raises

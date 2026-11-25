@@ -34,22 +34,36 @@ class _StrictDraft:
 
         ``change`` is the user's change that made ``answers`` from the current ones (a card of
         *Your channels*): the strict page's draft takes the same change. Without one it takes
-        the same edit, field by field (:func:`.strict_draft.patched`).
+        the same edit, field by field (:func:`.strict_draft.patched`). A save stopped by an
+        interruption after the file took the answers is followed too (:meth:`_saved`).
         """
-        before = self.draft_answers
-        ok = self._save_answers(self._reask(before, answers, strict=False), rebuild=rebuild)
-        if ok and before is not None:
-            self._strict.follow(before, answers, change, self._strict_settled)
+        before, ok = self.draft_answers, False
+        try:
+            ok = self._save_answers(self._reask(before, answers, strict=False), rebuild=rebuild)
+        finally:
+            if self._saved(ok, before):
+                self._strict.follow(before, answers, change, self._strict_settled)
         return ok
 
     def _answer_unattended(self, answers: DraftAnswers) -> bool:
         """Save answers made with no click (fast mode's trusted headers): the draft only."""
-        before = self.draft_answers
-        ok = self._save_answers(self._reask(before, answers, strict=False), rebuild=False)
-        if ok and before is not None and self._strict.draft is None:
-            self._strict_held()
-            self._strict.hold(before)
+        before, ok = self.draft_answers, False
+        try:
+            ok = self._save_answers(self._reask(before, answers, strict=False), rebuild=False)
+        finally:
+            if self._saved(ok, before) and self._strict.draft is None:
+                self._strict_held()
+                self._strict.hold(before)
         return ok
+
+    def _saved(self, ok: bool, before: DraftAnswers | None) -> bool:
+        """Return True when a save from ``before`` took effect (the strict page's draft follows).
+
+        It returned True, or was stopped by an interruption after the draft file took the
+        answers: memory then holds them (:meth:`._save_answers`; external re-check as,
+        24 November 2026).
+        """
+        return before is not None and (ok or self.draft_answers is not before)
 
     def _restore_strict(self) -> bool:
         """Save the strict page's draft back (fast mode unticked); False when refused."""

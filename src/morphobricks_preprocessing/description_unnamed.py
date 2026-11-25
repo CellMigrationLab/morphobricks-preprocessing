@@ -37,16 +37,19 @@ def unnamed_items(
     ]
 
 
-def checked_items(value: object, where: str) -> None:
+def checked_items(value: object, where: str, channels: int) -> None:
     """Refuse a malformed list of unnamed images of one unit record.
+
+    ``channels`` is the number of the unit's channels (its record's ``channels``): every
+    position is one of them, ``none`` lists them all and ``partial`` some but not all, as the
+    writer tells them apart (:func:`unnamed_items`, #506).
 
     Raises
     ------
     ValueError
         When it is not a non-empty list of items with exactly the recorded keys, a string
         image, ``none`` or ``partial``, and ascending distinct non-negative whole positions
-        (all of the unit's positions are not known here, so only ``none`` and ``partial``
-        are told apart by the writer).
+        below ``channels``, all of them for ``none`` and not all for ``partial``.
     """
     if not isinstance(value, list) or not value:
         raise ValueError(f"{where}.{FIELD} must be a non-empty list")
@@ -63,6 +66,17 @@ def checked_items(value: object, where: str) -> None:
         )
         if not whole or not positions or positions != sorted(set(positions)):
             raise ValueError(f"{where}.{FIELD} channel_positions must be ascending positions")
+        if positions[-1] >= channels:
+            raise ValueError(
+                f"{where}.{FIELD} channel_positions {positions} are not all positions of the "
+                f"unit's {plural(channels, 'channel')}"
+            )
+        if (item["header_names"] == NONE) != (len(positions) == channels):
+            raise ValueError(
+                f"{where}.{FIELD} header_names {item['header_names']!r} contradicts the "
+                f"positions {positions} of {plural(channels, 'channel')}: {NONE} lists every "
+                f"position, {PARTIAL} some"
+            )
     paths = [item["image"] for item in value]
     if paths != sorted(set(paths)):
         raise ValueError(f"{where}.{FIELD} images must be sorted and distinct")

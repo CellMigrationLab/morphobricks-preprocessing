@@ -20,7 +20,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from .projection import METHODS
+from .projection import METHODS, projection_dtype
 from .validation import ValidationIssue, plural, warning
 
 if TYPE_CHECKING:  # the record module imports this one
@@ -179,8 +179,6 @@ class RunProjection:
         bounds, record = data["z_range"], data["conversion_record"]
         if data["method"] not in METHODS:
             raise ValueError(f"{KEY}.method {data['method']!r} is not max, mean or sum")
-        if bounds is not None and not (isinstance(bounds, list) and len(bounds) == 2):
-            raise ValueError(f"{KEY}.z_range is not null or two numbers")
         if not isinstance(record, Mapping) or set(record) != {"file", "sha256"}:
             raise ValueError(f"{KEY}.conversion_record must be {{file, sha256}}")
         if not isinstance(record["file"], str) or not _SHA256.fullmatch(str(record["sha256"])):
@@ -194,14 +192,75 @@ class RunProjection:
             )
         if not isinstance(data["images"], list):
             raise ValueError(f"{KEY}.images is not a list")
+        images = tuple(ProjectedImage.from_dict(i) for i in data["images"])
+        for image in images:
+            _check_types(data["method"], image)
         return cls(
             method=data["method"],
-            z_range=None if bounds is None else (bounds[0], bounds[1]),
+            z_range=_checked_range(bounds, images),
             conversion_record=(record["file"], record["sha256"]),
             source_root=data["source_root"],
-            images=tuple(ProjectedImage.from_dict(i) for i in data["images"]),
+            images=images,
             masks_paired=tuple(masks),
             warnings=tuple(warns),
+        )
+
+
+def _checked_range(bounds: object, images: tuple[ProjectedImage, ...]) -> tuple[int, int] | None:
+    """Return the requested slice range, checked against itself and every image (#445).
+
+    Null (every slice: each image used its whole stack) or two whole numbers (not booleans)
+    ``0 <= start < stop``, each image's own range: the conversion projects every image of the
+    tree with the range asked for, and a stack it does not fit is refused there.
+
+    Raises
+    ------
+    ValueError
+        For any other range, or images that did not use it.
+    """
+    if bounds is None:
+        wanted = None
+    elif (
+        isinstance(bounds, list)
+        and len(bounds) == 2
+        and all(type(b) is int for b in bounds)
+        and 0 <= bounds[0] < bounds[1]
+    ):
+        wanted = (bounds[0], bounds[1])
+    else:
+        raise ValueError(f"{KEY}.z_range {bounds!r} is not null or two slice numbers START < STOP")
+    for image in images:
+        if image.z_range != (wanted or (0, image.source_z_size)):
+            used = f"{image.z_range[0]}:{image.z_range[1]}"
+            raise ValueError(
+                f"{KEY}.z_range {bounds!r} is not the slices {image.relative_path!r} used ({used})"
+            )
+    return wanted
+
+
+def _check_types(method: str, image: ProjectedImage) -> None:
+    """Refuse an image whose types, rule, rounding or bits reason are not the table's (#445).
+
+    The dtype table (:func:`.projection.projection_dtype`) decides them from the source type,
+    the method and the slices used; the reason the significant bits are dropped is the table's,
+    or None for a source that recorded none.
+    """
+    slices = image.z_range[1] - image.z_range[0]
+    try:
+        rule = projection_dtype(image.source_dtype, method, slices)
+    except (TypeError, ValueError) as exc:  # not a type, or a type or sum the table refuses
+        raise ValueError(
+            f"{KEY}.images: {image.relative_path!r} has no dtype table entry for a {method} of "
+            f"{slices} {image.source_dtype!r} slices: {exc}"
+        ) from exc
+    found = (image.source_dtype, image.output_dtype, image.rounding, image.dtype_rule)
+    table = (rule.source_dtype, rule.output_dtype.name, rule.rounding, rule.dtype_rule)
+    dropped = image.significant_bits_dropped
+    if found != table or dropped not in (None, rule.significant_bits_dropped):
+        raise ValueError(
+            f"{KEY}.images: {image.relative_path!r} records {found} (significant bits dropped: "
+            f"{dropped!r}); the dtype table gives {table} for a {method} of {slices} slices "
+            f"(significant bits dropped: None or {rule.significant_bits_dropped!r})"
         )
 
 

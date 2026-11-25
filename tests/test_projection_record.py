@@ -39,7 +39,7 @@ def projected_entry(**changes) -> CopyEntry:
     details = ProjectionEntry(
         source_relative_path="c/a.tif",
         source_content_sha256=SHA,
-        source_z_axis=("Z", 0),
+        source_z_axis=("Q", 0),
         source_z_size=12,
         z_range=(2, 10),
         method="max",
@@ -58,6 +58,7 @@ def projected_entry(**changes) -> CopyEntry:
         source_axes="QYX",
         roles=("Z", "Y", "X"),
         copy_axes="YX",
+        pixel_sizes=(RecordedSize("X"), RecordedSize("Y"), RecordedSize("Z"), RecordedSize("T")),
         copy_sha256=SHA,
         projection=details,
     )
@@ -95,7 +96,7 @@ def test_a_projected_record_round_trips():
     data = rec.to_dict()
     assert data["projection"] == {"method": "max", "z_range": [2, 10]}
     done = data["files"][0]["projection"]
-    assert done["source_z_axis"] == {"letter": "Z", "index": 0}
+    assert done["source_z_axis"] == {"letter": "Q", "index": 0}
     assert done["dropped_sizes"] == {"Z": {"value": 2.5, "unit": "micrometer", "source": "header"}}
     assert done["nan_policy"] == "propagate" and done["significant_bits_dropped"] is None
 
@@ -146,19 +147,25 @@ def test_a_changed_projection_field_changes_the_reuse_key():
     assert base.same_plan(projected_entry())
     done = base.projection
     changes = [
-        {"method": "sum", "output_dtype": "uint32", "dtype_rule": "sum uint16->uint32 exact"},
+        {
+            "method": "sum",
+            "output_dtype": "uint32",
+            "dtype_rule": "sum uint16->uint32 exact, bound Z<=65537",
+        },
         {"z_range": (2, 9)},
         {"source_z_size": 13},
-        {"source_z_axis": ("Z", 1)},
-        {"source_dtype": "uint8", "output_dtype": "uint8"},
+        {"source_dtype": "uint8", "output_dtype": "uint8", "dtype_rule": "max uint8->uint8"},
         {"dropped_sizes": {"Z": replace(Z_SIZE, value=2.6)}},
         {"dropped_sizes": {"Z": None}},
         {"significant_bits_dropped": "a sum can exceed the range"},
-        {"dtype_rule": "max uint16->uint16 (edited)"},
     ]
     for change in changes:
         other = replace(base, projection=replace(done, **change))
         assert not base.same_plan(other), change
+    moved = replace(done, source_z_axis=("Q", 1))  # another Z axis, with its header and roles
+    assert not base.same_plan(
+        replace(base, source_axes="YQX", roles=("Y", "Z", "X"), projection=moved)
+    )
     # The source content SHA-256 is a result of the write, not part of the plan.
     assert base.same_plan(replace(base, projection=done.with_content("b" * 64)))
     # A projected entry is never the plan of an unprojected one.
@@ -217,7 +224,12 @@ def test_all_slices_means_the_whole_stack_is_recorded():
 
 def test_a_record_of_a_sum_that_could_not_be_exact_is_refused():
     done = projected_entry().projection
-    kwargs = {"source_dtype": "uint32", "method": "sum", "output_dtype": "float64"}
+    kwargs = {
+        "source_dtype": "uint32",
+        "method": "sum",
+        "output_dtype": "float64",
+        "dtype_rule": "sum uint32->float64 exact integer within 2**53, bound Z<=2097152",
+    }
     fits = replace(done, source_z_size=2**21, z_range=(0, 2**21), **kwargs)
     assert fits.output_dtype == "float64"
     with pytest.raises(ValueError, match="exact"):

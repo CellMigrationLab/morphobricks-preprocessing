@@ -210,6 +210,13 @@ class _MaskStepCard:
             )
             self.mask_step_lock.show(step.output_folder)
             return None
+        if result.report is None:  # the description is gone or unreadable (#418)
+            self._mask_step_failed(
+                "The masks were not read: the experiment description cannot be read.",
+                ["No mask was read. Read the message below; it says what to do."],
+            )
+            self.mask_step_result.value = issues_html(list(result.issues))
+            return None
         self.mask_step_progress.bar_style = "success"
         self._show_mask_description(step, result)
         return result

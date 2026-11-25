@@ -433,6 +433,11 @@ editing, or the confirmed ones. An image that cannot be drawn gets a sentence sa
    shows the images as the check read them; the folders found, the check's
    report (formatted: a summary, then tables with the details folded) and **Exclude images**
    are collapsed below.
+   If the check itself fails or is interrupted (for example Google Drive stopped answering),
+   nothing of an earlier check stays shown as valid on any step: its labels, roles, offers,
+   pictures, recommended bins and confirmations are cleared, and a red message names the
+   folder and the error (the full report is in **Technical details**).
+   Make sure Google Drive is mounted and the folder is there, then click the button again.
 2. **Axes.** What the files hold, in two parts. The roles start from the proposal of step
    1 (the header's, or what you chose on the example) and can be changed here at any time;
    once confirmed, **Change axis roles** takes the confirmation back. The instant one of these
@@ -495,6 +500,49 @@ editing, or the confirmed ones. An image that cannot be drawn gets a sentence sa
    before the pairing: if you pair the `rep2` folders of different conditions with different
    biological repeats, every row of that folder (whatever its channel count) says so and
    fills nothing; tag those conditions on their own.
+   From a listed acquisition, **Override this unit (start from the row's tags)** opens that
+   acquisition's tags with the row's tags filled in. Under each channel the header name is
+   shown, and an orange box marks where it disagrees, so you change only what is different.
+   Nothing is saved while you edit; the acquisition counts as tagged only after **Confirm these
+   tags** (every channel tagged, each label once). If the acquisition's own header or its
+   tags change later, it is listed again.
+   A listed acquisition is counted only when you confirm *that* acquisition (**Confirm these
+   tags**, **Confirm the same tags**, or its own folder tagged on the grid). Confirming one
+   acquisition never counts another, and fast mode does not tag a listed acquisition from the
+   header names saved by confirming another: it stays listed with the same contradiction and
+   the same orange boxes. When a listed acquisition has the same header names, at every
+   channel, as one you confirmed, it says "same headers as *that one*, which you confirmed as
+   *tags*" and offers **Confirm the same tags**; when several listed acquisitions have them it
+   also offers **Confirm all N like it**. Nothing is counted until you click; the buttons save
+   exactly as **Confirm these tags** does (all N or none).
+   Tagging a listed acquisition by hand on the grid (every channel, fitting its header) is
+   saved as your confirmation of it, so it counts and can be offered as the source of **Confirm
+   the same tags**. With the statement unticked, a tag chosen for a block of folders is your
+   confirmation of every listed acquisition in that block: the block names them under its
+   dropdowns ("A tag chosen here also confirms the refused unit(s) ..."), also when its folder
+   list is folded; take an acquisition out of the block first to leave it listed. Tags that fit
+   only because you confirmed *another* acquisition with the same header names, or because the
+   header changed, never count it. If you rename or remove a label after an acquisition was listed, its
+   override opens with that channel left blank: choose a label that still exists. What is
+   listed and what you confirmed is saved with your answers: after you close and reopen the
+   notebook, a listed acquisition is still listed, and still not counted, until you confirm it.
+   This holds also when you stop the kernel (Interrupt) during a tag save: what is listed and
+   confirmed is then read again from the saved answers, in the same session too, so an
+   interrupted save never drops a listed acquisition or a confirmation.
+   Two notebooks open on the same output folder never write over each other's answers: each
+   notebook saves only over the draft it read or last saved. When the other one saved since,
+   the change is refused with `R_DRAFT_CHANGED` ("Not saved: the draft changed"), nothing is
+   written and the other notebook's listed acquisitions, confirmations and tags stay as they
+   are; press **Check folder** in step 1 to read them, then give your change again.
+   In fast mode this holds also when you correct the acquisition's image header so that it fits
+   its row: it is not tagged from its header but stays listed ("a refused unit is never tagged
+   from its header, even one that fits now; confirm its tags") until you confirm it. In fast
+   mode a listed acquisition you have not confirmed also keeps its tags when you edit a
+   layout's row of tags, fill new acquisitions like the first, tag several acquisitions with one
+   dropdown, or use **Tag like the saved group** or a header pre-tag: only an action on it alone
+   (its override, a one-click confirmation, or its own dropdowns) changes them. An
+   acquisition you set to colour (RGB) keeps its listing for later: it is not listed while it is
+   colour, and is listed again if you set it back to channels.
    In fast mode a row offers only the acquisitions that do not fit the layout, and those it
    fills are tagged on their own (checked as in the strict mode); unticked, a row is offered
    for every repeat folder. On a reopen, a row shows the tags every acquisition of its folder
@@ -523,7 +571,11 @@ editing, or the confirmed ones. An image that cannot be drawn gets a sentence sa
    change of the same entity (a folder renamed or removed) is never paired with it: the save
    is refused with `folder_and_id_changed` (#475); undo the ID edit and the folder change
    saves on its own. A saved ID cannot be changed from the notebook: only the publication API
-   takes a `Reconfirmation` that names a new ID.
+   takes a `Reconfirmation` that names a new ID. A whole biological repeat or condition can
+   be removed (every one of its folders gone from disk, or a condition folder renamed on disk,
+   which is a removed folder plus a new one): answer **Yes, remove** for each condition listed
+   and save. Its ID stays in `used_ids` as retired (experiment-v1 §4.9): it is never given to
+   another repeat or condition, and a folder of that name that comes back gets a new ID.
 4. **Masks.** The masks the check paired with the images (and, for masks whose files do not
    name their axes, the axes to state), then for each mask type: *separate objects*,
    *regions* or *grouped labels (one value per parent, e.g. mitochondria by cell)*. Nothing is
@@ -880,7 +932,9 @@ header is checked against the list first: an image with other channels, names in
 order, other names or another image type is listed (`R_FAST_LAYOUT_CONTRADICTION`) and nothing
 is written. Experiments where some acquisitions differ are described in the notebook, tagging
 those acquisitions on their own. `--strict` keeps the per-acquisition mode, answered in the
-notebook. A published description is never switched between modes by `describe`.
+notebook. A published description is never switched between modes by `describe`. While the
+output folder holds answers saved in the notebook (`morphobricks.draft.json`), the command
+publishes nothing (`R_DRAFT_EXISTS`): they are finished and published in the notebook.
 
 ### Stating pixel sizes (`calibrate`)
 
@@ -900,12 +954,19 @@ morphobricks-preprocessing calibrate /data/exp1 --remove treated Z
 ```
 
 The target is `.` (the whole experiment), a folder (a condition or repeat) or an image,
-relative to the experiment folder with `/`, spelled exactly as on disk. The most specific
-statement applies: an image's own over its folder's, a folder's over the whole
-experiment's. Each axis is stated on its own (`XY` states both with the same size), so Y
-and X never trade sizes. Units are pm, Å, nm, µm (um, micron), mm, cm or m. You may also
-edit the file in a spreadsheet; its columns are `target,axis,size,unit`, with an empty size
-and the unit `pixels` for a pixel statement:
+relative to the experiment folder with `/`, spelled exactly as on disk. Only `.` and `./`
+are the whole experiment: a target of only slashes, backslashes and `.` steps (`/`, `//`,
+`\`, `.\`, `./.`, `.//`, `././`) names no folder and is refused (reason
+`calibration_target_root`), never read as the whole experiment; `.\` and `./.` were read as
+the whole experiment before and are no longer accepted. `calibrate` and the notebook change
+nothing; a line of `calibration.csv` edited by hand to such a target (for example `/`, read
+as the whole experiment before) now stops the run with `calibration_unreadable`, naming the
+line (`calibrate` and the notebook always write `.`). The most specific statement applies:
+an image's own over its folder's, a folder's over the whole experiment's. Each axis is
+stated on its own (`XY` states both with the same size), so Y and X never trade sizes. Units
+are pm, Å, nm, µm (um, micron), mm, cm or m. You may also edit the file in a spreadsheet;
+its columns are `target,axis,size,unit`, with an empty size and the unit `pixels` for a
+pixel statement:
 
 ```text
 target,axis,size,unit
@@ -1354,11 +1415,14 @@ continues.
 | `R_IMAGE_TYPE_CONTRADICTS_HEADER` for colour scanner files, `R_RGB_OVERRIDE_NOT_THREE_SAMPLES`, `E_RGB_OVERRIDE_WITHOUT_RGB` | Error | Some scanners store colour (RGB) images with a header that does not say RGB (for example TIFF photometric *minisblack* with three samples per pixel). The acquisition declared `image_type = "rgb"` is then refused, and the message says so and names `rgb_header_override`. If the three samples are red, green and blue in this order, add `rgb_header_override = true` to that acquisition in `morphobricks.toml` (beside `image_type = "rgb"`; in the notebook, tick **Read these folders as colour (RGB) although their header does not say colour** on the Image type card of the Channels step) and publish again: the run then accepts the header and records the acquisition in the manifest as declared RGB with the header overridden (`image_type_header_overridden`, `header_photometric`). Every image whose header does not say RGB must have exactly three interleaved samples per pixel, else `R_RGB_OVERRIDE_NOT_THREE_SAMPLES` names the image (reported before `R_UNIT_NOT_HOMOGENEOUS`); the key on an acquisition that is not declared `rgb` is `E_RGB_OVERRIDE_WITHOUT_RGB`. Images of the acquisition that differ only in colour interpretation (some *minisblack*, some RGB) are then one layout. Images whose header already says RGB, or whose format states no colour interpretation (OME-Zarr), do not use the key; the manifest records, per image, whether it was used (`rgb_header_override_images`). Adding, removing or changing the key reopens the "same way" confirmation of that replicate. Only headers are read, never pixels. |
 | `R_FAST_LAYOUT_CONTRADICTION` | Error | The published description is in **fast mode** (it has a `channel_layout` table: "every imaging unit has the same channels in the same order", Spec ADR 0006) and some images of the acquisitions that follow it (`channels_from = "experiment"`) contradict that list. One message lists **every** contradicting image, with its FOV key (condition, repeat and acquisition folders, then the image name) and path, and every contradiction found in it: `image_type` (the header says colour where the list is not, or the reverse), `channel_count` (another number of channels), `header_order` (header names of the list in another order) or `header_names` (a header name that is no confirmed name of any channel of the list), each with its C index and what was expected and found. It is decided from the image headers only, before any pixel is read; nothing is reordered, dropped or guessed, and nothing was processed. Tag the acquisitions of these images on their own (`channels_from = "unit"`, confirmed per acquisition), publish again and run again. An image whose header gives no channel names (or an empty name) needs no evidence and follows the list; the manifest records each image of a fast acquisition in `fast_layout_images` (`header_verified` true only when every channel was confirmed by its header name). In such acquisitions this one code replaces `R_CHANNEL_COUNT_MISMATCH`, `R_HEADER_CONTRADICTION`, `R_IMAGE_TYPE_CONTRADICTS_HEADER` and `R_UNIT_NOT_HOMOGENEOUS` (which stays for the other axes); `R_RGB_OVERRIDE_NOT_THREE_SAMPLES` keeps its priority. An acquisition tagged on its own is checked as in a description without fast mode. Experiments with extra channels in some acquisitions are refused here: tag those acquisitions on their own. |
 | `folder_and_id_changed` | Error | *Check and save* (and publication) found an ID changed in the same save as a folder change of the same entity: for example a repeat ID `Day1 -> DayX` while one of its folders was renamed or removed, a condition ID changed while its folder was renamed, or a removed folder's ID typed for the new folder. Neither change is guessed from the other, so the message names the entity, its saved ID and its folders. Undo the ID edit: put the saved ID back (the folder change then saves on its own). A removed folder's ID stays used and is not given to another folder (experiment-v1 4.9). Nothing was published. |
+| `R_DRAFT_CHANGED` | Error | Notebook: `morphobricks.draft.json` was changed since this notebook read or saved it (another notebook, or a program, saved its own answers in the same output folder). Nothing was saved or published, and the answers saved there are kept. Press **Check folder** in step 1 to read them, then give your change again. |
+| `R_DRAFT_EXISTS` | Error | Command line (`describe --publish`): the output folder holds `morphobricks.draft.json`, answers saved in the notebook that the command does not read. Nothing was published or written. Finish those answers and publish them in the notebook (step 1, **Check folder**, then **Check and save**), or, if they are not wanted, remove or archive that file yourself and run the command again. |
 | `removal_mismatch` | Error | A saved folder is no longer in the description (neither under its folder nor under its IDs) and no **Yes, remove** confirms it, or a removal names a folder the description still holds. Confirm the removal of a folder that is gone, or undo the change; withdraw the removal of a folder that is still there, or check the folder again. Nothing was published. |
 | `mode_switch_unconfirmed` | Error | The description would change between fast mode (one channel list for the experiment) and the strict per-acquisition mode, but you did not switch it: a published description keeps its mode when it is reopened. Tick or untick **Every imaging unit has the same channels in the same order** on *Tag channels* yourself, then save again. Nothing was published. |
 | `E_FAST_LAYOUT_MISMATCH`, `E_FAST_MARKER_WITHOUT_LAYOUT` | Error | The description is refused by the reader: an acquisition marked `channels_from = "experiment"` lists other channels or another image type than `channel_layout` (`E_FAST_LAYOUT_MISMATCH`), or an acquisition has `channels_from` in a description without `channel_layout` (`E_FAST_MARKER_WITHOUT_LAYOUT`). In a description with `channel_layout` every acquisition must say `channels_from` (`E_MISSING_FIELD`). |
 | `description_unreadable` | Error | `morphobricks.toml` or `morphobricks.records.jsonl` cannot be read. A description the reader refuses is reported with its own code (`E_*`, `R_FILE_SYMLINK`) and table path. |
 | `unreadable_folder` | Error | A folder could not be opened. Check permissions. |
+| `store_unreadable` | Error | A folder inside an OME-Zarr image could not be listed, so whether it holds links or mount points leading outside the selected folder is not known. Check the folder's permissions (and that the drive is connected), then check again. |
 | `link_outside_folder` | Error | A link in the experiment or masks folder leads outside it (the message names each link and its target), and nothing outside the selected folder is read. Copy or move the files in, or select a folder that holds them, then remove the link. |
 | `link_loop` | Error | A link leads back to a folder that holds it. Remove it. |
 | `mounted_folder` | Error | A folder (or file) in the experiment or masks folder is a mount point: another disk or share, or a bind mount of another folder, so its files come from outside the selected folder. It is named and not entered. Copy the files in, or select the mounted folder itself. Where the system's mount table cannot be read (macOS, Windows), only a mount of another device is seen. |
@@ -1450,6 +1514,7 @@ continues.
 | `calibration_axis_absent` | Warning | `calibration.csv` states a size for an axis some images do not have (for example a Z size for 2D images or projections); the message names them. No size is recorded for an axis an image does not have. Give the statement a narrower target, or no action if it is meant for the other images. |
 | `calibration_differs_from_header` | Warning | `calibration.csv` states a pixel size (or `pixels`) that differs from an image's metadata; the message names each image and axis with both sizes. The stated size is used. Correct or remove the statement if the metadata are right. |
 | `calibration_target_not_found` | Error | `calibration.csv` names a folder or image that is not in the experiment (names are compared exactly, case included). Correct the target, or remove the line. |
+| `calibration_target_root` | Error (reason) | Not a message of its own: the reason given inside the refusal of a pixel-size target of only slashes, backslashes and `.` steps (`/`, `//`, `\`, `.\`, `./.`, `.//`, `././`), which names no folder and is never read as the whole experiment. In `calibration.csv` the message is `calibration_unreadable` (below), naming the line and this reason, and the run stops, the file kept; `calibrate` and the notebook's calibration card refuse it and change nothing. For the whole experiment give the target `.` (in the notebook, **Use for all images**); otherwise give the folder or image. |
 | `calibration_unreadable` | Error | `calibration.csv` cannot be read; the message names the line and what is wrong. The file is left as it is: correct it, or remove it to use the sizes in the metadata. |
 | `unbalanced_images` | Warning | A condition and biological repeat has fewer than half or more than twice the median number of images. Check for missing, misplaced or duplicated images. |
 | `repeat_missing_conditions` | Warning | A biological repeat is not found in every condition. It is still used. If it has another folder name in some condition, pair it in the experiment design (step 1). |
@@ -1497,6 +1562,7 @@ continues.
 | `mask_planes_mismatch` | Error (`run`) | A mask does not have the time points and depth slices of its image under the confirmed axis roles: the masks of a time-lapse must have the same T as their image, one plane per time point, and a 2D mask fits only an image with one plane, whatever its metadata names (it is never shared by several planes). Save one mask plane per time point, with the axes named (`TYX`) or stated (`--mask-axes Cells=TYX`), or check the axis roles. |
 | `mask_size_mismatch` | Error | A mask does not have the width and height of its image. Check that it was made from that image at full resolution. |
 | `mask_pixel_type` | Error | A mask's pixels are not whole numbers (for example decimals). Save it as an integer label image. |
+| `mask_lossy_codec` | Error | A TIFF mask is stored with a lossy codec (JPEG, JPEG 2000, WebP, JPEG XL or JPEG XR), which changes pixel values, so its labels may not be the ones written. The message names each mask and its codec; nothing is read. Save the mask again from the segmentation, uncompressed or with a lossless codec (zlib, LZW or Zstandard). |
 | `mask_missing` | Warning | Some images have no mask of a kind that other images have; their objects of that kind cannot be measured. Add the masks, or exclude the images. |
 | `ambiguous_mask` | Error | A mask's name could belong to two images (one image name starts another's) or fit both layouts. Rename the masks or the images so each names one image and one kind. |
 | `mask_without_image`, `mask_outside_type_folder`, `mask_of_excluded_image` | Warning | Files in the masks folder that match no image of the experiment (check the folder and file names), other files directly in the masks folder, or masks of excluded images. They are not used. |

@@ -184,7 +184,7 @@ def test_b_a_swap_resolved_by_the_unit_s_channel_order_reopens_only_that_repeat(
         transition_issues,
     )
     from morphobricks_preprocessing.draft_answers import description_from_draft
-    from morphobricks_preprocessing.run.description_file import publish_description
+    from morphobricks_preprocessing.run.draft_file import draft_generation, publish_draft
 
     state = nb._published()
     candidate = description_from_draft(
@@ -198,8 +198,16 @@ def test_b_a_swap_resolved_by_the_unit_s_channel_order_reopens_only_that_repeat(
         ("R_CONFIRMED_ID_CHANGED", "channels", "DNA"),
     }  # no R_CONFIRMED_ON_CHANGED: the repeat was reopened
     records = tuple(Reconfirmation("channels", c, None, today) for c in ("ACTIN", "DNA"))
-    result = publish_description(exp[2], candidate, base_sha256=state.sha256, confirmations=records)
-    assert result.sha256
+    # The notebook's saved draft is published as itself (publish_draft): never by
+    # publish_description over it (R_DRAFT_EXISTS, external re-check ay)
+    result = publish_draft(
+        exp[2],
+        nb._draft_base,
+        channel_counts=nb._channel_counts(),
+        confirmations=records,
+        expected=draft_generation(exp[2]),
+    )
+    assert result.sha256 and result.base_sha256 == state.sha256
     published = (exp[2] / "morphobricks.toml").read_text(encoding="utf-8")
     assert re.search(rf'\[repeats\.{rid}\]\nconfirmed = true\nconfirmed_on = "{today}"', published)
     assert re.search(
