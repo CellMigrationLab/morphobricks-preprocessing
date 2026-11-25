@@ -15,6 +15,7 @@ import pytest
 
 from cellpose_stub import install
 from morphobricks_preprocessing import notebook_cellpose
+from morphobricks_preprocessing import notebook_cellpose_fields as fields_module
 from morphobricks_preprocessing import notebook_cellpose_form as form_module
 from morphobricks_preprocessing import segmentation_cellpose as cp
 from morphobricks_preprocessing.notebook_cellpose_form import STOPPED, CellposeNotebook
@@ -44,7 +45,7 @@ def cells(mixed_run, monkeypatch, tmp_path):
 def shown_forms():
     """Return a workflow with every step's form shown (nothing pressed)."""
     workflow = CellposeNotebook()
-    for step in ("open", "channels", "model", "preview", "segment", "next"):
+    for step in ("open", "channels", "model", "preview", "segment"):
         getattr(workflow, f"{step}_step")()
     return workflow
 
@@ -105,7 +106,7 @@ def test_the_forms_start_with_the_former_defaults():
 
 def test_every_field_reaches_the_workflow_as_given(monkeypatch):
     calls = []
-    steps = ("open", "choose_channels", "set_settings", "load", "preview", "run", "next_steps")
+    steps = ("open", "choose_channels", "set_settings", "load", "preview", "run")
     for name in steps:
         monkeypatch.setattr(
             CellposeNotebook, name, lambda self, *a, name=name: calls.append((name, a))
@@ -150,7 +151,6 @@ def test_every_field_reaches_the_workflow_as_given(monkeypatch):
         ("load", ("cpdino", "/models/mine", "mps", True, True)),
         ("preview", ("a/b.tif",)),
         ("run", (True,)),
-        ("next_steps", ()),
     ]
 
 
@@ -253,7 +253,7 @@ def test_browse_fills_the_path_or_says_how_to_paste_it(monkeypatch, chosen):
     browse = [w for w in walk(form.widget) if getattr(w, "description", "") == "Browse…"]
     browse[0].click()  # the run folder's
     assert field.value == (chosen or "typed")
-    said = any("could not be opened" in getattr(w, "value", "") for w in walk(form.widget))
+    said = any("could not be opened" in str(getattr(w, "value", "")) for w in walk(form.widget))
     assert said == (chosen is None)
     assert len(browse) == 2  # the masks folder has its own
 
@@ -319,21 +319,59 @@ def test_the_cells_run_in_a_plain_jupyter_kernel(mixed_run):
     assert NOTEBOOK.exists()
 
 
-def test_the_advanced_settings_are_in_a_collapsed_accordion_with_the_same_defaults():
+def shown_on_screen(root, target):
+    """Return True when ``target`` is inside ``root`` and neither it nor a box above is hidden."""
+
+    def path(widget, trail):
+        if widget is target:
+            return [*trail, widget]
+        for child in getattr(widget, "children", ()):
+            found = path(child, [*trail, widget])
+            if found:
+                return found
+        return None
+
+    chain = path(root, [])
+    if chain is None:
+        return False
+    closed = [w for w in chain if isinstance(w, widgets.Accordion) and w.selected_index is None]
+    return not closed and all(w.layout.display != "none" for w in chain)
+
+
+def test_every_setting_has_its_one_line_help_beside_it_shown_with_the_same_defaults():
+    # Owner, 25 November 2026: a short visible line per setting saying which way to move it,
+    # checked against Cellpose 4.2.1.1's eval docstring and GUI tooltips; nothing folded.
     form = shown_forms().forms["model"]
-    (advanced,) = [
-        w
-        for w in walk(form.widget)
-        if isinstance(w, widgets.Accordion) and w.get_title(0) == form_module.ADVANCED
-    ]
-    assert advanced.selected_index is None  # collapsed
-    inside = set(map(id, walk(advanced)))
     names = ("diameter", "flow_threshold", "cellprob_threshold", "batch_size")
+    assert not [w for w in walk(form.widget) if isinstance(w, widgets.Accordion)]
     for name in names:
-        assert id(form.fields[name]) in inside, name
-    nuclei = {n for n in form.fields if n.startswith("nuclei_")} | {"separate_nuclei"}
-    for name in nuclei:  # the nuclei's own model and settings (output Both, #440)
-        assert id(form.fields[name]) in inside, name
-    for name in set(form.fields) - set(names) - nuclei:
-        assert id(form.fields[name]) not in inside, name
+        row = next(
+            w for w in walk(form.widget)
+            if isinstance(w, widgets.HBox) and form.fields[name] in w.children
+        )  # fmt: skip
+        (hint,) = [c for c in row.children if "mb-setting-help" in c._dom_classes]
+        assert fields_module.SETTING_HELP[name] in html.unescape(hint.value)
+        assert shown_on_screen(form.widget, hint)
+        assert shown_on_screen(form.widget, form.fields[name])
+    help_text = fields_module.SETTING_HELP
+    assert (
+        "increase if objects are split, decrease if they are merged"
+        in help_text["diameter"].casefold()
+    )
+    assert help_text["flow_threshold"].startswith("Increase to keep more objects")
+    assert help_text["cellprob_threshold"].startswith("Decrease to find more and larger objects")
+    assert "lower it if the GPU runs out of memory" in help_text["batch_size"]
     assert [form.fields[n].value for n in names] == ["", 0.4, 0.0, 8]
+
+
+def test_the_output_explanation_is_shown_beside_the_choice_in_full():
+    form = shown_forms().forms["channels"]
+    (explained,) = [w for w in walk(form.widget) if "mb-output-help" in w._dom_classes]
+    assert shown_on_screen(form.widget, explained)
+    assert "mb-help" not in explained.value  # not the one-line hint that the stepper clamps
+    text = html.unescape(explained.value)
+    for name, line in fields_module.OUTPUT_HELP:
+        assert f"<b>{name}</b>: {line}" in text
+    assert "two mask types, Cells and Nuclei" in text and "same model and settings" in text
+    row = next(w for w in walk(form.widget) if form.fields["output"] in getattr(w, "children", ()))
+    assert explained in row.children  # right next to the choice

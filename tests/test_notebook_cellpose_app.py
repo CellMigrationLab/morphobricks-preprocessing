@@ -20,6 +20,12 @@ from morphobricks_preprocessing.notebook_cellpose_form import CellposeNotebook
 from morphobricks_preprocessing.segmentation_record import read_record
 
 
+def walk(widget):
+    yield widget
+    for child in getattr(widget, "children", ()):
+        yield from walk(child)
+
+
 @pytest.fixture
 def stub(monkeypatch, tmp_path):
     return install(monkeypatch, tmp_path)
@@ -40,7 +46,10 @@ def test_given_the_folders_it_opens_the_run_and_holds_every_step(mixed_run, stub
     app = segmentation_app(mixed_run.out, mixed_run.masks)
     assert isinstance(app, SegmentationApp) and isinstance(app.workflow, CellposeNotebook)
     assert list(app.workflow.forms) == list(STEPS)
-    assert list(app.children) == [app.workflow.forms[s].widget for s in STEPS]
+    assert list(app.children) == [app.stepper.widget]  # one step on screen at a time
+    pages = [set(map(id, walk(page))) for page in app.stepper.pages]
+    for name in STEPS:  # every form's controls are on one page of the stepper
+        assert sum(id(app.workflow.forms[name].body) in page for page in pages) == 1
     assert app.workflow.inputs is not None and "Run opened" in app.workflow.shown[-1]
 
 
