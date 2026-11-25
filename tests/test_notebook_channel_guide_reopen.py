@@ -18,6 +18,8 @@ from morphobricks_preprocessing.draft_format import answers_from_bytes
 pytest.importorskip("ipywidgets")
 pytest.importorskip("matplotlib")
 
+from morphobricks_preprocessing import notebook_description  # noqa: E402
+from morphobricks_preprocessing import notebook_style as ui  # noqa: E402
 from test_notebook_channel_step_acceptance import (  # noqa: E402
     LABELS4,
     TAGS3,
@@ -164,3 +166,57 @@ def test_a_reopened_draft_with_a_listed_unit_keeps_its_tags_and_says_so(tmp_path
     assert not again.save_experiment()
     assert not (exp[2] / DESCRIPTION_FILENAME).exists()
     assert _saved(exp).channel_layout is None
+
+
+def _per_unit(exp):
+    nb = opened(*exp, TAGS3)
+    guide = nb.channel_grid.guide
+    guide.same.value = "no"
+    guide.narrow.value = "unit"
+    for i, key in enumerate(sorted(UNITS)):
+        choose(nb, ("unit", key), TAGS3[i % 3 :] + TAGS3[: i % 3])
+    assert guide.submit()
+
+
+def _mixed_yes(exp):
+    nb = opened(*exp, LABELS4)
+    nb.channel_grid.guide.same.value = "yes"
+    choose(nb, ("whole", 3), TAGS3)
+    choose(nb, ("whole", 4), LABELS4)
+    assert nb.channel_grid.guide.submit()
+
+
+def _fast(exp):
+    nb = opened(*exp, TAGS3)
+    nb.channel_grid.guide.same.value = "yes"
+    choose(nb, ("whole", 3), TAGS3)
+    assert nb.channel_grid.guide.submit()
+
+
+DRAFTS = {
+    "per_repeat": (_per_repeat, {}),
+    "per_unit": (_per_unit, {}),
+    "mixed_count_yes": (_mixed_yes, {"count": lambda key: 4 if key[1] == "rep2" else 3}),
+    "fast": (_fast, {}),
+    "all_colour": (lambda exp: opened(*exp, []), {"rgb": lambda key: True}),
+}
+
+
+@pytest.mark.parametrize("kind", sorted(DRAFTS))
+def test_opening_channels_on_a_reopened_draft_writes_no_byte(tmp_path, monkeypatch, kind):
+    answer, shape = DRAFTS[kind]
+    exp = experiment(tmp_path, **shape)
+    answer(exp)
+    before = draft(exp[2])
+    writes = []
+    real = notebook_description.save_draft
+
+    def counted(*args, **kwargs):
+        writes.append(args)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(notebook_description, "save_draft", counted)
+    nb = opened(*exp, [], typed=False)  # a new notebook on the draft, up to Channels
+    assert writes == []  # no draft write at all, not even of the same bytes
+    assert draft(exp[2]) == before
+    assert nb.channel_grid.guided and ui.is_visible(nb.channel_grid.widget)
