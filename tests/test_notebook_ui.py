@@ -228,14 +228,10 @@ def test_changing_the_folder_resets_later_steps(experiment):
     nb.folder.value = str(experiment) + "_other"
     assert nb.preflight is None and nb.confirmed_mapping is None
     assert "The folder changed" in nb.folder_status.value
-    assert nb.run_button.disabled
-    assert not ui.is_visible(nb.labels_card)
-    # Back to the checked folder: the check recorded in its output folder is restored
-    # (v0.9.0), with its message; nothing that was confirmed comes back confirmed.
-    nb.folder.value = str(experiment)
-    assert nb.preflight is not None and nb.preflight.headers_reused
-    assert nb.confirmed_mapping is None and nb.run_button.disabled
-    assert "Found earlier work" in nb.restore_status.value
+    assert nb.run_button.disabled and not ui.is_visible(nb.labels_card)
+    nb.folder.value = str(experiment)  # back: its recorded check is restored, nothing confirmed
+    assert nb.preflight is not None and nb.preflight.headers_reused and nb.run_button.disabled
+    assert nb.confirmed_mapping is None and "Found earlier work" in nb.restore_status.value
 
 
 def test_browse_fills_the_path_or_explains(experiment, monkeypatch):
@@ -464,8 +460,7 @@ def test_intensity_checks_follow_a_successful_run(tmp_path):
     assert not ui.is_visible(nb.run_checks.card)
     nb.run()
     assert sorted(p.name for p in out.iterdir() if "report" not in p.name) == [
-        "check_headers.json",  # the notebook check's headers, for a restore (v0.9.0)
-        *("experiment_design.csv", "image_qc.csv", "morphobricks.toml"),
+        *("check_headers.json", "experiment_design.csv", "image_qc.csv", "morphobricks.toml"),
         "plane_histograms.csv",
         "run_manifest.json",
     ]
