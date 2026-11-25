@@ -54,6 +54,14 @@ def test_a_current_run_is_finished(run):
     assert mismatch(run[0], run[1]) == ""
 
 
+def test_a_description_not_saved_as_the_run_used_it(run):
+    root, out, _ = run
+    pre = preflight(root, out, bind_headers=True)
+    # None: no saved description, or one changed since the folders were checked.
+    why = run_mismatch(out, earlier_work(out).manifest, pre, None)
+    assert why == "the experiment description is not saved as the run used it"
+
+
 def test_a_description_saved_again_after_the_run(run):
     root, out, _ = run
     path = out / DESCRIPTION_FILENAME
