@@ -12,14 +12,14 @@ import pytest
 from cellpose_stub import install
 from morphobricks_preprocessing import notebook_cellpose, notebook_stop
 from morphobricks_preprocessing import segmentation_cellpose as cp
-from test_notebook_cellpose import CHANNELS, DRIVE, INSTALL, MODEL, NEXT, NOTEBOOK, OPEN, source
+from test_notebook_cellpose import CHANNELS, DRIVE, INSTALL, LAST, MODEL, NOTEBOOK, OPEN, source
 
 IMPORT = "from morphobricks_preprocessing.notebook_stop import CellStop"
 
 
 def test_cellstop_is_defined_once_in_the_package_and_cell_1_keeps_its_copy():
     assert "class CellStop(RuntimeError):" in source(INSTALL)
-    for number in range(DRIVE, NEXT + 1):
+    for number in range(DRIVE, LAST + 1):
         text = source(number)
         assert "class CellStop" not in text, f"cell {number + 1}"
         assert "Run cell 1 first: it installs what this notebook needs." in text
@@ -59,7 +59,7 @@ def cells(mixed_run, monkeypatch, tmp_path):
 
 
 def _status(form):
-    return form.widget.children[1].children[2].value
+    return form.body.children[0].value  # the device line, the first thing of the step
 
 
 def test_the_model_form_says_no_gpu_was_found_before_anything_loads(cells):

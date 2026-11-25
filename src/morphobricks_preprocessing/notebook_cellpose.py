@@ -29,6 +29,7 @@ from .notebook_cellpose_channels import (
     MaskTarget,
     _card,
 )
+from .notebook_cellpose_download import quiet_cellpose
 from .notebook_cellpose_preview import MaskResult, preview_figures
 from .notebook_progress import progress_html
 from .notebook_stop import CellStop
@@ -40,7 +41,7 @@ from .segmentation_cellpose_run import (
     numbered_layout,
     open_pinned,
 )
-from .segmentation_handoff import images_to_segment, stray_backups
+from .segmentation_handoff import check_masks_folder, images_to_segment, stray_backups
 from .segmentation_record import SegmentationError, check_mask_type
 
 __all__ = [
@@ -119,6 +120,7 @@ class CellposeWorkflow:
         self.shown: list[str] = []
         self.on_masks_written: Callable[[cp.BatchResult], object] | None = None
         self.register_with: str | None = None
+        self.folders_refused = ""  # the masks folder refusal of the last Open the run, or ""
 
     def _show(self, widget: widgets.Widget) -> None:
         """Display ``widget`` (the style sheet goes first, once)."""
@@ -155,8 +157,8 @@ class CellposeWorkflow:
         if output == cp.NUCLEI_OUTPUT and self.nuclei_settings is not None:
             if self.nuclei_loaded is None:
                 raise SegmentationError(
-                    "The nuclei have their own model: load it first (Advanced settings of the Load "
-                    "the model step)."
+                    "The nuclei have their own model: load it first (the box Output Both: the "
+                    "nuclei, in the model step)."
                 )
             return self.nuclei_loaded, self.nuclei_settings
         return self.loaded, self.settings
@@ -169,14 +171,22 @@ class CellposeWorkflow:
         model to segment with, so nothing is written to the folders of the run before.
         """
         self.inputs = self.masks_root = self.result = self.run_manifest_sha256 = None
-        self.results = {}
+        self.results, self.folders_refused = {}, ""
         self.drop_choice()
         if not masks_folder.strip():
             raise SegmentationError("Give the masks folder (outside the experiment and the run).")
         inputs, pinned = open_pinned(run_folder)
         # The physical folder, fixed now: a relative path never follows a later change of the
         # kernel's working directory (review aq, B1).
-        self.inputs, self.masks_root = inputs, Path(masks_folder.strip()).expanduser().resolve()
+        masks_root = Path(masks_folder.strip()).expanduser().resolve()
+        # Checked here, at the first step, with the guard every write uses: the masks folder is
+        # not the run's output folder or the experiment, nor inside or holding either.
+        try:
+            check_masks_folder(inputs, masks_root)
+        except SegmentationError as exc:
+            self.folders_refused = str(exc)
+            raise
+        self.inputs, self.masks_root = inputs, masks_root
         self.run_manifest_sha256 = pinned
         coverage = cp.channel_coverage(inputs)
         lines = [
@@ -294,7 +304,8 @@ class CellposeWorkflow:
         self._need_both()
         if self.nuclei_settings is None:
             raise SegmentationError(
-                "Set the nuclei settings first (Advanced settings of the Load the model step)."
+                "Set the nuclei settings first (the box Output Both: the nuclei, in the model "
+                "step)."
             )
         self.nuclei_loaded = None
         self.nuclei_loaded = self._load_model(
@@ -307,8 +318,8 @@ class CellposeWorkflow:
         if self.picker.output != cp.BOTH_OUTPUT:
             raise SegmentationError(
                 "A separate nuclei model is for the output Both only; choose Both in the Choose "
-                "the channels step, or untick the separate nuclei model (Advanced settings of "
-                "the Load the model step)."
+                "the channels step, or untick the separate nuclei model (the box Output Both: "
+                "the nuclei, in the model step)."
             )
 
     def same_model_for_nuclei(self) -> None:
@@ -335,14 +346,19 @@ class CellposeWorkflow:
                 f"Loading {chosen} on {device}",
                 (
                     "Built-in weights are downloaded from Hugging Face on first use; they are "
-                    "downloaded only if the download box is ticked.",
+                    "downloaded only if the download box is ticked, with one progress bar.",
                     "On a GPU Cellpose may move its flow-threshold quality step to the CPU "
                     "when GPU memory is short, and always computes the masks on the CPU on "
                     "mps. That is Cellpose's own behaviour; it is recorded as a note.",
                 ),
             )
         )
-        loaded = cp.load_model(chosen, device, allow_download=download_weights)
+        with quiet_cellpose() as said:  # one tqdm.auto bar; what is loaded is unchanged
+            try:
+                loaded = cp.load_model(chosen, device, allow_download=download_weights)
+            finally:
+                if said:
+                    self._show(_card("warn", "Cellpose said, while loading", tuple(said)))
         self._show(
             _card(
                 "ok",
@@ -437,6 +453,11 @@ class CellposeWorkflow:
                     self._show(_card("error", f"Mask type {job.mask_type} stopped", (_named(exc),)))
                 error = error or exc
         self.result = next(iter(self.results.values()), None)
+        if self.results:
+            line = cp.next_step_line(
+                tuple(self.results), self.masks_root, register_with=self.register_with
+            )
+            self._show(_card("info", line))
         if error is not None:
             raise error
         return dict(self.results)
@@ -499,15 +520,6 @@ class CellposeWorkflow:
             )
         )
         return result
-
-    @stops
-    def next_steps(self) -> None:
-        """Say what to do now that the masks are made (the closing cell)."""
-        self._need("channels")
-        lines = cp.next_steps_lines(
-            tuple(self.mask_types.values()), self.masks_root, register_with=self.register_with
-        )
-        self._show(_card("info", "Next steps", lines))
 
 
 def _settings(
