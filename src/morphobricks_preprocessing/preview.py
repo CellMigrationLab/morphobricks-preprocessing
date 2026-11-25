@@ -302,6 +302,21 @@ class StripOptions:
     memory_limit: int = DEFAULT_MEMORY_LIMIT
 
 
+def _plane_key(
+    path: str | os.PathLike,
+    mapping: AxisMapping,
+    where: tuple[Fingerprint, int, int | None, int | None],
+    side: int,
+) -> Hashable:
+    """Return the cache key of one reduced plane.
+
+    The confirmed roles decide which pixels a coordinate names, so they are part of the key:
+    the same file read through other roles is another plane (#428).
+    """
+    roles = (mapping.axes, mapping.roles, mapping.singleton_roles)
+    return (os.fspath(path), roles, *where, side)
+
+
 def _cached_plane(
     path: str | os.PathLike,
     mapping: AxisMapping,
@@ -310,7 +325,7 @@ def _cached_plane(
 ) -> ReducedPlane:
     """Return channel ``c`` reduced, from the cache when the same file content was read."""
     fingerprint, c, z, t = where
-    key = (os.fspath(path), fingerprint, c, z, t, options.side)
+    key = _plane_key(path, mapping, where, options.side)
     plane = options.cache.get(key) if options.cache is not None else None
     if plane is None:
         channel = c if mapping.index_of("C") is not None else None
@@ -379,7 +394,8 @@ def channel_strip(
     except PreviewRefused:
         if options.cache is not None:  # nor kept: a plane read across a rewrite is not that file
             for c in range(layout.channel_count):
-                options.cache.discard((os.fspath(path), fingerprint, c, z, t, options.side))
+                where = (fingerprint, c, z, t)
+                options.cache.discard(_plane_key(path, mapping, where, options.side))
         raise
     return ChannelStrip(os.fspath(path), z, t, tuple(panels), strip_png([p.panel for p in panels]))
 

@@ -461,6 +461,8 @@ class _RunStep:
             self._show_run_checks(result.csv_path)
         self._show_log()
         if result.written:
+            # A new table, even at the same path: its earlier statistics and answers go (#524).
+            self._forget_comparison()
             self.csv_file.value = str(result.csv_path)
             self.stats_status.value = ui.status(
                 "info",

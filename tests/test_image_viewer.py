@@ -16,8 +16,10 @@ import tifffile
 
 from morphobricks_preprocessing.axes import AxisMapping
 from morphobricks_preprocessing.fingerprint import Fingerprint
+from morphobricks_preprocessing.header_preview import header_channels
 from morphobricks_preprocessing.image_tree import ImageEntry, choices, entries_of, resolve
 from morphobricks_preprocessing.image_view import ViewRequest, read_view, view_lengths
+from morphobricks_preprocessing.metadata import inspect_image
 from morphobricks_preprocessing.preview import PreviewRefused
 from morphobricks_preprocessing.report_view import report_html
 
@@ -125,6 +127,29 @@ def test_at_most_six_channels_are_drawn_and_the_view_says_so(tmp_path):
     assert view.shown_text == "6 of 9 channels shown"
     one = read_view(tmp_path / "a.tif", AxisMapping("CYX", tuple("ZYX")), (9, 8, 8))
     assert [t.c for t in one.tiles] == [None] and one.shown_text == "the only channel"
+
+
+@pytest.mark.parametrize("shown", [0, -1, True, False, np.bool_(True), np.int64(0), 1.5, "2"])
+def test_a_view_of_no_channel_is_refused_before_any_read(tmp_path, monkeypatch, shown):
+    """#433: ``shown`` below 1 (or not a whole number) is a ValueError, not a crash later."""
+    write(tmp_path / "a.tif", "CYX", (2, 8, 8))
+    meta = inspect_image(tmp_path / "a.tif", "a.tif")
+    monkeypatch.setattr(tifffile.TiffFile, "asarray", lambda *a, **k: pytest.fail("read"))
+    with pytest.raises(ValueError, match="at least 1"):
+        ViewRequest(shown=shown)
+    with pytest.raises(ValueError, match="at least 1"):
+        header_channels(tmp_path / "a.tif", meta, 64, shown)
+
+
+@pytest.mark.parametrize("shown", [np.int64(1), np.uint8(2), np.int32(6)])
+def test_a_numpy_whole_number_of_channels_is_accepted(tmp_path, shown):
+    """#433: a NumPy integer is a whole number of channels; it is kept as a Python int."""
+    write(tmp_path / "a.tif", "CYX", (2, 8, 8))
+    meta = inspect_image(tmp_path / "a.tif", "a.tif")
+    request = ViewRequest(shown=shown)
+    assert request.shown == int(shown) and type(request.shown) is int
+    picture = header_channels(tmp_path / "a.tif", meta, 64, shown)
+    assert len(picture.tiles) == min(2, int(shown))
 
 
 def test_a_view_is_refused_for_another_revision_and_without_y_and_x(tmp_path):

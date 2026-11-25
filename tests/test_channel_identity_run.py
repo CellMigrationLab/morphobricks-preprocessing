@@ -18,6 +18,7 @@ from morphobricks_preprocessing.cli import main
 from morphobricks_preprocessing.description_file import DESCRIPTION_FILENAME
 from morphobricks_preprocessing.description_write import canonical_bytes
 from morphobricks_preprocessing.discovery import default_output_folder
+from morphobricks_preprocessing.manifest import ManifestFormatError
 from morphobricks_preprocessing.run.preflight import preflight
 from tiff_tree import write_data
 
@@ -116,3 +117,33 @@ def test_the_notebook_shows_the_plot_and_findings(swapped_run):
     assert bytes(view.plot.value).startswith(b"\x89PNG")
     panel.clear()
     assert not ui.is_visible(view.box) and view.plot.value == b""
+
+
+def test_the_manifest_records_pair_tolerance_and_reads_older_limits(swapped_run):
+    """Owner decision of 24 November 2026: ``pair_tolerance`` is in the manifest's limits.
+
+    A manifest whose limits lack it (written before it was recorded) reads as 0.5, the
+    earlier constant; one without ``channel_identity`` (v0.8.0 and earlier) reads as None; an
+    invalid value is refused when the manifest is read.
+    """
+    _, result = swapped_run
+    path = result.manifest_path
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["channel_identity"]["pair_tolerance"] == 0.5
+
+    def read_with(edit):
+        edited = json.loads(json.dumps(data))
+        edit(edited)
+        path.write_text(json.dumps(edited), encoding="utf-8")
+        return read_manifest(path)
+
+    def tolerance(value):
+        return lambda d: d["channel_identity"].__setitem__("pair_tolerance", value)
+
+    assert read_with(tolerance(0.8)).channel_identity == ChannelIdentitySettings(pair_tolerance=0.8)
+    older = read_with(lambda d: d["channel_identity"].pop("pair_tolerance"))
+    assert older.channel_identity == ChannelIdentitySettings(pair_tolerance=0.5)
+    assert read_with(lambda d: d.pop("channel_identity")).channel_identity is None
+    for bad in (-0.5, None, "0.5"):
+        with pytest.raises(ManifestFormatError):
+            read_with(tolerance(bad))

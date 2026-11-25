@@ -1,0 +1,296 @@
+{
+  "benchmark": "description_read",
+  "mode": "full",
+  "repeats": 3,
+  "machine": {
+    "processor": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+    "cpus": 4,
+    "cpus_usable": 4,
+    "memory_bytes": 16868675584,
+    "load_average": [
+      1.0,
+      0.99951171875,
+      0.9267578125
+    ],
+    "system": "Linux-6.18.44-fc-v880-x86_64-with-glibc2.39",
+    "python": "3.13.18",
+    "libraries": {
+      "numpy": "2.5.5",
+      "scipy": "1.18.1",
+      "tifffile": "2026.11.16",
+      "imagecodecs": "2026.11.11",
+      "zarr": "3.4.2",
+      "morphobricks-normalization": "0.8.0",
+      "morphobricks-preprocessing": "0.8.0"
+    },
+    "thread_variables": {
+      "OMP_NUM_THREADS": null,
+      "OPENBLAS_NUM_THREADS": null,
+      "MKL_NUM_THREADS": null
+    },
+    "commit": "1cfc85dbbf7535e72c759883edd449737b44df21"
+  },
+  "sizes": [
+    {
+      "repeats_in_description": 100,
+      "members": 200,
+      "bytes": 45320,
+      "input_digest": "f1ae953447273e923af1f52b1c8e67cbbd27333e4d7bd1b48b605fad4945db71",
+      "wall_seconds": {
+        "median": 0.021087,
+        "min": 0.020646,
+        "max": 0.024176,
+        "values": [
+          0.024176,
+          0.020646,
+          0.021087
+        ]
+      },
+      "digest": "98a574d656479643f801e34521023e4f91cfdce1bc7b1a50d1e1a9b9bcdef55c",
+      "digest_stable": true,
+      "peak_traced_bytes": 1129934,
+      "phase_seconds": {
+        "1_decode": 0.008711,
+        "2_check_header": 3e-06,
+        "3_check_structure": 0.001012,
+        "4_check_identity": 0.001412,
+        "5_check_semantics": 0.005024,
+        "warnings": 9.2e-05,
+        "5._repeat_membership": 0.003892,
+        "5._unit_channels": 0.000604,
+        "5._channel_tables": 4e-06,
+        "5._mask_channels": 3e-06,
+        "5._display_names": 5.4e-05,
+        "5._used_ids": 6.8e-05,
+        "5._source_folders": 0.000341,
+        "5._mask_types": 2e-06,
+        "5._references": 1e-06
+      }
+    },
+    {
+      "repeats_in_description": 1000,
+      "members": 2000,
+      "bytes": 449420,
+      "input_digest": "88351fa07f6a2e0fc71da24f07f079ec0a33033fbb6a974e92103b289bbf714e",
+      "wall_seconds": {
+        "median": 0.595147,
+        "min": 0.574209,
+        "max": 0.602339,
+        "values": [
+          0.595147,
+          0.602339,
+          0.574209
+        ]
+      },
+      "digest": "c6b97fa69db66447f7675f9064855049e0fa61531eeb08b131c790383b6cb5f3",
+      "digest_stable": true,
+      "peak_traced_bytes": 11303682,
+      "phase_seconds": {
+        "1_decode": 0.092654,
+        "2_check_header": 6e-06,
+        "3_check_structure": 0.010883,
+        "4_check_identity": 0.017872,
+        "5_check_semantics": 0.406681,
+        "warnings": 0.001531,
+        "5._repeat_membership": 0.420941,
+        "5._unit_channels": 0.007135,
+        "5._channel_tables": 6e-06,
+        "5._mask_channels": 5e-06,
+        "5._display_names": 0.001123,
+        "5._used_ids": 0.000865,
+        "5._source_folders": 0.003659,
+        "5._mask_types": 5e-06,
+        "5._references": 2e-06
+      }
+    },
+    {
+      "repeats_in_description": 3000,
+      "members": 6000,
+      "bytes": 1347420,
+      "input_digest": "3a012dcf3fed5739b6f78c3e6971a2109d618a4a8ef42a7e961db626bb6186eb",
+      "wall_seconds": {
+        "median": 6.022744,
+        "min": 5.91827,
+        "max": 6.28929,
+        "values": [
+          5.91827,
+          6.28929,
+          6.022744
+        ]
+      },
+      "digest": "2472cb90e78d89dbd145dedcca9cfc7b121cfe8e03bcb30209534af32a1ba242",
+      "digest_stable": true,
+      "peak_traced_bytes": 33966890,
+      "phase_seconds": {
+        "1_decode": 0.284474,
+        "2_check_header": 6e-06,
+        "3_check_structure": 0.032654,
+        "4_check_identity": 0.054292,
+        "5_check_semantics": 5.362378,
+        "warnings": 0.005067,
+        "5._repeat_membership": 5.33428,
+        "5._unit_channels": 0.019755,
+        "5._channel_tables": 7e-06,
+        "5._mask_channels": 6e-06,
+        "5._display_names": 0.003979,
+        "5._used_ids": 0.003017,
+        "5._source_folders": 0.011071,
+        "5._mask_types": 6e-06,
+        "5._references": 3e-06
+      }
+    },
+    {
+      "repeats_in_description": 10000,
+      "members": 20000,
+      "bytes": 4490420,
+      "input_digest": "1a3143213cd845096c16ac66135c6c6b5e06116631c0657fadec35e38e33e455",
+      "wall_seconds": {
+        "median": 64.600211,
+        "min": 62.04478,
+        "max": 66.052708,
+        "values": [
+          62.04478,
+          64.600211,
+          66.052708
+        ]
+      },
+      "digest": "7f31fa69e4a3eea1fa33ff6189b7d0ffdc6b42140c44813e6a2b4900e08a6833",
+      "digest_stable": true,
+      "peak_traced_bytes": 112948810,
+      "phase_seconds": {
+        "1_decode": 1.474457,
+        "2_check_header": 1e-05,
+        "3_check_structure": 0.105427,
+        "4_check_identity": 0.217789,
+        "5_check_semantics": 66.416435,
+        "warnings": 0.023762,
+        "5._repeat_membership": 63.665441,
+        "5._unit_channels": 0.07138,
+        "5._channel_tables": 3e-05,
+        "5._mask_channels": 7e-06,
+        "5._display_names": 0.0153,
+        "5._used_ids": 0.017012,
+        "5._source_folders": 0.044701,
+        "5._mask_types": 8e-06,
+        "5._references": 3e-06
+      }
+    }
+  ],
+  "growth": [
+    {
+      "from": 100,
+      "to": 1000,
+      "exponent": 1.45
+    },
+    {
+      "from": 1000,
+      "to": 3000,
+      "exponent": 2.11
+    },
+    {
+      "from": 3000,
+      "to": 10000,
+      "exponent": 1.97
+    }
+  ],
+  "profile": {
+    "repeats_in_description": 3000,
+    "total_s": 35.9459,
+    "top": [
+      {
+        "function": "description_semantics.py:171(_repeat_membership)",
+        "calls": 1,
+        "own_s": 16.9028,
+        "cumulative_s": 34.3718
+      },
+      {
+        "function": "description_identity.py:29(nfc)",
+        "calls": 36102060,
+        "own_s": 8.3942,
+        "cumulative_s": 12.2141
+      },
+      {
+        "function": "~:0(<method 'casefold' of 'str' objects>)",
+        "calls": 36132071,
+        "own_s": 5.2959,
+        "cumulative_s": 5.2959
+      },
+      {
+        "function": "~:0(<built-in method unicodedata.normalize>)",
+        "calls": 36102060,
+        "own_s": 3.8199,
+        "cumulative_s": 3.8199
+      },
+      {
+        "function": "_parser.py:206(get_or_create_nest)",
+        "calls": 45019,
+        "own_s": 0.1422,
+        "cumulative_s": 0.1939
+      },
+      {
+        "function": "_parser.py:240(skip_chars)",
+        "calls": 432132,
+        "own_s": 0.0994,
+        "cumulative_s": 0.0994
+      },
+      {
+        "function": "_parser.py:381(parse_key)",
+        "calls": 45019,
+        "own_s": 0.0888,
+        "cumulative_s": 0.2125
+      },
+      {
+        "function": "_parser.py:331(key_value_rule)",
+        "calls": 30012,
+        "own_s": 0.0871,
+        "cumulative_s": 0.5196
+      },
+      {
+        "function": "_parser.py:77(loads)",
+        "calls": 1,
+        "own_s": 0.0756,
+        "cumulative_s": 0.9841
+      },
+      {
+        "function": "description_report.py:19(key_path)",
+        "calls": 159030,
+        "own_s": 0.0633,
+        "cumulative_s": 0.1123
+      },
+      {
+        "function": "~:0(<built-in method builtins.isinstance>)",
+        "calls": 426071,
+        "own_s": 0.0582,
+        "cumulative_s": 0.0582
+      },
+      {
+        "function": "~:0(<method 'fullmatch' of 're.Pattern' objects>)",
+        "calls": 162036,
+        "own_s": 0.0502,
+        "cumulative_s": 0.0502
+      },
+      {
+        "function": "_parser.py:183(is_)",
+        "calls": 60026,
+        "own_s": 0.0494,
+        "cumulative_s": 0.0494
+      },
+      {
+        "function": "description_identity.py:86(collisions)",
+        "calls": 1,
+        "own_s": 0.0479,
+        "cumulative_s": 0.091
+      },
+      {
+        "function": "_parser.py:403(parse_key_part)",
+        "calls": 96025,
+        "own_s": 0.0469,
+        "cumulative_s": 0.0944
+      }
+    ]
+  },
+  "process": {
+    "peak_rss_bytes": 350543872,
+    "source": "VmHWM"
+  }
+}

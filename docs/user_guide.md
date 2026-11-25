@@ -623,8 +623,8 @@ editing, or the confirmed ones. An image that cannot be drawn gets a sentence sa
    saves on its own. A saved ID cannot be changed from the notebook: only the publication API
    takes a `Reconfirmation` that names a new ID. A whole biological repeat or condition can
    be removed (every one of its folders gone from disk, or a condition folder renamed on disk,
-   which is a removed folder plus a new one): answer **Yes, remove** for each condition listed
-   and save. Its ID stays in `used_ids` as retired (experiment-v1 §4.9): it is never given to
+   which is a removed folder plus a new one): answer **Yes, remove** for each folder listed
+   (one question per condition, naming its removed folders) and save. Its ID stays in `used_ids` as retired (experiment-v1 §4.9): it is never given to
    another repeat or condition, and a folder of that name that comes back gets a new ID.
 4. **Masks.** The masks the check paired with the images (and, for masks whose files do not
    name their axes, the axes to state), then for each mask type: *separate objects*,
@@ -822,10 +822,17 @@ the channel, the image or biological repeat and the values compared, and what to
 per kind; it draws no plots (the notebook does). Then it prints the channel check: each
 imaging unit's channels compared with the same channels of the other units of its condition
 (a treatment effect is not reported when the condition has at least 3 other units), with
-`channel_unlike_others` and `possible_channel_swap` warnings (for example "channels DAPI and
-GFP look swapped") and the channels it could not check; the notebook draws them under
+`channel_unlike_others`, `possible_channel_swap` (for example "channels DAPI and GFP look
+swapped") and `ambiguous_channel_swap` warnings (channels that look swapped in more than one
+way the check cannot tell apart, the pairs being within `pair_tolerance`, 0.5 by default, of each other: it names them all and no pair; a cycle of three channels, A shows B, B shows C, C shows A, is not a swap and gives three "does not look like" warnings) and the channels it could not check; the notebook draws them under
 **Do the channels look like themselves?**. A swap made in every unit of a condition is not
 found. Warnings only: nothing is changed or blocked.
+
+The channel check's limits, `pair_tolerance` included, are recorded in `run_manifest.json`
+(`channel_identity`). They have no command-line option or notebook field: to apply others, call
+`check_channel_identity(result.intensity.summaries, ChannelIdentitySettings(pair_tolerance=0.8))`
+(Python, both from `morphobricks_preprocessing.channel_identity`), which recomputes nothing. A manifest whose limits lack `pair_tolerance` (written
+before it was recorded) is read with 0.5, the value that code used.
 
 Read the warnings as prompts to look, not as verdicts. With very noisy data (units that differ
 by about 30 % per channel) false warnings are frequent: in a simulation, 171 of 300 runs
@@ -1575,7 +1582,8 @@ continues.
 | `saturated_image` | Warning (intensity check) | More than the limit (default 1 %) of an image's pixels in a channel are at the largest value of its pixel type, so their true intensity is lost. Check the exposure, gain or laser power. |
 | `no_intensity_spread` | Warning (intensity check) | An image's channel has the same 1st and 99.8th percentile (empty or blank), so it cannot be normalised on its own. Check the channel, or exclude the image. |
 | `channel_unlike_others` | Warning (channel check) | One imaging unit's channel does not look like the same channel in the other units of its condition: its level, brightness or contrast differ by about 1.8 times or more and by much more than the units usually differ. The message names the nearest other channel, or says it looks like a channel this unit does not have (for example a fourth channel only other repeats have). Look at that unit's images in that channel: check its channel tag and how the images were exported, and whether the stain, exposure or acquisition differed. Nothing is changed or blocked. With very noisy data (units differing by about 30 % per channel) false warnings are frequent (171 of 300 simulated runs without a swap warned); floats converted from whole numbers with medians near zero can warn falsely, and 16-bit and 0-1 float images agree only above the integer floor (a high percentile above about 333 counts). |
-| `possible_channel_swap` | Warning (channel check) | Two channels of one imaging unit look like each other's channel in the other units (for example "DAPI and GFP look swapped"), or one channel clearly looks like another channel of the same unit: its channel tags may be in the wrong order. Check the unit's channels against how its images were acquired; if they are swapped, correct them in the experiment description and run again. Nothing is changed or blocked. A swap made in every unit of a condition is not found: the check compares each unit with the other units of its condition. |
+| `possible_channel_swap` | Warning (channel check) | Two channels of one imaging unit look like each other's channel in the other units (for example "DAPI and GFP look swapped"), or one channel clearly looks like another channel of the same unit: its channel tags may be in the wrong order. Check the unit's channels against how its images were acquired; if they are swapped, correct them in the experiment description and run again. Nothing is changed or blocked. A swap made in every unit of a condition is not found: the check compares each unit with the other units of its condition. When a channel could be swapped with two others, the pair whose two channels look most like each other is named, and the third channel gets its own "does not look like ... but like ..." warning; channel names never decide. |
+| `ambiguous_channel_swap` | Warning (channel check) | Channels of one imaging unit look swapped in more than one way that the check cannot tell apart (for example "channels A, B and C look swapped in more than one way": its B looks like A or C), so no pair is named. Check the channel tags of every channel named against how the images were acquired, and correct the unit's channels in the experiment description only once you know which are swapped; run again. Nothing is changed or blocked. |
 | `channel_without_finite_pixels` | Warning (intensity check) | An image's channel has no finite pixels (every value NaN or infinite), so its intensities were not checked and it cannot be normalised from its own pixels. Exclude the image, or fix the channel in the source data and run again. |
 | `channel_names_differ` | Error | Channel names differ between images at the same channel number, so different stains would be pooled as one channel. Spaces at the start or end of a name are ignored (and noted in the manifest); otherwise names must match exactly, and names that differ only in inner spaces are quoted and reported as such. Check the channel order; export the images again with the same channel order and names, or exclude the images whose channels differ. |
 | `non_finite_pixels` | Warning | NaN or infinite pixels are left out of the histograms and counted. |

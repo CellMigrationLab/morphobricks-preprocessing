@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 
+from .plane_errors import PlaneReadError
 from .run_inputs import RunInputs
 from .run_inputs_tissue import (
     HE_TISSUE_V1,
@@ -87,7 +88,8 @@ def tissue_mask_command(args: argparse.Namespace) -> int:
     for image in images:
         try:
             result = run.he_tissue_mask(image, output_mask_id=args.to, rule=args.rule)
-        except (ValueError, ImportError) as exc:  # every refusal (RunInputsError included)
+        # Every refusal: RunInputsError, a missing extra, and a plane that cannot be read (#469).
+        except (ValueError, ImportError, PlaneReadError, OSError) as exc:
             print(f"{image}: no tissue mask written. {exc}")
             if written:
                 print(f"{plural(len(written), 'image')} before it stay written.")
