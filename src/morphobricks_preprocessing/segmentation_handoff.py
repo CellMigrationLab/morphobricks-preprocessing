@@ -51,16 +51,13 @@ from .metadata import OME_ZARR, TiffMetadata
 from .run_inputs import Fov, RunInputs
 from .run_inputs_request import FovSelection, Request
 from .segmentation_record import (
+    WRITE_LOCK_FILENAME,
     SegmentationError,
     check_mask_type,
     check_mask_type_folder,
     hold_lock,
 )
 from .zarr_input import is_zarr_name
-
-WRITE_LOCK_FILENAME = ".segmentation_write.lock"
-"""The lock a writer holds in a type folder from the twin check to the published mask. A
-dot-file, so the run's masks discovery skips it like the record's lock."""
 
 INT32_MAX = 2_147_483_647
 """The largest label every brick accepts (contract §15, §16)."""

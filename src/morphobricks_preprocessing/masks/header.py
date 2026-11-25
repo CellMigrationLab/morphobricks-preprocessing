@@ -5,7 +5,9 @@ Moved from ``masks.py`` (PP-5).
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
+from types import MappingProxyType
 
 import numpy as np
 import tifffile
@@ -15,6 +17,68 @@ from ..zarr_input import (
 )
 from .layout import _tiff_axes
 from .model import _YX, FOLDER, PLANE_AXES, MaskFile
+
+MASK_LOSSY_CODEC = "mask_lossy_codec"
+"""The error of a TIFF mask stored with a lossy codec (#360, owner decision of 24 November 2026)."""
+
+LOSSY_CODECS: Mapping[int, str] = MappingProxyType(
+    {
+        6: "old-style JPEG",
+        7: "JPEG",
+        22610: "JPEG XR",
+        33003: "JPEG 2000",
+        33004: "JPEG 2000",
+        33005: "JPEG 2000",
+        33007: "JPEG (ALT_JPEG)",
+        34712: "JPEG 2000",
+        34892: "lossy JPEG (DNG)",
+        34934: "JPEG XR",
+        50001: "WebP",
+        50002: "JPEG XL",
+        52546: "JPEG XL",
+    }
+)
+"""TIFF compression codes of lossy codecs, by name: a mask stored with one is refused."""
+
+
+class MaskLossyCodecError(ValueError):
+    """Raised when a TIFF mask is stored with a lossy codec (``mask_lossy_codec``, #360).
+
+    A lossy codec changes pixel values, so the labels read may not be the labels written:
+    such a mask is refused, never read. The message starts with the code and names the file
+    and the codec.
+
+    Attributes
+    ----------
+    path
+        The mask, as given.
+    codec
+        The codec's name (:data:`LOSSY_CODECS`).
+    """
+
+    def __init__(self, path: str | Path, codec: str, code: int) -> None:
+        self.path = str(path)
+        self.codec = codec
+        super().__init__(
+            f"{MASK_LOSSY_CODEC}: the mask {path} is stored with the lossy codec {codec} (TIFF "
+            f"compression {code}), so its labels may not be the ones written. Save the mask "
+            "again uncompressed or with a lossless codec (zlib, LZW or Zstandard)."
+        )
+
+
+def refuse_lossy(series: tifffile.TiffPageSeries, path: str | Path) -> None:
+    """Refuse a TIFF mask whose pages are stored with a lossy codec (:data:`LOSSY_CODECS`).
+
+    The codec is the series' key page's: tifffile decodes every page of a series with it.
+
+    Raises
+    ------
+    MaskLossyCodecError
+        If the codec is lossy.
+    """
+    code = int(series.keyframe.compression)
+    if code in LOSSY_CODECS:
+        raise MaskLossyCodecError(path, LOSSY_CODECS[code], code)
 
 
 def _mask_header(mask: MaskFile, folder: Path | None, root: Path) -> tuple:
@@ -29,6 +93,7 @@ def _mask_header(mask: MaskFile, folder: Path | None, root: Path) -> tuple:
         with tifffile.TiffFile(Path(folder) / mask.path) as tif:
             if len(tif.series) != 1:
                 raise ValueError(f"{len(tif.series)} image series")
+            refuse_lossy(tif.series[0], mask.path)
             axes, shape = _tiff_axes(tif.series[0])
             dtype = tif.series[0].dtype
     else:

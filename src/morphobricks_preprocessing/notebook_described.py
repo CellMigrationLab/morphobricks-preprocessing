@@ -72,12 +72,11 @@ class _DescribedRun:
 
     # Step 1 ------------------------------------------------------------------------------
 
-    def check_folder(self) -> Preflight | None:
-        """Check the folder; the labels are taken as shown (no toggle)."""
-        pre = super().check_folder()
-        if pre is not None and pre.discovery.leaves and self._show_design:
+    def _show_check(self, folder: str, pre: Preflight) -> None:
+        """Show the check; the labels are taken as shown (no toggle)."""
+        super()._show_check(folder, pre)
+        if pre.discovery.leaves and self._show_design:
             self.labels_confirmed.set(True)
-        return pre
 
     def _show_folder_results(self, pre: Preflight) -> None:
         super()._show_folder_results(pre)
