@@ -180,25 +180,55 @@ def test_in_a_notebook_the_step_shows_itself_first_and_the_cells_display_adds_no
     # Cell 4 stays the pinned release's (segmentation_step(notebook); display(segmentation)),
     # and still shows the widget before the run is opened (#574 review).
     reads = count_whole_reads(monkeypatch, tmp_path / "exp")
-    shown, published = [], []
+    shown, drawn = [], []
     monkeypatch.setattr(step_module, "get_ipython", lambda: object())
+    # How the widget itself is drawn (ipywidgets 7 or 8) is the next two tests'.
+    monkeypatch.setattr(
+        widgets.Widget, "_ipython_display_", lambda self, **k: drawn.append(self), raising=False
+    )
 
     def display(obj, raw=False):
-        if raw:
-            published.append(obj)
-        else:
-            shown.append((obj, sum(reads.values())))
-            obj._ipython_display_()  # what IPython's display does with such an object
+        assert not raw
+        shown.append((obj, sum(reads.values())))
+        obj._ipython_display_()  # what IPython's display does with such an object
 
     monkeypatch.setattr(step_module, "display", display)
     step = segmentation_step(app)
-    assert [(obj, count) for obj, count in shown] == [(step, 0)]
-    bundle = step._repr_mimebundle_()
-    assert published == [bundle] and step.skip_next_display  # shown once, before any read
+    assert shown == [(step, 0)]
+    assert drawn == [step] and step.skip_next_display  # drawn once, before any read
     step._ipython_display_()  # the cell's display(segmentation): nothing more
-    assert published == [bundle] and not step.skip_next_display
+    assert drawn == [step] and not step.skip_next_display
     step._ipython_display_()  # a later display shows it as any widget
-    assert published == [bundle, bundle]
+    assert drawn == [step, step]
+
+
+def test_with_ipywidgets_7_the_step_is_displayed_by_the_widgets_own_display(app, monkeypatch):
+    # ipywidgets 7.7 (Colab) has Widget._ipython_display_ and no _repr_mimebundle_ (#575).
+    calls = []
+    monkeypatch.setattr(step_module, "display", lambda *a, **k: pytest.fail("raw display"))
+    monkeypatch.delattr(widgets.Widget, "_repr_mimebundle_", raising=False)
+    monkeypatch.setattr(
+        widgets.Widget, "_ipython_display_", lambda self, **k: calls.append(self), raising=False
+    )
+    step = segmentation_step(app)
+    step.skip_next_display = True  # as segmentation_step leaves it in a kernel
+    step._ipython_display_()
+    assert calls == []
+    step._ipython_display_()
+    assert calls == [step]
+
+
+def test_with_ipywidgets_8_the_step_is_displayed_by_its_mimebundle(app, monkeypatch):
+    if not hasattr(widgets.Widget, "_repr_mimebundle_"):
+        pytest.skip("ipywidgets 7: a widget has no _repr_mimebundle_ (the test above is its)")
+    published = []
+    monkeypatch.setattr(step_module, "display", lambda obj, raw=False: published.append(obj))
+    for parent in widgets.Widget.__mro__:
+        if "_ipython_display_" in vars(parent):
+            monkeypatch.delattr(parent, "_ipython_display_")
+    step = segmentation_step(app)
+    step._ipython_display_()
+    assert published == [step._repr_mimebundle_()]
 
 
 def test_outside_a_notebook_the_step_shows_nothing_itself(app, monkeypatch):

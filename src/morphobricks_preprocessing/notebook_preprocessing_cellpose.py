@@ -110,7 +110,8 @@ class SegmentationStep(widgets.VBox):
         self.segmentation: SegmentationApp | None = None
         self.rechecked_run: Path | None = None
         self.registered_manifest: str | None = None
-        self.skip_next_display = False  # shown by segmentation_step: the cell's display adds none
+        # Shown by segmentation_step: the next display of this step (the cell's) adds nothing.
+        self.skip_next_display = False
         self.notice = widgets.HTML(self._notice())
         self.opening = widgets.HTML()  # the wait of the run's checks without the component
         self.installed = widgets.HTML()  # what the installation installed, once it did
@@ -144,10 +145,20 @@ class SegmentationStep(widgets.VBox):
             self.refused = _refusal(self.run_folder, checking)
         self.notice.value = self._notice()
 
-    def _ipython_display_(self) -> None:
-        """Display the widget, unless :func:`segmentation_step` just did (then once nothing)."""
+    def _ipython_display_(self, **kwargs: object) -> None:
+        """Display the widget, unless :func:`segmentation_step` just did (then once nothing).
+
+        :attr:`skip_next_display` is consumed by the next display of this same step only (the
+        cell's ``display(segmentation)``); every later display shows it. ipywidgets 7 (Colab)
+        displays a widget by ``Widget._ipython_display_``, ipywidgets 8 by
+        ``_repr_mimebundle_`` (7 has none): whichever the installed version has.
+        """
         if self.skip_next_display:
             self.skip_next_display = False
+            return
+        shown_by_widget = getattr(super(), "_ipython_display_", None)
+        if shown_by_widget is not None:
+            shown_by_widget(**kwargs)
             return
         display(self._repr_mimebundle_(), raw=True)
 
