@@ -311,9 +311,14 @@ banner then says "commit unknown" and that the override is on). Then:
   all in the Cellpose file). When no DINOv3 is installed, the first load of a `cpdino` model
   installs it, without its dependencies, at a pinned commit (the head of its default branch on
   22 November 2026, not verified against `cpdino`). A DINOv3 of another commit is not
-  replaced: the load is refused with the command to run. If Cellpose was already loaded in
-  this runtime (another model loaded first), the load asks you to restart the runtime and run
-  the cells again; nothing is downloaded again.
+  replaced: the load is refused with the command to run. In the combined notebook, cell 4's
+  **Install Cellpose** installs the pinned DINOv3 code just before Cellpose when none is
+  installed (v0.9.1), so a `cpdino` model works without a restart whichever model you load
+  first. A restart is asked for only when it is really needed: DINOv3 was installed after
+  Cellpose had been loaded in this runtime (for example a `cpsam` model loaded first in the
+  Cellpose notebook); then restart the runtime and run the cells again; nothing is downloaded
+  again. A DINOv3 that cannot be imported at all is refused with its import error instead,
+  since a restart would not fix it.
 - **Device.** The model form says, before anything loads, whether a GPU was found and which.
   You choose `cuda`, `mps` or `cpu`. A GPU that is not available is refused, never
   replaced by the CPU, and after loading every parameter and buffer of the network must be on

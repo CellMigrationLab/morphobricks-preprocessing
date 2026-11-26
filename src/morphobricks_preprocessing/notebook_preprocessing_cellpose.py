@@ -68,8 +68,9 @@ the masks (:mod:`.notebook_mask_register`)."""
 INSTALL_TEXT = (
     "Cellpose {version} is not installed in this environment. It is installed only here, only "
     "when you tick the box: it brings PyTorch, a download of a few gigabytes. Preprocessing "
-    "alone never installs it. The command is <b>{command}</b>. DINOv3 is never installed here "
-    "(it is a choice of the model step)."
+    "alone never installs it. The command is <b>{command}</b>. When no DINOv3 is installed, "
+    "the pinned DINOv3 code (the network code of the cpdino models; no weights) is installed "
+    "just before Cellpose, so that a cpdino model never needs a runtime restart."
 )
 
 

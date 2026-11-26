@@ -4,13 +4,20 @@ The combined notebook (``MorphoBricks_Preprocessing_Cellpose.ipynb``, #441) inst
 preprocessing in cell 1, exactly as the Preprocessing notebook does, and Cellpose (with PyTorch)
 only when the segmentation cell is used: :func:`install_cellpose` runs ``pip`` for the pinned
 :data:`.segmentation_cellpose_model.CELLPOSE_VERSION`, and only when the user ticked the
-installation (the consent, as for the model download and DINOv3). It keeps the rules of the
-Cellpose notebook's install cell: the release pinned, never DINOv3, and a restart asked for
-when ``pip`` changed a package the running kernel already loaded (:data:`LOADED_BY_KERNEL`),
-never a guess that the old copy still works. ``pip``'s lines are passed on as it prints them
-(``output``), so the notebook shows its progress (owner Colab test, #574), and
-:func:`installed_distributions` / :func:`install_changes` say what it installed. Nothing here
-imports Cellpose or torch.
+installation (the consent). It keeps the rules of the Cellpose notebook's install cell: the
+release pinned, and a restart asked for when ``pip`` changed a package the running kernel
+already loaded (:data:`LOADED_BY_KERNEL`), never a guess that the old copy still works.
+
+DINOv3 (v0.9.1): when no DINOv3 is installed, the pinned DINOv3 code
+(:func:`.segmentation_cellpose_model.dinov3_install_command`, ``--no-deps``, no weights) is
+installed *before* Cellpose, in the same ticked installation. Cellpose 4.2.1.1 imports DINOv3
+only once, when its network module is first imported, so a DINOv3 installed later (on the first
+``cpdino`` load after a ``cpsam`` one) needed a runtime restart (owner's Colab test of v0.9.0).
+A DINOv3 already installed, at any commit, is left as it is; the model step checks its commit.
+
+``pip``'s lines are passed on as it prints them (``output``), so the notebook shows its
+progress (owner Colab test, #574), and :func:`installed_distributions` / :func:`install_changes`
+say what it installed. Nothing here imports Cellpose or torch.
 """
 
 from __future__ import annotations
@@ -131,6 +138,9 @@ def _pip(command: list[str], output: Callable[[str], object]) -> None:
 def install_cellpose(ticked: bool, output: Callable[[str], object] = print) -> str:
     """Install the pinned Cellpose release when it is not installed, if ``ticked``.
 
+    When no DINOv3 is installed, the pinned DINOv3 code is installed first (see the module
+    docstring), so that a ``cpdino`` model never needs a restart in this runtime.
+
     Parameters
     ----------
     ticked
@@ -148,7 +158,8 @@ def install_cellpose(ticked: bool, output: Callable[[str], object] = print) -> s
     Raises
     ------
     SegmentationError
-        Without the tick (nothing is installed), when ``pip`` fails, when it changed a package
+        Without the tick (nothing is installed), when ``pip`` fails (DINOv3's installation
+        included: Cellpose is then not installed), when it changed a package
         the kernel had loaded (restart the runtime), or when another version is still installed.
     """
     if cellpose_ready():
@@ -156,6 +167,16 @@ def install_cellpose(ticked: bool, output: Callable[[str], object] = print) -> s
     if not ticked:
         raise SegmentationError(NOT_TICKED.format(version=CELLPOSE_VERSION))
     before = {name: model.installed_version(name) for name in LOADED_BY_KERNEL}
+    if not model.dinov3_present():
+        try:
+            _pip(model.dinov3_install_command(), output)
+        except (subprocess.CalledProcessError, OSError) as exc:
+            raise SegmentationError(
+                f"DINOv3 (the code of the cpdino models, installed before Cellpose) could not "
+                f"be installed ({exc}); Cellpose was not installed. Check the installation "
+                "output and internet access, then press the button again."
+            ) from exc
+        importlib.invalidate_caches()
     try:
         _pip(cellpose_install_command(), output)
     except (subprocess.CalledProcessError, OSError) as exc:

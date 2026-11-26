@@ -223,6 +223,37 @@ def test_cellpose_is_installed_only_when_ticked_then_the_component_appears(tmp_p
     assert step.segmentation is not None and step.workflow.inputs is None  # no masks folder yet
 
 
+def test_dinov3_is_installed_before_cellpose_when_none_is_there(tmp_path, pip, stub):
+    # cpdino fix (v0.9.1): DINOv3 in place before Cellpose is ever imported, so a cpdino model
+    # loaded after a cpsam one needs no runtime restart.
+    stub.dinov3_commit = None
+    step = segmentation_step(ran_app(tmp_path))
+    step.install_tick.value = True
+    assert step.install()
+    first, second = pip.commands
+    assert first == model.dinov3_install_command() and "--no-deps" in first
+    assert second[-1] == "cellpose==4.2.1.1"
+
+
+def test_a_dinov3_already_installed_is_left_as_it_is(tmp_path, pip, stub):
+    stub.dinov3_commit, stub.dinov3_present = None, True  # one of the user's own, commit unknown
+    step = segmentation_step(ran_app(tmp_path))
+    step.install_tick.value = True
+    assert step.install()
+    (command,) = pip.commands
+    assert command[-1] == "cellpose==4.2.1.1"
+
+
+def test_a_failed_dinov3_install_installs_no_cellpose(tmp_path, pip, stub):
+    stub.dinov3_commit, pip.returncode = None, 1
+    step = segmentation_step(ran_app(tmp_path))
+    step.install_tick.value = True
+    assert not step.install()
+    assert len(pip.commands) == 1 and "DINOv3" in step.install_status.value
+    assert "Cellpose was not installed" in step.install_status.value
+    assert step.segmentation is None
+
+
 def test_an_install_that_changes_a_loaded_numpy_asks_for_a_restart(tmp_path, pip):
     pip.numpy = ("2.0.0", "2.3.0")
     step = segmentation_step(ran_app(tmp_path))

@@ -183,7 +183,8 @@ def install(monkeypatch, tmp_path, **options):
     ``buffers`` (the device types of the network's tensors, when not the requested one),
     ``no_net``, ``fail`` (a function of the stack that raises), ``version``,
     ``dinov3_commit`` (None: no DINOv3 installed; ``install_dinov3`` then installs the pinned
-    one and records it in ``dinov3_installs``), ``dinov3_present`` (a DINOv3 of unknown commit)
+    one and records it in ``dinov3_installs``), ``dinov3_present`` (a DINOv3 of unknown commit),
+    ``dinov3_import_problem`` (why ``dinov3.hub.backbones`` would not import; None: it would)
     and ``download_fail`` (an exception the download raises).
     """
     models_dir = tmp_path / "cellpose_models"
@@ -198,6 +199,7 @@ def install(monkeypatch, tmp_path, **options):
         cellpose_downloaded=[],
         dinov3_installs=[],
         dinov3_present=False,
+        dinov3_import_problem=None,
         download_fail=None,
         models_dir=models_dir,
         cuda=False,
@@ -254,6 +256,7 @@ def fetching(monkeypatch, state):
         state.dinov3_commit = model_module.DINOV3_COMMIT
 
     monkeypatch.setattr(model_module, "install_dinov3", install_dinov3)
+    monkeypatch.setattr(model_module, "dinov3_import_problem", lambda: state.dinov3_import_problem)
     monkeypatch.setattr(weights_module, "PINNED_WEIGHTS", fake_pins())
     monkeypatch.setattr(weights_module, "_open_url", lambda url, timeout: served(state, url))
 

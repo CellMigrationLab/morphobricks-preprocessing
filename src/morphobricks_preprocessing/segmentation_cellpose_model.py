@@ -309,15 +309,36 @@ def ensure_dinov3(progress: Progress | None = None) -> bool:
     if progress is not None:
         progress(DINOV3_LABEL, 0, 0)
     install_dinov3()
+    # The import system caches folder listings: without this, Cellpose imported right after
+    # could miss the package just installed and need a restart for nothing.
+    importlib.invalidate_caches()
     return True
+
+
+def dinov3_import_problem() -> str | None:
+    """Return why ``dinov3.hub.backbones`` cannot be imported here, or None when it can.
+
+    What Cellpose 4.2.1.1's ``cellpose.vit`` imports from DINOv3. Used only after Cellpose
+    failed to get it, to tell a runtime that needs a restart (DINOv3 importable now, installed
+    after Cellpose was imported) from a DINOv3 that does not import at all, which a restart
+    would not fix.
+    """
+    importlib.invalidate_caches()
+    try:
+        importlib.import_module("dinov3.hub.backbones")
+    except Exception as exc:  # any import failure is the answer, reported as it is
+        return " ".join(f"{type(exc).__name__}: {exc}".split())
+    return None
 
 
 def check_dinov3(models: ModuleType) -> str:
     """Return the commit of the installed DINOv3 if it is the pinned one, else refuse.
 
     Cellpose 4.2.1.1 imports DINOv3 once, when ``cellpose.vit`` is first imported (it then
-    defines ``CPDINO`` whether or not that worked), so a DINOv3 installed after that needs a
-    restart of the runtime; the check looks at ``cellpose.vit`` itself and says so.
+    defines ``CPDINO`` whether or not that worked), so the check looks at ``cellpose.vit``
+    itself. When it has no DINOv3, a restart is asked for only when it would help: DINOv3
+    imports now, so it was installed after Cellpose was imported. A DINOv3 that does not import
+    at all is refused with its import error, since a restart would not change that.
     """
     command = " ".join(dinov3_install_command()[2:])
     commit = installed_dinov3_commit()
@@ -334,6 +355,14 @@ def check_dinov3(models: ModuleType) -> str:
         )
     vit = sys.modules.get("cellpose.vit")  # imported with ``models``
     if not hasattr(vit, "dinov3_vitl16"):
+        problem = dinov3_import_problem()
+        if problem is not None:
+            raise SegmentationError(
+                f"DINOv3 is installed (commit {commit[:12]}) but cannot be imported here "
+                f"({problem}), so Cellpose cannot build the {', '.join(DINO_MODELS)} networks. "
+                "A restart does not fix this: check that PyTorch imports, or choose a SAM model "
+                "(cpsam_v2, cpsam)."
+            )
         raise SegmentationError(
             f"DINOv3 is installed (commit {commit[:12]}), but Cellpose was imported in this "
             "runtime before it was there. Restart the runtime (Colab: Runtime > Restart "
