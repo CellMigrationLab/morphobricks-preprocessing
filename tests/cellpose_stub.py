@@ -94,6 +94,8 @@ def model_class(state):
             state.constructed.append(
                 SimpleNamespace(gpu=gpu, pretrained_model=pretrained_model, device=device, **kwargs)
             )
+            if state.on_construct is not None:  # something else touches the file meanwhile
+                state.on_construct(pretrained_model)
             if state.cpdino_log:  # 4.2.1.1 logs this when cellpose.models cannot import DINOv3
                 logging.getLogger("cellpose.models").warning(CPDINO_WARNING)
             self.pretrained_model = state.substitute or self._resolve(pretrained_model)
@@ -209,6 +211,7 @@ def install(monkeypatch, tmp_path, **options):
         dinov3_commit=model_module.DINOV3_COMMIT,
         has_cpdino=True,
         cpdino_log=False,
+        on_construct=None,
         normalize_default={
             "lowhigh": None,
             "percentile": None,

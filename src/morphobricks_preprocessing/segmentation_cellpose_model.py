@@ -45,7 +45,9 @@ from .segmentation_cellpose_weights import (
     WEIGHTS_REPOSITORY,
     WEIGHTS_REVISION,
     Progress,
+    changed_refusal,
     fetch_weights,
+    file_identity,
 )
 from .segmentation_record import DEVICES, SegmentationError
 
@@ -472,6 +474,14 @@ def _verify(loaded: object, expected: Path, device: str, choice: ModelChoice) ->
         )
 
 
+def _identity(path: Path) -> tuple[int, int, int, int] | None:
+    """Return the weights file's :func:`.segmentation_cellpose_weights.file_identity`, or None."""
+    try:
+        return file_identity(path)
+    except OSError:
+        return None
+
+
 def load_model(
     model: str | os.PathLike, device: str, *, progress: Progress | None = None
 ) -> LoadedModel:
@@ -483,8 +493,12 @@ def load_model(
     SHA-256 (:func:`.segmentation_cellpose_weights.fetch_weights`); a DINOv3 model needs the
     pinned DINOv3; then the model is loaded from that file's absolute path and **verified**
     (the weights file it reports is the one asked for; every parameter and buffer of the
-    network sits on the stated device type). Choosing the model and calling this is the
-    consent to those downloads; nothing else is fetched and no other model is used.
+    network sits on the stated device type). The file's identity (device, inode, size,
+    modification time) taken when it was hashed must be the same right before Cellpose opens it
+    and after Cellpose loaded it (and, for a model file of one's own, after it was hashed):
+    Cellpose would download ``cpsam_v2`` from its moving branch for a path that is gone, and a
+    file replaced in between is not the one recorded. Choosing the model and calling this is
+    the consent to those downloads; nothing else is fetched and no other model is used.
 
     Parameters
     ----------
@@ -496,7 +510,8 @@ def load_model(
     SegmentationError
         For an unknown model or one that does not exist, a device that is not available or
         not the one the model sits on, a substituted model, weights that cannot be downloaded
-        or are not the pinned file, another Cellpose version or another DINOv3 commit.
+        or are not the pinned file, a weights file that changed after it was checked, another
+        Cellpose version or another DINOv3 commit.
     """
     choice = choose_model(model)
     check_device(device)
@@ -507,11 +522,17 @@ def load_model(
     commit = check_dinov3(models) if dino else None
     if choice.path is not None:
         expected, weights = choice.path, None
+        identity = _identity(expected)
     else:
         weights = fetch_weights(choice.name, os.fspath(models.MODEL_DIR), progress)
-        expected = weights.path
+        expected, identity = weights.path, weights.identity
+    if _identity(expected) != identity:  # gone now: Cellpose would download cpsam_v2 instead
+        raise changed_refusal(expected)
     loaded = _construct(models, os.fspath(expected), device)
     _verify(loaded, expected, device, choice)
+    sha256 = file_sha256(expected) if weights is None else weights.sha256
+    if _identity(expected) != identity:  # the file Cellpose read may not be the one hashed
+        raise changed_refusal(expected)
     backbone = getattr(loaded, "backbone", None)
     if not isinstance(backbone, str):
         raise SegmentationError("The loaded model does not say which network it is; refused.")
@@ -522,7 +543,7 @@ def load_model(
         name=choice.name,
         file=os.fspath(expected) if choice.path else expected.name,
         path=expected,
-        sha256=file_sha256(expected) if weights is None else weights.sha256,
+        sha256=sha256,
         device=device,
         backbone=backbone,
         tile_size=SAM_TILE if backbone == "sam_vitl" else DINO_TILE,

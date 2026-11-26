@@ -98,6 +98,8 @@ class WeightsFile:
         :data:`WEIGHTS_REPOSITORY` and :data:`WEIGHTS_REVISION`.
     downloaded
         True when this call downloaded it; False when the copy on disk was used.
+    identity
+        The file's :func:`file_identity` when it was hashed (checked again after loading).
     """
 
     name: str
@@ -107,6 +109,7 @@ class WeightsFile:
     repository: str = WEIGHTS_REPOSITORY
     revision: str = WEIGHTS_REVISION
     downloaded: bool = False
+    identity: tuple[int, int, int, int] | None = None
 
 
 def weights_url(name: str) -> str:
@@ -144,6 +147,22 @@ def _refusal(name: str, url: str, why: str) -> SegmentationError:
     )
 
 
+def file_identity(path: str | os.PathLike) -> tuple[int, int, int, int]:
+    """Return a file's identity now: its device, inode, size and modification time (ns).
+
+    Taken when the file is hashed and compared after Cellpose loads it
+    (:func:`.segmentation_cellpose_model.load_model`): a file replaced, removed or written to
+    in between is another file than the one hashed.
+
+    Raises
+    ------
+    OSError
+        When the file cannot be read (it is gone, say).
+    """
+    found = os.stat(path)
+    return (found.st_dev, found.st_ino, found.st_size, found.st_mtime_ns)
+
+
 def fetch_weights(
     name: str, model_dir: str | os.PathLike, progress: Progress | None = None
 ) -> WeightsFile:
@@ -162,12 +181,14 @@ def fetch_weights(
     Raises
     ------
     SegmentationError
-        For a copy on disk that is not the pinned file, a download that fails or is blocked,
-        or bytes that are not the pinned size and SHA-256. Each names the model and the source.
+        For a copy on disk that is not the pinned file (or changed while it was hashed), a
+        download that fails or is blocked, bytes that are not the pinned size and SHA-256 (each
+        names the model and the source), or a file that cannot be written (it names the folder).
     """
     pin, url = _pinned(name), weights_url(name)
     target = Path(model_dir) / name
     if target.is_file():
+        before = file_identity(target)
         found = file_sha256(target)
         if found != pin.sha256:
             raise SegmentationError(
@@ -176,41 +197,42 @@ def fetch_weights(
                 "replaced. Delete that file (or move it away), then press the button again to "
                 "download the pinned weights."
             )
-        return WeightsFile(name, target, found, url)
+        if file_identity(target) != before:
+            raise changed_refusal(target)
+        return WeightsFile(name, target, found, url, identity=before)
     sha256 = _download(name, url, target, pin, progress)
-    return WeightsFile(name, target, sha256, url, downloaded=True)
+    return WeightsFile(name, target, sha256, url, downloaded=True, identity=file_identity(target))
+
+
+def changed_refusal(path: Path) -> SegmentationError:
+    """Return the refusal of a weights file that changed after it was hashed."""
+    return SegmentationError(
+        f"The weights file {path} changed after it was checked (it was replaced, removed or "
+        "written to), so the model loaded may not be the file whose SHA-256 is recorded. "
+        "Nothing was segmented and that model is not used. Make sure nothing else writes to "
+        "Cellpose's model folder, then press the button again."
+    )
+
+
+def _write_refusal(name: str, folder: Path, exc: OSError) -> SegmentationError:
+    """Return the refusal of weights that could not be written on this computer."""
+    return SegmentationError(
+        f"The weights of {name} could not be written to {folder} ({type(exc).__name__}: {exc}). "
+        "The disk may be full or the folder not writable; this is not a network problem. "
+        "Nothing was loaded and no partial file is kept. Free some space (the file is up to "
+        "1.2 GB) or make the folder writable, then press the button again."
+    )
 
 
 def _download(name: str, url: str, target: Path, pin: PinnedFile, progress: Progress | None) -> str:
     """Download ``url`` to ``target`` through a checked temporary file; return its SHA-256."""
-    label = download_label(name)
     try:
         target.parent.mkdir(parents=True, exist_ok=True)
         handle, temporary = tempfile.mkstemp(prefix=f".{name}.", suffix=".part", dir=target.parent)
     except OSError as exc:
-        why = f"the model folder {target.parent} cannot be written: {exc}"
-        raise _refusal(name, url, why) from exc
-    digest, done = hashlib.sha256(), 0
+        raise _write_refusal(name, target.parent, exc) from exc
     try:
-        with os.fdopen(handle, "wb") as out:
-            try:
-                with _open_url(url, TIMEOUT) as response:
-                    size = response.headers.get("Content-Length")
-                    total = int(size) if size and size.isdigit() else 0
-                    if progress is not None:
-                        progress(label, 0, total)
-                    for block in iter(lambda r=response: r.read(CHUNK), b""):
-                        out.write(block)
-                        digest.update(block)
-                        done += len(block)
-                        if progress is not None:
-                            progress(label, done, total)
-            except urllib.error.HTTPError as exc:
-                raise _refusal(name, url, f"the server answered {exc.code} {exc.reason}") from exc
-            except (urllib.error.URLError, OSError, ValueError, http.client.HTTPException) as exc:
-                why = getattr(exc, "reason", None) or exc
-                raise _refusal(name, url, f"{type(exc).__name__}: {why}") from exc
-        found = digest.hexdigest()
+        done, found = _stream(name, url, handle, target.parent, progress)
         if (done, found) != (pin.size, pin.sha256):
             raise _refusal(
                 name,
@@ -218,11 +240,68 @@ def _download(name: str, url: str, target: Path, pin: PinnedFile, progress: Prog
                 f"received {done:,} bytes with SHA-256 {found}; the pinned file has "
                 f"{pin.size:,} bytes and SHA-256 {pin.sha256}",
             )
-        os.replace(temporary, target)
+        try:
+            os.replace(temporary, target)
+        except OSError as exc:
+            raise SegmentationError(
+                f"The weights of {name} were downloaded and checked but could not be moved to "
+                f"{target} ({type(exc).__name__}: {exc}). Nothing was loaded and no partial "
+                "file is kept. Check that the folder is writable, then press the button again."
+            ) from exc
     finally:
         if os.path.exists(temporary):
             os.remove(temporary)
     return found
+
+
+def _stream(
+    name: str, url: str, handle: int, folder: Path, progress: Progress | None
+) -> tuple[int, str]:
+    """Write ``url``'s bytes to the open file ``handle``, synced; return their count and hash.
+
+    A network error is a download refusal; a write error (a full disk) is a write refusal.
+    """
+    label, digest, done = download_label(name), hashlib.sha256(), 0
+    network = (urllib.error.URLError, OSError, ValueError, http.client.HTTPException)
+    out = os.fdopen(handle, "wb")
+    try:
+        try:
+            response = _open_url(url, TIMEOUT)
+        except urllib.error.HTTPError as exc:
+            raise _refusal(name, url, f"the server answered {exc.code} {exc.reason}") from exc
+        except network as exc:
+            why = getattr(exc, "reason", None) or exc
+            raise _refusal(name, url, f"{type(exc).__name__}: {why}") from exc
+        with response:
+            size = response.headers.get("Content-Length")
+            total = int(size) if size and size.isdigit() else 0
+            if progress is not None:
+                progress(label, 0, total)
+            while True:
+                try:
+                    block = response.read(CHUNK)
+                except network as exc:
+                    why = getattr(exc, "reason", None) or exc
+                    raise _refusal(name, url, f"{type(exc).__name__}: {why}") from exc
+                if not block:
+                    break
+                try:
+                    out.write(block)
+                except OSError as exc:
+                    raise _write_refusal(name, folder, exc) from exc
+                digest.update(block)
+                done += len(block)
+                if progress is not None:
+                    progress(label, done, total)
+        try:
+            out.flush()
+            os.fsync(out.fileno())  # on disk before the rename makes it the weights file
+            out.close()
+        except OSError as exc:
+            raise _write_refusal(name, folder, exc) from exc
+    finally:
+        out.close()
+    return done, digest.hexdigest()
 
 
 __all__ = [
@@ -235,7 +314,9 @@ __all__ = [
     "PinnedFile",
     "Progress",
     "WeightsFile",
+    "changed_refusal",
     "download_label",
     "fetch_weights",
+    "file_identity",
     "weights_url",
 ]

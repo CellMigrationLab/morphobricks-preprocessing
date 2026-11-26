@@ -5,7 +5,10 @@ download with its own bytes, whose SHA-256 and size it makes the pins.
 """
 
 import email.message
+import errno
 import hashlib
+import io
+import os
 import re
 import urllib.error
 import warnings
@@ -15,6 +18,7 @@ import pytest
 
 from cellpose_stub import BUILTINS, install, weights_bytes
 from morphobricks_preprocessing import segmentation_cellpose as cp
+from morphobricks_preprocessing import segmentation_cellpose_model as model_module
 from morphobricks_preprocessing import segmentation_cellpose_weights as weights_module
 from morphobricks_preprocessing.segmentation_record import SegmentationError, read_record
 from test_segmentation_cellpose import make_job
@@ -198,3 +202,132 @@ def test_the_warning_is_shown_again_outside_the_cellpose_call(stub):
         warnings.simplefilter("always")
         _warn(SPARSE_MESSAGE, "cellpose.dynamics")(None)
     assert [str(w.message) for w in seen] == [SPARSE_MESSAGE]
+
+
+# review of #577 ---------------------------------------------------------------------------------
+
+
+def test_the_sparse_filter_is_put_back_when_cellpose_raises(stub):
+    loaded = cp.load_model("cpsam_v2", "cpu")
+
+    def broken(_stack):
+        raise RuntimeError("CUDA out of memory")
+
+    stub.fail = broken
+    before = list(warnings.filters)
+    with pytest.raises(RuntimeError, match="out of memory"):
+        cp.evaluate(loaded, cp.Settings(), np.zeros((2, 8, 8), np.uint16))
+    assert warnings.filters == before
+    with warnings.catch_warnings(record=True) as seen:
+        warnings.simplefilter("always")
+        _warn(SPARSE_MESSAGE, "cellpose.dynamics")(None)
+    assert [str(w.message) for w in seen] == [SPARSE_MESSAGE]
+
+
+def _replace_with_same_bytes(path):
+    data = path.read_bytes()
+    path.unlink()
+    path.write_bytes(data)  # another file (inode, time) with the very same bytes
+
+
+@pytest.mark.parametrize("what", ["removed", "replaced"])
+def test_a_weights_file_that_changes_while_cellpose_loads_it_is_refused(stub, what):
+    # Removed: Cellpose 4.2.1.1 would fetch cpsam_v2 from its moving branch with TLS off, to
+    # the same path, while the record would carry the pinned hash.
+    path = stub.models_dir / "cpsam_v2"
+    stub.on_construct = (
+        (lambda _r: path.unlink())
+        if what == "removed"
+        else (lambda _r: _replace_with_same_bytes(path))
+    )
+    with pytest.raises(SegmentationError, match="changed after it was checked") as caught:
+        cp.load_model("cpsam_v2", "cpu")
+    assert str(path) in str(caught.value) and len(stub.constructed) == 1
+
+
+def test_a_weights_file_gone_before_cellpose_opens_it_is_refused_without_cellpose(
+    stub, monkeypatch
+):
+    real = model_module.fetch_weights
+
+    def fetch_then_lose(*args, **kwargs):
+        found = real(*args, **kwargs)
+        found.path.unlink()  # between the check and the load
+        return found
+
+    monkeypatch.setattr(model_module, "fetch_weights", fetch_then_lose)
+    with pytest.raises(SegmentationError, match="changed after it was checked"):
+        cp.load_model("cpsam_v2", "cpu")
+    assert stub.constructed == [] and stub.cellpose_downloaded == []
+
+
+def test_a_model_file_of_ones_own_that_changes_while_loading_is_refused(stub, tmp_path):
+    from cellpose_stub import custom_model
+
+    path = custom_model(tmp_path)
+    stub.on_construct = lambda _r: path.write_bytes(b"retrained meanwhile")
+    with pytest.raises(SegmentationError, match="changed after it was checked"):
+        cp.load_model(str(path), "cpu")
+
+
+class _OS:
+    """The ``os`` module as the weights module sees it, with some calls replaced."""
+
+    def __init__(self, **replaced):
+        self.__dict__.update(replaced)
+
+    def __getattr__(self, name):
+        return getattr(os, name)
+
+
+class _FullDisk(io.BufferedWriter):
+    def write(self, data):
+        raise OSError(errno.ENOSPC, "No space left on device")
+
+
+def test_a_full_disk_is_a_write_refusal_not_a_network_one(stub, monkeypatch):
+    (stub.models_dir / "cpsam").unlink()
+
+    def fdopen(handle, mode):
+        return _FullDisk(io.FileIO(handle, "w"))
+
+    monkeypatch.setattr(weights_module, "os", _OS(fdopen=fdopen))
+    with pytest.raises(SegmentationError, match="could not be written to") as caught:
+        cp.load_model("cpsam", "cpu")
+    message = str(caught.value)
+    assert "No space left on device" in message and str(stub.models_dir) in message
+    assert "not a network problem" in message and "internet" not in message
+    assert sorted(p.name for p in stub.models_dir.iterdir()) == ["cpsam_v2"]
+    assert stub.constructed == []
+
+
+def test_a_failed_rename_names_the_target_and_keeps_nothing(stub, monkeypatch):
+    (stub.models_dir / "cpsam").unlink()
+
+    def replace(source, target):
+        raise PermissionError(errno.EACCES, "Permission denied")
+
+    monkeypatch.setattr(weights_module, "os", _OS(replace=replace))
+    with pytest.raises(SegmentationError, match="could not be moved to") as caught:
+        cp.load_model("cpsam", "cpu")
+    assert str(stub.models_dir / "cpsam") in str(caught.value)
+    assert "Permission denied" in str(caught.value)
+    assert sorted(p.name for p in stub.models_dir.iterdir()) == ["cpsam_v2"]
+    assert stub.constructed == []
+
+
+def test_the_download_is_synced_to_disk_before_the_rename(stub, monkeypatch):
+    (stub.models_dir / "cpsam").unlink()
+    calls = []
+
+    def fsync(handle):
+        calls.append("fsync")
+        os.fsync(handle)
+
+    def replace(source, target):
+        calls.append("replace")
+        os.replace(source, target)
+
+    monkeypatch.setattr(weights_module, "os", _OS(fsync=fsync, replace=replace))
+    cp.load_model("cpsam", "cpu")
+    assert calls == ["fsync", "replace"]

@@ -1404,8 +1404,10 @@ downloaded by Cellpose: choosing a built-in model and loading it is the consent 
 model's file (owner, #574), which `segmentation_cellpose_weights` fetches from
 `mouseland/cellpose-sam` at a pinned commit (`WEIGHTS_REVISION`) and accepts only with its
 pinned size and SHA-256 (`PINNED_WEIGHTS`); a copy already in Cellpose's model folder must match
-too, else it is refused and left as it is. A failed or blocked download is a refusal naming the
-model and the URL; nothing partial is kept and no other model is used. Cellpose is then given
+too, else it is refused and left as it is; the file's identity (device, inode, size, modification
+time) taken when it is hashed must be unchanged right before and after Cellpose loads it, else
+the load is refused. A failed or blocked download is a refusal naming the
+model and the URL (a local write error names the folder instead); nothing partial is kept and no other model is used. Cellpose is then given
 the file's absolute path. While `model.eval` runs, torch's `UserWarning` starting "Sparse
 invariant checks are implicitly disabled" from the `torch` or `cellpose` modules is filtered
 (`warnings.catch_warnings`, never a global filter); it does not affect results. More than
