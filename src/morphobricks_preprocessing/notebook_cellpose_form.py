@@ -400,10 +400,27 @@ class CellposeNotebook(CellposeWorkflow):
             cards,
             "Preview",
             "eye",
-            lambda: self._with_form_settings(lambda: self._preview_and_note(image.value or "")),
+            lambda: self._preview_from_form(image.value or ""),
             {"preview_image": image},
         )
+        # Under the button's output (the model's loading), the last Preview's result only.
+        form.body.children = [*form.body.children, self.preview_box]
         return self._keep("preview", form)
+
+    def _mount_preview(self) -> None:
+        """Show the preview's box in the cell, unless the Preview form already holds it."""
+        if "preview" not in self.forms:
+            super()._mount_preview()
+
+    def _preview_from_form(self, image: str) -> None:
+        """Press of **Preview**: take the last result off first, then load if needed and preview.
+
+        Cleared before the model is checked or loaded, so a refused or failed load leaves no
+        earlier result on screen, nor the Segment step's line saying what it used.
+        """
+        self.clear_preview()
+        self._previewed_with = None
+        self._with_form_settings(lambda: self._preview_and_note(image))
 
     def segment_form(self) -> StepForm:
         """Show the form of cell 7: overwrite (off by default) and the button that segments."""

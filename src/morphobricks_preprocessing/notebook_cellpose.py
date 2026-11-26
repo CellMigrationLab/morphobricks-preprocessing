@@ -30,10 +30,10 @@ from .notebook_cellpose_channels import (
     _card,
 )
 from .notebook_cellpose_download import quiet_cellpose
-from .notebook_cellpose_preview import MaskResult, preview_figures
+from .notebook_cellpose_preview import MaskResult, preview_images
 from .notebook_progress import progress_html
 from .notebook_stop import CellStop
-from .notebook_style import STYLE_CSS, table, tiles
+from .notebook_style import STYLE_CSS, status, table, tiles
 from .run_inputs import Fov, RunInputs
 from .segmentation_cellpose_run import (
     channel_layouts,
@@ -117,6 +117,7 @@ class CellposeWorkflow:
         self.result: cp.BatchResult | None = None
         self.results: dict[str, cp.BatchResult] = {}
         self.previewed: list[MaskResult] = []
+        self.preview_box = widgets.VBox()  # the last Preview's result, and nothing else
         self.shown: list[str] = []
         self.on_masks_written: Callable[[cp.BatchResult], object] | None = None
         self.register_with: str | None = None
@@ -147,6 +148,20 @@ class CellposeWorkflow:
         """Forget the channels, the mask types and every loaded model (the choice changed)."""
         self.picker = self.loaded = self.nuclei_loaded = self.nuclei_settings = None
         self.mask_types = {}
+        self.clear_preview()  # a preview of other channels says nothing of the next ones
+
+    def clear_preview(self) -> None:
+        """Take the last Preview's result off the screen and out of :attr:`previewed`."""
+        self.previewed = []
+        shown, self.preview_box.children = self.preview_box.children, ()
+        for widget in shown:  # their pictures leave the kernel too
+            widget.close()
+
+    def _mount_preview(self) -> None:
+        """Show :attr:`preview_box` in the cell that previews (a form shows it on its page)."""
+        if not self.shown:
+            display(widgets.HTML(STYLE_CSS))
+        display(self.preview_box)
 
     def model_for(self, output: str) -> tuple[cp.LoadedModel, cp.Settings]:
         """Return the model and the settings that segment the masks of ``output``.
@@ -382,8 +397,21 @@ class CellposeWorkflow:
     def preview(self, image: str = "") -> None:
         """Segment one image and show it with the outlines; nothing is written (cell 6).
 
-        For Both, the image is segmented twice, the cells and the nuclei, each shown.
+        For Both, the image is segmented twice, the cells and the nuclei, each shown. Every
+        result of an earlier Preview is taken off the screen first (:meth:`clear_preview`), and
+        a Preview that fails shows none: what is shown is always this Preview's result. While
+        Cellpose runs, one line says which model runs.
         """
+        self.clear_preview()
+        self._mount_preview()
+        try:
+            self._preview(image)
+        except BaseException:  # a refusal, any error or an interrupt: no result is shown
+            self.clear_preview()
+            raise
+
+    def _preview(self, image: str) -> None:
+        """Segment ``image`` and put this Preview's result in :attr:`preview_box`."""
         self._need("model")
         targets = self.picker.current_targets()
         fovs = self.inputs.fovs()
@@ -395,24 +423,26 @@ class CellposeWorkflow:
             )
         fov = by_path[image.strip()] if image.strip() else (self.first_without_mask() or fovs[0])
         check_manifest(self.inputs, self.run_manifest_sha256)  # the run opened, still
+        models = [self.model_for(target.output) for target in targets]
+        names = " and ".join(dict.fromkeys(loaded.name for loaded, _ in models))
+        running = status("info", f"Running {names} on the preview image…")
+        self.preview_box.children = (widgets.HTML(f"<div class='mb-root'>{running}</div>"),)
         results, lines = [], []
-        for target in targets:
-            loaded, settings = self.model_for(target.output)
+        for target, (loaded, settings) in zip(targets, models, strict=True):
             stack = target.plan.read(fov)
             labels, flows = cp.evaluate(loaded, settings, stack)
             named = tuple(zip(target.channel_ids, target.roles, strict=True))
             result = MaskResult(OUTPUT_NAMES[target.output], stack, named, labels, flows)
             results.append(result)
             lines.append(f"{result.name}: {result.objects} objects; diameter {_diameter(settings)}")
-        self._show(
-            _card("info", f"Preview of {fov.relative_path} (nothing is written)", tuple(lines))
-        )
+        card = _card("info", f"Preview of {fov.relative_path} (nothing is written)", tuple(lines))
         try:
-            figures = preview_figures(results)
+            pictures = preview_images(results)
         except ValueError as exc:
             raise SegmentationError(str(exc)) from exc
-        for figure in figures:
-            display(figure)
+        self.shown.append(card.value)
+        self.clear_preview()  # the line of the model running
+        self.preview_box.children = (card, *pictures)
         self.previewed = results
 
     def first_without_mask(self) -> Fov | None:
