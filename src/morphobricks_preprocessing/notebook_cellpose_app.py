@@ -138,6 +138,7 @@ def segmentation_app(
     app: object = None,
     on_masks_written: Callable[[cp.BatchResult], object] | None = None,
     register_with: str | None = None,
+    open_now: bool = True,
 ) -> SegmentationApp:
     """Return the whole Cellpose segmentation as one widget.
 
@@ -158,13 +159,16 @@ def segmentation_app(
         Where the notebook registers the masks itself (the combined notebook's cell 5); the
         line shown once the masks are written then names it
         (:func:`.segmentation_cellpose_run.next_step_line`). None: the declaration by hand.
+    open_now
+        False leaves the run to be opened by the caller (``segmentation.workflow.forms
+        ["open"].submit()``), once the widget is on screen to show the wait.
 
     Returns
     -------
     SegmentationApp
         The steps of :data:`PAGES` in a stepper; ``.workflow`` is the
-        :class:`.CellposeNotebook` behind them. Given both folders, the run is opened at once
-        (its result, or its refusal, is shown under **Open the run**).
+        :class:`.CellposeNotebook` behind them. Given both folders and ``open_now``, the run is
+        opened at once (its result, or its refusal, is shown under **Open the run**).
     """
     found = app_folders(app) if app is not None else ("", "")
     if isinstance(run_folder, RunInputs):
@@ -180,6 +184,6 @@ def segmentation_app(
     segmentation = SegmentationApp(workflow)
     opener = workflow.forms["open"]
     opener.fields["run_folder"].value, opener.fields["masks_folder"].value = run, masks
-    if run and masks:
+    if run and masks and open_now:
         opener.submit()
     return segmentation

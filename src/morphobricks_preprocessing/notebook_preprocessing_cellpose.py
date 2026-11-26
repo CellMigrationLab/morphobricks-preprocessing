@@ -29,10 +29,20 @@ import ipywidgets as widgets
 
 from . import notebook_style as ui
 from . import segmentation_cellpose as cp
-from .cellpose_install import cellpose_install_command, cellpose_ready, install_cellpose
+from .cellpose_install import (
+    cellpose_install_command,
+    cellpose_ready,
+    install_cellpose,
+    install_changes,
+    installed_distributions,
+)
 from .notebook_cellpose_app import SegmentationApp, app_folders, segmentation_app
 from .notebook_cellpose_form import CellposeNotebook
+from .notebook_cellpose_install import INSTALLING, PipProgress, failed_lines, installed_html
+from .notebook_open_progress import opening
+from .notebook_progress import Wait
 from .notebook_render import blocked_line
+from .open_checks import Checking, quiet
 from .run_inputs import RunInputsError
 from .segmentation_cellpose_run import open_run
 
@@ -87,21 +97,49 @@ class SegmentationStep(widgets.VBox):
     def __init__(
         self, app: object, on_masks_written: Callable[[cp.BatchResult], object] | None
     ) -> None:
-        """Read the app's run and masks folder, then mount or offer the installation."""
+        """Read the app's run and masks folder, then mount or offer the installation.
+
+        Nothing is opened yet: :meth:`check` opens the run, once this widget can show it.
+        """
         super().__init__(layout=widgets.Layout(width="99%"))
         self.app, self._on_masks_written = app, on_masks_written
         self.run_folder, self.masks_folder = app_folders(app)
-        self.refused = _refusal(self.run_folder)
+        self.refused = ""
         self.segmentation: SegmentationApp | None = None
         self.rechecked_run: Path | None = None
         self.registered_manifest: str | None = None
         self.notice = widgets.HTML(self._notice())
+        self.opening = widgets.HTML()  # the wait of the run's checks without the component
+        self.installed = widgets.HTML()  # what the installation installed, once it did
         self.install_box = widgets.VBox()
-        self.children = [widgets.HTML(ui.STYLE_CSS), self.notice, self.install_box]
+        self.children = [
+            widgets.HTML(ui.STYLE_CSS),
+            self.notice,
+            self.opening,
+            self.installed,
+            self.install_box,
+        ]
         if cellpose_ready():
-            self._mount()
+            self._mount(open_now=False)
         else:
             self.install_box.children = [self._install_card()]
+
+    def check(self) -> None:
+        """Open the app's run once, showing the wait, and say when it cannot be segmented.
+
+        With the component and both folders, **Open the run** opens it (its wait under the
+        button); otherwise it is opened here only for its refusal (its wait under the notice).
+        Opened once, not twice (owner Colab test, #574): every image of a ``verify_content``
+        run is read whole for its SHA-256 at each opening.
+        """
+        if not self.run_folder:
+            return
+        if self.segmentation is not None and self.masks_folder:
+            self._open_in_form()
+            return
+        with opening(self.opening) as checking:
+            self.refused = _refusal(self.run_folder, checking)
+        self.notice.value = self._notice()
 
     @property
     def workflow(self) -> CellposeNotebook | None:
@@ -127,14 +165,25 @@ class SegmentationStep(widgets.VBox):
             raw=True,
         )
 
-    def _mount(self) -> None:
-        """Mount the segmentation component on the app's run (opened when both folders are)."""
+    def _mount(self, open_now: bool = True) -> None:
+        """Mount the segmentation component on the app's run; ``open_now``: open it there."""
         self.segmentation = segmentation_app(
-            app=self.app, on_masks_written=self._on_masks_written, register_with=REGISTER_WITH
+            app=self.app,
+            on_masks_written=self._on_masks_written,
+            register_with=REGISTER_WITH,
+            open_now=False,
         )
-        self.install_box.children = [self.segmentation]
+        self.install_box.children = [self.segmentation]  # on screen before the wait
+        if open_now:
+            self._open_in_form()
+
+    def _open_in_form(self) -> None:
+        """Open the run by **Open the run** when both folders are known; keep its refusal."""
         opener = self.segmentation.workflow.forms["open"]
-        if self.run_folder and self.masks_folder and opener.stopped is not None:
+        if not (self.run_folder and self.masks_folder):
+            return
+        opener.submit()
+        if opener.stopped is not None:
             # A refused masks folder is said under Open the run; the run itself is not refused.
             if not self.refused and not self.segmentation.workflow.folders_refused:
                 self.refused = opener.refusal
@@ -175,23 +224,36 @@ class SegmentationStep(widgets.VBox):
         self.install_blocker.value = blocked_line([] if ticked else ["tick the installation"])
 
     def install(self) -> bool:
-        """Install Cellpose (the tick is the consent) and mount the component; False if refused."""
-        self.install_status.value = ui.working(f"Installing Cellpose {cp.CELLPOSE_VERSION}…")
+        """Install Cellpose (the tick is the consent) and mount the component; False if refused.
+
+        The wait says what pip does now, with a ticking time; then a card says what pip
+        installed or changed, above the component (owner Colab test, #574).
+        """
+        label = INSTALLING.format(version=cp.CELLPOSE_VERSION)
+        wait = Wait(self.install_status)
+        wait.start(f"{label}: starting pip")
+        shown, before = PipProgress(wait, label), installed_distributions()
         try:
-            install_cellpose(self.install_tick.value)
+            with wait.ticking():
+                version = install_cellpose(self.install_tick.value, shown.line)
         except cp.SegmentationError as exc:
-            self.install_status.value = ui.status("error", "Cellpose is not installed", [str(exc)])
+            lines = [html.escape(str(exc)), *failed_lines(shown.lines)]
+            self.install_status.value = ui.status(
+                "error", "Cellpose is not installed", lines, raw=True
+            )
             return False
+        changes = install_changes(before, installed_distributions())
+        self.installed.value = installed_html(version, wait.took(), changes)
         self._mount()
         return True
 
 
-def _refusal(run_folder: str) -> str:
+def _refusal(run_folder: str, checking: Checking = quiet) -> str:
     """Return why the run in ``run_folder`` cannot be opened, or "" (also for no run)."""
     if not run_folder:
         return ""
     try:
-        open_run(run_folder)
+        open_run(run_folder, checking=checking)
     except (RunInputsError, cp.SegmentationError) as exc:
         return str(exc)
     return ""
@@ -203,9 +265,12 @@ def _refused_card(reason: str) -> str:
 
 
 def segmentation_step(
-    app: object, *, on_masks_written: Callable[[cp.BatchResult], object] | None = None
+    app: object,
+    *,
+    on_masks_written: Callable[[cp.BatchResult], object] | None = None,
+    show: Callable[[SegmentationStep], object] | None = None,
 ) -> SegmentationStep:
-    """Return cell 4's widget: the Cellpose segmentation of the run of the Preprocessing app.
+    """Return cell 4's widget, its run opened: the Cellpose segmentation of the app's run.
 
     Parameters
     ----------
@@ -214,8 +279,16 @@ def segmentation_step(
         masks folder rule give the folders (:func:`.notebook_cellpose_app.app_folders`).
     on_masks_written
         Passed to :func:`.notebook_cellpose_app.segmentation_app`.
+    show
+        Called with the widget before the run is opened (cell 4: IPython's ``display``), so
+        that the wait of its checks is on screen (owner Colab test, #574); None: the widget
+        is returned opened, for the caller to show.
     """
-    return SegmentationStep(app, on_masks_written)
+    step = SegmentationStep(app, on_masks_written)
+    if show is not None:
+        show(step)
+    step.check()
+    return step
 
 
 __all__ = ["NO_RUN", "REGISTER_WITH", "RUN_REFUSED", "SegmentationStep", "segmentation_step"]

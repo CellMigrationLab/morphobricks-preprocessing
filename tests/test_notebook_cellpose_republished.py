@@ -20,7 +20,7 @@ from cellpose_stub import install, two_channel_run
 from morphobricks_preprocessing import segmentation_cellpose as cp
 from morphobricks_preprocessing import segmentation_cellpose_run as run_module
 from morphobricks_preprocessing.manifest import MANIFEST_FILENAME
-from morphobricks_preprocessing.run_inputs import RunInputs
+from morphobricks_preprocessing.run_inputs import RunInputs, open_checked
 from morphobricks_preprocessing.segmentation_record import read_record, record_path
 from test_notebook_cellpose import BATCH, CHANNELS, MODEL, OPEN, PREVIEW, run_cell, source
 
@@ -143,14 +143,15 @@ def test_a_run_published_between_two_images_stops_the_batch(monkeypatch, tmp_pat
 def test_a_run_published_while_it_is_opened_is_refused(monkeypatch, tmp_path):
     install(monkeypatch, tmp_path)
     run, ns = two_channel_run(tmp_path / "run"), {}
-    real = RunInputs.open
+    real = open_checked
 
     def open_then_publish(*args, **kwargs):
         inputs = real(*args, **kwargs)
         republish(run.out, check=False)  # after the snapshot was read
         return inputs
 
-    monkeypatch.setattr(RunInputs, "open", open_then_publish)
+    # The notebook opens the run through open_checked (RunInputs.open with its wait, #574).
+    monkeypatch.setattr(run_module, "open_checked", open_then_publish)
     exec(compile(source(OPEN), "<cell 3>", "exec"), ns)
     opener = ns["workflow"].forms["open"]
     opener.fields["run_folder"].value = str(run.out)

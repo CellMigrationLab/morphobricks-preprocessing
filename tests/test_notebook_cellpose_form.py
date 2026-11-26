@@ -109,7 +109,7 @@ def test_every_field_reaches_the_workflow_as_given(monkeypatch):
     steps = ("open", "choose_channels", "set_settings", "load", "preview", "run")
     for name in steps:
         monkeypatch.setattr(
-            CellposeNotebook, name, lambda self, *a, name=name: calls.append((name, a))
+            CellposeNotebook, name, lambda self, *a, name=name, **_: calls.append((name, a))
         )
     forms = shown_forms().forms
     values = {
