@@ -330,7 +330,9 @@ src/morphobricks_preprocessing/
                     each step shown by notebook_register_progress.py RegisterWait (#574); shown
                     first (notebook_shown_first.py ShownFirst, shared with cell 4); one press when
                     nothing changed since cell 3's check (register_checks.py changes_since_check,
-                    and the refusal helpers, v0.9.1)
+                    and the refusal helpers, v0.9.1); notebook_stop_button.py Stopper,
+                    _StopSteps: Stop for Run and Register (work in a thread in a kernel, checked
+                    between images, StopPressed is a KeyboardInterrupt)
                     notebook_cellpose_preview.py MaskResult, preview_figures: the example result as
                     ZeroCostDL4Mic draws it (cellpose.plot.show_segmentation), one result per mask
                     notebook_cellpose_channels.py ChannelPicker, MaskTarget: the output's masks (Both:

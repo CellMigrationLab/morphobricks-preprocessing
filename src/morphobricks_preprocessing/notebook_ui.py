@@ -97,6 +97,7 @@ from .notebook_results import _ResultsStep
 from .notebook_run import _RunStep
 from .notebook_run_plan import _RunPlan
 from .notebook_steps import _StepsFlow
+from .notebook_stop_button import _StopSteps
 from .notebook_values import display_range
 from .planes import PlaneLayout
 from .run import Preflight, RunResult
@@ -130,6 +131,7 @@ __all__ = [
 
 
 class PreprocessingNotebook(
+    _StopSteps,
     _RestoreEarlier,
     _StepsFlow,
     _DescribedRun,
@@ -206,6 +208,7 @@ class PreprocessingNotebook(
         self._show_design = True
         self._layouts_cache: tuple[tuple, dict[str, PlaneLayout]] | None = None
         self._init_prefill()
+        self._build_stop()
         self._build_restore()
         self._build_check_save()
         self._build_channel_moves()
@@ -391,6 +394,7 @@ class PreprocessingNotebook(
                 self.settings_card,
                 self.plan_card,
                 self.run_button,
+                self.stopper.button,
                 self.run_blocker,
                 self.progress,
                 self.run_status,

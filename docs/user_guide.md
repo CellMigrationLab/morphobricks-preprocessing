@@ -503,6 +503,14 @@ editing, or the confirmed ones. An image that cannot be drawn gets a sentence sa
    folder and the error (the full report is in **Technical details**).
    Make sure Google Drive is mounted and the folder is there, then click the button again.
 
+   **Stop (v0.9.1).** While **Compute histograms** runs (also its checks before the first
+   image) or **Register the masks** works, a red **Stop** button is shown under it (in cell 5
+   too). It stops after the image being read: nothing is half written, the images read so far
+   are kept, and the line says "Stopped after m:ss; run again to continue": press the button
+   again and it continues where it stopped. While a step runs, the app's other buttons and boxes
+   are disabled. Cellpose segmentation cannot be stopped with it: use Runtime > Interrupt
+   execution (Colab) or the kernel's interrupt; its batch keeps the masks already written.
+
    **Nothing is read while you type (v0.9.1, #579).** Typing or pasting a folder path never
    starts a scan, a check or a restore: editing a folder box only clears what came from the old
    folders (the scan, the check, the run shown) and says which button to press. **Scan the

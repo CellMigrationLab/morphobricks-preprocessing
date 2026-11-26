@@ -55,6 +55,7 @@ from .notebook_open_progress import opening
 from .notebook_register_progress import RegisterWait
 from .notebook_render import blocked_line
 from .notebook_shown_first import ShownFirst
+from .notebook_stop_button import StopPressed
 from .open_checks import Checking, quiet
 from .register_checks import (
     CHANGED,
@@ -126,6 +127,8 @@ STOPPED = (
     "masks only once this step says The masks are registered; cell 3 shows what it saved. "
     "Press Register the masks again."
 )
+STOPPED_BY_USER = "Register the masks was stopped"
+"""The title of the card left when **Stop** ended a press (the line says how to continue)."""
 NOT_SAVED = (
     "Check and save did not save the description: open cell 3, step Check and save, answer "
     "what it lists, then press Register the masks again here."
@@ -242,7 +245,7 @@ class MaskRegistration(ShownFirst, widgets.VBox):
         self.refused = ""
         self.skip_next_display = False
         self.button = ui.button("Register the masks", icon="check", main=True)
-        self.button.on_click(lambda _: self.register())
+        self.button.on_click(lambda _: self._register_pressed())
         self.blocker = widgets.HTML()
         self.progress, self.progress_detail = widgets.HTML(), widgets.HTML()
         types = written_types(segmentation)
@@ -259,10 +262,12 @@ class MaskRegistration(ShownFirst, widgets.VBox):
             "description, runs again (the histograms are reused) and describes the masks; each "
             "step is shown here as it goes."
         )
+        stop = getattr(app, "stopper", None)  # the app's Stop, shown here too (v0.9.1)
         body = [
             ui.help_text(text),
             *rows,
             widgets.HBox([self.button, self.blocker]),
+            *([] if stop is None else [stop.button]),
             self.progress,
             self.progress_detail,
             self.status,
@@ -332,11 +337,20 @@ class MaskRegistration(ShownFirst, widgets.VBox):
         """
         if self.button.disabled:
             return False
+        return self._pressed()
+
+    def _pressed(self) -> bool:
+        """Do :meth:`register` once its button is known to be enabled."""
         self.button.disabled = True
         self.status.value = ""
         try:
             with RegisterWait(self.progress, self.progress_detail).running() as wait:
                 return self._register(wait, ContentMemo())  # one memo per press, then gone
+        except StopPressed:
+            self.status.value = ui.status(
+                "info", STOPPED_BY_USER, [self.app.stopper.stopped_line()], raw=True
+            )
+            raise
         except BaseException as exc:  # a click handler's error is never shown in this cell
             self._stop(STOPPED.format(problem=f"{type(exc).__name__}: {exc}"))
             raise
@@ -351,7 +365,7 @@ class MaskRegistration(ShownFirst, widgets.VBox):
         before it publishes never does (:mod:`.content_memo`, owner on #578).
         """
         with wait.step("run"):
-            why = refusal(self.app, self.segmentation, checking=wait.checking, memo=memo)
+            why = refusal(self.app, self.segmentation, checking=self._checking(wait), memo=memo)
         if why:
             return self._stop(why)
         reasons: list[str] = []
@@ -381,6 +395,33 @@ class MaskRegistration(ShownFirst, widgets.VBox):
         self.registered = True
         self.status.value = self._registered_html(result)
         return True
+
+    def _checking(self, wait: RegisterWait) -> Checking:
+        """Return the run's checks' callback: the wait's, after **Stop** is looked at."""
+        stopper = getattr(self.app, "stopper", None)
+
+        def checking(phase: str, done: int, total: int, path: str) -> None:
+            if stopper is not None:
+                stopper.check()  # between images: nothing is declared or written yet
+            wait.checking(phase, done, total, path)
+
+        return checking
+
+    def _register_pressed(self) -> None:
+        """*Register the masks* pressed: in a thread in a kernel, so **Stop** is handled."""
+        stopper = getattr(self.app, "stopper", None)
+        if stopper is None or self.button.disabled:
+            self.register()
+            return
+
+        def work() -> None:
+            try:
+                with self.app._frozen_app(self):
+                    self._pressed()
+            finally:
+                self._update()  # its own state, over the one the freeze put back
+
+        stopper.start(work, lambda: None)  # register() shows the stop itself
 
     def _has_masks(self) -> bool:
         """Return whether the app's last check paired the masks folder with every mask type."""

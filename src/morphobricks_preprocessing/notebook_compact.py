@@ -106,6 +106,7 @@ class _CompactPages:
             self.settings_fold,
             self.plan_fold,
             self.run_button,
+            self.stopper.button,
             self.run_blocker,
             self.progress,
             self.run_status,

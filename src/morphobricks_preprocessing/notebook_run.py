@@ -100,7 +100,7 @@ class _RunStep:
         self.histogram_range.observe(
             lambda change: ui.set_visible(self.robust_box, change["new"] == "robust"), names="value"
         )
-        self.run_button.on_click(lambda _: self.run())
+        self.run_button.on_click(lambda _: self._run_pressed())  # notebook_stop_button
 
     def _build_settings(self) -> None:
         """Build the settings card: the recommended settings, the advanced ones and the mode."""
