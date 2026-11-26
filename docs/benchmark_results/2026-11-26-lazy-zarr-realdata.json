@@ -1,0 +1,6867 @@
+{
+ "preview": [
+  {
+   "fetch": {
+    "bytes": 428316691,
+    "calls": 300,
+    "ranged": 262
+   },
+   "identical_to_eager_stride": true,
+   "limit": 67108864,
+   "peak_rss": 99139584,
+   "ratio_to_limit": 1.477294921875,
+   "step": 13,
+   "wall_s": 1.0181961950002005
+  },
+  {
+   "fetch": {
+    "bytes": 428248843,
+    "calls": 153,
+    "ranged": 100
+   },
+   "identical_to_eager_stride": true,
+   "limit": 268435456,
+   "peak_rss": 345743360,
+   "ratio_to_limit": 1.287994384765625,
+   "step": 7,
+   "wall_s": 0.9378001649993166
+  },
+  {
+   "fetch": {
+    "bytes": 15203570,
+    "calls": 31,
+    "ranged": 18
+   },
+   "identical_to_eager_stride": true,
+   "limit": 67108864,
+   "peak_rss": 66539520,
+   "ratio_to_limit": 0.99151611328125,
+   "step": 12,
+   "wall_s": 0.18987826300053712
+  },
+  {
+   "fetch": {
+    "bytes": 15198166,
+    "calls": 17,
+    "ranged": 4
+   },
+   "identical_to_eager_stride": true,
+   "limit": 268435456,
+   "peak_rss": 294289408,
+   "ratio_to_limit": 1.0963134765625,
+   "step": 1,
+   "wall_s": 0.1420112509995306
+  }
+ ],
+ "preview_trace": [
+  {
+   "block_estimate": 55031808,
+   "block_shape": [
+    768,
+    11898
+   ],
+   "in_blocks": true,
+   "limit": 67108864,
+   "rss/limit": 1.647,
+   "rss_peak": 110538752,
+   "step": 13,
+   "traced/limit": 1.223,
+   "traced_peak": 82082804,
+   "whole_estimate": 572662856
+  },
+  {
+   "block_estimate": 256815104,
+   "block_shape": [
+    3584,
+    11898
+   ],
+   "in_blocks": true,
+   "limit": 268435456,
+   "rss/limit": 1.293,
+   "rss_peak": 347136000,
+   "step": 7,
+   "traced/limit": 1.177,
+   "traced_peak": 315834833,
+   "whole_estimate": 572662856
+  },
+  {
+   "block_estimate": 45661320,
+   "block_shape": [
+    2295,
+    6632
+   ],
+   "in_blocks": true,
+   "limit": 67108864,
+   "rss/limit": 1.149,
+   "rss_peak": 77111296,
+   "step": 12,
+   "traced/limit": 0.947,
+   "traced_peak": 63581548,
+   "whole_estimate": 243527040
+  },
+  {
+   "block_estimate": null,
+   "block_shape": null,
+   "in_blocks": false,
+   "limit": 268435456,
+   "rss/limit": 1.237,
+   "rss_peak": 331935744,
+   "step": 1,
+   "traced/limit": 1.22,
+   "traced_peak": 327435939,
+   "whole_estimate": 243527040
+  }
+ ],
+ "records": {
+  "ebi_planes_1g.json": {
+   "block_memory_estimate": 1056711232,
+   "block_shape": [
+    2304,
+    11898
+   ],
+   "cmd": "planes",
+   "cmd_args": {
+    "axes": "TCZYX",
+    "memory_limit": 1073741824,
+    "path": "ebi_cy5/cy5.ome.zarr"
+   },
+   "estimate": 1056711232,
+   "in_blocks": true,
+   "layout_memory_estimate": 5119515912,
+   "memory_limit": 1073741824,
+   "numpy": "2.5.5",
+   "reads": [
+    {
+     "block_count": 6,
+     "blocks_s": 1.4927906169996277,
+     "c": 0,
+     "fetch": {
+      "bytes": 428286146,
+      "calls": 254,
+      "ranged": 244
+     },
+     "hist": {
+      "bin_count": 65536,
+      "binning": [
+       101.0,
+       65535.0
+      ],
+      "counts_sha": "737f3376f3914bf61301054e2a2ee05c2f5719f2b6a27850567ce874eaa10a9f",
+      "max": 65535.0,
+      "min": 101.0,
+      "total": 141562404,
+      "valid": 141562404
+     },
+     "in_blocks": true,
+     "peak_rss": 381353984,
+     "ratio": 0.36088760339778425,
+     "t": 0,
+     "wall_s": 3.2872210320001614,
+     "z": 0
+    }
+   ],
+   "total_s": 3.2918622460001643,
+   "zarr": "3.4.2"
+  },
+  "ebi_planes_64m.json": {
+   "block_memory_estimate": 65576960,
+   "block_shape": [
+    256,
+    5888
+   ],
+   "cmd": "planes",
+   "cmd_args": {
+    "axes": "TCZYX",
+    "memory_limit": 67108864,
+    "path": "ebi_cy5/cy5.ome.zarr"
+   },
+   "estimate": 65576960,
+   "in_blocks": true,
+   "layout_memory_estimate": 5119515912,
+   "memory_limit": 67108864,
+   "numpy": "2.5.5",
+   "reads": [
+    {
+     "block_count": 141,
+     "blocks_s": 1.8073253869997643,
+     "c": 0,
+     "fetch": {
+      "bytes": 428923506,
+      "calls": 1504,
+      "ranged": 1504
+     },
+     "hist": {
+      "bin_count": 65536,
+      "binning": [
+       101.0,
+       65535.0
+      ],
+      "counts_sha": "737f3376f3914bf61301054e2a2ee05c2f5719f2b6a27850567ce874eaa10a9f",
+      "max": 65535.0,
+      "min": 101.0,
+      "total": 141562404,
+      "valid": 141562404
+     },
+     "in_blocks": true,
+     "peak_rss": 38682624,
+     "ratio": 0.5898813241723923,
+     "t": 0,
+     "wall_s": 3.483465735000209,
+     "z": 0
+    }
+   ],
+   "total_s": 3.4880900099997234,
+   "zarr": "3.4.2"
+  },
+  "ebi_planes_6g.json": {
+   "block_memory_estimate": null,
+   "block_shape": null,
+   "cmd": "planes",
+   "cmd_args": {
+    "axes": "TCZYX",
+    "memory_limit": 6442450944,
+    "path": "ebi_cy5/cy5.ome.zarr"
+   },
+   "estimate": 5119515912,
+   "in_blocks": false,
+   "layout_memory_estimate": 5119515912,
+   "memory_limit": 6442450944,
+   "numpy": "2.5.5",
+   "reads": [
+    {
+     "block_count": 1,
+     "blocks_s": 1.3063086199999816,
+     "c": 0,
+     "fetch": {
+      "bytes": 214112233,
+      "calls": 47,
+      "ranged": 22
+     },
+     "hist": {
+      "bin_count": 65536,
+      "binning": [
+       101.0,
+       65535.0
+      ],
+      "counts_sha": "737f3376f3914bf61301054e2a2ee05c2f5719f2b6a27850567ce874eaa10a9f",
+      "max": 65535.0,
+      "min": 101.0,
+      "total": 141562404,
+      "valid": 141562404
+     },
+     "in_blocks": false,
+     "peak_rss": 1502281728,
+     "ratio": 0.29344214449625877,
+     "t": 0,
+     "traced_peak": null,
+     "wall_s": 2.2002440309997837,
+     "z": 0
+    }
+   ],
+   "total_s": 2.2061052919998474,
+   "zarr": "3.4.2"
+  },
+  "ebi_verify.json": {
+   "checked": 726,
+   "cmd": "verify",
+   "cmd_args": {
+    "axes": "TCZYX",
+    "path": "ebi_cy5/cy5.ome.zarr",
+    "records": [
+     "ebi_win_w1_plan.json",
+     "ebi_win_w4_plan.json",
+     "ebi_win_w4_nocache.json",
+     "ebi_win_w1_nocache.json",
+     "ebi_xyc.json",
+     "ebi_planes_64m.json",
+     "ebi_planes_1g.json"
+    ]
+   },
+   "eager_s": 1.0045870139992985,
+   "full_sha": "f552c99f68f7a72242fdac16788ad3843cf53889baac74310d4eba0ce6fe0d96",
+   "full_shape": [
+    1,
+    1,
+    1,
+    11898,
+    11898
+   ],
+   "numpy": "2.5.5",
+   "problems": [],
+   "zarr": "3.4.2"
+  },
+  "ebi_verify2.json": {
+   "checked": 2,
+   "cmd": "verify",
+   "cmd_args": {
+    "axes": "TCZYX",
+    "path": "ebi_cy5/cy5.ome.zarr",
+    "records": [
+     "ebi_planes_6g.json"
+    ]
+   },
+   "eager_s": 0.8692770580000797,
+   "full_sha": "f552c99f68f7a72242fdac16788ad3843cf53889baac74310d4eba0ce6fe0d96",
+   "full_shape": [
+    1,
+    1,
+    1,
+    11898,
+    11898
+   ],
+   "numpy": "2.5.5",
+   "problems": [],
+   "zarr": "3.4.2"
+  },
+  "ebi_win_w1_nocache.json": {
+   "all_sha": "596f1d71fe7c4fa168837cd53a18341fd7ed3f29ef6aa582e76ae7a81342e71f",
+   "cache_bytes": 1,
+   "cache_plan": {
+    "cache_bytes": 36962304,
+    "groups": 1,
+    "per_row": 47,
+    "piece_nbytes": 131072,
+    "piece_rows": 6
+   },
+   "cache_stats": {
+    "decodes": 4761,
+    "evictions": 0,
+    "hits": 0,
+    "nbytes": 0
+   },
+   "channels": [
+    0
+   ],
+   "cmd": "windows",
+   "cmd_args": {
+    "axes": "TCZYX",
+    "cache": 1,
+    "channels": [
+     0
+    ],
+    "margin": 64,
+    "path": "ebi_cy5/cy5.ome.zarr",
+    "t": 0,
+    "tile": 1024,
+    "workers": 1,
+    "z": 0
+   },
+   "fetch": {
+    "bytes": 478442475,
+    "calls": 10242,
+    "ranged": 9522
+   },
+   "held_bytes": 2654208,
+   "max_in_flight": 2,
+   "memory_estimate": 20152321,
+   "numpy": "2.5.5",
+   "peak_rss": 9076736,
+   "plane": [
+    11898,
+    11898
+   ],
+   "ratio": 0.45040648171493497,
+   "t": 0,
+   "wall_s": 11.21517459000006,
+   "window_bytes": 8749056,
+   "windows": 144,
+   "workers": 1,
+   "z": 0,
+   "zarr": "3.4.2"
+  },
+  "ebi_win_w1_plan.json": {
+   "all_sha": "596f1d71fe7c4fa168837cd53a18341fd7ed3f29ef6aa582e76ae7a81342e71f",
+   "cache_bytes": 36962304,
+   "cache_plan": {
+    "cache_bytes": 36962304,
+    "groups": 1,
+    "per_row": 47,
+    "piece_nbytes": 131072,
+    "piece_rows": 6
+   },
+   "cache_stats": {
+    "decodes": 2209,
+    "evictions": 1899,
+    "hits": 2552,
+    "nbytes": 36894792
+   },
+   "channels": [
+    0
+   ],
+   "cmd": "windows",
+   "cmd_args": {
+    "axes": "TCZYX",
+    "cache": "plan",
+    "channels": [
+     0
+    ],
+    "margin": 64,
+    "path": "ebi_cy5/cy5.ome.zarr",
+    "t": 0,
+    "tile": 1024,
+    "workers": 1,
+    "z": 0
+   },
+   "fetch": {
+    "bytes": 216703053,
+    "calls": 5138,
+    "ranged": 4418
+   },
+   "held_bytes": 2654208,
+   "max_in_flight": 2,
+   "memory_estimate": 57114624,
+   "numpy": "2.5.5",
+   "peak_rss": 47194112,
+   "plane": [
+    11898,
+    11898
+   ],
+   "ratio": 0.8263052208835341,
+   "t": 0,
+   "wall_s": 5.813741886999196,
+   "window_bytes": 8749056,
+   "windows": 144,
+   "workers": 1,
+   "z": 0,
+   "zarr": "3.4.2"
+  },
+  "ebi_win_w4_nocache.json": {
+   "all_sha": "596f1d71fe7c4fa168837cd53a18341fd7ed3f29ef6aa582e76ae7a81342e71f",
+   "cache_bytes": 1,
+   "cache_plan": {
+    "cache_bytes": 36962304,
+    "groups": 1,
+    "per_row": 47,
+    "piece_nbytes": 131072,
+    "piece_rows": 6
+   },
+   "cache_stats": {
+    "decodes": 4401,
+    "evictions": 0,
+    "hits": 360,
+    "nbytes": 0
+   },
+   "channels": [
+    0
+   ],
+   "cmd": "windows",
+   "cmd_args": {
+    "axes": "TCZYX",
+    "cache": 1,
+    "channels": [
+     0
+    ],
+    "margin": 64,
+    "path": "ebi_cy5/cy5.ome.zarr",
+    "t": 0,
+    "tile": 1024,
+    "workers": 4,
+    "z": 0
+   },
+   "fetch": {
+    "bytes": 441446330,
+    "calls": 9522,
+    "ranged": 8802
+   },
+   "held_bytes": 2654208,
+   "max_in_flight": 8,
+   "memory_estimate": 72646657,
+   "numpy": "2.5.5",
+   "peak_rss": 29827072,
+   "plane": [
+    11898,
+    11898
+   ],
+   "ratio": 0.4105773511367495,
+   "t": 0,
+   "wall_s": 15.175404728000103,
+   "window_bytes": 8749056,
+   "windows": 144,
+   "workers": 4,
+   "z": 0,
+   "zarr": "3.4.2"
+  },
+  "ebi_win_w4_plan.json": {
+   "all_sha": "596f1d71fe7c4fa168837cd53a18341fd7ed3f29ef6aa582e76ae7a81342e71f",
+   "cache_bytes": 36962304,
+   "cache_plan": {
+    "cache_bytes": 36962304,
+    "groups": 1,
+    "per_row": 47,
+    "piece_nbytes": 131072,
+    "piece_rows": 6
+   },
+   "cache_stats": {
+    "decodes": 2209,
+    "evictions": 1899,
+    "hits": 2552,
+    "nbytes": 36894792
+   },
+   "channels": [
+    0
+   ],
+   "cmd": "windows",
+   "cmd_args": {
+    "axes": "TCZYX",
+    "cache": "plan",
+    "channels": [
+     0
+    ],
+    "margin": 64,
+    "path": "ebi_cy5/cy5.ome.zarr",
+    "t": 0,
+    "tile": 1024,
+    "workers": 4,
+    "z": 0
+   },
+   "fetch": {
+    "bytes": 216703053,
+    "calls": 5138,
+    "ranged": 4418
+   },
+   "held_bytes": 2654208,
+   "max_in_flight": 8,
+   "memory_estimate": 109608960,
+   "numpy": "2.5.5",
+   "peak_rss": 72896512,
+   "plane": [
+    11898,
+    11898
+   ],
+   "ratio": 0.6650597907324365,
+   "t": 0,
+   "wall_s": 9.231674503999784,
+   "window_bytes": 8749056,
+   "windows": 144,
+   "workers": 4,
+   "z": 0,
+   "zarr": "3.4.2"
+  },
+  "ebi_xyc.json": {
+   "cmd": "xyc",
+   "cmd_args": {
+    "axes": "TCZYX",
+    "memory_limit": 2147483648,
+    "path": "ebi_cy5/cy5.ome.zarr",
+    "planes": [
+     [
+      0,
+      0
+     ]
+    ]
+   },
+   "numpy": "2.5.5",
+   "reads": [
+    {
+     "estimate": 1436960912,
+     "fetch": {
+      "bytes": 214114712,
+      "calls": 52,
+      "ranged": 22
+     },
+     "peak_rss": 664625152,
+     "ratio": 0.46252138555039557,
+     "sha": [
+      "f552c99f68f7a72242fdac16788ad3843cf53889baac74310d4eba0ce6fe0d96"
+     ],
+     "shape": [
+      1,
+      11898,
+      11898
+     ],
+     "t": 0,
+     "wall_s": 1.1370732690002114,
+     "z": 0
+    }
+   ],
+   "zarr": "3.4.2"
+  },
+  "mmv04_planes_1g.json": {
+   "block_memory_estimate": null,
+   "block_shape": null,
+   "cmd": "planes",
+   "cmd_args": {
+    "axes": "ZYX",
+    "memory_limit": 1073741824,
+    "path": "marmoset_v04/marmoset_neurons.ome.zarr"
+   },
+   "estimate": 103081984,
+   "in_blocks": false,
+   "layout_memory_estimate": 103081984,
+   "memory_limit": 1073741824,
+   "numpy": "2.5.5",
+   "reads": [
+    {
+     "block_count": 1,
+     "blocks_s": 0.17486417399959464,
+     "c": 0,
+     "fetch": {
+      "bytes": 19216673,
+      "calls": 256,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       0.0,
+       20.0
+      ],
+      "counts_sha": "86e7e1a80dec61521eadfaadcb978608e85b6cfda745e1df214201dfb2a778f9",
+      "max": 20.0,
+      "min": 0.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": false,
+     "peak_rss": 16150528,
+     "ratio": 0.156676534281684,
+     "t": null,
+     "wall_s": 0.18176468999990902,
+     "z": 0
+    },
+    {
+     "block_count": 1,
+     "blocks_s": 0.17353910200017708,
+     "c": 0,
+     "fetch": {
+      "bytes": 19216673,
+      "calls": 256,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       0.0,
+       20.0
+      ],
+      "counts_sha": "9499977c7ac938cc8156e363599d51f565bb7945ab96db71b3dd7f9041174d94",
+      "max": 20.0,
+      "min": 0.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": false,
+     "peak_rss": 8925184,
+     "ratio": 0.08658335485665468,
+     "t": null,
+     "wall_s": 0.1789979539998967,
+     "z": 1
+    },
+    {
+     "block_count": 1,
+     "blocks_s": 0.17559557200002018,
+     "c": 0,
+     "fetch": {
+      "bytes": 19216673,
+      "calls": 256,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       0.0,
+       24.0
+      ],
+      "counts_sha": "916379a1a47445467731876a6114f65ea847a415c156621c1ce18f39376e2521",
+      "max": 24.0,
+      "min": 0.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": false,
+     "peak_rss": 9768960,
+     "ratio": 0.0947688395287386,
+     "t": null,
+     "wall_s": 0.1814036550003948,
+     "z": 2
+    },
+    {
+     "block_count": 1,
+     "blocks_s": 0.17080493999947066,
+     "c": 0,
+     "fetch": {
+      "bytes": 19096422,
+      "calls": 256,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       0.0,
+       28.0
+      ],
+      "counts_sha": "94feec90a6b43cac3f01b39e689ddda1f462ee5fc003366c1e6948005d06ae39",
+      "max": 28.0,
+      "min": 0.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": false,
+     "peak_rss": 9940992,
+     "ratio": 0.09643772475314406,
+     "t": null,
+     "wall_s": 0.1763960069993118,
+     "z": 313
+    }
+   ],
+   "reads_summary": {
+    "count": 314,
+    "fetch_bytes_sum": 6867600924,
+    "fetch_calls_sum": 80384,
+    "peak_rss_max": 16150528,
+    "peak_rss_min": 8585216,
+    "ratio_max": 0.156676534281684,
+    "ratio_min": 0.0832853197703296,
+    "wall_s_max": 0.22918626899991068,
+    "wall_s_min": 0.15641862499978743,
+    "wall_s_sum": 56.52196628000547
+   },
+   "total_s": 56.679331997999725,
+   "zarr": "3.4.2"
+  },
+  "mmv04_planes_8m.json": {
+   "block_memory_estimate": 7546880,
+   "block_shape": [
+    64,
+    1024
+   ],
+   "cmd": "planes",
+   "cmd_args": {
+    "axes": "ZYX",
+    "memory_limit": 8388608,
+    "path": "marmoset_v04/marmoset_neurons.ome.zarr",
+    "planes": [
+     [
+      null,
+      0
+     ],
+     [
+      null,
+      63
+     ],
+     [
+      null,
+      64
+     ],
+     [
+      null,
+      157
+     ],
+     [
+      null,
+      313
+     ]
+    ]
+   },
+   "estimate": 7546880,
+   "in_blocks": true,
+   "layout_memory_estimate": 103081984,
+   "memory_limit": 8388608,
+   "numpy": "2.5.5",
+   "reads": [
+    {
+     "block_count": 16,
+     "blocks_s": 0.19096694300060335,
+     "c": 0,
+     "fetch": {
+      "bytes": 38433346,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       0.0,
+       20.0
+      ],
+      "counts_sha": "86e7e1a80dec61521eadfaadcb978608e85b6cfda745e1df214201dfb2a778f9",
+      "max": 20.0,
+      "min": 0.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 9048064,
+     "ratio": 1.1989145183175034,
+     "t": null,
+     "wall_s": 0.38966524500028754,
+     "z": 0
+    },
+    {
+     "block_count": 16,
+     "blocks_s": 0.18979790100001992,
+     "c": 0,
+     "fetch": {
+      "bytes": 38433346,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       1.0,
+       255.0
+      ],
+      "counts_sha": "657024695dde3c2afc52500c3e6fe28b53f6d7e2dbebe3f677c324f559228875",
+      "max": 255.0,
+      "min": 1.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 1302528,
+     "ratio": 0.17259158751696066,
+     "t": null,
+     "wall_s": 0.38688037900010386,
+     "z": 63
+    },
+    {
+     "block_count": 16,
+     "blocks_s": 0.20379051700001583,
+     "c": 0,
+     "fetch": {
+      "bytes": 45495814,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       1.0,
+       255.0
+      ],
+      "counts_sha": "af482a0ea1f10e42dff92cc81b2ebbec9e7d37424708939b3201b71ebb913e79",
+      "max": 255.0,
+      "min": 1.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 1253376,
+     "ratio": 0.166078697421981,
+     "t": null,
+     "wall_s": 0.4092300369993609,
+     "z": 64
+    },
+    {
+     "block_count": 16,
+     "blocks_s": 0.19141286900048726,
+     "c": 0,
+     "fetch": {
+      "bytes": 47997578,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       0.0,
+       255.0
+      ],
+      "counts_sha": "858b5a20612b885f7cf76d1350eaabbf01d4d047a86971ca7962073357a686b3",
+      "max": 255.0,
+      "min": 0.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 1294336,
+     "ratio": 0.17150610583446405,
+     "t": null,
+     "wall_s": 0.38396774100056064,
+     "z": 157
+    },
+    {
+     "block_count": 16,
+     "blocks_s": 0.18841834199974983,
+     "c": 0,
+     "fetch": {
+      "bytes": 38192844,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       0.0,
+       28.0
+      ],
+      "counts_sha": "94feec90a6b43cac3f01b39e689ddda1f462ee5fc003366c1e6948005d06ae39",
+      "max": 28.0,
+      "min": 0.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 1318912,
+     "ratio": 0.17476255088195386,
+     "t": null,
+     "wall_s": 0.3738246149996485,
+     "z": 313
+    }
+   ],
+   "total_s": 1.9501466930005336,
+   "zarr": "3.4.2"
+  },
+  "mmv04_verify.json": {
+   "checked": 750,
+   "cmd": "verify",
+   "cmd_args": {
+    "axes": "ZYX",
+    "path": "marmoset_v04/marmoset_neurons.ome.zarr",
+    "records": [
+     "mmv04_win_w1_plan.json",
+     "mmv04_win_w4_plan.json",
+     "mmv04_xyc.json",
+     "mmv04_planes_1g.json",
+     "mmv04_planes_8m.json"
+    ]
+   },
+   "eager_s": 1.0420495869993829,
+   "full_sha": "c4949b80253fd9aaf8a853b816e208c9cc5c23092986a66334679cace8e629f2",
+   "full_shape": [
+    314,
+    1024,
+    1024
+   ],
+   "numpy": "2.5.5",
+   "problems": [],
+   "zarr": "3.4.2"
+  },
+  "mmv04_win_w1_plan.json": {
+   "all_sha": "87a453c53c943aec727bfc964abc51bf51648540a66f94286c1311b6572e11eb",
+   "cache_bytes": 25165824,
+   "cache_plan": {
+    "cache_bytes": 25165824,
+    "groups": 1,
+    "per_row": 16,
+    "piece_nbytes": 262144,
+    "piece_rows": 6
+   },
+   "cache_stats": {
+    "decodes": 256,
+    "evictions": 160,
+    "hits": 228,
+    "nbytes": 25165824
+   },
+   "channels": [
+    0
+   ],
+   "cmd": "windows",
+   "cmd_args": {
+    "axes": "ZYX",
+    "cache": "plan",
+    "channels": [
+     0
+    ],
+    "margin": 32,
+    "path": "marmoset_v04/marmoset_neurons.ome.zarr",
+    "tile": 256,
+    "workers": 1,
+    "z": 157
+   },
+   "fetch": {
+    "bytes": 24259461,
+    "calls": 320,
+    "ranged": 0
+   },
+   "held_bytes": 102400,
+   "max_in_flight": 2,
+   "memory_estimate": 28504064,
+   "numpy": "2.5.5",
+   "peak_rss": 27627520,
+   "plane": [
+    1024,
+    1024
+   ],
+   "ratio": 0.9692484552378215,
+   "t": null,
+   "wall_s": 1.2165080300001136,
+   "window_bytes": 1617920,
+   "windows": 16,
+   "workers": 1,
+   "z": 157,
+   "zarr": "3.4.2"
+  },
+  "mmv04_win_w4_plan.json": {
+   "all_sha": "87a453c53c943aec727bfc964abc51bf51648540a66f94286c1311b6572e11eb",
+   "cache_bytes": 25165824,
+   "cache_plan": {
+    "cache_bytes": 25165824,
+    "groups": 1,
+    "per_row": 16,
+    "piece_nbytes": 262144,
+    "piece_rows": 6
+   },
+   "cache_stats": {
+    "decodes": 256,
+    "evictions": 160,
+    "hits": 228,
+    "nbytes": 25165824
+   },
+   "channels": [
+    0
+   ],
+   "cmd": "windows",
+   "cmd_args": {
+    "axes": "ZYX",
+    "cache": "plan",
+    "channels": [
+     0
+    ],
+    "margin": 32,
+    "path": "marmoset_v04/marmoset_neurons.ome.zarr",
+    "tile": 256,
+    "workers": 4,
+    "z": 157
+   },
+   "fetch": {
+    "bytes": 24259461,
+    "calls": 320,
+    "ranged": 0
+   },
+   "held_bytes": 102400,
+   "max_in_flight": 8,
+   "memory_estimate": 38088704,
+   "numpy": "2.5.5",
+   "peak_rss": 41349120,
+   "plane": [
+    1024,
+    1024
+   ],
+   "ratio": 1.085600602215292,
+   "t": null,
+   "wall_s": 3.5266165470002306,
+   "window_bytes": 1617920,
+   "windows": 16,
+   "workers": 4,
+   "z": 157,
+   "zarr": "3.4.2"
+  },
+  "mmv04_xyc.json": {
+   "cmd": "xyc",
+   "cmd_args": {
+    "axes": "ZYX",
+    "path": "marmoset_v04/marmoset_neurons.ome.zarr",
+    "planes": [
+     [
+      null,
+      0
+     ],
+     [
+      null,
+      63
+     ],
+     [
+      null,
+      64
+     ],
+     [
+      null,
+      157
+     ],
+     [
+      null,
+      313
+     ]
+    ]
+   },
+   "numpy": "2.5.5",
+   "reads": [
+    {
+     "estimate": 205520896,
+     "fetch": {
+      "bytes": 19232965,
+      "calls": 260,
+      "ranged": 0
+     },
+     "peak_rss": 8458240,
+     "ratio": 0.04115513392857143,
+     "sha": [
+      "5f72b1722e5d9d63c5a4e68e7d5b31ed983ef8d338603cfcf92a01cd2dfad6ad"
+     ],
+     "shape": [
+      1,
+      1024,
+      1024
+     ],
+     "t": null,
+     "wall_s": 0.1731074389999776,
+     "z": 0
+    },
+    {
+     "estimate": 205520896,
+     "fetch": {
+      "bytes": 19232965,
+      "calls": 260,
+      "ranged": 0
+     },
+     "peak_rss": 3567616,
+     "ratio": 0.01735889668367347,
+     "sha": [
+      "11563afe0cde658dc4f5252448685f9b4102fbaa0c45783ce398f89268b54d19"
+     ],
+     "shape": [
+      1,
+      1024,
+      1024
+     ],
+     "t": null,
+     "wall_s": 0.15841048099991895,
+     "z": 63
+    },
+    {
+     "estimate": 205520896,
+     "fetch": {
+      "bytes": 22764199,
+      "calls": 260,
+      "ranged": 0
+     },
+     "peak_rss": 2711552,
+     "ratio": 0.013193558673469387,
+     "sha": [
+      "6cf80ef959735e8b85f170df47a4584652c3ac68c4826775c7039471cae09ea6"
+     ],
+     "shape": [
+      1,
+      1024,
+      1024
+     ],
+     "t": null,
+     "wall_s": 0.18011989600017841,
+     "z": 64
+    },
+    {
+     "estimate": 205520896,
+     "fetch": {
+      "bytes": 24015081,
+      "calls": 260,
+      "ranged": 0
+     },
+     "peak_rss": 2588672,
+     "ratio": 0.012595663265306123,
+     "sha": [
+      "ca80f9369057c80bb35c70219197e2c7225a527ed2df147dfdd713f1b975a1ac"
+     ],
+     "shape": [
+      1,
+      1024,
+      1024
+     ],
+     "t": null,
+     "wall_s": 0.17252626299978147,
+     "z": 157
+    },
+    {
+     "estimate": 205520896,
+     "fetch": {
+      "bytes": 19112714,
+      "calls": 260,
+      "ranged": 0
+     },
+     "peak_rss": 2392064,
+     "ratio": 0.011639030612244899,
+     "sha": [
+      "4f42bfd20c1a23d2fa10a063bf503d54423e007f752af3398f23ec9934bdb880"
+     ],
+     "shape": [
+      1,
+      1024,
+      1024
+     ],
+     "t": null,
+     "wall_s": 0.17163918900041608,
+     "z": 313
+    }
+   ],
+   "zarr": "3.4.2"
+  },
+  "mmv05_planes_1g.json": {
+   "block_memory_estimate": null,
+   "block_shape": null,
+   "cmd": "planes",
+   "cmd_args": {
+    "axes": "ZYX",
+    "memory_limit": 1073741824,
+    "path": "marmoset_v05/marmoset_neurons.ome.zarr"
+   },
+   "estimate": 103081984,
+   "in_blocks": false,
+   "layout_memory_estimate": 103081984,
+   "memory_limit": 1073741824,
+   "numpy": "2.5.5",
+   "reads": [
+    {
+     "block_count": 1,
+     "blocks_s": 0.18913148199953866,
+     "c": 0,
+     "fetch": {
+      "bytes": 19216673,
+      "calls": 256,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       0.0,
+       20.0
+      ],
+      "counts_sha": "86e7e1a80dec61521eadfaadcb978608e85b6cfda745e1df214201dfb2a778f9",
+      "max": 20.0,
+      "min": 0.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": false,
+     "peak_rss": 16523264,
+     "ratio": 0.16029245226789582,
+     "t": null,
+     "wall_s": 0.19619686199985154,
+     "z": 0
+    },
+    {
+     "block_count": 1,
+     "blocks_s": 0.17675789799977792,
+     "c": 0,
+     "fetch": {
+      "bytes": 19216673,
+      "calls": 256,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       0.0,
+       20.0
+      ],
+      "counts_sha": "9499977c7ac938cc8156e363599d51f565bb7945ab96db71b3dd7f9041174d94",
+      "max": 20.0,
+      "min": 0.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": false,
+     "peak_rss": 8814592,
+     "ratio": 0.08551050006953688,
+     "t": null,
+     "wall_s": 0.18355528599931858,
+     "z": 1
+    },
+    {
+     "block_count": 1,
+     "blocks_s": 0.17342094800005725,
+     "c": 0,
+     "fetch": {
+      "bytes": 19216673,
+      "calls": 256,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       0.0,
+       24.0
+      ],
+      "counts_sha": "916379a1a47445467731876a6114f65ea847a415c156621c1ce18f39376e2521",
+      "max": 24.0,
+      "min": 0.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": false,
+     "peak_rss": 9596928,
+     "ratio": 0.09309995430433314,
+     "t": null,
+     "wall_s": 0.18509763500060217,
+     "z": 2
+    },
+    {
+     "block_count": 1,
+     "blocks_s": 0.193818760000795,
+     "c": 0,
+     "fetch": {
+      "bytes": 19096422,
+      "calls": 256,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       0.0,
+       28.0
+      ],
+      "counts_sha": "94feec90a6b43cac3f01b39e689ddda1f462ee5fc003366c1e6948005d06ae39",
+      "max": 28.0,
+      "min": 0.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": false,
+     "peak_rss": 8392704,
+     "ratio": 0.08141775773349492,
+     "t": null,
+     "wall_s": 0.1991153180006222,
+     "z": 313
+    }
+   ],
+   "reads_summary": {
+    "count": 314,
+    "fetch_bytes_sum": 6867600924,
+    "fetch_calls_sum": 80384,
+    "peak_rss_max": 16523264,
+    "peak_rss_min": 8388608,
+    "ratio_max": 0.16029245226789582,
+    "ratio_min": 0.08137802237100908,
+    "wall_s_max": 0.2738911819997156,
+    "wall_s_min": 0.16313662499942438,
+    "wall_s_sum": 57.9889093769998
+   },
+   "total_s": 58.1371137189999,
+   "zarr": "3.4.2"
+  },
+  "mmv05_planes_8m.json": {
+   "block_memory_estimate": 7546880,
+   "block_shape": [
+    64,
+    1024
+   ],
+   "cmd": "planes",
+   "cmd_args": {
+    "axes": "ZYX",
+    "memory_limit": 8388608,
+    "path": "marmoset_v05/marmoset_neurons.ome.zarr",
+    "planes": [
+     [
+      null,
+      0
+     ],
+     [
+      null,
+      63
+     ],
+     [
+      null,
+      64
+     ],
+     [
+      null,
+      157
+     ],
+     [
+      null,
+      313
+     ]
+    ]
+   },
+   "estimate": 7546880,
+   "in_blocks": true,
+   "layout_memory_estimate": 103081984,
+   "memory_limit": 8388608,
+   "numpy": "2.5.5",
+   "reads": [
+    {
+     "block_count": 16,
+     "blocks_s": 0.22817617500004417,
+     "c": 0,
+     "fetch": {
+      "bytes": 38433346,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       0.0,
+       20.0
+      ],
+      "counts_sha": "86e7e1a80dec61521eadfaadcb978608e85b6cfda745e1df214201dfb2a778f9",
+      "max": 20.0,
+      "min": 0.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 8937472,
+     "ratio": 1.184260515603799,
+     "t": null,
+     "wall_s": 0.4410341140001037,
+     "z": 0
+    },
+    {
+     "block_count": 16,
+     "blocks_s": 0.21513255100035167,
+     "c": 0,
+     "fetch": {
+      "bytes": 38433346,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       1.0,
+       255.0
+      ],
+      "counts_sha": "657024695dde3c2afc52500c3e6fe28b53f6d7e2dbebe3f677c324f559228875",
+      "max": 255.0,
+      "min": 1.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 1032192,
+     "ratio": 0.1367706919945726,
+     "t": null,
+     "wall_s": 0.4321946720001506,
+     "z": 63
+    },
+    {
+     "block_count": 16,
+     "blocks_s": 0.21689650000007532,
+     "c": 0,
+     "fetch": {
+      "bytes": 45495814,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       1.0,
+       255.0
+      ],
+      "counts_sha": "af482a0ea1f10e42dff92cc81b2ebbec9e7d37424708939b3201b71ebb913e79",
+      "max": 255.0,
+      "min": 1.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 987136,
+     "ratio": 0.13080054274084124,
+     "t": null,
+     "wall_s": 0.41541148200030875,
+     "z": 64
+    },
+    {
+     "block_count": 16,
+     "blocks_s": 0.20461800800057972,
+     "c": 0,
+     "fetch": {
+      "bytes": 47997578,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       0.0,
+       255.0
+      ],
+      "counts_sha": "858b5a20612b885f7cf76d1350eaabbf01d4d047a86971ca7962073357a686b3",
+      "max": 255.0,
+      "min": 0.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 811008,
+     "ratio": 0.10746268656716418,
+     "t": null,
+     "wall_s": 0.4401657320004233,
+     "z": 157
+    },
+    {
+     "block_count": 16,
+     "blocks_s": 0.2063753069996892,
+     "c": 0,
+     "fetch": {
+      "bytes": 38192844,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       0.0,
+       28.0
+      ],
+      "counts_sha": "94feec90a6b43cac3f01b39e689ddda1f462ee5fc003366c1e6948005d06ae39",
+      "max": 28.0,
+      "min": 0.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 925696,
+     "ratio": 0.12265943012211669,
+     "t": null,
+     "wall_s": 0.41460624699993787,
+     "z": 313
+    }
+   ],
+   "total_s": 2.150757899000382,
+   "zarr": "3.4.2"
+  },
+  "mmv05_verify.json": {
+   "checked": 750,
+   "cmd": "verify",
+   "cmd_args": {
+    "axes": "ZYX",
+    "path": "marmoset_v05/marmoset_neurons.ome.zarr",
+    "records": [
+     "mmv05_win_w1_plan.json",
+     "mmv05_win_w4_plan.json",
+     "mmv05_xyc.json",
+     "mmv05_planes_1g.json",
+     "mmv05_planes_8m.json"
+    ]
+   },
+   "eager_s": 1.128889600000548,
+   "full_sha": "c4949b80253fd9aaf8a853b816e208c9cc5c23092986a66334679cace8e629f2",
+   "full_shape": [
+    314,
+    1024,
+    1024
+   ],
+   "numpy": "2.5.5",
+   "problems": [],
+   "zarr": "3.4.2"
+  },
+  "mmv05_win_w1_plan.json": {
+   "all_sha": "87a453c53c943aec727bfc964abc51bf51648540a66f94286c1311b6572e11eb",
+   "cache_bytes": 25165824,
+   "cache_plan": {
+    "cache_bytes": 25165824,
+    "groups": 1,
+    "per_row": 16,
+    "piece_nbytes": 262144,
+    "piece_rows": 6
+   },
+   "cache_stats": {
+    "decodes": 256,
+    "evictions": 160,
+    "hits": 228,
+    "nbytes": 25165824
+   },
+   "channels": [
+    0
+   ],
+   "cmd": "windows",
+   "cmd_args": {
+    "axes": "ZYX",
+    "cache": "plan",
+    "channels": [
+     0
+    ],
+    "margin": 32,
+    "path": "marmoset_v05/marmoset_neurons.ome.zarr",
+    "tile": 256,
+    "workers": 1,
+    "z": 157
+   },
+   "fetch": {
+    "bytes": 24254533,
+    "calls": 320,
+    "ranged": 0
+   },
+   "held_bytes": 102400,
+   "max_in_flight": 2,
+   "memory_estimate": 28504064,
+   "numpy": "2.5.5",
+   "peak_rss": 27193344,
+   "plane": [
+    1024,
+    1024
+   ],
+   "ratio": 0.9540163816640322,
+   "t": null,
+   "wall_s": 1.2389385110000148,
+   "window_bytes": 1617920,
+   "windows": 16,
+   "workers": 1,
+   "z": 157,
+   "zarr": "3.4.2"
+  },
+  "mmv05_win_w4_plan.json": {
+   "all_sha": "87a453c53c943aec727bfc964abc51bf51648540a66f94286c1311b6572e11eb",
+   "cache_bytes": 25165824,
+   "cache_plan": {
+    "cache_bytes": 25165824,
+    "groups": 1,
+    "per_row": 16,
+    "piece_nbytes": 262144,
+    "piece_rows": 6
+   },
+   "cache_stats": {
+    "decodes": 256,
+    "evictions": 160,
+    "hits": 228,
+    "nbytes": 25165824
+   },
+   "channels": [
+    0
+   ],
+   "cmd": "windows",
+   "cmd_args": {
+    "axes": "ZYX",
+    "cache": "plan",
+    "channels": [
+     0
+    ],
+    "margin": 32,
+    "path": "marmoset_v05/marmoset_neurons.ome.zarr",
+    "tile": 256,
+    "workers": 4,
+    "z": 157
+   },
+   "fetch": {
+    "bytes": 24254533,
+    "calls": 320,
+    "ranged": 0
+   },
+   "held_bytes": 102400,
+   "max_in_flight": 8,
+   "memory_estimate": 38088704,
+   "numpy": "2.5.5",
+   "peak_rss": 42606592,
+   "plane": [
+    1024,
+    1024
+   ],
+   "ratio": 1.1186149048284761,
+   "t": null,
+   "wall_s": 3.5436718920000203,
+   "window_bytes": 1617920,
+   "windows": 16,
+   "workers": 4,
+   "z": 157,
+   "zarr": "3.4.2"
+  },
+  "mmv05_xyc.json": {
+   "cmd": "xyc",
+   "cmd_args": {
+    "axes": "ZYX",
+    "path": "marmoset_v05/marmoset_neurons.ome.zarr",
+    "planes": [
+     [
+      null,
+      0
+     ],
+     [
+      null,
+      63
+     ],
+     [
+      null,
+      64
+     ],
+     [
+      null,
+      157
+     ],
+     [
+      null,
+      313
+     ]
+    ]
+   },
+   "numpy": "2.5.5",
+   "reads": [
+    {
+     "estimate": 205520896,
+     "fetch": {
+      "bytes": 19232657,
+      "calls": 260,
+      "ranged": 0
+     },
+     "peak_rss": 8519680,
+     "ratio": 0.04145408163265306,
+     "sha": [
+      "5f72b1722e5d9d63c5a4e68e7d5b31ed983ef8d338603cfcf92a01cd2dfad6ad"
+     ],
+     "shape": [
+      1,
+      1024,
+      1024
+     ],
+     "t": null,
+     "wall_s": 0.17520576900005835,
+     "z": 0
+    },
+    {
+     "estimate": 205520896,
+     "fetch": {
+      "bytes": 19232657,
+      "calls": 260,
+      "ranged": 0
+     },
+     "peak_rss": 2588672,
+     "ratio": 0.012595663265306123,
+     "sha": [
+      "11563afe0cde658dc4f5252448685f9b4102fbaa0c45783ce398f89268b54d19"
+     ],
+     "shape": [
+      1,
+      1024,
+      1024
+     ],
+     "t": null,
+     "wall_s": 0.1677619660003984,
+     "z": 63
+    },
+    {
+     "estimate": 205520896,
+     "fetch": {
+      "bytes": 22763891,
+      "calls": 260,
+      "ranged": 0
+     },
+     "peak_rss": 2445312,
+     "ratio": 0.01189811862244898,
+     "sha": [
+      "6cf80ef959735e8b85f170df47a4584652c3ac68c4826775c7039471cae09ea6"
+     ],
+     "shape": [
+      1,
+      1024,
+      1024
+     ],
+     "t": null,
+     "wall_s": 0.17293690399947081,
+     "z": 64
+    },
+    {
+     "estimate": 205520896,
+     "fetch": {
+      "bytes": 24014773,
+      "calls": 260,
+      "ranged": 0
+     },
+     "peak_rss": 2420736,
+     "ratio": 0.011778539540816327,
+     "sha": [
+      "ca80f9369057c80bb35c70219197e2c7225a527ed2df147dfdd713f1b975a1ac"
+     ],
+     "shape": [
+      1,
+      1024,
+      1024
+     ],
+     "t": null,
+     "wall_s": 0.19427457500023593,
+     "z": 157
+    },
+    {
+     "estimate": 205520896,
+     "fetch": {
+      "bytes": 19112406,
+      "calls": 260,
+      "ranged": 0
+     },
+     "peak_rss": 2322432,
+     "ratio": 0.011300223214285714,
+     "sha": [
+      "4f42bfd20c1a23d2fa10a063bf503d54423e007f752af3398f23ec9934bdb880"
+     ],
+     "shape": [
+      1,
+      1024,
+      1024
+     ],
+     "t": null,
+     "wall_s": 0.19397444000060204,
+     "z": 313
+    }
+   ],
+   "zarr": "3.4.2"
+  },
+  "rgb_planes_1g.json": {
+   "block_memory_estimate": 809054156,
+   "block_shape": [
+    2295,
+    9948
+   ],
+   "cmd": "planes",
+   "cmd_args": {
+    "axes": "TCZYX",
+    "memory_limit": 1073741824,
+    "path": "ssbd_rgb/brainslice.ome.zarr"
+   },
+   "estimate": 809054156,
+   "in_blocks": true,
+   "layout_memory_estimate": 4154780544,
+   "memory_limit": 1073741824,
+   "numpy": "2.5.5",
+   "reads": [
+    {
+     "block_count": 8,
+     "blocks_s": 0.3398805259994333,
+     "c": 0,
+     "fetch": {
+      "bytes": 15203270,
+      "calls": 32,
+      "ranged": 32
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       0.0,
+       255.0
+      ],
+      "counts_sha": "5921ae65c95ff51b2ea16875042d18bc6901b2131f3537c351cddfe2548294a8",
+      "max": 255.0,
+      "min": 0.0,
+      "total": 121763520,
+      "valid": 121763520
+     },
+     "in_blocks": true,
+     "peak_rss": 275939328,
+     "ratio": 0.34106410053469893,
+     "t": 0,
+     "wall_s": 1.2601668839997728,
+     "z": 0
+    },
+    {
+     "block_count": 8,
+     "blocks_s": 0.2637500680002631,
+     "c": 1,
+     "fetch": {
+      "bytes": 6530022,
+      "calls": 32,
+      "ranged": 32
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       0.0,
+       255.0
+      ],
+      "counts_sha": "4f750cce141e621fcc17db5ea90fd8c613124a1456bda7a2b50d6eddd74fef49",
+      "max": 255.0,
+      "min": 0.0,
+      "total": 121763520,
+      "valid": 121763520
+     },
+     "in_blocks": true,
+     "peak_rss": 235741184,
+     "ratio": 0.2913787442431728,
+     "t": 0,
+     "wall_s": 1.1482752160000018,
+     "z": 0
+    },
+    {
+     "block_count": 8,
+     "blocks_s": 0.3354218969998328,
+     "c": 2,
+     "fetch": {
+      "bytes": 61789470,
+      "calls": 32,
+      "ranged": 32
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       0.0,
+       255.0
+      ],
+      "counts_sha": "59f382314ad9e1603899070547b9972d6de247d6918f3ece9536944703991553",
+      "max": 255.0,
+      "min": 0.0,
+      "total": 121763520,
+      "valid": 121763520
+     },
+     "in_blocks": true,
+     "peak_rss": 256544768,
+     "ratio": 0.31709220711301805,
+     "t": 0,
+     "wall_s": 1.3449117949994616,
+     "z": 0
+    }
+   ],
+   "total_s": 3.7597120250002263,
+   "zarr": "3.4.2"
+  },
+  "rgb_planes_64m.json": {
+   "block_memory_estimate": 66774416,
+   "block_shape": [
+    55,
+    13264
+   ],
+   "cmd": "planes",
+   "cmd_args": {
+    "axes": "TCZYX",
+    "memory_limit": 67108864,
+    "path": "ssbd_rgb/brainslice.ome.zarr"
+   },
+   "estimate": 66774416,
+   "in_blocks": true,
+   "layout_memory_estimate": 4154780544,
+   "memory_limit": 67108864,
+   "numpy": "2.5.5",
+   "reads": [
+    {
+     "block_count": 168,
+     "blocks_s": 2.2714649689996804,
+     "c": 0,
+     "fetch": {
+      "bytes": 638277948,
+      "calls": 672,
+      "ranged": 672
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       0.0,
+       255.0
+      ],
+      "counts_sha": "5921ae65c95ff51b2ea16875042d18bc6901b2131f3537c351cddfe2548294a8",
+      "max": 255.0,
+      "min": 0.0,
+      "total": 121763520,
+      "valid": 121763520
+     },
+     "in_blocks": true,
+     "peak_rss": 56659968,
+     "ratio": 0.848528094951815,
+     "t": 0,
+     "wall_s": 4.9218105410000135,
+     "z": 0
+    },
+    {
+     "block_count": 168,
+     "blocks_s": 2.1603145919998497,
+     "c": 1,
+     "fetch": {
+      "bytes": 274001532,
+      "calls": 672,
+      "ranged": 672
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       0.0,
+       255.0
+      ],
+      "counts_sha": "4f750cce141e621fcc17db5ea90fd8c613124a1456bda7a2b50d6eddd74fef49",
+      "max": 255.0,
+      "min": 0.0,
+      "total": 121763520,
+      "valid": 121763520
+     },
+     "in_blocks": true,
+     "peak_rss": 7413760,
+     "ratio": 0.11102695379619644,
+     "t": 0,
+     "wall_s": 4.589799784000206,
+     "z": 0
+    },
+    {
+     "block_count": 168,
+     "blocks_s": 2.9587131279995447,
+     "c": 2,
+     "fetch": {
+      "bytes": 2594898348,
+      "calls": 672,
+      "ranged": 672
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       0.0,
+       255.0
+      ],
+      "counts_sha": "59f382314ad9e1603899070547b9972d6de247d6918f3ece9536944703991553",
+      "max": 255.0,
+      "min": 0.0,
+      "total": 121763520,
+      "valid": 121763520
+     },
+     "in_blocks": true,
+     "peak_rss": 45273088,
+     "ratio": 0.6780005084582095,
+     "t": 0,
+     "wall_s": 6.2768141679998735,
+     "z": 0
+    }
+   ],
+   "total_s": 15.79413150200071,
+   "zarr": "3.4.2"
+  },
+  "rgb_planes_6g.json": {
+   "block_memory_estimate": null,
+   "block_shape": null,
+   "cmd": "planes",
+   "cmd_args": {
+    "axes": "TCZYX",
+    "memory_limit": 6442450944,
+    "path": "ssbd_rgb/brainslice.ome.zarr"
+   },
+   "estimate": 4154780544,
+   "in_blocks": false,
+   "layout_memory_estimate": 4154780544,
+   "memory_limit": 6442450944,
+   "numpy": "2.5.5",
+   "reads": [
+    {
+     "block_count": 1,
+     "blocks_s": 0.37150708899935125,
+     "c": 0,
+     "fetch": {
+      "bytes": 7596231,
+      "calls": 2,
+      "ranged": 2
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       0.0,
+       255.0
+      ],
+      "counts_sha": "5921ae65c95ff51b2ea16875042d18bc6901b2131f3537c351cddfe2548294a8",
+      "max": 255.0,
+      "min": 0.0,
+      "total": 121763520,
+      "valid": 121763520
+     },
+     "in_blocks": false,
+     "peak_rss": 1145896960,
+     "ratio": 0.27580204245800954,
+     "t": 0,
+     "traced_peak": null,
+     "wall_s": 1.1471532209998259,
+     "z": 0
+    },
+    {
+     "block_count": 1,
+     "blocks_s": 0.307832882999719,
+     "c": 1,
+     "fetch": {
+      "bytes": 3259607,
+      "calls": 2,
+      "ranged": 2
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       0.0,
+       255.0
+      ],
+      "counts_sha": "4f750cce141e621fcc17db5ea90fd8c613124a1456bda7a2b50d6eddd74fef49",
+      "max": 255.0,
+      "min": 0.0,
+      "total": 121763520,
+      "valid": 121763520
+     },
+     "in_blocks": false,
+     "peak_rss": 959705088,
+     "ratio": 0.23098815396782604,
+     "t": 0,
+     "traced_peak": null,
+     "wall_s": 1.174772035999922,
+     "z": 0
+    },
+    {
+     "block_count": 1,
+     "blocks_s": 0.3123098800006119,
+     "c": 2,
+     "fetch": {
+      "bytes": 30889331,
+      "calls": 3,
+      "ranged": 3
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       0.0,
+       255.0
+      ],
+      "counts_sha": "59f382314ad9e1603899070547b9972d6de247d6918f3ece9536944703991553",
+      "max": 255.0,
+      "min": 0.0,
+      "total": 121763520,
+      "valid": 121763520
+     },
+     "in_blocks": false,
+     "peak_rss": 1011339264,
+     "ratio": 0.24341580819725722,
+     "t": 0,
+     "traced_peak": null,
+     "wall_s": 0.9613275950005118,
+     "z": 0
+    }
+   ],
+   "total_s": 3.2907306030001564,
+   "zarr": "3.4.2"
+  },
+  "rgb_verify.json": {
+   "checked": 642,
+   "cmd": "verify",
+   "cmd_args": {
+    "axes": "TCZYX",
+    "path": "ssbd_rgb/brainslice.ome.zarr",
+    "records": [
+     "rgb_win_w1_plan.json",
+     "rgb_win_w4_plan.json",
+     "rgb_win_w4_nocache_c20.json",
+     "rgb_xyc.json",
+     "rgb_planes_64m.json",
+     "rgb_planes_1g.json"
+    ]
+   },
+   "eager_s": 0.437481261999892,
+   "full_sha": "bfcba7f94af19e51db930735241e8eb9cdf60337aab2332fefeaafab3c792963",
+   "full_shape": [
+    1,
+    3,
+    1,
+    9180,
+    13264
+   ],
+   "numpy": "2.5.5",
+   "problems": [],
+   "zarr": "3.4.2"
+  },
+  "rgb_verify2.json": {
+   "checked": 6,
+   "cmd": "verify",
+   "cmd_args": {
+    "axes": "TCZYX",
+    "path": "ssbd_rgb/brainslice.ome.zarr",
+    "records": [
+     "rgb_planes_6g.json"
+    ]
+   },
+   "eager_s": 0.35831325399976777,
+   "full_sha": "bfcba7f94af19e51db930735241e8eb9cdf60337aab2332fefeaafab3c792963",
+   "full_shape": [
+    1,
+    3,
+    1,
+    9180,
+    13264
+   ],
+   "numpy": "2.5.5",
+   "problems": [],
+   "zarr": "3.4.2"
+  },
+  "rgb_win_w1_plan.json": {
+   "all_sha": "c7ff94c51bffb037b65aaf60a8f023dcbe1e363a6033a707e9f68f7f5cd6d57a",
+   "cache_bytes": 273967920,
+   "cache_plan": {
+    "cache_bytes": 273967920,
+    "groups": 3,
+    "per_row": 4,
+    "piece_nbytes": 7610220,
+    "piece_rows": 3
+   },
+   "cache_stats": {
+    "decodes": 48,
+    "evictions": 12,
+    "hits": 192,
+    "nbytes": 273967920
+   },
+   "channels": [
+    0,
+    1,
+    2
+   ],
+   "cmd": "windows",
+   "cmd_args": {
+    "axes": "TCZYX",
+    "cache": "plan",
+    "channels": [
+     0,
+     1,
+     2
+    ],
+    "margin": 128,
+    "path": "ssbd_rgb/brainslice.ome.zarr",
+    "t": 0,
+    "tile": 2048,
+    "workers": 1,
+    "z": 0
+   },
+   "fetch": {
+    "bytes": 41863944,
+    "calls": 271,
+    "ranged": 96
+   },
+   "held_bytes": 15925248,
+   "max_in_flight": 2,
+   "memory_estimate": 404383376,
+   "numpy": "2.5.5",
+   "peak_rss": 351383552,
+   "plane": [
+    9180,
+    13264
+   ],
+   "ratio": 0.868936689425136,
+   "t": 0,
+   "wall_s": 1.729447552000238,
+   "window_bytes": 57245104,
+   "windows": 35,
+   "workers": 1,
+   "z": 0,
+   "zarr": "3.4.2"
+  },
+  "rgb_win_w4_nocache_c20.json": {
+   "all_sha": "dac48cae2508f9f15f708671273f9736590a3b6850197bbf91e8f3dd400faa72",
+   "cache_bytes": 1,
+   "cache_plan": {
+    "cache_bytes": 182645280,
+    "groups": 2,
+    "per_row": 4,
+    "piece_nbytes": 7610220,
+    "piece_rows": 3
+   },
+   "cache_stats": {
+    "decodes": 117,
+    "evictions": 0,
+    "hits": 43,
+    "nbytes": 0
+   },
+   "channels": [
+    2,
+    0
+   ],
+   "cmd": "windows",
+   "cmd_args": {
+    "axes": "TCZYX",
+    "cache": 1,
+    "channels": [
+     2,
+     0
+    ],
+    "margin": 128,
+    "path": "ssbd_rgb/brainslice.ome.zarr",
+    "t": 0,
+    "tile": 2048,
+    "workers": 4,
+    "z": 0
+   },
+   "fetch": {
+    "bytes": 127302196,
+    "calls": 409,
+    "ranged": 234
+   },
+   "held_bytes": 10616832,
+   "max_in_flight": 8,
+   "memory_estimate": 426110337,
+   "numpy": "2.5.5",
+   "peak_rss": 254373888,
+   "plane": [
+    9180,
+    13264
+   ],
+   "ratio": 0.596967184112222,
+   "t": 0,
+   "wall_s": 1.0066399709994585,
+   "window_bytes": 51936688,
+   "windows": 35,
+   "workers": 4,
+   "z": 0,
+   "zarr": "3.4.2"
+  },
+  "rgb_win_w4_plan.json": {
+   "all_sha": "c7ff94c51bffb037b65aaf60a8f023dcbe1e363a6033a707e9f68f7f5cd6d57a",
+   "cache_bytes": 273967920,
+   "cache_plan": {
+    "cache_bytes": 273967920,
+    "groups": 3,
+    "per_row": 4,
+    "piece_nbytes": 7610220,
+    "piece_rows": 3
+   },
+   "cache_stats": {
+    "decodes": 48,
+    "evictions": 12,
+    "hits": 192,
+    "nbytes": 273967920
+   },
+   "channels": [
+    0,
+    1,
+    2
+   ],
+   "cmd": "windows",
+   "cmd_args": {
+    "axes": "TCZYX",
+    "cache": "plan",
+    "channels": [
+     0,
+     1,
+     2
+    ],
+    "margin": 128,
+    "path": "ssbd_rgb/brainslice.ome.zarr",
+    "t": 0,
+    "tile": 2048,
+    "workers": 4,
+    "z": 0
+   },
+   "fetch": {
+    "bytes": 41863944,
+    "calls": 271,
+    "ranged": 96
+   },
+   "held_bytes": 15925248,
+   "max_in_flight": 8,
+   "memory_estimate": 747854000,
+   "numpy": "2.5.5",
+   "peak_rss": 571981824,
+   "plane": [
+    9180,
+    13264
+   ],
+   "ratio": 0.7648308680571342,
+   "t": 0,
+   "wall_s": 0.8390153350001128,
+   "window_bytes": 57245104,
+   "windows": 35,
+   "workers": 4,
+   "z": 0,
+   "zarr": "3.4.2"
+  },
+  "rgb_xyc.json": {
+   "cmd": "xyc",
+   "cmd_args": {
+    "axes": "TCZYX",
+    "memory_limit": 2147483648,
+    "path": "ssbd_rgb/brainslice.ome.zarr",
+    "planes": [
+     [
+      0,
+      0
+     ]
+    ]
+   },
+   "numpy": "2.5.5",
+   "reads": [
+    {
+     "estimate": 854441792,
+     "fetch": {
+      "bytes": 41747570,
+      "calls": 12,
+      "ranged": 7
+     },
+     "peak_rss": 689885184,
+     "ratio": 0.8074103940833456,
+     "sha": [
+      "0e149ab818eb736a765d9a4f6d1824422369392c710090b07afb364d9f700269",
+      "343888bf0184bde4272e4509160c4e0cedd55ede35db63b8ae6696e0658377b7",
+      "7c67bdc693293890960a0635fd97f832aecc03267aff09f685427be59948a744"
+     ],
+     "shape": [
+      3,
+      9180,
+      13264
+     ],
+     "t": 0,
+     "wall_s": 0.6264997950001998,
+     "z": 0
+    }
+   ],
+   "zarr": "3.4.2"
+  },
+  "sm_planes_1g.json": {
+   "block_memory_estimate": null,
+   "block_shape": null,
+   "cmd": "planes",
+   "cmd_args": {
+    "axes": "TCZYX",
+    "memory_limit": 1073741824,
+    "path": "ssbd_smovie/smovie.ome.zarr"
+   },
+   "estimate": 30460864,
+   "in_blocks": false,
+   "layout_memory_estimate": 30460864,
+   "memory_limit": 1073741824,
+   "numpy": "2.5.5",
+   "reads": [
+    {
+     "block_count": 1,
+     "blocks_s": 0.009330952000709658,
+     "c": 0,
+     "fetch": {
+      "bytes": 641602,
+      "calls": 2,
+      "ranged": 2
+     },
+     "hist": {
+      "bin_count": 65536,
+      "binning": [
+       0.0,
+       4401.0
+      ],
+      "counts_sha": "48563b6f3c709a018177dc4e386196c04d650b0c8459dda32336da6390b38e48",
+      "max": 4401.0,
+      "min": 0.0,
+      "total": 712336,
+      "valid": 712336
+     },
+     "in_blocks": false,
+     "peak_rss": 9506816,
+     "ratio": 0.3120993547655116,
+     "t": 0,
+     "wall_s": 0.016106853000565025,
+     "z": 0
+    },
+    {
+     "block_count": 1,
+     "blocks_s": 0.006831570000031206,
+     "c": 1,
+     "fetch": {
+      "bytes": 615101,
+      "calls": 2,
+      "ranged": 2
+     },
+     "hist": {
+      "bin_count": 65536,
+      "binning": [
+       5.0,
+       3389.0
+      ],
+      "counts_sha": "302f14b9d0148ff6c5f770268de3024438b047f7ae8f465b5ac06aa2c6ea888c",
+      "max": 3389.0,
+      "min": 5.0,
+      "total": 712336,
+      "valid": 712336
+     },
+     "in_blocks": false,
+     "peak_rss": 7811072,
+     "ratio": 0.2564297585255625,
+     "t": 0,
+     "wall_s": 0.009991197999625001,
+     "z": 0
+    },
+    {
+     "block_count": 1,
+     "blocks_s": 0.006467692999649444,
+     "c": 2,
+     "fetch": {
+      "bytes": 806252,
+      "calls": 2,
+      "ranged": 2
+     },
+     "hist": {
+      "bin_count": 65536,
+      "binning": [
+       0.0,
+       13071.0
+      ],
+      "counts_sha": "d66757c8f3155771182281dd08482abdb100ee4ab585c249f68b30ae543b7e92",
+      "max": 13071.0,
+      "min": 0.0,
+      "total": 712336,
+      "valid": 712336
+     },
+     "in_blocks": false,
+     "peak_rss": 8458240,
+     "ratio": 0.27767564308090537,
+     "t": 0,
+     "wall_s": 0.009816754999519617,
+     "z": 0
+    },
+    {
+     "block_count": 1,
+     "blocks_s": 0.007174189000579645,
+     "c": 2,
+     "fetch": {
+      "bytes": 822559,
+      "calls": 2,
+      "ranged": 2
+     },
+     "hist": {
+      "bin_count": 65536,
+      "binning": [
+       0.0,
+       10140.0
+      ],
+      "counts_sha": "c406e3605461afbc1edd09b2bb7948a4c93651559510054b29cee18dec16e7bd",
+      "max": 10140.0,
+      "min": 0.0,
+      "total": 712336,
+      "valid": 712336
+     },
+     "in_blocks": false,
+     "peak_rss": 6418432,
+     "ratio": 0.21071076644444492,
+     "t": 0,
+     "wall_s": 0.0100201740006014,
+     "z": 57
+    }
+   ],
+   "reads_summary": {
+    "count": 174,
+    "fetch_bytes_sum": 121047150,
+    "fetch_calls_sum": 348,
+    "peak_rss_max": 10010624,
+    "peak_rss_min": 6361088,
+    "ratio_max": 0.3286388724889747,
+    "ratio_min": 0.20882821971169302,
+    "wall_s_max": 0.035202475000005506,
+    "wall_s_min": 0.00789679899935436,
+    "wall_s_sum": 1.6529284239941262
+   },
+   "total_s": 1.8462453390002338,
+   "zarr": "3.4.2"
+  },
+  "sm_planes_8m.json": {
+   "block_memory_estimate": 8383152,
+   "block_shape": [
+    29,
+    844
+   ],
+   "cmd": "planes",
+   "cmd_args": {
+    "axes": "TCZYX",
+    "memory_limit": 8388608,
+    "path": "ssbd_smovie/smovie.ome.zarr",
+    "planes": [
+     [
+      0,
+      0
+     ],
+     [
+      0,
+      29
+     ],
+     [
+      0,
+      57
+     ]
+    ]
+   },
+   "estimate": 8383152,
+   "in_blocks": true,
+   "layout_memory_estimate": 30460864,
+   "memory_limit": 8388608,
+   "numpy": "2.5.5",
+   "reads": [
+    {
+     "block_count": 30,
+     "blocks_s": 0.10048219600048469,
+     "c": 0,
+     "fetch": {
+      "bytes": 38496120,
+      "calls": 120,
+      "ranged": 120
+     },
+     "hist": {
+      "bin_count": 65536,
+      "binning": [
+       0.0,
+       4401.0
+      ],
+      "counts_sha": "48563b6f3c709a018177dc4e386196c04d650b0c8459dda32336da6390b38e48",
+      "max": 4401.0,
+      "min": 0.0,
+      "total": 712336,
+      "valid": 712336
+     },
+     "in_blocks": true,
+     "peak_rss": 7135232,
+     "ratio": 0.85113952365411,
+     "t": 0,
+     "wall_s": 0.20276690700029576,
+     "z": 0
+    },
+    {
+     "block_count": 30,
+     "blocks_s": 0.10329912399993191,
+     "c": 1,
+     "fetch": {
+      "bytes": 36906060,
+      "calls": 120,
+      "ranged": 120
+     },
+     "hist": {
+      "bin_count": 65536,
+      "binning": [
+       5.0,
+       3389.0
+      ],
+      "counts_sha": "302f14b9d0148ff6c5f770268de3024438b047f7ae8f465b5ac06aa2c6ea888c",
+      "max": 3389.0,
+      "min": 5.0,
+      "total": 712336,
+      "valid": 712336
+     },
+     "in_blocks": true,
+     "peak_rss": 2355200,
+     "ratio": 0.2809444466711328,
+     "t": 0,
+     "wall_s": 0.20787654600007954,
+     "z": 0
+    },
+    {
+     "block_count": 30,
+     "blocks_s": 0.13519123199966998,
+     "c": 2,
+     "fetch": {
+      "bytes": 48375120,
+      "calls": 120,
+      "ranged": 120
+     },
+     "hist": {
+      "bin_count": 65536,
+      "binning": [
+       0.0,
+       13071.0
+      ],
+      "counts_sha": "d66757c8f3155771182281dd08482abdb100ee4ab585c249f68b30ae543b7e92",
+      "max": 13071.0,
+      "min": 0.0,
+      "total": 712336,
+      "valid": 712336
+     },
+     "in_blocks": true,
+     "peak_rss": 1511424,
+     "ratio": 0.1802930449072139,
+     "t": 0,
+     "wall_s": 0.27399420399979135,
+     "z": 0
+    },
+    {
+     "block_count": 30,
+     "blocks_s": 0.0964806359997965,
+     "c": 0,
+     "fetch": {
+      "bytes": 40102200,
+      "calls": 120,
+      "ranged": 120
+     },
+     "hist": {
+      "bin_count": 65536,
+      "binning": [
+       0.0,
+       3893.0
+      ],
+      "counts_sha": "d7640910ce60594d9cfd2805780918721f191a51b3bcb03fe929a7fe3af49430",
+      "max": 3893.0,
+      "min": 0.0,
+      "total": 712336,
+      "valid": 712336
+     },
+     "in_blocks": true,
+     "peak_rss": 4526080,
+     "ratio": 0.5399019366462638,
+     "t": 0,
+     "wall_s": 0.1976539369998136,
+     "z": 29
+    },
+    {
+     "block_count": 30,
+     "blocks_s": 0.09101078999992751,
+     "c": 1,
+     "fetch": {
+      "bytes": 37725360,
+      "calls": 120,
+      "ranged": 120
+     },
+     "hist": {
+      "bin_count": 65536,
+      "binning": [
+       3.0,
+       1839.0
+      ],
+      "counts_sha": "363a953a74f6d9463888054ed26b5f1a1876c89eeede921d64821573bd7edcb4",
+      "max": 1839.0,
+      "min": 3.0,
+      "total": 712336,
+      "valid": 712336
+     },
+     "in_blocks": true,
+     "peak_rss": 2236416,
+     "ratio": 0.2667750745781539,
+     "t": 0,
+     "wall_s": 0.1858485840002686,
+     "z": 29
+    },
+    {
+     "block_count": 30,
+     "blocks_s": 0.128137759999845,
+     "c": 2,
+     "fetch": {
+      "bytes": 49204380,
+      "calls": 120,
+      "ranged": 120
+     },
+     "hist": {
+      "bin_count": 65536,
+      "binning": [
+       0.0,
+       12098.0
+      ],
+      "counts_sha": "c9dbb08d4ac4a2b195bf5e6361cd6a8aab199033df8657513511858acbc187d8",
+      "max": 12098.0,
+      "min": 0.0,
+      "total": 712336,
+      "valid": 712336
+     },
+     "in_blocks": true,
+     "peak_rss": 1425408,
+     "ratio": 0.17003246511574643,
+     "t": 0,
+     "wall_s": 0.2656535869991785,
+     "z": 29
+    },
+    {
+     "block_count": 30,
+     "blocks_s": 0.09171932999925048,
+     "c": 0,
+     "fetch": {
+      "bytes": 39604920,
+      "calls": 120,
+      "ranged": 120
+     },
+     "hist": {
+      "bin_count": 65536,
+      "binning": [
+       0.0,
+       3581.0
+      ],
+      "counts_sha": "aba01fdacad8e5f10d29ced9b61fa27faff625d5770ddec4e978c041ac5c21bf",
+      "max": 3581.0,
+      "min": 0.0,
+      "total": 712336,
+      "valid": 712336
+     },
+     "in_blocks": true,
+     "peak_rss": 4468736,
+     "ratio": 0.5330615501186189,
+     "t": 0,
+     "wall_s": 0.18875133599976834,
+     "z": 57
+    },
+    {
+     "block_count": 30,
+     "blocks_s": 0.0973806539996076,
+     "c": 1,
+     "fetch": {
+      "bytes": 38319360,
+      "calls": 120,
+      "ranged": 120
+     },
+     "hist": {
+      "bin_count": 65536,
+      "binning": [
+       1.0,
+       1872.0
+      ],
+      "counts_sha": "29b8970f5836cabad710dc08350c7e0165e24df86ea570a6e096f7048405bc13",
+      "max": 1872.0,
+      "min": 1.0,
+      "total": 712336,
+      "valid": 712336
+     },
+     "in_blocks": true,
+     "peak_rss": 4575232,
+     "ratio": 0.5457651250985309,
+     "t": 0,
+     "wall_s": 0.1945813749998706,
+     "z": 57
+    },
+    {
+     "block_count": 30,
+     "blocks_s": 0.1314261150000675,
+     "c": 2,
+     "fetch": {
+      "bytes": 49353540,
+      "calls": 120,
+      "ranged": 120
+     },
+     "hist": {
+      "bin_count": 65536,
+      "binning": [
+       0.0,
+       10140.0
+      ],
+      "counts_sha": "c406e3605461afbc1edd09b2bb7948a4c93651559510054b29cee18dec16e7bd",
+      "max": 10140.0,
+      "min": 0.0,
+      "total": 712336,
+      "valid": 712336
+     },
+     "in_blocks": true,
+     "peak_rss": 1536000,
+     "ratio": 0.18322463913334747,
+     "t": 0,
+     "wall_s": 0.25998245299979317,
+     "z": 57
+    }
+   ],
+   "total_s": 1.9888133730000845,
+   "zarr": "3.4.2"
+  },
+  "sm_verify.json": {
+   "checked": 833,
+   "cmd": "verify",
+   "cmd_args": {
+    "axes": "TCZYX",
+    "path": "ssbd_smovie/smovie.ome.zarr",
+    "records": [
+     "sm_win_w1_plan.json",
+     "sm_win_w4_plan.json",
+     "sm_xyc.json",
+     "sm_planes_1g.json",
+     "sm_planes_8m.json"
+    ]
+   },
+   "eager_s": 0.4734839259999717,
+   "full_sha": "604394a43934b24390fe3fd5bbea49b3ecc8dd36afdeea930fd393d7541bb07c",
+   "full_shape": [
+    1,
+    3,
+    58,
+    844,
+    844
+   ],
+   "numpy": "2.5.5",
+   "problems": [],
+   "zarr": "3.4.2"
+  },
+  "sm_win_w1_plan.json": {
+   "all_sha": "97fa41b116e2bd2441d12664539c3665cf792a1be18c56d6bc7076112ab9e4f5",
+   "cache_bytes": 4274016,
+   "cache_plan": {
+    "cache_bytes": 4274016,
+    "groups": 3,
+    "per_row": 1,
+    "piece_nbytes": 1424672,
+    "piece_rows": 1
+   },
+   "cache_stats": {
+    "decodes": 3,
+    "evictions": 0,
+    "hits": 45,
+    "nbytes": 4274016
+   },
+   "channels": [
+    0,
+    1,
+    2
+   ],
+   "cmd": "windows",
+   "cmd_args": {
+    "axes": "TCZYX",
+    "cache": "plan",
+    "channels": [
+     0,
+     1,
+     2
+    ],
+    "margin": 32,
+    "path": "ssbd_smovie/smovie.ome.zarr",
+    "t": 0,
+    "tile": 256,
+    "workers": 1,
+    "z": 29
+   },
+   "fetch": {
+    "bytes": 2158415,
+    "calls": 86,
+    "ranged": 6
+   },
+   "held_bytes": 614400,
+   "max_in_flight": 2,
+   "memory_estimate": 18858080,
+   "numpy": "2.5.5",
+   "peak_rss": 9039872,
+   "plane": [
+    844,
+    844
+   ],
+   "ratio": 0.4793633286103357,
+   "t": 0,
+   "wall_s": 0.09685998900022241,
+   "window_bytes": 6984832,
+   "windows": 16,
+   "workers": 1,
+   "z": 29,
+   "zarr": "3.4.2"
+  },
+  "sm_win_w4_plan.json": {
+   "all_sha": "97fa41b116e2bd2441d12664539c3665cf792a1be18c56d6bc7076112ab9e4f5",
+   "cache_bytes": 4274016,
+   "cache_plan": {
+    "cache_bytes": 4274016,
+    "groups": 3,
+    "per_row": 1,
+    "piece_nbytes": 1424672,
+    "piece_rows": 1
+   },
+   "cache_stats": {
+    "decodes": 3,
+    "evictions": 0,
+    "hits": 45,
+    "nbytes": 4274016
+   },
+   "channels": [
+    0,
+    1,
+    2
+   ],
+   "cmd": "windows",
+   "cmd_args": {
+    "axes": "TCZYX",
+    "cache": "plan",
+    "channels": [
+     0,
+     1,
+     2
+    ],
+    "margin": 32,
+    "path": "ssbd_smovie/smovie.ome.zarr",
+    "t": 0,
+    "tile": 256,
+    "workers": 4,
+    "z": 29
+   },
+   "fetch": {
+    "bytes": 2158415,
+    "calls": 86,
+    "ranged": 6
+   },
+   "held_bytes": 614400,
+   "max_in_flight": 8,
+   "memory_estimate": 60357472,
+   "numpy": "2.5.5",
+   "peak_rss": 11489280,
+   "plane": [
+    844,
+    844
+   ],
+   "ratio": 0.19035389686300977,
+   "t": 0,
+   "wall_s": 0.17080543900010525,
+   "window_bytes": 6984832,
+   "windows": 16,
+   "workers": 4,
+   "z": 29,
+   "zarr": "3.4.2"
+  },
+  "sm_xyc.json": {
+   "cmd": "xyc",
+   "cmd_args": {
+    "axes": "TCZYX",
+    "path": "ssbd_smovie/smovie.ome.zarr",
+    "planes": [
+     [
+      0,
+      0
+     ],
+     [
+      0,
+      1
+     ],
+     [
+      0,
+      2
+     ],
+     [
+      0,
+      3
+     ],
+     [
+      0,
+      4
+     ],
+     [
+      0,
+      5
+     ],
+     [
+      0,
+      6
+     ],
+     [
+      0,
+      7
+     ],
+     [
+      0,
+      8
+     ],
+     [
+      0,
+      9
+     ],
+     [
+      0,
+      10
+     ],
+     [
+      0,
+      11
+     ],
+     [
+      0,
+      12
+     ],
+     [
+      0,
+      13
+     ],
+     [
+      0,
+      14
+     ],
+     [
+      0,
+      15
+     ],
+     [
+      0,
+      16
+     ],
+     [
+      0,
+      17
+     ],
+     [
+      0,
+      18
+     ],
+     [
+      0,
+      19
+     ],
+     [
+      0,
+      20
+     ],
+     [
+      0,
+      21
+     ],
+     [
+      0,
+      22
+     ],
+     [
+      0,
+      23
+     ],
+     [
+      0,
+      24
+     ],
+     [
+      0,
+      25
+     ],
+     [
+      0,
+      26
+     ],
+     [
+      0,
+      27
+     ],
+     [
+      0,
+      28
+     ],
+     [
+      0,
+      29
+     ],
+     [
+      0,
+      30
+     ],
+     [
+      0,
+      31
+     ],
+     [
+      0,
+      32
+     ],
+     [
+      0,
+      33
+     ],
+     [
+      0,
+      34
+     ],
+     [
+      0,
+      35
+     ],
+     [
+      0,
+      36
+     ],
+     [
+      0,
+      37
+     ],
+     [
+      0,
+      38
+     ],
+     [
+      0,
+      39
+     ],
+     [
+      0,
+      40
+     ],
+     [
+      0,
+      41
+     ],
+     [
+      0,
+      42
+     ],
+     [
+      0,
+      43
+     ],
+     [
+      0,
+      44
+     ],
+     [
+      0,
+      45
+     ],
+     [
+      0,
+      46
+     ],
+     [
+      0,
+      47
+     ],
+     [
+      0,
+      48
+     ],
+     [
+      0,
+      49
+     ],
+     [
+      0,
+      50
+     ],
+     [
+      0,
+      51
+     ],
+     [
+      0,
+      52
+     ],
+     [
+      0,
+      53
+     ],
+     [
+      0,
+      54
+     ],
+     [
+      0,
+      55
+     ],
+     [
+      0,
+      56
+     ],
+     [
+      0,
+      57
+     ]
+    ]
+   },
+   "numpy": "2.5.5",
+   "reads": [
+    {
+     "estimate": 12069856,
+     "fetch": {
+      "bytes": 2065531,
+      "calls": 11,
+      "ranged": 6
+     },
+     "peak_rss": 9842688,
+     "ratio": 0.8154768375032809,
+     "sha": [
+      "9927b5cc660f25fafb94748fd4f1c85cf35c78b631d85da485fd34972bd991aa",
+      "f10adcfd7aed0a65cb5ac16cc9af6d955146eb9ba5c1329f471fc3a90291537a",
+      "11bede17854dba16d57cb215b7ff1c9c612be08e21393a313994c13646909a74"
+     ],
+     "shape": [
+      3,
+      844,
+      844
+     ],
+     "t": 0,
+     "wall_s": 0.025025685999935376,
+     "z": 0
+    },
+    {
+     "estimate": 12069856,
+     "fetch": {
+      "bytes": 2023765,
+      "calls": 11,
+      "ranged": 6
+     },
+     "peak_rss": 11108352,
+     "ratio": 0.9203384033744894,
+     "sha": [
+      "57569c6ee9747ab8a8ac2fa6e6df0cc5459c918b47c8f8526057e7451101959a",
+      "db9ffd48758a483266823ac6820b3abe166fdc04b2ddd31a822ccd85b8559dcc",
+      "a2413f014c8389ad6d50e8f29d09b8e9e0d8a566a4542be19a31977b288f1b3c"
+     ],
+     "shape": [
+      3,
+      844,
+      844
+     ],
+     "t": 0,
+     "wall_s": 0.023042523999720288,
+     "z": 1
+    },
+    {
+     "estimate": 12069856,
+     "fetch": {
+      "bytes": 2020420,
+      "calls": 11,
+      "ranged": 6
+     },
+     "peak_rss": 8601600,
+     "ratio": 0.712651418542193,
+     "sha": [
+      "fe2c375ef0a69edb167cfc21d3af215d8f2d0129d0b6fdfe7d01936fc153dd36",
+      "404d750c22dd1f1ab2d30db0f8df0b5aecad3b8e39f03816c3fb2025e4513667",
+      "7da0e1149237e6facfacbdfeb81880106db31182de0026435dd30bd4d0a3e839"
+     ],
+     "shape": [
+      3,
+      844,
+      844
+     ],
+     "t": 0,
+     "wall_s": 0.016894534999664756,
+     "z": 2
+    },
+    {
+     "estimate": 12069856,
+     "fetch": {
+      "bytes": 2123873,
+      "calls": 11,
+      "ranged": 6
+     },
+     "peak_rss": 8548352,
+     "ratio": 0.7082397669035985,
+     "sha": [
+      "d498b9b9f5052ad08fab5546314e8a0dca78b6eb4f6abf0632363f3ade092a9e",
+      "17e263441d2970f21a0dbb50d17e57c6479ea38c041fff9969138c0f79dacec2",
+      "27eef6f84f418e1a5b2cb315d407e4f99332951cf554efc7ba71f9f460fe5fbc"
+     ],
+     "shape": [
+      3,
+      844,
+      844
+     ],
+     "t": 0,
+     "wall_s": 0.016563211000175215,
+     "z": 57
+    }
+   ],
+   "reads_summary": {
+    "count": 58,
+    "fetch_bytes_sum": 121196558,
+    "fetch_calls_sum": 638,
+    "peak_rss_max": 11108352,
+    "peak_rss_min": 8548352,
+    "ratio_max": 0.9203384033744894,
+    "ratio_min": 0.7082397669035985,
+    "wall_s_max": 0.025025685999935376,
+    "wall_s_min": 0.015151428000535816,
+    "wall_s_sum": 1.029303742000593
+   },
+   "zarr": "3.4.2"
+  },
+  "smovie_xyc.json": {
+   "cmd": "xyc",
+   "cmd_args": {
+    "axes": "TCZYX",
+    "path": "ssbd_smovie/smovie.ome.zarr",
+    "planes": [
+     [
+      0,
+      0
+     ],
+     [
+      0,
+      29
+     ],
+     [
+      0,
+      57
+     ]
+    ]
+   },
+   "numpy": "2.5.5",
+   "reads": [
+    {
+     "estimate": 12069856,
+     "fetch": {
+      "bytes": 2065531,
+      "calls": 11,
+      "ranged": 6
+     },
+     "peak_rss": 10190848,
+     "ratio": 0.844322252063322,
+     "sha": [
+      "9927b5cc660f25fafb94748fd4f1c85cf35c78b631d85da485fd34972bd991aa",
+      "f10adcfd7aed0a65cb5ac16cc9af6d955146eb9ba5c1329f471fc3a90291537a",
+      "11bede17854dba16d57cb215b7ff1c9c612be08e21393a313994c13646909a74"
+     ],
+     "shape": [
+      3,
+      844,
+      844
+     ],
+     "t": 0,
+     "wall_s": 0.022543554000549193,
+     "z": 0
+    },
+    {
+     "estimate": 12069856,
+     "fetch": {
+      "bytes": 2119775,
+      "calls": 11,
+      "ranged": 6
+     },
+     "peak_rss": 11313152,
+     "ratio": 0.9373062942921606,
+     "sha": [
+      "bfdcc77d7e4c642d5b8b88887cd10cbf5e555fb8db286cf92ea05bdce81b65e7",
+      "5223261fbbf2900c0eb314cc7278af4d443a669e432d4ad43803797aeb661747",
+      "e805f14bb8c0b72d82be0203a7df573f49fcb073430de56308471d5ba7761517"
+     ],
+     "shape": [
+      3,
+      844,
+      844
+     ],
+     "t": 0,
+     "wall_s": 0.0229138979993877,
+     "z": 29
+    },
+    {
+     "estimate": 12069856,
+     "fetch": {
+      "bytes": 2123873,
+      "calls": 11,
+      "ranged": 6
+     },
+     "peak_rss": 8601600,
+     "ratio": 0.712651418542193,
+     "sha": [
+      "d498b9b9f5052ad08fab5546314e8a0dca78b6eb4f6abf0632363f3ade092a9e",
+      "17e263441d2970f21a0dbb50d17e57c6479ea38c041fff9969138c0f79dacec2",
+      "27eef6f84f418e1a5b2cb315d407e4f99332951cf554efc7ba71f9f460fe5fbc"
+     ],
+     "shape": [
+      3,
+      844,
+      844
+     ],
+     "t": 0,
+     "wall_s": 0.01683789600065211,
+     "z": 57
+    }
+   ],
+   "zarr": "3.4.2"
+  }
+ },
+ "repeats": {
+  "mmv04_b8_trace.json": {
+   "block_memory_estimate": 7546880,
+   "block_shape": [
+    64,
+    1024
+   ],
+   "cmd": "planes",
+   "cmd_args": {
+    "axes": "ZYX",
+    "memory_limit": 8388608,
+    "path": "marmoset_v04/marmoset_neurons.ome.zarr",
+    "planes": [
+     [
+      null,
+      0
+     ],
+     [
+      null,
+      63
+     ],
+     [
+      null,
+      64
+     ],
+     [
+      null,
+      157
+     ],
+     [
+      null,
+      313
+     ]
+    ],
+    "trace": true,
+    "warmup": true
+   },
+   "estimate": 7546880,
+   "in_blocks": true,
+   "layout_memory_estimate": 103081984,
+   "memory_limit": 8388608,
+   "numpy": "2.5.5",
+   "reads": [
+    {
+     "block_count": 16,
+     "blocks_s": 0.40212605699980486,
+     "c": 0,
+     "fetch": {
+      "bytes": 38433346,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       0.0,
+       20.0
+      ],
+      "counts_sha": "86e7e1a80dec61521eadfaadcb978608e85b6cfda745e1df214201dfb2a778f9",
+      "max": 20.0,
+      "min": 0.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 8306688,
+     "ratio": 1.1006784260515603,
+     "t": null,
+     "traced_peak": 3450805,
+     "wall_s": 0.8024797409998428,
+     "z": 0
+    },
+    {
+     "block_count": 16,
+     "blocks_s": 0.38781133300017245,
+     "c": 0,
+     "fetch": {
+      "bytes": 38433346,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       1.0,
+       255.0
+      ],
+      "counts_sha": "657024695dde3c2afc52500c3e6fe28b53f6d7e2dbebe3f677c324f559228875",
+      "max": 255.0,
+      "min": 1.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 1466368,
+     "ratio": 0.1943012211668928,
+     "t": null,
+     "traced_peak": 3742664,
+     "wall_s": 0.803117304000807,
+     "z": 63
+    },
+    {
+     "block_count": 16,
+     "blocks_s": 0.3866233589997137,
+     "c": 0,
+     "fetch": {
+      "bytes": 45495814,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       1.0,
+       255.0
+      ],
+      "counts_sha": "af482a0ea1f10e42dff92cc81b2ebbec9e7d37424708939b3201b71ebb913e79",
+      "max": 255.0,
+      "min": 1.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 1241088,
+     "ratio": 0.16445047489823608,
+     "t": null,
+     "traced_peak": 3751585,
+     "wall_s": 0.7685503740003696,
+     "z": 64
+    },
+    {
+     "block_count": 16,
+     "blocks_s": 0.3769215490001443,
+     "c": 0,
+     "fetch": {
+      "bytes": 47997578,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       0.0,
+       255.0
+      ],
+      "counts_sha": "858b5a20612b885f7cf76d1350eaabbf01d4d047a86971ca7962073357a686b3",
+      "max": 255.0,
+      "min": 0.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 1335296,
+     "ratio": 0.1769335142469471,
+     "t": null,
+     "traced_peak": 3704623,
+     "wall_s": 0.7627815480000208,
+     "z": 157
+    },
+    {
+     "block_count": 16,
+     "blocks_s": 0.34542554400013614,
+     "c": 0,
+     "fetch": {
+      "bytes": 38192844,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       0.0,
+       28.0
+      ],
+      "counts_sha": "94feec90a6b43cac3f01b39e689ddda1f462ee5fc003366c1e6948005d06ae39",
+      "max": 28.0,
+      "min": 0.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 1011712,
+     "ratio": 0.13405698778833108,
+     "t": null,
+     "traced_peak": 3550718,
+     "wall_s": 0.7387270499993974,
+     "z": 313
+    }
+   ],
+   "total_s": 3.8858805579993714,
+   "zarr": "3.4.2"
+  },
+  "mmv04_b8_wufalse_1.json": {
+   "block_memory_estimate": 7546880,
+   "block_shape": [
+    64,
+    1024
+   ],
+   "cmd": "planes",
+   "cmd_args": {
+    "axes": "ZYX",
+    "memory_limit": 8388608,
+    "path": "marmoset_v04/marmoset_neurons.ome.zarr",
+    "planes": [
+     [
+      null,
+      0
+     ],
+     [
+      null,
+      63
+     ],
+     [
+      null,
+      64
+     ],
+     [
+      null,
+      157
+     ],
+     [
+      null,
+      313
+     ]
+    ],
+    "warmup": false
+   },
+   "estimate": 7546880,
+   "in_blocks": true,
+   "layout_memory_estimate": 103081984,
+   "memory_limit": 8388608,
+   "numpy": "2.5.5",
+   "reads": [
+    {
+     "block_count": 16,
+     "blocks_s": 0.18735755200032145,
+     "c": 0,
+     "fetch": {
+      "bytes": 38433346,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       0.0,
+       20.0
+      ],
+      "counts_sha": "86e7e1a80dec61521eadfaadcb978608e85b6cfda745e1df214201dfb2a778f9",
+      "max": 20.0,
+      "min": 0.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 9138176,
+     "ratio": 1.210854816824966,
+     "t": null,
+     "traced_peak": null,
+     "wall_s": 0.40262128399990615,
+     "z": 0
+    },
+    {
+     "block_count": 16,
+     "blocks_s": 0.2055866859991511,
+     "c": 0,
+     "fetch": {
+      "bytes": 38433346,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       1.0,
+       255.0
+      ],
+      "counts_sha": "657024695dde3c2afc52500c3e6fe28b53f6d7e2dbebe3f677c324f559228875",
+      "max": 255.0,
+      "min": 1.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 1753088,
+     "ratio": 0.23229308005427407,
+     "t": null,
+     "traced_peak": null,
+     "wall_s": 0.4068342139999004,
+     "z": 63
+    },
+    {
+     "block_count": 16,
+     "blocks_s": 0.20517009800005326,
+     "c": 0,
+     "fetch": {
+      "bytes": 45495814,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       1.0,
+       255.0
+      ],
+      "counts_sha": "af482a0ea1f10e42dff92cc81b2ebbec9e7d37424708939b3201b71ebb913e79",
+      "max": 255.0,
+      "min": 1.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 1286144,
+     "ratio": 0.17042062415196743,
+     "t": null,
+     "traced_peak": null,
+     "wall_s": 0.39845848500044667,
+     "z": 64
+    },
+    {
+     "block_count": 16,
+     "blocks_s": 0.19698629300000903,
+     "c": 0,
+     "fetch": {
+      "bytes": 47997578,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       0.0,
+       255.0
+      ],
+      "counts_sha": "858b5a20612b885f7cf76d1350eaabbf01d4d047a86971ca7962073357a686b3",
+      "max": 255.0,
+      "min": 0.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 1228800,
+     "ratio": 0.1628222523744912,
+     "t": null,
+     "traced_peak": null,
+     "wall_s": 0.3910324150001543,
+     "z": 157
+    },
+    {
+     "block_count": 16,
+     "blocks_s": 0.20896468099999765,
+     "c": 0,
+     "fetch": {
+      "bytes": 38192844,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       0.0,
+       28.0
+      ],
+      "counts_sha": "94feec90a6b43cac3f01b39e689ddda1f462ee5fc003366c1e6948005d06ae39",
+      "max": 28.0,
+      "min": 0.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 1601536,
+     "ratio": 0.21221166892808685,
+     "t": null,
+     "traced_peak": null,
+     "wall_s": 0.4653333360001852,
+     "z": 313
+    }
+   ],
+   "total_s": 2.071353740999257,
+   "zarr": "3.4.2"
+  },
+  "mmv04_b8_wufalse_2.json": {
+   "block_memory_estimate": 7546880,
+   "block_shape": [
+    64,
+    1024
+   ],
+   "cmd": "planes",
+   "cmd_args": {
+    "axes": "ZYX",
+    "memory_limit": 8388608,
+    "path": "marmoset_v04/marmoset_neurons.ome.zarr",
+    "planes": [
+     [
+      null,
+      0
+     ],
+     [
+      null,
+      63
+     ],
+     [
+      null,
+      64
+     ],
+     [
+      null,
+      157
+     ],
+     [
+      null,
+      313
+     ]
+    ],
+    "warmup": false
+   },
+   "estimate": 7546880,
+   "in_blocks": true,
+   "layout_memory_estimate": 103081984,
+   "memory_limit": 8388608,
+   "numpy": "2.5.5",
+   "reads": [
+    {
+     "block_count": 16,
+     "blocks_s": 0.20083852500010835,
+     "c": 0,
+     "fetch": {
+      "bytes": 38433346,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       0.0,
+       20.0
+      ],
+      "counts_sha": "86e7e1a80dec61521eadfaadcb978608e85b6cfda745e1df214201dfb2a778f9",
+      "max": 20.0,
+      "min": 0.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 8966144,
+     "ratio": 1.1880597014925374,
+     "t": null,
+     "traced_peak": null,
+     "wall_s": 0.38528350700016745,
+     "z": 0
+    },
+    {
+     "block_count": 16,
+     "blocks_s": 0.20496803999958502,
+     "c": 0,
+     "fetch": {
+      "bytes": 38433346,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       1.0,
+       255.0
+      ],
+      "counts_sha": "657024695dde3c2afc52500c3e6fe28b53f6d7e2dbebe3f677c324f559228875",
+      "max": 255.0,
+      "min": 1.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 1024000,
+     "ratio": 0.13568521031207598,
+     "t": null,
+     "traced_peak": null,
+     "wall_s": 0.40082113900007244,
+     "z": 63
+    },
+    {
+     "block_count": 16,
+     "blocks_s": 0.1822820520001187,
+     "c": 0,
+     "fetch": {
+      "bytes": 45495814,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       1.0,
+       255.0
+      ],
+      "counts_sha": "af482a0ea1f10e42dff92cc81b2ebbec9e7d37424708939b3201b71ebb913e79",
+      "max": 255.0,
+      "min": 1.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 1388544,
+     "ratio": 0.18398914518317502,
+     "t": null,
+     "traced_peak": null,
+     "wall_s": 0.37669821199961007,
+     "z": 64
+    },
+    {
+     "block_count": 16,
+     "blocks_s": 0.18104591600058484,
+     "c": 0,
+     "fetch": {
+      "bytes": 47997578,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       0.0,
+       255.0
+      ],
+      "counts_sha": "858b5a20612b885f7cf76d1350eaabbf01d4d047a86971ca7962073357a686b3",
+      "max": 255.0,
+      "min": 0.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 892928,
+     "ratio": 0.11831750339213026,
+     "t": null,
+     "traced_peak": null,
+     "wall_s": 0.370730058000845,
+     "z": 157
+    },
+    {
+     "block_count": 16,
+     "blocks_s": 0.20414030099982483,
+     "c": 0,
+     "fetch": {
+      "bytes": 38192844,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       0.0,
+       28.0
+      ],
+      "counts_sha": "94feec90a6b43cac3f01b39e689ddda1f462ee5fc003366c1e6948005d06ae39",
+      "max": 28.0,
+      "min": 0.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 679936,
+     "ratio": 0.09009497964721845,
+     "t": null,
+     "traced_peak": null,
+     "wall_s": 0.38994429200010927,
+     "z": 313
+    }
+   ],
+   "total_s": 1.9306125729999621,
+   "zarr": "3.4.2"
+  },
+  "mmv04_b8_wufalse_3.json": {
+   "block_memory_estimate": 7546880,
+   "block_shape": [
+    64,
+    1024
+   ],
+   "cmd": "planes",
+   "cmd_args": {
+    "axes": "ZYX",
+    "memory_limit": 8388608,
+    "path": "marmoset_v04/marmoset_neurons.ome.zarr",
+    "planes": [
+     [
+      null,
+      0
+     ],
+     [
+      null,
+      63
+     ],
+     [
+      null,
+      64
+     ],
+     [
+      null,
+      157
+     ],
+     [
+      null,
+      313
+     ]
+    ],
+    "warmup": false
+   },
+   "estimate": 7546880,
+   "in_blocks": true,
+   "layout_memory_estimate": 103081984,
+   "memory_limit": 8388608,
+   "numpy": "2.5.5",
+   "reads": [
+    {
+     "block_count": 16,
+     "blocks_s": 0.18643438500021148,
+     "c": 0,
+     "fetch": {
+      "bytes": 38433346,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       0.0,
+       20.0
+      ],
+      "counts_sha": "86e7e1a80dec61521eadfaadcb978608e85b6cfda745e1df214201dfb2a778f9",
+      "max": 20.0,
+      "min": 0.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 8949760,
+     "ratio": 1.185888738127544,
+     "t": null,
+     "traced_peak": null,
+     "wall_s": 0.3844081830002324,
+     "z": 0
+    },
+    {
+     "block_count": 16,
+     "blocks_s": 0.1766253810001217,
+     "c": 0,
+     "fetch": {
+      "bytes": 38433346,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       1.0,
+       255.0
+      ],
+      "counts_sha": "657024695dde3c2afc52500c3e6fe28b53f6d7e2dbebe3f677c324f559228875",
+      "max": 255.0,
+      "min": 1.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 2056192,
+     "ratio": 0.27245590230664857,
+     "t": null,
+     "traced_peak": null,
+     "wall_s": 0.3705208909996145,
+     "z": 63
+    },
+    {
+     "block_count": 16,
+     "blocks_s": 0.19501653099996474,
+     "c": 0,
+     "fetch": {
+      "bytes": 45495814,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       1.0,
+       255.0
+      ],
+      "counts_sha": "af482a0ea1f10e42dff92cc81b2ebbec9e7d37424708939b3201b71ebb913e79",
+      "max": 255.0,
+      "min": 1.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 1683456,
+     "ratio": 0.2230664857530529,
+     "t": null,
+     "traced_peak": null,
+     "wall_s": 0.39196683800037135,
+     "z": 64
+    },
+    {
+     "block_count": 16,
+     "blocks_s": 0.20018074700055877,
+     "c": 0,
+     "fetch": {
+      "bytes": 47997578,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       0.0,
+       255.0
+      ],
+      "counts_sha": "858b5a20612b885f7cf76d1350eaabbf01d4d047a86971ca7962073357a686b3",
+      "max": 255.0,
+      "min": 0.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 1458176,
+     "ratio": 0.1932157394843962,
+     "t": null,
+     "traced_peak": null,
+     "wall_s": 0.3929780019998361,
+     "z": 157
+    },
+    {
+     "block_count": 16,
+     "blocks_s": 0.2073889439998311,
+     "c": 0,
+     "fetch": {
+      "bytes": 38192844,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       0.0,
+       28.0
+      ],
+      "counts_sha": "94feec90a6b43cac3f01b39e689ddda1f462ee5fc003366c1e6948005d06ae39",
+      "max": 28.0,
+      "min": 0.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 1499136,
+     "ratio": 0.19864314789687923,
+     "t": null,
+     "traced_peak": null,
+     "wall_s": 0.41240847100016254,
+     "z": 313
+    }
+   ],
+   "total_s": 1.9588223170003403,
+   "zarr": "3.4.2"
+  },
+  "mmv04_b8_wutrue_1.json": {
+   "block_memory_estimate": 7546880,
+   "block_shape": [
+    64,
+    1024
+   ],
+   "cmd": "planes",
+   "cmd_args": {
+    "axes": "ZYX",
+    "memory_limit": 8388608,
+    "path": "marmoset_v04/marmoset_neurons.ome.zarr",
+    "planes": [
+     [
+      null,
+      0
+     ],
+     [
+      null,
+      63
+     ],
+     [
+      null,
+      64
+     ],
+     [
+      null,
+      157
+     ],
+     [
+      null,
+      313
+     ]
+    ],
+    "warmup": true
+   },
+   "estimate": 7546880,
+   "in_blocks": true,
+   "layout_memory_estimate": 103081984,
+   "memory_limit": 8388608,
+   "numpy": "2.5.5",
+   "reads": [
+    {
+     "block_count": 16,
+     "blocks_s": 0.19128635400011262,
+     "c": 0,
+     "fetch": {
+      "bytes": 38433346,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       0.0,
+       20.0
+      ],
+      "counts_sha": "86e7e1a80dec61521eadfaadcb978608e85b6cfda745e1df214201dfb2a778f9",
+      "max": 20.0,
+      "min": 0.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 8675328,
+     "ratio": 1.1495251017639077,
+     "t": null,
+     "traced_peak": null,
+     "wall_s": 0.37303027600046335,
+     "z": 0
+    },
+    {
+     "block_count": 16,
+     "blocks_s": 0.1895773320002263,
+     "c": 0,
+     "fetch": {
+      "bytes": 38433346,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       1.0,
+       255.0
+      ],
+      "counts_sha": "657024695dde3c2afc52500c3e6fe28b53f6d7e2dbebe3f677c324f559228875",
+      "max": 255.0,
+      "min": 1.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 1724416,
+     "ratio": 0.22849389416553595,
+     "t": null,
+     "traced_peak": null,
+     "wall_s": 0.390528462000475,
+     "z": 63
+    },
+    {
+     "block_count": 16,
+     "blocks_s": 0.19231816600040474,
+     "c": 0,
+     "fetch": {
+      "bytes": 45495814,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       1.0,
+       255.0
+      ],
+      "counts_sha": "af482a0ea1f10e42dff92cc81b2ebbec9e7d37424708939b3201b71ebb913e79",
+      "max": 255.0,
+      "min": 1.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 1867776,
+     "ratio": 0.24748982360922658,
+     "t": null,
+     "traced_peak": null,
+     "wall_s": 0.4072070040001563,
+     "z": 64
+    },
+    {
+     "block_count": 16,
+     "blocks_s": 0.1914777199999662,
+     "c": 0,
+     "fetch": {
+      "bytes": 47997578,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       0.0,
+       255.0
+      ],
+      "counts_sha": "858b5a20612b885f7cf76d1350eaabbf01d4d047a86971ca7962073357a686b3",
+      "max": 255.0,
+      "min": 0.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 1351680,
+     "ratio": 0.1791044776119403,
+     "t": null,
+     "traced_peak": null,
+     "wall_s": 0.378633799000454,
+     "z": 157
+    },
+    {
+     "block_count": 16,
+     "blocks_s": 0.20329879699966114,
+     "c": 0,
+     "fetch": {
+      "bytes": 38192844,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       0.0,
+       28.0
+      ],
+      "counts_sha": "94feec90a6b43cac3f01b39e689ddda1f462ee5fc003366c1e6948005d06ae39",
+      "max": 28.0,
+      "min": 0.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 1458176,
+     "ratio": 0.1932157394843962,
+     "t": null,
+     "traced_peak": null,
+     "wall_s": 0.4054934149999099,
+     "z": 313
+    }
+   ],
+   "total_s": 1.9620491729992864,
+   "zarr": "3.4.2"
+  },
+  "mmv04_b8_wutrue_2.json": {
+   "block_memory_estimate": 7546880,
+   "block_shape": [
+    64,
+    1024
+   ],
+   "cmd": "planes",
+   "cmd_args": {
+    "axes": "ZYX",
+    "memory_limit": 8388608,
+    "path": "marmoset_v04/marmoset_neurons.ome.zarr",
+    "planes": [
+     [
+      null,
+      0
+     ],
+     [
+      null,
+      63
+     ],
+     [
+      null,
+      64
+     ],
+     [
+      null,
+      157
+     ],
+     [
+      null,
+      313
+     ]
+    ],
+    "warmup": true
+   },
+   "estimate": 7546880,
+   "in_blocks": true,
+   "layout_memory_estimate": 103081984,
+   "memory_limit": 8388608,
+   "numpy": "2.5.5",
+   "reads": [
+    {
+     "block_count": 16,
+     "blocks_s": 0.18885555399992882,
+     "c": 0,
+     "fetch": {
+      "bytes": 38433346,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       0.0,
+       20.0
+      ],
+      "counts_sha": "86e7e1a80dec61521eadfaadcb978608e85b6cfda745e1df214201dfb2a778f9",
+      "max": 20.0,
+      "min": 0.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 8343552,
+     "ratio": 1.1055630936227951,
+     "t": null,
+     "traced_peak": null,
+     "wall_s": 0.38812967900048534,
+     "z": 0
+    },
+    {
+     "block_count": 16,
+     "blocks_s": 0.18229779000012059,
+     "c": 0,
+     "fetch": {
+      "bytes": 38433346,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       1.0,
+       255.0
+      ],
+      "counts_sha": "657024695dde3c2afc52500c3e6fe28b53f6d7e2dbebe3f677c324f559228875",
+      "max": 255.0,
+      "min": 1.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 2048000,
+     "ratio": 0.27137042062415195,
+     "t": null,
+     "traced_peak": null,
+     "wall_s": 0.36347348599974794,
+     "z": 63
+    },
+    {
+     "block_count": 16,
+     "blocks_s": 0.17860105799991288,
+     "c": 0,
+     "fetch": {
+      "bytes": 45495814,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       1.0,
+       255.0
+      ],
+      "counts_sha": "af482a0ea1f10e42dff92cc81b2ebbec9e7d37424708939b3201b71ebb913e79",
+      "max": 255.0,
+      "min": 1.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 1601536,
+     "ratio": 0.21221166892808685,
+     "t": null,
+     "traced_peak": null,
+     "wall_s": 0.37081659599971317,
+     "z": 64
+    },
+    {
+     "block_count": 16,
+     "blocks_s": 0.22058451999964745,
+     "c": 0,
+     "fetch": {
+      "bytes": 47997578,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       0.0,
+       255.0
+      ],
+      "counts_sha": "858b5a20612b885f7cf76d1350eaabbf01d4d047a86971ca7962073357a686b3",
+      "max": 255.0,
+      "min": 0.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 1318912,
+     "ratio": 0.17476255088195386,
+     "t": null,
+     "traced_peak": null,
+     "wall_s": 0.4225225000000137,
+     "z": 157
+    },
+    {
+     "block_count": 16,
+     "blocks_s": 0.19234824999966804,
+     "c": 0,
+     "fetch": {
+      "bytes": 38192844,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       0.0,
+       28.0
+      ],
+      "counts_sha": "94feec90a6b43cac3f01b39e689ddda1f462ee5fc003366c1e6948005d06ae39",
+      "max": 28.0,
+      "min": 0.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 1028096,
+     "ratio": 0.13622795115332428,
+     "t": null,
+     "traced_peak": null,
+     "wall_s": 0.3865506080001069,
+     "z": 313
+    }
+   ],
+   "total_s": 1.9380146729999979,
+   "zarr": "3.4.2"
+  },
+  "mmv04_b8_wutrue_3.json": {
+   "block_memory_estimate": 7546880,
+   "block_shape": [
+    64,
+    1024
+   ],
+   "cmd": "planes",
+   "cmd_args": {
+    "axes": "ZYX",
+    "memory_limit": 8388608,
+    "path": "marmoset_v04/marmoset_neurons.ome.zarr",
+    "planes": [
+     [
+      null,
+      0
+     ],
+     [
+      null,
+      63
+     ],
+     [
+      null,
+      64
+     ],
+     [
+      null,
+      157
+     ],
+     [
+      null,
+      313
+     ]
+    ],
+    "warmup": true
+   },
+   "estimate": 7546880,
+   "in_blocks": true,
+   "layout_memory_estimate": 103081984,
+   "memory_limit": 8388608,
+   "numpy": "2.5.5",
+   "reads": [
+    {
+     "block_count": 16,
+     "blocks_s": 0.1986861149998731,
+     "c": 0,
+     "fetch": {
+      "bytes": 38433346,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       0.0,
+       20.0
+      ],
+      "counts_sha": "86e7e1a80dec61521eadfaadcb978608e85b6cfda745e1df214201dfb2a778f9",
+      "max": 20.0,
+      "min": 0.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 8404992,
+     "ratio": 1.1137042062415197,
+     "t": null,
+     "traced_peak": null,
+     "wall_s": 0.4005398269991929,
+     "z": 0
+    },
+    {
+     "block_count": 16,
+     "blocks_s": 0.18631685499985906,
+     "c": 0,
+     "fetch": {
+      "bytes": 38433346,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       1.0,
+       255.0
+      ],
+      "counts_sha": "657024695dde3c2afc52500c3e6fe28b53f6d7e2dbebe3f677c324f559228875",
+      "max": 255.0,
+      "min": 1.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 2043904,
+     "ratio": 0.2708276797829037,
+     "t": null,
+     "traced_peak": null,
+     "wall_s": 0.3851480189996437,
+     "z": 63
+    },
+    {
+     "block_count": 16,
+     "blocks_s": 0.19772951199956879,
+     "c": 0,
+     "fetch": {
+      "bytes": 45495814,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       1.0,
+       255.0
+      ],
+      "counts_sha": "af482a0ea1f10e42dff92cc81b2ebbec9e7d37424708939b3201b71ebb913e79",
+      "max": 255.0,
+      "min": 1.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 1400832,
+     "ratio": 0.18561736770691994,
+     "t": null,
+     "traced_peak": null,
+     "wall_s": 0.38440440299928014,
+     "z": 64
+    },
+    {
+     "block_count": 16,
+     "blocks_s": 0.19607158999951935,
+     "c": 0,
+     "fetch": {
+      "bytes": 47997578,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       0.0,
+       255.0
+      ],
+      "counts_sha": "858b5a20612b885f7cf76d1350eaabbf01d4d047a86971ca7962073357a686b3",
+      "max": 255.0,
+      "min": 0.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 1855488,
+     "ratio": 0.2458616010854817,
+     "t": null,
+     "traced_peak": null,
+     "wall_s": 0.39498310099952505,
+     "z": 157
+    },
+    {
+     "block_count": 16,
+     "blocks_s": 0.19506562199967448,
+     "c": 0,
+     "fetch": {
+      "bytes": 38192844,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       0.0,
+       28.0
+      ],
+      "counts_sha": "94feec90a6b43cac3f01b39e689ddda1f462ee5fc003366c1e6948005d06ae39",
+      "max": 28.0,
+      "min": 0.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 1003520,
+     "ratio": 0.13297150610583447,
+     "t": null,
+     "traced_peak": null,
+     "wall_s": 0.38862722299927555,
+     "z": 313
+    }
+   ],
+   "total_s": 1.9607733739994728,
+   "zarr": "3.4.2"
+  },
+  "mmv04_w4_trace.json": {
+   "all_sha": "87a453c53c943aec727bfc964abc51bf51648540a66f94286c1311b6572e11eb",
+   "cache_bytes": 25165824,
+   "cache_plan": {
+    "cache_bytes": 25165824,
+    "groups": 1,
+    "per_row": 16,
+    "piece_nbytes": 262144,
+    "piece_rows": 6
+   },
+   "cache_stats": {
+    "decodes": 256,
+    "evictions": 160,
+    "hits": 228,
+    "nbytes": 25165824
+   },
+   "channels": [
+    0
+   ],
+   "cmd": "windows",
+   "cmd_args": {
+    "axes": "ZYX",
+    "cache": "plan",
+    "channels": [
+     0
+    ],
+    "margin": 32,
+    "path": "marmoset_v04/marmoset_neurons.ome.zarr",
+    "tile": 256,
+    "trace": true,
+    "warmup": true,
+    "workers": 4,
+    "z": 157
+   },
+   "fetch": {
+    "bytes": 24259461,
+    "calls": 320,
+    "ranged": 0
+   },
+   "held_bytes": 102400,
+   "max_in_flight": 8,
+   "memory_estimate": 38088704,
+   "numpy": "2.5.5",
+   "peak_rss": 47140864,
+   "plane": [
+    1024,
+    1024
+   ],
+   "ratio": 1.2376599634369287,
+   "t": null,
+   "traced_peak": 29433770,
+   "wall_s": 8.616587650999463,
+   "warmup": true,
+   "window_bytes": 1617920,
+   "windows": 16,
+   "workers": 4,
+   "z": 157,
+   "zarr": "3.4.2"
+  },
+  "mmv04_w4_wufalse_1.json": {
+   "all_sha": "87a453c53c943aec727bfc964abc51bf51648540a66f94286c1311b6572e11eb",
+   "cache_bytes": 25165824,
+   "cache_plan": {
+    "cache_bytes": 25165824,
+    "groups": 1,
+    "per_row": 16,
+    "piece_nbytes": 262144,
+    "piece_rows": 6
+   },
+   "cache_stats": {
+    "decodes": 256,
+    "evictions": 160,
+    "hits": 228,
+    "nbytes": 25165824
+   },
+   "channels": [
+    0
+   ],
+   "cmd": "windows",
+   "cmd_args": {
+    "axes": "ZYX",
+    "cache": "plan",
+    "channels": [
+     0
+    ],
+    "margin": 32,
+    "path": "marmoset_v04/marmoset_neurons.ome.zarr",
+    "tile": 256,
+    "warmup": false,
+    "workers": 4,
+    "z": 157
+   },
+   "fetch": {
+    "bytes": 24259461,
+    "calls": 320,
+    "ranged": 0
+   },
+   "held_bytes": 102400,
+   "max_in_flight": 8,
+   "memory_estimate": 38088704,
+   "numpy": "2.5.5",
+   "peak_rss": 41271296,
+   "plane": [
+    1024,
+    1024
+   ],
+   "ratio": 1.0835573717604043,
+   "t": null,
+   "traced_peak": null,
+   "wall_s": 3.595742743000301,
+   "warmup": false,
+   "window_bytes": 1617920,
+   "windows": 16,
+   "workers": 4,
+   "z": 157,
+   "zarr": "3.4.2"
+  },
+  "mmv04_w4_wufalse_2.json": {
+   "all_sha": "87a453c53c943aec727bfc964abc51bf51648540a66f94286c1311b6572e11eb",
+   "cache_bytes": 25165824,
+   "cache_plan": {
+    "cache_bytes": 25165824,
+    "groups": 1,
+    "per_row": 16,
+    "piece_nbytes": 262144,
+    "piece_rows": 6
+   },
+   "cache_stats": {
+    "decodes": 256,
+    "evictions": 160,
+    "hits": 228,
+    "nbytes": 25165824
+   },
+   "channels": [
+    0
+   ],
+   "cmd": "windows",
+   "cmd_args": {
+    "axes": "ZYX",
+    "cache": "plan",
+    "channels": [
+     0
+    ],
+    "margin": 32,
+    "path": "marmoset_v04/marmoset_neurons.ome.zarr",
+    "tile": 256,
+    "warmup": false,
+    "workers": 4,
+    "z": 157
+   },
+   "fetch": {
+    "bytes": 24259461,
+    "calls": 320,
+    "ranged": 0
+   },
+   "held_bytes": 102400,
+   "max_in_flight": 8,
+   "memory_estimate": 38088704,
+   "numpy": "2.5.5",
+   "peak_rss": 40255488,
+   "plane": [
+    1024,
+    1024
+   ],
+   "ratio": 1.056887837401871,
+   "t": null,
+   "traced_peak": null,
+   "wall_s": 3.4976656990002084,
+   "warmup": false,
+   "window_bytes": 1617920,
+   "windows": 16,
+   "workers": 4,
+   "z": 157,
+   "zarr": "3.4.2"
+  },
+  "mmv04_w4_wufalse_3.json": {
+   "all_sha": "87a453c53c943aec727bfc964abc51bf51648540a66f94286c1311b6572e11eb",
+   "cache_bytes": 25165824,
+   "cache_plan": {
+    "cache_bytes": 25165824,
+    "groups": 1,
+    "per_row": 16,
+    "piece_nbytes": 262144,
+    "piece_rows": 6
+   },
+   "cache_stats": {
+    "decodes": 256,
+    "evictions": 160,
+    "hits": 228,
+    "nbytes": 25165824
+   },
+   "channels": [
+    0
+   ],
+   "cmd": "windows",
+   "cmd_args": {
+    "axes": "ZYX",
+    "cache": "plan",
+    "channels": [
+     0
+    ],
+    "margin": 32,
+    "path": "marmoset_v04/marmoset_neurons.ome.zarr",
+    "tile": 256,
+    "warmup": false,
+    "workers": 4,
+    "z": 157
+   },
+   "fetch": {
+    "bytes": 24259461,
+    "calls": 320,
+    "ranged": 0
+   },
+   "held_bytes": 102400,
+   "max_in_flight": 8,
+   "memory_estimate": 38088704,
+   "numpy": "2.5.5",
+   "peak_rss": 44699648,
+   "plane": [
+    1024,
+    1024
+   ],
+   "ratio": 1.1735670502204538,
+   "t": null,
+   "traced_peak": null,
+   "wall_s": 3.425099815000067,
+   "warmup": false,
+   "window_bytes": 1617920,
+   "windows": 16,
+   "workers": 4,
+   "z": 157,
+   "zarr": "3.4.2"
+  },
+  "mmv04_w4_wutrue_1.json": {
+   "all_sha": "87a453c53c943aec727bfc964abc51bf51648540a66f94286c1311b6572e11eb",
+   "cache_bytes": 25165824,
+   "cache_plan": {
+    "cache_bytes": 25165824,
+    "groups": 1,
+    "per_row": 16,
+    "piece_nbytes": 262144,
+    "piece_rows": 6
+   },
+   "cache_stats": {
+    "decodes": 256,
+    "evictions": 160,
+    "hits": 228,
+    "nbytes": 25165824
+   },
+   "channels": [
+    0
+   ],
+   "cmd": "windows",
+   "cmd_args": {
+    "axes": "ZYX",
+    "cache": "plan",
+    "channels": [
+     0
+    ],
+    "margin": 32,
+    "path": "marmoset_v04/marmoset_neurons.ome.zarr",
+    "tile": 256,
+    "warmup": true,
+    "workers": 4,
+    "z": 157
+   },
+   "fetch": {
+    "bytes": 24259461,
+    "calls": 320,
+    "ranged": 0
+   },
+   "held_bytes": 102400,
+   "max_in_flight": 8,
+   "memory_estimate": 38088704,
+   "numpy": "2.5.5",
+   "peak_rss": 32874496,
+   "plane": [
+    1024,
+    1024
+   ],
+   "ratio": 0.8631035595225293,
+   "t": null,
+   "traced_peak": null,
+   "wall_s": 3.4911905389999447,
+   "warmup": true,
+   "window_bytes": 1617920,
+   "windows": 16,
+   "workers": 4,
+   "z": 157,
+   "zarr": "3.4.2"
+  },
+  "mmv04_w4_wutrue_2.json": {
+   "all_sha": "87a453c53c943aec727bfc964abc51bf51648540a66f94286c1311b6572e11eb",
+   "cache_bytes": 25165824,
+   "cache_plan": {
+    "cache_bytes": 25165824,
+    "groups": 1,
+    "per_row": 16,
+    "piece_nbytes": 262144,
+    "piece_rows": 6
+   },
+   "cache_stats": {
+    "decodes": 256,
+    "evictions": 160,
+    "hits": 228,
+    "nbytes": 25165824
+   },
+   "channels": [
+    0
+   ],
+   "cmd": "windows",
+   "cmd_args": {
+    "axes": "ZYX",
+    "cache": "plan",
+    "channels": [
+     0
+    ],
+    "margin": 32,
+    "path": "marmoset_v04/marmoset_neurons.ome.zarr",
+    "tile": 256,
+    "warmup": true,
+    "workers": 4,
+    "z": 157
+   },
+   "fetch": {
+    "bytes": 24259461,
+    "calls": 320,
+    "ranged": 0
+   },
+   "held_bytes": 102400,
+   "max_in_flight": 8,
+   "memory_estimate": 38088704,
+   "numpy": "2.5.5",
+   "peak_rss": 35459072,
+   "plane": [
+    1024,
+    1024
+   ],
+   "ratio": 0.9309603183137972,
+   "t": null,
+   "traced_peak": null,
+   "wall_s": 3.4684480320001967,
+   "warmup": true,
+   "window_bytes": 1617920,
+   "windows": 16,
+   "workers": 4,
+   "z": 157,
+   "zarr": "3.4.2"
+  },
+  "mmv04_w4_wutrue_3.json": {
+   "all_sha": "87a453c53c943aec727bfc964abc51bf51648540a66f94286c1311b6572e11eb",
+   "cache_bytes": 25165824,
+   "cache_plan": {
+    "cache_bytes": 25165824,
+    "groups": 1,
+    "per_row": 16,
+    "piece_nbytes": 262144,
+    "piece_rows": 6
+   },
+   "cache_stats": {
+    "decodes": 256,
+    "evictions": 160,
+    "hits": 228,
+    "nbytes": 25165824
+   },
+   "channels": [
+    0
+   ],
+   "cmd": "windows",
+   "cmd_args": {
+    "axes": "ZYX",
+    "cache": "plan",
+    "channels": [
+     0
+    ],
+    "margin": 32,
+    "path": "marmoset_v04/marmoset_neurons.ome.zarr",
+    "tile": 256,
+    "warmup": true,
+    "workers": 4,
+    "z": 157
+   },
+   "fetch": {
+    "bytes": 24259461,
+    "calls": 320,
+    "ranged": 0
+   },
+   "held_bytes": 102400,
+   "max_in_flight": 8,
+   "memory_estimate": 38088704,
+   "numpy": "2.5.5",
+   "peak_rss": 31830016,
+   "plane": [
+    1024,
+    1024
+   ],
+   "ratio": 0.8356812560490375,
+   "t": null,
+   "traced_peak": null,
+   "wall_s": 3.4853725019993362,
+   "warmup": true,
+   "window_bytes": 1617920,
+   "windows": 16,
+   "workers": 4,
+   "z": 157,
+   "zarr": "3.4.2"
+  },
+  "mmv05_b8_trace.json": {
+   "block_memory_estimate": 7546880,
+   "block_shape": [
+    64,
+    1024
+   ],
+   "cmd": "planes",
+   "cmd_args": {
+    "axes": "ZYX",
+    "memory_limit": 8388608,
+    "path": "marmoset_v05/marmoset_neurons.ome.zarr",
+    "planes": [
+     [
+      null,
+      0
+     ],
+     [
+      null,
+      63
+     ],
+     [
+      null,
+      64
+     ],
+     [
+      null,
+      157
+     ],
+     [
+      null,
+      313
+     ]
+    ],
+    "trace": true,
+    "warmup": true
+   },
+   "estimate": 7546880,
+   "in_blocks": true,
+   "layout_memory_estimate": 103081984,
+   "memory_limit": 8388608,
+   "numpy": "2.5.5",
+   "reads": [
+    {
+     "block_count": 16,
+     "blocks_s": 0.4057348139995156,
+     "c": 0,
+     "fetch": {
+      "bytes": 38433346,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       0.0,
+       20.0
+      ],
+      "counts_sha": "86e7e1a80dec61521eadfaadcb978608e85b6cfda745e1df214201dfb2a778f9",
+      "max": 20.0,
+      "min": 0.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 8376320,
+     "ratio": 1.1099050203527816,
+     "t": null,
+     "traced_peak": 3849786,
+     "wall_s": 0.8527890249997654,
+     "z": 0
+    },
+    {
+     "block_count": 16,
+     "blocks_s": 0.42604536799990456,
+     "c": 0,
+     "fetch": {
+      "bytes": 38433346,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       1.0,
+       255.0
+      ],
+      "counts_sha": "657024695dde3c2afc52500c3e6fe28b53f6d7e2dbebe3f677c324f559228875",
+      "max": 255.0,
+      "min": 1.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 1593344,
+     "ratio": 0.21112618724559024,
+     "t": null,
+     "traced_peak": 3849118,
+     "wall_s": 0.8450116479998542,
+     "z": 63
+    },
+    {
+     "block_count": 16,
+     "blocks_s": 0.43342084199957753,
+     "c": 0,
+     "fetch": {
+      "bytes": 45495814,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       1.0,
+       255.0
+      ],
+      "counts_sha": "af482a0ea1f10e42dff92cc81b2ebbec9e7d37424708939b3201b71ebb913e79",
+      "max": 255.0,
+      "min": 1.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 958464,
+     "ratio": 0.12700135685210312,
+     "t": null,
+     "traced_peak": 4002314,
+     "wall_s": 0.8603798979993371,
+     "z": 64
+    },
+    {
+     "block_count": 16,
+     "blocks_s": 0.39534700099920883,
+     "c": 0,
+     "fetch": {
+      "bytes": 47997578,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       0.0,
+       255.0
+      ],
+      "counts_sha": "858b5a20612b885f7cf76d1350eaabbf01d4d047a86971ca7962073357a686b3",
+      "max": 255.0,
+      "min": 0.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 995328,
+     "ratio": 0.13188602442333786,
+     "t": null,
+     "traced_peak": 3548081,
+     "wall_s": 0.8101850439998088,
+     "z": 157
+    },
+    {
+     "block_count": 16,
+     "blocks_s": 0.3947736479995001,
+     "c": 0,
+     "fetch": {
+      "bytes": 38192844,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       0.0,
+       28.0
+      ],
+      "counts_sha": "94feec90a6b43cac3f01b39e689ddda1f462ee5fc003366c1e6948005d06ae39",
+      "max": 28.0,
+      "min": 0.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 917504,
+     "ratio": 0.12157394843962008,
+     "t": null,
+     "traced_peak": 3554376,
+     "wall_s": 0.8012280980001378,
+     "z": 313
+    }
+   ],
+   "total_s": 4.179432463000012,
+   "zarr": "3.4.2"
+  },
+  "mmv05_b8_wufalse_1.json": {
+   "block_memory_estimate": 7546880,
+   "block_shape": [
+    64,
+    1024
+   ],
+   "cmd": "planes",
+   "cmd_args": {
+    "axes": "ZYX",
+    "memory_limit": 8388608,
+    "path": "marmoset_v05/marmoset_neurons.ome.zarr",
+    "planes": [
+     [
+      null,
+      0
+     ],
+     [
+      null,
+      63
+     ],
+     [
+      null,
+      64
+     ],
+     [
+      null,
+      157
+     ],
+     [
+      null,
+      313
+     ]
+    ],
+    "warmup": false
+   },
+   "estimate": 7546880,
+   "in_blocks": true,
+   "layout_memory_estimate": 103081984,
+   "memory_limit": 8388608,
+   "numpy": "2.5.5",
+   "reads": [
+    {
+     "block_count": 16,
+     "blocks_s": 0.2068076960003964,
+     "c": 0,
+     "fetch": {
+      "bytes": 38433346,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       0.0,
+       20.0
+      ],
+      "counts_sha": "86e7e1a80dec61521eadfaadcb978608e85b6cfda745e1df214201dfb2a778f9",
+      "max": 20.0,
+      "min": 0.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 9072640,
+     "ratio": 1.2021709633649933,
+     "t": null,
+     "traced_peak": null,
+     "wall_s": 0.414435573999981,
+     "z": 0
+    },
+    {
+     "block_count": 16,
+     "blocks_s": 0.18906127199988987,
+     "c": 0,
+     "fetch": {
+      "bytes": 38433346,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       1.0,
+       255.0
+      ],
+      "counts_sha": "657024695dde3c2afc52500c3e6fe28b53f6d7e2dbebe3f677c324f559228875",
+      "max": 255.0,
+      "min": 1.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 1126400,
+     "ratio": 0.14925373134328357,
+     "t": null,
+     "traced_peak": null,
+     "wall_s": 0.38530789500055107,
+     "z": 63
+    },
+    {
+     "block_count": 16,
+     "blocks_s": 0.20818363200032763,
+     "c": 0,
+     "fetch": {
+      "bytes": 45495814,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       1.0,
+       255.0
+      ],
+      "counts_sha": "af482a0ea1f10e42dff92cc81b2ebbec9e7d37424708939b3201b71ebb913e79",
+      "max": 255.0,
+      "min": 1.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 851968,
+     "ratio": 0.11289009497964722,
+     "t": null,
+     "traced_peak": null,
+     "wall_s": 0.41644360500049515,
+     "z": 64
+    },
+    {
+     "block_count": 16,
+     "blocks_s": 0.19711330699919927,
+     "c": 0,
+     "fetch": {
+      "bytes": 47997578,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       0.0,
+       255.0
+      ],
+      "counts_sha": "858b5a20612b885f7cf76d1350eaabbf01d4d047a86971ca7962073357a686b3",
+      "max": 255.0,
+      "min": 0.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 823296,
+     "ratio": 0.10909090909090909,
+     "t": null,
+     "traced_peak": null,
+     "wall_s": 0.401933170999655,
+     "z": 157
+    },
+    {
+     "block_count": 16,
+     "blocks_s": 0.18573707900031877,
+     "c": 0,
+     "fetch": {
+      "bytes": 38192844,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       0.0,
+       28.0
+      ],
+      "counts_sha": "94feec90a6b43cac3f01b39e689ddda1f462ee5fc003366c1e6948005d06ae39",
+      "max": 28.0,
+      "min": 0.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 839680,
+     "ratio": 0.1112618724559023,
+     "t": null,
+     "traced_peak": null,
+     "wall_s": 0.38311137100026826,
+     "z": 313
+    }
+   ],
+   "total_s": 2.007930777999718,
+   "zarr": "3.4.2"
+  },
+  "mmv05_b8_wufalse_2.json": {
+   "block_memory_estimate": 7546880,
+   "block_shape": [
+    64,
+    1024
+   ],
+   "cmd": "planes",
+   "cmd_args": {
+    "axes": "ZYX",
+    "memory_limit": 8388608,
+    "path": "marmoset_v05/marmoset_neurons.ome.zarr",
+    "planes": [
+     [
+      null,
+      0
+     ],
+     [
+      null,
+      63
+     ],
+     [
+      null,
+      64
+     ],
+     [
+      null,
+      157
+     ],
+     [
+      null,
+      313
+     ]
+    ],
+    "warmup": false
+   },
+   "estimate": 7546880,
+   "in_blocks": true,
+   "layout_memory_estimate": 103081984,
+   "memory_limit": 8388608,
+   "numpy": "2.5.5",
+   "reads": [
+    {
+     "block_count": 16,
+     "blocks_s": 0.2140063389997522,
+     "c": 0,
+     "fetch": {
+      "bytes": 38433346,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       0.0,
+       20.0
+      ],
+      "counts_sha": "86e7e1a80dec61521eadfaadcb978608e85b6cfda745e1df214201dfb2a778f9",
+      "max": 20.0,
+      "min": 0.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 8904704,
+     "ratio": 1.1799185888738128,
+     "t": null,
+     "traced_peak": null,
+     "wall_s": 0.4135407869998744,
+     "z": 0
+    },
+    {
+     "block_count": 16,
+     "blocks_s": 0.19918032399982621,
+     "c": 0,
+     "fetch": {
+      "bytes": 38433346,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       1.0,
+       255.0
+      ],
+      "counts_sha": "657024695dde3c2afc52500c3e6fe28b53f6d7e2dbebe3f677c324f559228875",
+      "max": 255.0,
+      "min": 1.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 1249280,
+     "ratio": 0.1655359565807327,
+     "t": null,
+     "traced_peak": null,
+     "wall_s": 0.39272039299976313,
+     "z": 63
+    },
+    {
+     "block_count": 16,
+     "blocks_s": 0.21314142499977606,
+     "c": 0,
+     "fetch": {
+      "bytes": 45495814,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       1.0,
+       255.0
+      ],
+      "counts_sha": "af482a0ea1f10e42dff92cc81b2ebbec9e7d37424708939b3201b71ebb913e79",
+      "max": 255.0,
+      "min": 1.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 1380352,
+     "ratio": 0.18290366350067844,
+     "t": null,
+     "traced_peak": null,
+     "wall_s": 0.41635890699944866,
+     "z": 64
+    },
+    {
+     "block_count": 16,
+     "blocks_s": 0.2132818430000043,
+     "c": 0,
+     "fetch": {
+      "bytes": 47997578,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       0.0,
+       255.0
+      ],
+      "counts_sha": "858b5a20612b885f7cf76d1350eaabbf01d4d047a86971ca7962073357a686b3",
+      "max": 255.0,
+      "min": 0.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 1241088,
+     "ratio": 0.16445047489823608,
+     "t": null,
+     "traced_peak": null,
+     "wall_s": 0.4142707890005113,
+     "z": 157
+    },
+    {
+     "block_count": 16,
+     "blocks_s": 0.19932482300009724,
+     "c": 0,
+     "fetch": {
+      "bytes": 38192844,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       0.0,
+       28.0
+      ],
+      "counts_sha": "94feec90a6b43cac3f01b39e689ddda1f462ee5fc003366c1e6948005d06ae39",
+      "max": 28.0,
+      "min": 0.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 987136,
+     "ratio": 0.13080054274084124,
+     "t": null,
+     "traced_peak": null,
+     "wall_s": 0.3962192340004549,
+     "z": 313
+    }
+   ],
+   "total_s": 2.0401932599997963,
+   "zarr": "3.4.2"
+  },
+  "mmv05_b8_wufalse_3.json": {
+   "block_memory_estimate": 7546880,
+   "block_shape": [
+    64,
+    1024
+   ],
+   "cmd": "planes",
+   "cmd_args": {
+    "axes": "ZYX",
+    "memory_limit": 8388608,
+    "path": "marmoset_v05/marmoset_neurons.ome.zarr",
+    "planes": [
+     [
+      null,
+      0
+     ],
+     [
+      null,
+      63
+     ],
+     [
+      null,
+      64
+     ],
+     [
+      null,
+      157
+     ],
+     [
+      null,
+      313
+     ]
+    ],
+    "warmup": false
+   },
+   "estimate": 7546880,
+   "in_blocks": true,
+   "layout_memory_estimate": 103081984,
+   "memory_limit": 8388608,
+   "numpy": "2.5.5",
+   "reads": [
+    {
+     "block_count": 16,
+     "blocks_s": 0.21828564099996584,
+     "c": 0,
+     "fetch": {
+      "bytes": 38433346,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       0.0,
+       20.0
+      ],
+      "counts_sha": "86e7e1a80dec61521eadfaadcb978608e85b6cfda745e1df214201dfb2a778f9",
+      "max": 20.0,
+      "min": 0.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 9015296,
+     "ratio": 1.194572591587517,
+     "t": null,
+     "traced_peak": null,
+     "wall_s": 0.44078814499971486,
+     "z": 0
+    },
+    {
+     "block_count": 16,
+     "blocks_s": 0.20338806899962947,
+     "c": 0,
+     "fetch": {
+      "bytes": 38433346,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       1.0,
+       255.0
+      ],
+      "counts_sha": "657024695dde3c2afc52500c3e6fe28b53f6d7e2dbebe3f677c324f559228875",
+      "max": 255.0,
+      "min": 1.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 1183744,
+     "ratio": 0.15685210312075984,
+     "t": null,
+     "traced_peak": null,
+     "wall_s": 0.39526223899974866,
+     "z": 63
+    },
+    {
+     "block_count": 16,
+     "blocks_s": 0.19074961099977372,
+     "c": 0,
+     "fetch": {
+      "bytes": 45495814,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       1.0,
+       255.0
+      ],
+      "counts_sha": "af482a0ea1f10e42dff92cc81b2ebbec9e7d37424708939b3201b71ebb913e79",
+      "max": 255.0,
+      "min": 1.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 1257472,
+     "ratio": 0.1666214382632293,
+     "t": null,
+     "traced_peak": null,
+     "wall_s": 0.3952265059997444,
+     "z": 64
+    },
+    {
+     "block_count": 16,
+     "blocks_s": 0.20177378700009285,
+     "c": 0,
+     "fetch": {
+      "bytes": 47997578,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       0.0,
+       255.0
+      ],
+      "counts_sha": "858b5a20612b885f7cf76d1350eaabbf01d4d047a86971ca7962073357a686b3",
+      "max": 255.0,
+      "min": 0.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 892928,
+     "ratio": 0.11831750339213026,
+     "t": null,
+     "traced_peak": null,
+     "wall_s": 0.40272187699974893,
+     "z": 157
+    },
+    {
+     "block_count": 16,
+     "blocks_s": 0.19463950299996213,
+     "c": 0,
+     "fetch": {
+      "bytes": 38192844,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       0.0,
+       28.0
+      ],
+      "counts_sha": "94feec90a6b43cac3f01b39e689ddda1f462ee5fc003366c1e6948005d06ae39",
+      "max": 28.0,
+      "min": 0.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 765952,
+     "ratio": 0.10149253731343283,
+     "t": null,
+     "traced_peak": null,
+     "wall_s": 0.4036174430002575,
+     "z": 313
+    }
+   ],
+   "total_s": 2.0441246469999896,
+   "zarr": "3.4.2"
+  },
+  "mmv05_b8_wutrue_1.json": {
+   "block_memory_estimate": 7546880,
+   "block_shape": [
+    64,
+    1024
+   ],
+   "cmd": "planes",
+   "cmd_args": {
+    "axes": "ZYX",
+    "memory_limit": 8388608,
+    "path": "marmoset_v05/marmoset_neurons.ome.zarr",
+    "planes": [
+     [
+      null,
+      0
+     ],
+     [
+      null,
+      63
+     ],
+     [
+      null,
+      64
+     ],
+     [
+      null,
+      157
+     ],
+     [
+      null,
+      313
+     ]
+    ],
+    "warmup": true
+   },
+   "estimate": 7546880,
+   "in_blocks": true,
+   "layout_memory_estimate": 103081984,
+   "memory_limit": 8388608,
+   "numpy": "2.5.5",
+   "reads": [
+    {
+     "block_count": 16,
+     "blocks_s": 0.18917198400049529,
+     "c": 0,
+     "fetch": {
+      "bytes": 38433346,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       0.0,
+       20.0
+      ],
+      "counts_sha": "86e7e1a80dec61521eadfaadcb978608e85b6cfda745e1df214201dfb2a778f9",
+      "max": 20.0,
+      "min": 0.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 8421376,
+     "ratio": 1.1158751696065128,
+     "t": null,
+     "traced_peak": null,
+     "wall_s": 0.38122660299995914,
+     "z": 0
+    },
+    {
+     "block_count": 16,
+     "blocks_s": 0.19057555600011256,
+     "c": 0,
+     "fetch": {
+      "bytes": 38433346,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       1.0,
+       255.0
+      ],
+      "counts_sha": "657024695dde3c2afc52500c3e6fe28b53f6d7e2dbebe3f677c324f559228875",
+      "max": 255.0,
+      "min": 1.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 1388544,
+     "ratio": 0.18398914518317502,
+     "t": null,
+     "traced_peak": null,
+     "wall_s": 0.3956935810001596,
+     "z": 63
+    },
+    {
+     "block_count": 16,
+     "blocks_s": 0.2161475729999438,
+     "c": 0,
+     "fetch": {
+      "bytes": 45495814,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       1.0,
+       255.0
+      ],
+      "counts_sha": "af482a0ea1f10e42dff92cc81b2ebbec9e7d37424708939b3201b71ebb913e79",
+      "max": 255.0,
+      "min": 1.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 892928,
+     "ratio": 0.11831750339213026,
+     "t": null,
+     "traced_peak": null,
+     "wall_s": 0.43523038199964503,
+     "z": 64
+    },
+    {
+     "block_count": 16,
+     "blocks_s": 0.19707104500048445,
+     "c": 0,
+     "fetch": {
+      "bytes": 47997578,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       0.0,
+       255.0
+      ],
+      "counts_sha": "858b5a20612b885f7cf76d1350eaabbf01d4d047a86971ca7962073357a686b3",
+      "max": 255.0,
+      "min": 0.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 962560,
+     "ratio": 0.12754409769335143,
+     "t": null,
+     "traced_peak": null,
+     "wall_s": 0.413244253000812,
+     "z": 157
+    },
+    {
+     "block_count": 16,
+     "blocks_s": 0.20786042300005647,
+     "c": 0,
+     "fetch": {
+      "bytes": 38192844,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       0.0,
+       28.0
+      ],
+      "counts_sha": "94feec90a6b43cac3f01b39e689ddda1f462ee5fc003366c1e6948005d06ae39",
+      "max": 28.0,
+      "min": 0.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 688128,
+     "ratio": 0.09118046132971507,
+     "t": null,
+     "traced_peak": null,
+     "wall_s": 0.4076873700005308,
+     "z": 313
+    }
+   ],
+   "total_s": 2.0397472390004623,
+   "zarr": "3.4.2"
+  },
+  "mmv05_b8_wutrue_2.json": {
+   "block_memory_estimate": 7546880,
+   "block_shape": [
+    64,
+    1024
+   ],
+   "cmd": "planes",
+   "cmd_args": {
+    "axes": "ZYX",
+    "memory_limit": 8388608,
+    "path": "marmoset_v05/marmoset_neurons.ome.zarr",
+    "planes": [
+     [
+      null,
+      0
+     ],
+     [
+      null,
+      63
+     ],
+     [
+      null,
+      64
+     ],
+     [
+      null,
+      157
+     ],
+     [
+      null,
+      313
+     ]
+    ],
+    "warmup": true
+   },
+   "estimate": 7546880,
+   "in_blocks": true,
+   "layout_memory_estimate": 103081984,
+   "memory_limit": 8388608,
+   "numpy": "2.5.5",
+   "reads": [
+    {
+     "block_count": 16,
+     "blocks_s": 0.2107579879993864,
+     "c": 0,
+     "fetch": {
+      "bytes": 38433346,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       0.0,
+       20.0
+      ],
+      "counts_sha": "86e7e1a80dec61521eadfaadcb978608e85b6cfda745e1df214201dfb2a778f9",
+      "max": 20.0,
+      "min": 0.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 9252864,
+     "ratio": 1.2260515603799187,
+     "t": null,
+     "traced_peak": null,
+     "wall_s": 0.4194308739997723,
+     "z": 0
+    },
+    {
+     "block_count": 16,
+     "blocks_s": 0.19224362000022666,
+     "c": 0,
+     "fetch": {
+      "bytes": 38433346,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       1.0,
+       255.0
+      ],
+      "counts_sha": "657024695dde3c2afc52500c3e6fe28b53f6d7e2dbebe3f677c324f559228875",
+      "max": 255.0,
+      "min": 1.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 1150976,
+     "ratio": 0.1525101763907734,
+     "t": null,
+     "traced_peak": null,
+     "wall_s": 0.38895736999984365,
+     "z": 63
+    },
+    {
+     "block_count": 16,
+     "blocks_s": 0.2037654929999917,
+     "c": 0,
+     "fetch": {
+      "bytes": 45495814,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       1.0,
+       255.0
+      ],
+      "counts_sha": "af482a0ea1f10e42dff92cc81b2ebbec9e7d37424708939b3201b71ebb913e79",
+      "max": 255.0,
+      "min": 1.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 1347584,
+     "ratio": 0.17856173677069198,
+     "t": null,
+     "traced_peak": null,
+     "wall_s": 0.4215628559995821,
+     "z": 64
+    },
+    {
+     "block_count": 16,
+     "blocks_s": 0.21620850399995106,
+     "c": 0,
+     "fetch": {
+      "bytes": 47997578,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       0.0,
+       255.0
+      ],
+      "counts_sha": "858b5a20612b885f7cf76d1350eaabbf01d4d047a86971ca7962073357a686b3",
+      "max": 255.0,
+      "min": 0.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 995328,
+     "ratio": 0.13188602442333786,
+     "t": null,
+     "traced_peak": null,
+     "wall_s": 0.4203641530002642,
+     "z": 157
+    },
+    {
+     "block_count": 16,
+     "blocks_s": 0.20927368700085935,
+     "c": 0,
+     "fetch": {
+      "bytes": 38192844,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       0.0,
+       28.0
+      ],
+      "counts_sha": "94feec90a6b43cac3f01b39e689ddda1f462ee5fc003366c1e6948005d06ae39",
+      "max": 28.0,
+      "min": 0.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 950272,
+     "ratio": 0.1259158751696065,
+     "t": null,
+     "traced_peak": null,
+     "wall_s": 0.3987728790007168,
+     "z": 313
+    }
+   ],
+   "total_s": 2.055817180000304,
+   "zarr": "3.4.2"
+  },
+  "mmv05_b8_wutrue_3.json": {
+   "block_memory_estimate": 7546880,
+   "block_shape": [
+    64,
+    1024
+   ],
+   "cmd": "planes",
+   "cmd_args": {
+    "axes": "ZYX",
+    "memory_limit": 8388608,
+    "path": "marmoset_v05/marmoset_neurons.ome.zarr",
+    "planes": [
+     [
+      null,
+      0
+     ],
+     [
+      null,
+      63
+     ],
+     [
+      null,
+      64
+     ],
+     [
+      null,
+      157
+     ],
+     [
+      null,
+      313
+     ]
+    ],
+    "warmup": true
+   },
+   "estimate": 7546880,
+   "in_blocks": true,
+   "layout_memory_estimate": 103081984,
+   "memory_limit": 8388608,
+   "numpy": "2.5.5",
+   "reads": [
+    {
+     "block_count": 16,
+     "blocks_s": 0.18779259100028867,
+     "c": 0,
+     "fetch": {
+      "bytes": 38433346,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       0.0,
+       20.0
+      ],
+      "counts_sha": "86e7e1a80dec61521eadfaadcb978608e85b6cfda745e1df214201dfb2a778f9",
+      "max": 20.0,
+      "min": 0.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 8454144,
+     "ratio": 1.1202170963364992,
+     "t": null,
+     "traced_peak": null,
+     "wall_s": 0.38035717200000363,
+     "z": 0
+    },
+    {
+     "block_count": 16,
+     "blocks_s": 0.19216076399970916,
+     "c": 0,
+     "fetch": {
+      "bytes": 38433346,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       1.0,
+       255.0
+      ],
+      "counts_sha": "657024695dde3c2afc52500c3e6fe28b53f6d7e2dbebe3f677c324f559228875",
+      "max": 255.0,
+      "min": 1.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 901120,
+     "ratio": 0.11940298507462686,
+     "t": null,
+     "traced_peak": null,
+     "wall_s": 0.3813315679999505,
+     "z": 63
+    },
+    {
+     "block_count": 16,
+     "blocks_s": 0.2172691700006908,
+     "c": 0,
+     "fetch": {
+      "bytes": 45495814,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       1.0,
+       255.0
+      ],
+      "counts_sha": "af482a0ea1f10e42dff92cc81b2ebbec9e7d37424708939b3201b71ebb913e79",
+      "max": 255.0,
+      "min": 1.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 1155072,
+     "ratio": 0.15305291723202172,
+     "t": null,
+     "traced_peak": null,
+     "wall_s": 0.4199422470001082,
+     "z": 64
+    },
+    {
+     "block_count": 16,
+     "blocks_s": 0.20438308000029792,
+     "c": 0,
+     "fetch": {
+      "bytes": 47997578,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       0.0,
+       255.0
+      ],
+      "counts_sha": "858b5a20612b885f7cf76d1350eaabbf01d4d047a86971ca7962073357a686b3",
+      "max": 255.0,
+      "min": 0.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 1040384,
+     "ratio": 0.1378561736770692,
+     "t": null,
+     "traced_peak": null,
+     "wall_s": 0.4109515800000736,
+     "z": 157
+    },
+    {
+     "block_count": 16,
+     "blocks_s": 0.19180372200025886,
+     "c": 0,
+     "fetch": {
+      "bytes": 38192844,
+      "calls": 512,
+      "ranged": 0
+     },
+     "hist": {
+      "bin_count": 256,
+      "binning": [
+       0.0,
+       28.0
+      ],
+      "counts_sha": "94feec90a6b43cac3f01b39e689ddda1f462ee5fc003366c1e6948005d06ae39",
+      "max": 28.0,
+      "min": 0.0,
+      "total": 1048576,
+      "valid": 1048576
+     },
+     "in_blocks": true,
+     "peak_rss": 688128,
+     "ratio": 0.09118046132971507,
+     "t": null,
+     "traced_peak": null,
+     "wall_s": 0.40904884500014305,
+     "z": 313
+    }
+   ],
+   "total_s": 2.0080391829997097,
+   "zarr": "3.4.2"
+  },
+  "mmv05_w4_trace.json": {
+   "all_sha": "87a453c53c943aec727bfc964abc51bf51648540a66f94286c1311b6572e11eb",
+   "cache_bytes": 25165824,
+   "cache_plan": {
+    "cache_bytes": 25165824,
+    "groups": 1,
+    "per_row": 16,
+    "piece_nbytes": 262144,
+    "piece_rows": 6
+   },
+   "cache_stats": {
+    "decodes": 256,
+    "evictions": 160,
+    "hits": 228,
+    "nbytes": 25165824
+   },
+   "channels": [
+    0
+   ],
+   "cmd": "windows",
+   "cmd_args": {
+    "axes": "ZYX",
+    "cache": "plan",
+    "channels": [
+     0
+    ],
+    "margin": 32,
+    "path": "marmoset_v05/marmoset_neurons.ome.zarr",
+    "tile": 256,
+    "trace": true,
+    "warmup": true,
+    "workers": 4,
+    "z": 157
+   },
+   "fetch": {
+    "bytes": 24254533,
+    "calls": 320,
+    "ranged": 0
+   },
+   "held_bytes": 102400,
+   "max_in_flight": 8,
+   "memory_estimate": 38088704,
+   "numpy": "2.5.5",
+   "peak_rss": 45637632,
+   "plane": [
+    1024,
+    1024
+   ],
+   "ratio": 1.1981933541240994,
+   "t": null,
+   "traced_peak": 29949396,
+   "wall_s": 8.90093399000034,
+   "warmup": true,
+   "window_bytes": 1617920,
+   "windows": 16,
+   "workers": 4,
+   "z": 157,
+   "zarr": "3.4.2"
+  },
+  "mmv05_w4_wufalse_1.json": {
+   "all_sha": "87a453c53c943aec727bfc964abc51bf51648540a66f94286c1311b6572e11eb",
+   "cache_bytes": 25165824,
+   "cache_plan": {
+    "cache_bytes": 25165824,
+    "groups": 1,
+    "per_row": 16,
+    "piece_nbytes": 262144,
+    "piece_rows": 6
+   },
+   "cache_stats": {
+    "decodes": 256,
+    "evictions": 160,
+    "hits": 228,
+    "nbytes": 25165824
+   },
+   "channels": [
+    0
+   ],
+   "cmd": "windows",
+   "cmd_args": {
+    "axes": "ZYX",
+    "cache": "plan",
+    "channels": [
+     0
+    ],
+    "margin": 32,
+    "path": "marmoset_v05/marmoset_neurons.ome.zarr",
+    "tile": 256,
+    "warmup": false,
+    "workers": 4,
+    "z": 157
+   },
+   "fetch": {
+    "bytes": 24254533,
+    "calls": 320,
+    "ranged": 0
+   },
+   "held_bytes": 102400,
+   "max_in_flight": 8,
+   "memory_estimate": 38088704,
+   "numpy": "2.5.5",
+   "peak_rss": 40636416,
+   "plane": [
+    1024,
+    1024
+   ],
+   "ratio": 1.066888912786321,
+   "t": null,
+   "traced_peak": null,
+   "wall_s": 3.552640270999291,
+   "warmup": false,
+   "window_bytes": 1617920,
+   "windows": 16,
+   "workers": 4,
+   "z": 157,
+   "zarr": "3.4.2"
+  },
+  "mmv05_w4_wufalse_2.json": {
+   "all_sha": "87a453c53c943aec727bfc964abc51bf51648540a66f94286c1311b6572e11eb",
+   "cache_bytes": 25165824,
+   "cache_plan": {
+    "cache_bytes": 25165824,
+    "groups": 1,
+    "per_row": 16,
+    "piece_nbytes": 262144,
+    "piece_rows": 6
+   },
+   "cache_stats": {
+    "decodes": 256,
+    "evictions": 160,
+    "hits": 228,
+    "nbytes": 25165824
+   },
+   "channels": [
+    0
+   ],
+   "cmd": "windows",
+   "cmd_args": {
+    "axes": "ZYX",
+    "cache": "plan",
+    "channels": [
+     0
+    ],
+    "margin": 32,
+    "path": "marmoset_v05/marmoset_neurons.ome.zarr",
+    "tile": 256,
+    "warmup": false,
+    "workers": 4,
+    "z": 157
+   },
+   "fetch": {
+    "bytes": 24254533,
+    "calls": 320,
+    "ranged": 0
+   },
+   "held_bytes": 102400,
+   "max_in_flight": 8,
+   "memory_estimate": 38088704,
+   "numpy": "2.5.5",
+   "peak_rss": 41349120,
+   "plane": [
+    1024,
+    1024
+   ],
+   "ratio": 1.085600602215292,
+   "t": null,
+   "traced_peak": null,
+   "wall_s": 3.5424043080001866,
+   "warmup": false,
+   "window_bytes": 1617920,
+   "windows": 16,
+   "workers": 4,
+   "z": 157,
+   "zarr": "3.4.2"
+  },
+  "mmv05_w4_wufalse_3.json": {
+   "all_sha": "87a453c53c943aec727bfc964abc51bf51648540a66f94286c1311b6572e11eb",
+   "cache_bytes": 25165824,
+   "cache_plan": {
+    "cache_bytes": 25165824,
+    "groups": 1,
+    "per_row": 16,
+    "piece_nbytes": 262144,
+    "piece_rows": 6
+   },
+   "cache_stats": {
+    "decodes": 256,
+    "evictions": 160,
+    "hits": 228,
+    "nbytes": 25165824
+   },
+   "channels": [
+    0
+   ],
+   "cmd": "windows",
+   "cmd_args": {
+    "axes": "ZYX",
+    "cache": "plan",
+    "channels": [
+     0
+    ],
+    "margin": 32,
+    "path": "marmoset_v05/marmoset_neurons.ome.zarr",
+    "tile": 256,
+    "warmup": false,
+    "workers": 4,
+    "z": 157
+   },
+   "fetch": {
+    "bytes": 24254533,
+    "calls": 320,
+    "ranged": 0
+   },
+   "held_bytes": 102400,
+   "max_in_flight": 8,
+   "memory_estimate": 38088704,
+   "numpy": "2.5.5",
+   "peak_rss": 42893312,
+   "plane": [
+    1024,
+    1024
+   ],
+   "ratio": 1.1261425959780622,
+   "t": null,
+   "traced_peak": null,
+   "wall_s": 3.4905907160000424,
+   "warmup": false,
+   "window_bytes": 1617920,
+   "windows": 16,
+   "workers": 4,
+   "z": 157,
+   "zarr": "3.4.2"
+  },
+  "mmv05_w4_wutrue_1.json": {
+   "all_sha": "87a453c53c943aec727bfc964abc51bf51648540a66f94286c1311b6572e11eb",
+   "cache_bytes": 25165824,
+   "cache_plan": {
+    "cache_bytes": 25165824,
+    "groups": 1,
+    "per_row": 16,
+    "piece_nbytes": 262144,
+    "piece_rows": 6
+   },
+   "cache_stats": {
+    "decodes": 256,
+    "evictions": 160,
+    "hits": 228,
+    "nbytes": 25165824
+   },
+   "channels": [
+    0
+   ],
+   "cmd": "windows",
+   "cmd_args": {
+    "axes": "ZYX",
+    "cache": "plan",
+    "channels": [
+     0
+    ],
+    "margin": 32,
+    "path": "marmoset_v05/marmoset_neurons.ome.zarr",
+    "tile": 256,
+    "warmup": true,
+    "workers": 4,
+    "z": 157
+   },
+   "fetch": {
+    "bytes": 24254533,
+    "calls": 320,
+    "ranged": 0
+   },
+   "held_bytes": 102400,
+   "max_in_flight": 8,
+   "memory_estimate": 38088704,
+   "numpy": "2.5.5",
+   "peak_rss": 30285824,
+   "plane": [
+    1024,
+    1024
+   ],
+   "ratio": 0.7951392622862673,
+   "t": null,
+   "traced_peak": null,
+   "wall_s": 3.6566215599996212,
+   "warmup": true,
+   "window_bytes": 1617920,
+   "windows": 16,
+   "workers": 4,
+   "z": 157,
+   "zarr": "3.4.2"
+  },
+  "mmv05_w4_wutrue_2.json": {
+   "all_sha": "87a453c53c943aec727bfc964abc51bf51648540a66f94286c1311b6572e11eb",
+   "cache_bytes": 25165824,
+   "cache_plan": {
+    "cache_bytes": 25165824,
+    "groups": 1,
+    "per_row": 16,
+    "piece_nbytes": 262144,
+    "piece_rows": 6
+   },
+   "cache_stats": {
+    "decodes": 256,
+    "evictions": 160,
+    "hits": 228,
+    "nbytes": 25165824
+   },
+   "channels": [
+    0
+   ],
+   "cmd": "windows",
+   "cmd_args": {
+    "axes": "ZYX",
+    "cache": "plan",
+    "channels": [
+     0
+    ],
+    "margin": 32,
+    "path": "marmoset_v05/marmoset_neurons.ome.zarr",
+    "tile": 256,
+    "warmup": true,
+    "workers": 4,
+    "z": 157
+   },
+   "fetch": {
+    "bytes": 24254533,
+    "calls": 320,
+    "ranged": 0
+   },
+   "held_bytes": 102400,
+   "max_in_flight": 8,
+   "memory_estimate": 38088704,
+   "numpy": "2.5.5",
+   "peak_rss": 35106816,
+   "plane": [
+    1024,
+    1024
+   ],
+   "ratio": 0.9217120120443059,
+   "t": null,
+   "traced_peak": null,
+   "wall_s": 3.5408416139998735,
+   "warmup": true,
+   "window_bytes": 1617920,
+   "windows": 16,
+   "workers": 4,
+   "z": 157,
+   "zarr": "3.4.2"
+  },
+  "mmv05_w4_wutrue_3.json": {
+   "all_sha": "87a453c53c943aec727bfc964abc51bf51648540a66f94286c1311b6572e11eb",
+   "cache_bytes": 25165824,
+   "cache_plan": {
+    "cache_bytes": 25165824,
+    "groups": 1,
+    "per_row": 16,
+    "piece_nbytes": 262144,
+    "piece_rows": 6
+   },
+   "cache_stats": {
+    "decodes": 256,
+    "evictions": 160,
+    "hits": 228,
+    "nbytes": 25165824
+   },
+   "channels": [
+    0
+   ],
+   "cmd": "windows",
+   "cmd_args": {
+    "axes": "ZYX",
+    "cache": "plan",
+    "channels": [
+     0
+    ],
+    "margin": 32,
+    "path": "marmoset_v05/marmoset_neurons.ome.zarr",
+    "tile": 256,
+    "warmup": true,
+    "workers": 4,
+    "z": 157
+   },
+   "fetch": {
+    "bytes": 24254533,
+    "calls": 320,
+    "ranged": 0
+   },
+   "held_bytes": 102400,
+   "max_in_flight": 8,
+   "memory_estimate": 38088704,
+   "numpy": "2.5.5",
+   "peak_rss": 31358976,
+   "plane": [
+    1024,
+    1024
+   ],
+   "ratio": 0.8233143348747177,
+   "t": null,
+   "traced_peak": null,
+   "wall_s": 3.523587054000018,
+   "warmup": true,
+   "window_bytes": 1617920,
+   "windows": 16,
+   "workers": 4,
+   "z": 157,
+   "zarr": "3.4.2"
+  }
+ }
+}
