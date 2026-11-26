@@ -309,3 +309,46 @@ def test_the_run_wait_counts_real_totals_and_ends_at_n_of_n():
     assert lines[-1].startswith(
         "Preparing: reading each image whole for its content SHA-256 · 3 of 3"
     )
+
+
+def test_the_masks_counter_reaches_n_of_n(tmp_path, experiment):
+    """The masks phase reads "n of N" up to N (it stopped at N-1: reported before each mask)."""
+    pytest.importorskip("ipywidgets")
+    from types import SimpleNamespace
+
+    import ipywidgets as widgets
+
+    from morphobricks_preprocessing.notebook_progress import Wait
+    from morphobricks_preprocessing.notebook_run import _RunStep
+
+    masks = tmp_path / "masks"
+    for rel in IMAGES[:3]:
+        write_tiff(masks / rel.replace(".tif", "_mask.tif"))
+    calls = []
+    result = run_described(
+        experiment,
+        prefill_mapping("YX"),
+        output_folder=tmp_path / "out",
+        masks_folder=masks,
+        mode=RunMode(checking=lambda *call: calls.append(call)),
+    )
+    assert result.written
+    real = [c for c in calls if c[0] == "masks" and c[3]]
+    assert real, calls  # the masks were found and read
+    total = real[0][2]
+    assert total == 3 and calls.count(("masks", total, total, "")) == 1
+    target = widgets.HTML()
+    seen = []
+    target.observe(
+        lambda change: seen.append(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", change["new"]))),
+        names="value",
+    )
+    now = [0.0]
+    step = SimpleNamespace(_run_wait=Wait(target, bar=False, clock=lambda: now[0]))
+    step._run_wait.start("Preparing")
+    for call in calls:
+        if call[0] in ("folders", "headers", "masks"):
+            now[0] += 1
+            _RunStep._checking(step, *call)
+    lines = [line.strip() for line in seen if "mask headers" in line]
+    assert lines[-1].startswith("Preparing: reading the mask headers again · 3 of 3"), lines

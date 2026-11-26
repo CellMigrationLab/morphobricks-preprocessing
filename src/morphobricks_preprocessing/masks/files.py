@@ -80,7 +80,8 @@ def find_masks(
         mask step refuses a mask that is no longer the one its header described; a mask
         that changed while its header was read is the error ``mask_changed_during_check``.
     progress
-        Called as ``progress(done, total, mask_path)`` before each mask's header is read. It
+        Called as ``progress(done, total, mask_path)`` before each mask's header is read, and
+        as ``progress(total, total, "")`` after the last. It
         changes nothing about the result.
 
     Returns

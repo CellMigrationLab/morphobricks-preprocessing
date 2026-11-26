@@ -157,7 +157,9 @@ def test_pairing_the_masks_again_reports_each_mask(exp):  # noqa: F811
     calls = []
     again = remasked(pre, masks, None, out, lambda *call: calls.append(call))
     assert again.masks == pre.masks
-    assert [call[0] for call in calls] == list(range(len(pre.masks.files)))
+    count = len(pre.masks.files)
+    assert [call[0] for call in calls] == [*range(count), count]  # each, then the last one done
+    assert calls[-1] == (count, count, "")
 
 
 def test_check_progress_words_each_phase():
