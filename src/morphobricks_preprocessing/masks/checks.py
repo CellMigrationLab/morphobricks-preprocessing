@@ -48,7 +48,8 @@ def _header_issues(
     (OME-Zarr ``labels`` groups). With ``bind``, each mask is fingerprinted before and
     after its header is read (:attr:`.model.MaskFile.bound`, issue #160); a mask whose two
     fingerprints differ is ``mask_changed_during_check``. ``progress(done, total, path)`` is
-    called before each mask's header is read.
+    called before each mask's header is read, and once more as
+    ``progress(total, total, "")`` when the last one is read.
     """
     found: list[tuple[str, str, str]] = [("unreadable_mask", path, "") for path in unreadable]
     for index, mask in enumerate(files):
@@ -66,6 +67,8 @@ def _header_issues(
         found.extend(problems)
         if checked is not None:
             files[index] = checked
+    if progress is not None and files:
+        progress(len(files), len(files), "")  # the last mask is done: "N of N"
     by_image: dict[str, list[MaskFile]] = {}
     for mask in files:
         if mask.axes:

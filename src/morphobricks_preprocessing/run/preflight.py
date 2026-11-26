@@ -216,7 +216,8 @@ def preflight(
         :data:`.phases.PHASES` (``folders``, ``headers``, ``masks``, ``acquisitions``): a phase
         is announced as ``(phase, 0, total, "")`` and ends with ``(phase, total, total, "")``;
         the headers phase also reports ``(phase, done, total, path)`` before each image, the
-        masks phase ``("masks", done, total, mask_path)`` before each mask's header, and the
+        masks phase ``("masks", done, total, mask_path)`` before each mask's header and
+        ``("masks", total, total, "")`` after the last, and the
         folders phase ``("folders", 0, 1, folder)`` before each folder is listed.
         :func:`.phases.progress_text` words it. It changes nothing about the result.
     recorded
@@ -352,7 +353,8 @@ def remasked(
     output_folder
         The output folder (it may not be inside the masks folder).
     progress
-        Called as ``progress(done, total, mask_path)`` before each mask's header is read.
+        Called as ``progress(done, total, mask_path)`` before each mask's header is read, and
+        as ``progress(total, total, "")`` after the last.
 
     Returns
     -------
