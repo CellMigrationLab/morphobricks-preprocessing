@@ -11,6 +11,12 @@ PHASES = ("folders", "headers", "masks", "acquisitions")
 """The phases of the check, in order: the folder walk, one header per image, the masks found
 and paired, and the acquisitions (calibration, dataset consistency, axis suggestion)."""
 
+CONTENTS = "contents"
+"""The run's phase after the check, in a ``verify_content`` run: each image's content SHA-256,
+one whole read of every image before the first pixel is read (reported as
+``("contents", done, total, path)`` to :attr:`.modes.RunMode.checking`; not a phase of the
+folder check, so not in :data:`PHASES`)."""
+
 COUNTED = "headers"
 """The phase that counts its work (one header per image); the others are one step each."""
 

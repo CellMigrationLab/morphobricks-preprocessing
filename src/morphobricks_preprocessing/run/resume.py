@@ -177,7 +177,9 @@ def new_rows(
         )
         discard_staged(job.output, rel)
     workers = workers or Workers()
-    keys = {rel: _staging_key(job, rel) for rel in to_read}
+    # The pixel type once: MetadataReport.dtype looks at every header (O(n) per call).
+    dtype = job.pre.metadata.dtype.name
+    keys = {rel: _staging_key(job, rel, dtype) for rel in to_read}
     if workers.count == 1:
         for done, rel in enumerate(to_read):
             if progress is not None:
@@ -191,10 +193,10 @@ def new_rows(
     return found
 
 
-def _staging_key(job: FileJob, rel: str) -> dict:
-    """Return the staging key of one file's rows in this run."""
+def _staging_key(job: FileJob, rel: str, dtype: str) -> dict:
+    """Return the staging key of one file's rows in this run (``dtype``: the pixel type's name)."""
     root = job.pre.discovery.root.as_posix()
-    return staging_key(RowKey.of(job.entries[rel], job.settings, root), job.pre.metadata.dtype.name)
+    return staging_key(RowKey.of(job.entries[rel], job.settings, root), dtype)
 
 
 def _resumed(job: FileJob, rel: str, key: dict, earlier: StagedFile | None, found: NewRows) -> bool:
