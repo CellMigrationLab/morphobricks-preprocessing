@@ -30,8 +30,8 @@ from .notebook_cellpose_channels import (
     _card,
 )
 from .notebook_cellpose_download import DownloadLine, quiet_cellpose
-from .notebook_cellpose_preview import MaskResult, preview_figures
-from .notebook_progress import progress_html
+from .notebook_cellpose_preview import MaskResult, preview_images
+from .notebook_progress import Wait, progress_html
 from .notebook_stop import CellStop
 from .notebook_style import STYLE_CSS, table, tiles
 from .open_checks import Checking, quiet
@@ -90,6 +90,9 @@ NEEDED = {
 }
 """The refusal of a step whose earlier step has not run, by what it needs (the step's button)."""
 
+RUNNING = "Running {model} on {image}…"
+"""The line shown, with its ticking time, while the model segments the preview image (#574)."""
+
 
 class CellposeWorkflow:
     """The Cellpose notebook's state: the run, the channels, the model and the batch.
@@ -118,15 +121,16 @@ class CellposeWorkflow:
         self.result: cp.BatchResult | None = None
         self.results: dict[str, cp.BatchResult] = {}
         self.previewed: list[MaskResult] = []
+        self.preview_box = widgets.VBox()  # the last Preview's result, and nothing else
         self.shown: list[str] = []
+        self.styled = False  # the style sheet is shown (once, by the first step or Preview)
         self.on_masks_written: Callable[[cp.BatchResult], object] | None = None
         self.register_with: str | None = None
         self.folders_refused = ""  # the masks folder refusal of the last Open the run, or ""
 
     def _show(self, widget: widgets.Widget) -> None:
         """Display ``widget`` (the style sheet goes first, once)."""
-        if not self.shown:
-            display(widgets.HTML(STYLE_CSS))
+        self._style()
         self.shown.append(getattr(widget, "value", ""))
         display(widget)
 
@@ -148,6 +152,29 @@ class CellposeWorkflow:
         """Forget the channels, the mask types and every loaded model (the choice changed)."""
         self.picker = self.loaded = self.nuclei_loaded = self.nuclei_settings = None
         self.mask_types = {}
+        self.clear_preview()  # a preview of other channels says nothing of the next ones
+
+    def channels_edited(self) -> None:
+        """Take the preview off: a channel dropdown or number changed (Preview re-reads them)."""
+        self.clear_preview()
+
+    def clear_preview(self) -> None:
+        """Take the last Preview's result off the screen and out of :attr:`previewed`."""
+        self.previewed = []
+        shown, self.preview_box.children = self.preview_box.children, ()
+        for widget in shown:  # their pictures leave the kernel too
+            widget.close()
+
+    def _mount_preview(self) -> None:
+        """Show :attr:`preview_box` in the cell that previews (a form shows it on its page)."""
+        self._style()
+        display(self.preview_box)
+
+    def _style(self) -> None:
+        """Display the style sheet, the first time only."""
+        if not self.styled:
+            self.styled = True
+            display(widgets.HTML(STYLE_CSS))
 
     def model_for(self, output: str) -> tuple[cp.LoadedModel, cp.Settings]:
         """Return the model and the settings that segment the masks of ``output``.
@@ -238,6 +265,7 @@ class CellposeWorkflow:
         self.drop_choice()
         self.mask_types, self.mask_type = types, next(iter(types.values()))
         self.picker = ChannelPicker(self.inputs, output)
+        self.picker.on_edit(self.channels_edited)  # the dropdowns are live: Preview re-reads them
         lines = tuple(
             f"{OUTPUT_NAMES[o]}, mask type {t}: {len(todo[o])} of {len(self.inputs.fovs())} "
             "images have no mask yet"
@@ -259,7 +287,10 @@ class CellposeWorkflow:
         Normalisation is not a choice: it is always Cellpose's own, per image (1st to 99th
         percentile of each channel).
         """
-        self.settings = _settings(diameter, flow_threshold, cellprob_threshold, batch_size)
+        settings = _settings(diameter, flow_threshold, cellprob_threshold, batch_size)
+        if settings != self.settings:  # a preview with other settings is taken off
+            self.clear_preview()
+        self.settings = settings
 
     @stops
     def set_nuclei_settings(
@@ -271,7 +302,10 @@ class CellposeWorkflow:
     ) -> None:
         """Check the settings of a separate nuclei model (output Both, cell 5's Advanced)."""
         self._need_both()
-        self.nuclei_settings = _settings(diameter, flow_threshold, cellprob_threshold, batch_size)
+        settings = _settings(diameter, flow_threshold, cellprob_threshold, batch_size)
+        if settings != self.nuclei_settings:  # a preview with other settings is taken off
+            self.clear_preview()
+        self.nuclei_settings = settings
 
     @stops
     def load(self, model: str, custom_model_file: str, device: str) -> None:
@@ -285,6 +319,7 @@ class CellposeWorkflow:
         if self.settings is None:
             raise SegmentationError("Set the settings first: press Load the model.")
         self.loaded = None
+        self.clear_preview()  # a preview of the model loaded before is taken off
         self.loaded = self._load_model(model, custom_model_file, device, self.settings)
 
     @stops
@@ -297,6 +332,7 @@ class CellposeWorkflow:
                 "step)."
             )
         self.nuclei_loaded = None
+        self.clear_preview()  # a preview of the nuclei model loaded before is taken off
         self.nuclei_loaded = self._load_model(
             model, custom_model_file, device, self.nuclei_settings
         )
@@ -313,6 +349,8 @@ class CellposeWorkflow:
 
     def same_model_for_nuclei(self) -> None:
         """Segment the nuclei of Both with the model and the settings of the cells."""
+        if self.nuclei_loaded is not None or self.nuclei_settings is not None:
+            self.clear_preview()  # a preview of the nuclei's own model is taken off
         self.nuclei_loaded = self.nuclei_settings = None
 
     def _load_model(
@@ -366,8 +404,21 @@ class CellposeWorkflow:
     def preview(self, image: str = "") -> None:
         """Segment one image and show it with the outlines; nothing is written (cell 6).
 
-        For Both, the image is segmented twice, the cells and the nuclei, each shown.
+        For Both, the image is segmented twice, the cells and the nuclei, each shown. Every
+        result of an earlier Preview is taken off the screen first (:meth:`clear_preview`), and
+        a Preview that fails shows none: what is shown is always this Preview's result. While
+        Cellpose runs, one line says which model runs.
         """
+        self.clear_preview()
+        self._mount_preview()
+        try:
+            self._preview(image)
+        except BaseException:  # a refusal, any error or an interrupt: no result is shown
+            self.clear_preview()
+            raise
+
+    def _preview(self, image: str) -> None:
+        """Segment ``image`` and put this Preview's result in :attr:`preview_box`."""
         self._need("model")
         targets = self.picker.current_targets()
         fovs = self.inputs.fovs()
@@ -379,24 +430,28 @@ class CellposeWorkflow:
             )
         fov = by_path[image.strip()] if image.strip() else (self.first_without_mask() or fovs[0])
         check_manifest(self.inputs, self.run_manifest_sha256)  # the run opened, still
+        models = [self.model_for(target.output) for target in targets]
+        running = widgets.HTML()  # which model runs on which image, with its time (#574 item 4)
+        self.preview_box.children = (running,)
         results, lines = [], []
-        for target in targets:
-            loaded, settings = self.model_for(target.output)
+        for target, (loaded, settings) in zip(targets, models, strict=True):
             stack = target.plan.read(fov)
-            labels, flows = cp.evaluate(loaded, settings, stack)
+            wait = Wait(running, bar=False)
+            wait.start(RUNNING.format(model=loaded.name, image=fov.relative_path))
+            with wait.ticking():
+                labels, flows = cp.evaluate(loaded, settings, stack)
             named = tuple(zip(target.channel_ids, target.roles, strict=True))
             result = MaskResult(OUTPUT_NAMES[target.output], stack, named, labels, flows)
             results.append(result)
             lines.append(f"{result.name}: {result.objects} objects; diameter {_diameter(settings)}")
-        self._show(
-            _card("info", f"Preview of {fov.relative_path} (nothing is written)", tuple(lines))
-        )
+        card = _card("info", f"Preview of {fov.relative_path} (nothing is written)", tuple(lines))
         try:
-            figures = preview_figures(results)
+            pictures = preview_images(results)
         except ValueError as exc:
             raise SegmentationError(str(exc)) from exc
-        for figure in figures:
-            display(figure)
+        self.shown.append(card.value)
+        self.clear_preview()  # the line of the model running
+        self.preview_box.children = (card, *pictures)
         self.previewed = results
 
     def first_without_mask(self) -> Fov | None:
@@ -470,8 +525,9 @@ class CellposeWorkflow:
         started = time.monotonic()
 
         def progress(done: int, total: int, item: str) -> None:
+            what = f"Running {job.loaded.name}" + (f" for {job.mask_type}" if titled else "")
             bar.value = progress_html(
-                f"Segmenting {job.mask_type}" if titled else "Segmenting",
+                what,
                 done,
                 total,
                 item,

@@ -307,6 +307,12 @@ class CellposeNotebook(CellposeWorkflow):
                 "warn", f"Changed: press Choose the channels again, then {then}."
             )
 
+    def channels_edited(self) -> None:
+        """Take the preview off; Segment's line no longer says it used these channels."""
+        super().channels_edited()
+        self._previewed_with = None
+        self._refresh_summary()
+
     def drop_choice(self) -> None:
         """Forget the channels, the mask types and every loaded model (the choice changed)."""
         super().drop_choice()
@@ -404,10 +410,27 @@ class CellposeNotebook(CellposeWorkflow):
             cards,
             "Preview",
             "eye",
-            lambda: self._with_form_settings(lambda: self._preview_and_note(image.value or "")),
+            lambda: self._preview_from_form(image.value or ""),
             {"preview_image": image},
         )
+        # Under the button's output (the model's loading), the last Preview's result only.
+        form.body.children = [*form.body.children, self.preview_box]
         return self._keep("preview", form)
+
+    def _mount_preview(self) -> None:
+        """Show the preview's box in the cell, unless the Preview form already holds it."""
+        if "preview" not in self.forms:
+            super()._mount_preview()
+
+    def _preview_from_form(self, image: str) -> None:
+        """Press of **Preview**: take the last result off first, then load if needed and preview.
+
+        Cleared before the model is checked or loaded, so a refused or failed load leaves no
+        earlier result on screen, nor the Segment step's line saying what it used.
+        """
+        self.clear_preview()
+        self._previewed_with = None
+        self._with_form_settings(lambda: self._preview_and_note(image))
 
     def segment_form(self) -> StepForm:
         """Show the form of cell 7: overwrite (off by default) and the button that segments."""
@@ -447,7 +470,11 @@ class CellposeNotebook(CellposeWorkflow):
         self._refresh_summary()
 
     def _model_fields_changed(self) -> None:
-        """Update what shows the model form's values: Segment's line and the step strip."""
+        """Take the preview off (Preview and Segment read these fields), then update the line.
+
+        What the last Preview used is kept: Segment's line still says what changed since.
+        """
+        self.clear_preview()
         self._refresh_summary()
         for callback in self.on_change:
             callback()

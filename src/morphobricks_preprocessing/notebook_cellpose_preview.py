@@ -9,13 +9,20 @@ contrast only: the stack and the masks are never changed). Nothing is written.
 
 A preview holds a list of :class:`MaskResult`: one now, a cell mask or a nuclei mask; the
 *Both* output (#440) adds a second result and the figures follow, with no change here.
+
+The figures are shown as PNG pictures in widgets (:func:`preview_images`), never displayed into
+an output area: the preview's box then holds the last Preview's result only, in every frontend
+(owner, 26 November 2026: in Colab, nuclei figures of the first Preview stayed on screen after
+later ones).
 """
 
 from __future__ import annotations
 
 import importlib
+import io
 from dataclasses import dataclass
 
+import ipywidgets as widgets
 import numpy as np
 from matplotlib.figure import Figure
 
@@ -90,3 +97,16 @@ def segmentation_figure(result: MaskResult) -> Figure:
 def preview_figures(results: list[MaskResult]) -> list[Figure]:
     """Return the preview's figures: the channels, then Cellpose's panels, for each result."""
     return [figure for r in results for figure in (channel_figure(r), segmentation_figure(r))]
+
+
+def figure_image(figure: Figure) -> widgets.Image:
+    """Return ``figure`` as a PNG picture widget, at most 99% of its box wide."""
+    buffer = io.BytesIO()
+    figure.savefig(buffer, format="png", bbox_inches="tight")
+    layout = widgets.Layout(max_width="99%", height="auto")
+    return widgets.Image(value=buffer.getvalue(), format="png", layout=layout)
+
+
+def preview_images(results: list[MaskResult]) -> list[widgets.Image]:
+    """Return the figures of :func:`preview_figures` as picture widgets, in the same order."""
+    return [figure_image(figure) for figure in preview_figures(results)]
