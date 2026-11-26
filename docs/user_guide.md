@@ -389,11 +389,18 @@ run the experiment in the app of cell 3. Then:
   reuses it) and **Segment** (it reuses the loaded model, and says in one line exactly which
   model and settings it will use, in amber with what differs when the last Preview used
   others). One line after the batch points to cell 5.
-- **5. Register the masks** shows, for each mask type cell 4 wrote, the declaration it would
-  add (`[masks.Cells]` with `source_type = "Cells"` and `representation = "instances"`). Tick
-  each one and press **Register the masks**: the app of cell 3 then checks the folders again
-  with the masks folder, answers the mask on **Masks**, saves the description, runs again
-  (the histograms of unchanged images are reused) and describes the masks. Masks written into
+- **5. Register the masks** asks, for each mask type cell 4 wrote, what the mask is, with no
+  answer chosen: *Each object has its own number (label image: every cell/nucleus is a
+  separate object)* or *Foreground / background only (binary mask)*. They are measured
+  differently, and the notebook never guesses which one a file is. Cellpose gives each object
+  its own number, so only the first is registered (the second is refused, saying why); the
+  declaration it adds (`[masks.Cells]` with `source_type = "Cells"` and `representation =
+  "instances"`) is shown folded under the question. Answer each one and press **Register the
+  masks**: the app of cell 3 then checks the folders again with the masks folder, answers the
+  mask on **Masks**, saves the description, runs again (the histograms of unchanged images are
+  reused) and describes the masks. Each step is shown under the button as it goes ("Step 4 of
+  5 · Running again…", its elapsed time, and the step's own line: the image read now, "n of
+  N"), then how long it took. Masks written into
   the masks folder the run already used are fine. If its folder check asks you to confirm the
   axes again, do it in cell 3 (step **Axes**) and press the button again (or run cell 5
   again). It refuses, changing nothing, a mask type that collides with a mask already declared,

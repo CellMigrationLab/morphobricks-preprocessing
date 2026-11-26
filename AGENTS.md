@@ -323,8 +323,9 @@ src/morphobricks_preprocessing/
                     notebook_cellpose_install.py what pip does now, then what it installed;
                     notebook_open_progress.py opening: the wait of opening a run (#574);
                     notebook_mask_register.py register_step(app, segmentation): cell 5, a
-                    declaration to tick per mask type, then the app's own check, Masks answer,
-                    save, run and Describe the masks
+                    question per mask type (objects or binary, none chosen; objects registered),
+                    then the app's own check, Masks answer, save, run and Describe the masks,
+                    each step shown by notebook_register_progress.py RegisterWait (#574)
                     notebook_cellpose_preview.py MaskResult, preview_figures: the example result as
                     ZeroCostDL4Mic draws it (cellpose.plot.show_segmentation), one result per mask
                     notebook_cellpose_channels.py ChannelPicker, MaskTarget: the output's masks (Both:

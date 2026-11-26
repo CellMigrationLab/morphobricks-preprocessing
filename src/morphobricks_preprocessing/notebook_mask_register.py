@@ -1,10 +1,14 @@
 """Cell 5 of the combined notebook: declare the masks cell 4 wrote, rescan, describe them.
 
-One declaration is offered per mask type cell 4 wrote, prefilled from the segmentation:
-``[masks.<type>]`` with ``source_type = "<type>"`` and ``representation = "instances"``
-(Cellpose writes one label per object). Nothing is declared until the user ticks each one and
-presses **Register the masks**. Then the Preprocessing app's own code does the rest, the same
-code as its buttons (no second implementation):
+For each mask type cell 4 wrote, the user says what the mask is, with no answer chosen for
+them (owner, 26 Nov 2026, #574 item 6): *each object has its own number* (a label image) or
+*foreground / background only* (a binary mask). The two are measured differently and a file is
+never guessed to be one or the other. Cellpose writes one number per object, so only the first
+is registered: ``[masks.<type>]`` with ``source_type = "<type>"`` and ``representation =
+"instances"`` (shown folded, under the question); the second is refused, saying why. Nothing is
+declared until every mask type is answered and **Register the masks** is pressed. Then the
+Preprocessing app's own code does the rest, the same code as its buttons (no second
+implementation), each step shown in cell 5 as it goes (:mod:`.notebook_register_progress`):
 
 1. the app's folder check with the masks folder (``check_folder``, *Scan the folders*);
 2. each mask answered on the app's *Masks* question (its ID box and its choice, which save the
@@ -42,9 +46,11 @@ from . import notebook_style as ui
 from .description_identity import nfc
 from .folder_rules import masks_folder_issues
 from .manifest import MANIFEST_FILENAME, ManifestFormatError, read_manifest
-from .mask_answers import INSTANCES
+from .mask_answers import BINARY, INSTANCES
 from .notebook_cellpose_app import app_folders
+from .notebook_register_progress import RegisterWait
 from .notebook_render import blocked_line
+from .open_checks import Checking, quiet
 from .report import mapping_summary
 from .run_inputs import RunInputsError, UnrecordedFilesError
 from .segmentation_cellpose_run import manifest_sha256, open_run
@@ -91,6 +97,22 @@ OTHER_AXES = (
     "step Axes, confirm the recorded axes, then press Register the masks again. Nothing was "
     "declared."
 )
+CHOICES = [
+    (
+        "Each object has its own number (label image: every cell/nucleus is a separate object)",
+        INSTANCES,
+    ),
+    ("Foreground / background only (binary mask)", BINARY),
+]
+"""The answers to "what is this mask?", in this order; none is chosen for the user."""
+WHY_WE_ASK = (
+    "We ask because the two are measured differently, and we never guess which one a file is."
+)
+BINARY_REFUSED = (
+    "{mask_type} cannot be registered as foreground / background only: cell 4 wrote it with "
+    "Cellpose, which gives each object its own number"
+)
+"""Why a binary answer is not registered (a phrase beside the disabled button)."""
 NOT_SAVED = (
     "Check and save did not save the description: open cell 3, step Check and save, answer "
     "what it lists, then press Register the masks again here."
@@ -154,11 +176,15 @@ def _app_run(app: object, rechecked: bool) -> tuple[str, str]:
     return run, masks
 
 
-def refusal(app: object, segmentation: object, *, rechecked: bool = False) -> str:
+def refusal(
+    app: object, segmentation: object, *, rechecked: bool = False, checking: Checking = quiet
+) -> str:
     """Return why the masks of cell 4 cannot be registered in the app's run, or "".
 
     ``rechecked``: cell 5 made the app's folder check for this run (also read from the
     segmentation's ``rechecked_run``, so cell 5 run again after the axes stop continues).
+    ``checking`` is told each phase of opening the run (:func:`.segmentation_cellpose_run.
+    open_run`); it changes nothing checked or decided.
     """
     types = written_types(segmentation)
     if not types:
@@ -179,7 +205,7 @@ def refusal(app: object, segmentation: object, *, rechecked: bool = False) -> st
     if app_masks and Path(app_masks).resolve() != masks:
         return OTHER_MASKS.format(segmented=masks, app_masks=app_masks)
     try:
-        open_run(os.fspath(segmented))
+        open_run(os.fspath(segmented), checking=checking)
     except UnrecordedFilesError as exc:
         if not _only_written(exc, masks, types):
             return CHANGED.format(reason=exc)
@@ -252,50 +278,71 @@ def _other_experiment(app: object, inputs: object) -> str:
 
 
 class MaskRegistration(widgets.VBox):
-    """Cell 5's widget: one declaration to tick per mask type, and **Register the masks**."""
+    """Cell 5's widget: what each mask type is, and **Register the masks**."""
 
     def __init__(self, app: object, segmentation: object) -> None:
-        """Offer the declarations, or show why the masks cannot be registered."""
+        """Ask what each mask is, or show why the masks cannot be registered."""
         super().__init__(layout=widgets.Layout(width="99%"))
         self.app, self.segmentation = app, segmentation
         self.status = widgets.HTML()
-        self.ticks: dict[str, widgets.Checkbox] = {}
+        self.choices: dict[str, widgets.RadioButtons] = {}
         self.registered = False
         why = refusal(app, segmentation)
         if why:
             self.status.value = ui.status("error", "The masks cannot be registered", [why])
             self.children = [widgets.HTML(ui.STYLE_CSS), self.status]
             return
-        rows = []
-        for mask_type in written_types(segmentation):
-            tick = widgets.Checkbox(
-                value=False,
-                description=f"Declare {mask_type} as separate objects",
-                indent=False,
-                layout=widgets.Layout(width="auto"),
-            )
-            tick.observe(lambda _: self._update(), names="value")
-            self.ticks[mask_type] = tick
-            section = html.escape(toml_section(mask_type))
-            rows += [widgets.HTML(f"<pre>{section}</pre>"), tick]
+        rows = [self._question(mask_type) for mask_type in written_types(segmentation)]
         self.button = ui.button("Register the masks", icon="check", main=True)
         self.button.on_click(lambda _: self.register())
         self.blocker = widgets.HTML()
+        self.progress, self.progress_detail = widgets.HTML(), widgets.HTML()
         self._update()
         text = (
-            "Each mask type cell 4 wrote, as it would be declared in the experiment description. "
-            "Tick each one you confirm, then press <b>Register the masks</b>: the app of cell 3 "
-            "checks the folders again with the masks folder, saves the description, runs again "
-            "(the histograms are reused) and describes the masks."
+            "For each mask type cell 4 wrote, say what the mask is. "
+            f"{html.escape(WHY_WE_ASK)} Then press <b>Register the masks</b>: the app of "
+            "cell 3 checks the folders again with the masks folder, saves the description, "
+            "runs again (the histograms are reused) and describes the masks; each step is "
+            "shown here as it goes."
         )
-        body = [ui.help_text(text), *rows, widgets.HBox([self.button, self.blocker]), self.status]
+        body = [
+            ui.help_text(text),
+            *rows,
+            widgets.HBox([self.button, self.blocker]),
+            self.progress,
+            self.progress_detail,
+            self.status,
+        ]
         self.children = [widgets.HTML(ui.STYLE_CSS), ui.card("Register the masks", body)]
 
+    def _question(self, mask_type: str) -> widgets.VBox:
+        """Return the question about ``mask_type``, with no answer chosen, and its declaration.
+
+        The declaration it adds to the description is shown folded (``<details>``).
+        """
+        choice = widgets.RadioButtons(
+            options=CHOICES, value=None, layout=widgets.Layout(width="auto")
+        )
+        choice.observe(lambda _: self._update(), names="value")
+        self.choices[mask_type] = choice
+        section = html.escape(toml_section(mask_type))
+        declared = (
+            "<details><summary class='mb-help'>What registering it as separate objects adds "
+            f"to the experiment description</summary><pre>{section}</pre></details>"
+        )
+        title = f"<b>{html.escape(mask_type)}</b>: what is this mask?"
+        return widgets.VBox([widgets.HTML(title), choice, widgets.HTML(declared)])
+
     def _update(self) -> None:
-        """Enable the button once every declaration is ticked, saying which are not."""
-        left = [t for t, tick in self.ticks.items() if not tick.value]
-        self.button.disabled = bool(left)
-        reasons = [f"tick the declaration of {', '.join(left)}"] if left else []
+        """Enable the button once every mask type is answered as objects, saying what is left."""
+        left = [t for t, choice in self.choices.items() if choice.value is None]
+        reasons = [f"choose what {', '.join(left)} is"] if left else []
+        reasons += [
+            BINARY_REFUSED.format(mask_type=t)
+            for t, choice in self.choices.items()
+            if choice.value == BINARY
+        ]
+        self.button.disabled = bool(reasons)
         self.blocker.value = blocked_line(reasons)
 
     def _stop(self, text: str) -> bool:
@@ -304,54 +351,91 @@ class MaskRegistration(widgets.VBox):
         return False
 
     def register(self) -> bool:
-        """Declare the ticked masks through the app, save, run and describe; True when done."""
+        """Declare the masks through the app, save, run and describe; True when done.
+
+        Each step is shown under the button while it goes (:class:`.RegisterWait`), and the
+        button is disabled meanwhile.
+        """
         if self.button.disabled:
             return False
-        why = refusal(self.app, self.segmentation)
+        self.button.disabled = True
+        self.status.value = ""
+        try:
+            with RegisterWait(self.progress, self.progress_detail).running() as wait:
+                return self._register(wait)
+        finally:
+            self._update()
+
+    def _register(self, wait: RegisterWait) -> bool:
+        """Do the steps of :meth:`register`, each named by ``wait``; True when done."""
+        with wait.step("run"):
+            why = refusal(self.app, self.segmentation, checking=wait.checking)
         if why:
             return self._stop(why)
-        app, masks = self.app, Path(self.segmentation.workflow.masks_root).resolve()
-        found = getattr(app.preflight, "masks", None)
-        checked = getattr(found, "folder", None)
-        if (
-            checked is None
-            or Path(checked).resolve() != masks
-            or any(t not in found.types for t in self.ticks)  # checked before cell 4 wrote
-        ):
-            app.masks_folder.value = os.fspath(masks)
-            app.check_folder()  # the app's Scan the folders, now with the masks folder
-            # Kept on cell 4's step, not this widget: cell 5 run again continues from here.
-            self.segmentation.rechecked_run = Path(
-                self.segmentation.workflow.inputs.output_folder
-            ).resolve()
+        self._check_folders(wait)
+        app = self.app
         if app.confirmed_mapping is None:
             return self._stop(AXES_AGAIN)
         why = _other_experiment(app, self.segmentation.workflow.inputs)
         if why:  # the axes stop lets the user change the app: check it is still the run's
             return self._stop(why)
-        for mask_type in self.ticks:
-            question = app.mask_card.questions.get(mask_type)
-            if question is None:
-                return self._stop(f"The folder check of cell 3 found no {mask_type} masks.")
-            question.id_box.value = mask_type
-            question.choice.value = INSTANCES
-            if question.saved is None or question.saved[:2] != (mask_type, INSTANCES):
-                return self._stop(f"{mask_type}: {_plain(question.message.value)}")
-        if not app.save_experiment():
-            return self._stop(NOT_SAVED)
-        result = app.run()
+        with wait.step("save"):
+            why = self._answer_masks()
+            if why:
+                return self._stop(why)
+            if not app.save_experiment():
+                return self._stop(NOT_SAVED)
+        with wait.step("rerun", getattr(app, "run_status", None)):
+            result = app.run()
         if result is None or not result.written:
             return self._stop("The run of cell 3 stopped: its step Run says why.")
         # Kept on cell 4's step: this publication is the registration's (cell 5 run again).
         self.segmentation.registered_manifest = manifest_sha256(Path(result.output_folder))
-        app.mask_step_button.click()  # the app's Describe the masks
+        with wait.step("describe", getattr(app, "mask_step_status", None)):
+            app.mask_step_button.click()  # the app's Describe the masks
         self.registered = True
-        self.status.value = (
+        self.status.value = self._registered_html(result)
+        return True
+
+    def _check_folders(self, wait: RegisterWait) -> None:
+        """Make the app's folder check with the masks folder, unless its last one has them."""
+        app, masks = self.app, Path(self.segmentation.workflow.masks_root).resolve()
+        found = getattr(app.preflight, "masks", None)
+        checked = getattr(found, "folder", None)
+        if (
+            checked is not None
+            and Path(checked).resolve() == masks
+            and all(t in found.types for t in self.choices)  # else checked before cell 4 wrote
+        ):
+            return
+        with wait.step("folders", getattr(app, "folder_status", None)):
+            app.masks_folder.value = os.fspath(masks)
+            app.check_folder()  # the app's Scan the folders, now with the masks folder
+        # Kept on cell 4's step, not this widget: cell 5 run again continues from here.
+        self.segmentation.rechecked_run = Path(
+            self.segmentation.workflow.inputs.output_folder
+        ).resolve()
+
+    def _answer_masks(self) -> str:
+        """Answer each mask on the app's *Masks* question as objects; return a refusal or ""."""
+        for mask_type in self.choices:
+            question = self.app.mask_card.questions.get(mask_type)
+            if question is None:
+                return f"The folder check of cell 3 found no {mask_type} masks."
+            question.id_box.value = mask_type
+            question.choice.value = INSTANCES
+            if question.saved is None or question.saved[:2] != (mask_type, INSTANCES):
+                return f"{mask_type}: {_plain(question.message.value)}"
+        return ""
+
+    def _registered_html(self, result: object) -> str:
+        """Return the card saying the masks are registered, with the app's mask step's."""
+        return (
             ui.status(
                 "ok",
                 "The masks are registered",
                 [
-                    f"Declared: {', '.join(self.ticks)}; the run in {result.output_folder} now "
+                    f"Declared: {', '.join(self.choices)}; the run in {result.output_folder} now "
                     "records them and is ready for MorphoFeature.",
                     f"Histograms reused for {len(result.unchanged)} images; images read again: "
                     f"{len(result.read)}"
@@ -359,9 +443,8 @@ class MaskRegistration(widgets.VBox):
                     + ".",
                 ],
             )
-            + app.mask_step_status.value
+            + self.app.mask_step_status.value
         )
-        return True
 
 
 def _plain(text: str) -> str:
@@ -374,4 +457,13 @@ def register_step(app: object, segmentation: object) -> MaskRegistration:
     return MaskRegistration(app, segmentation)
 
 
-__all__ = ["MaskRegistration", "refusal", "register_step", "toml_section", "written_types"]
+__all__ = [
+    "BINARY_REFUSED",
+    "CHOICES",
+    "WHY_WE_ASK",
+    "MaskRegistration",
+    "refusal",
+    "register_step",
+    "toml_section",
+    "written_types",
+]
