@@ -90,9 +90,6 @@ NEEDED = {
 }
 """The refusal of a step whose earlier step has not run, by what it needs (the step's button)."""
 
-RUNNING = "Running {model} on {image}…"
-"""The line shown, with its ticking time, while the model segments the preview image (#574)."""
-
 
 class CellposeWorkflow:
     """The Cellpose notebook's state: the run, the channels, the model and the batch.
@@ -437,7 +434,7 @@ class CellposeWorkflow:
         for target, (loaded, settings) in zip(targets, models, strict=True):
             stack = target.plan.read(fov)
             wait = Wait(running, bar=False)
-            wait.start(RUNNING.format(model=loaded.name, image=fov.relative_path))
+            wait.start(f"Running {loaded.name} on {fov.relative_path}…")
             with wait.ticking():
                 labels, flows = cp.evaluate(loaded, settings, stack)
             named = tuple(zip(target.channel_ids, target.roles, strict=True))
