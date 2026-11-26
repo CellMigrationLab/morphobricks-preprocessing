@@ -82,8 +82,9 @@ def _pieces_by_boxes(mask: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
 
 def _pieces_by_runs(mask: np.ndarray, first: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """Return :func:`piece_counts` from the runs; ``first`` marks the first pixel of each."""
-    starts, ends, label = _runs(mask, first)
-    piece = _join_runs(starts, ends, label, mask.shape[1] + 2, _corner_reach())
+    reach = _corner_reach()
+    starts, ends, label = _runs(mask, first, reach)
+    piece = _join_runs(starts, ends, label, mask.shape[1] + 2, reach)
     del starts, ends
     # every piece is runs of one label, so a label's pieces are the pieces carrying it
     label_of_piece = np.empty(int(piece.max(initial=-1)) + 1, dtype=mask.dtype)
@@ -102,16 +103,28 @@ def _corner_reach() -> int:
     raise ValueError("piece_counts supports only the 8- or 4-connected 3 x 3 structure.")
 
 
-def _runs(mask: np.ndarray, first: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+def _place_kind(rows: int, columns: int, reach: int) -> type[np.signedinteger]:
+    """Return ``int32`` if every place and every search of :func:`_join_runs` fits it.
+
+    Places run from 0 to ``rows * (columns + 2) - 3``, and the searches go down to
+    ``-(columns + 2 + reach)``, so ``rows * (columns + 2) + reach`` must fit too (review of
+    #568: a mask of shape (1, 2**31 - 3) overflowed the search).
+    """
+    return np.int32 if rows * (columns + 2) + reach <= _INT32_MAX else np.int64
+
+
+def _runs(
+    mask: np.ndarray, first: np.ndarray, reach: int
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Return the first and last pixel of every run, as places, and the run's label.
 
     A place is ``row * (columns + 2) + column``: the two spare columns keep runs of rows that
-    are not neighbours out of each other's reach. Places are ``int32`` when every place fits,
-    ``int64`` otherwise. Runs come in row-major order, so both places increase.
+    are not neighbours out of each other's reach. Places are ``int32`` when they and the
+    searches over them fit (:func:`_place_kind`), ``int64`` otherwise. Runs come in
+    row-major order, so both places increase.
     """
     rows, columns = mask.shape
-    width = columns + 2
-    kind = np.int32 if rows * width <= _INT32_MAX else np.int64
+    kind = _place_kind(rows, columns, reach)
     flat = np.flatnonzero(first)
     label = np.ascontiguousarray(mask).reshape(-1)[flat]  # a view when already contiguous
     starts = flat.astype(kind)

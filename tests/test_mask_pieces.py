@@ -146,3 +146,22 @@ def test_pixel_scale_masks_take_the_boxes_route_and_others_the_runs_route(route,
     blocks = np.kron(np.arange(16, dtype=np.int32).reshape(4, 4), np.ones((16, 16), np.int32))
     assert_identical(blocks)  # 1/16 run per pixel
     assert taken == ["_pieces_by_boxes", "_pieces_by_runs"]
+
+
+@pytest.mark.parametrize(
+    ("shape", "reach", "kind"),
+    [
+        ((1, 2**31 - 3), 1, np.int64),  # review of #568: width + reach is 2**31
+        ((1, 2**31 - 4), 1, np.int32),
+        ((1, 2**31 - 3), 0, np.int32),
+        ((2, 2**30 - 2), 1, np.int64),  # 2 * (2**30) + 1 is above the int32 limit
+        ((4096, 4096), 1, np.int32),
+    ],
+)
+def test_places_are_int32_only_when_every_search_fits(route, shape, reach, kind):
+    if route != "chosen":
+        pytest.skip("the choice of place type does not depend on the route")
+    assert mask_pieces._place_kind(*shape, reach) is kind
+    if kind is np.int32:  # the lowest search value of a run in the first row fits
+        width = shape[1] + 2
+        assert np.array([0], np.int32) - (width + reach) >= np.iinfo(np.int32).min
