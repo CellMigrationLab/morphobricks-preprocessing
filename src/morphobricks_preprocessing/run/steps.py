@@ -29,6 +29,7 @@ from ..source_content import with_content
 from ..validation import ValidationIssue, error, has_errors, plural
 from .entries import Comparison, compare_with_previous, file_entries
 from .modes import FULL
+from .phases import CONTENTS
 from .preflight import Preflight
 from .recorded import ResolvedInputs
 from .resume import FileJob, changed_during_check, new_rows
@@ -170,6 +171,28 @@ def _no_roles_issue() -> ValidationIssue:
 
 
 @dataclass(frozen=True)
+class Reporting:
+    """Who is told what :func:`compute_rows` does: before the first read, and each read.
+
+    Attributes
+    ----------
+    reading
+        As :func:`.pipeline.run_experiment`'s ``progress``: each image read.
+    checking
+        As :attr:`.modes.RunMode.checking`: here the phase :data:`.phases.CONTENTS`, each
+        image's content SHA-256 in a ``verify_content`` run.
+    """
+
+    reading: Callable[[int, int, str], None] | None = None
+    checking: Callable[[str, int, int, str], None] | None = None
+
+    def contents(self, done: int, total: int, path: str) -> None:
+        """Report the content SHA-256 of image ``done`` of ``total`` (phase ``contents``)."""
+        if self.checking is not None:
+            self.checking(CONTENTS, done, total, path)
+
+
+@dataclass(frozen=True)
 class Rows:
     """The rows of a run, and which files were read and why.
 
@@ -227,7 +250,7 @@ def compute_rows(
     output: Path,
     previous: tuple[RunManifest | None, str | None],
     mode: str,
-    progress: Callable[[int, int, str], None] | None,
+    reporting: Reporting,
     workers: Workers | None = None,
 ) -> Rows:
     """Reuse the earlier rows that can be reused, resume staged rows, and read the rest.
@@ -246,8 +269,8 @@ def compute_rows(
         :func:`.reuse.read_previous`'s answer.
     mode
         ``"restart"`` or ``"full"``.
-    progress
-        As :func:`.pipeline.run_experiment`.
+    reporting
+        Who is told of each content SHA-256 and each read (:class:`Reporting`).
     workers
         How many files may be read at once (:class:`.workers.Workers`); None: one.
 
@@ -266,7 +289,12 @@ def compute_rows(
         earlier_qc, reason = _load_previous_qc(output, previous[0], earlier)
     entries = file_entries(pre, review, root, in_blocks, checked.channels)
     # Strict reuse: each image's content SHA-256 joins its row key; an unreadable one fails.
-    entries, unhashed = with_content(entries, root) if settings.verify_content else (entries, [])
+    # Each image read whole (minutes on Google Drive): reported, before the first read.
+    entries, unhashed = (
+        with_content(entries, root, reporting.contents)
+        if settings.verify_content
+        else (entries, [])
+    )
     found = compare_with_previous(entries, previous[0], earlier, reason is not None, settings, root)
     records: list[PlaneRecord] = []
     narrow: list[NarrowRange] = []
@@ -284,7 +312,7 @@ def compute_rows(
         if rel not in changed and rel not in unhashed
     ]
     kept = set(found.unchanged) if not reason else set()
-    new = new_rows(job, to_read, kept, progress, workers)
+    new = new_rows(job, to_read, kept, reporting.reading, workers)
     return Rows(
         [*records, *new.records],
         [*narrow, *new.narrow],

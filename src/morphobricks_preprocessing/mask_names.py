@@ -204,17 +204,20 @@ def _mask_owner(
 
     Any suffix when ``suffixes`` is None. ``stem`` and the keys of ``stems`` are lower case.
     The longest such position wins, an image of ``folder`` first; None when there is none.
+    Only the prefixes of ``stem`` that end before one of its ``_`` can be such a position, so
+    those are looked up, longest first (not every key of ``stems``: that was quadratic).
     """
-    keys = [
-        key
-        for key in stems
-        if key != stem
-        and stem.startswith(key + "_")
-        and (suffixes is None or stem[len(key) :] in suffixes)
-    ]
-    if not keys:
+    key = None
+    cut = stem.rfind("_")
+    while cut >= 0:
+        candidate = stem[:cut]
+        if candidate in stems and (suffixes is None or stem[cut:] in suffixes):
+            key = candidate
+            break
+        cut = stem.rfind("_", 0, cut)
+    if key is None:
         return None
-    owners = stems[max(keys, key=len)]
+    owners = stems[key]
     near = [owner for owner in owners if str(PurePosixPath(owner).parent) == folder]
     return (near or owners)[0]
 

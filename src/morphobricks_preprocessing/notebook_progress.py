@@ -12,8 +12,10 @@ elapsed time is shown. Nothing here reads a file or decides anything.
 from __future__ import annotations
 
 import html
+import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 
 import ipywidgets as widgets
 
@@ -21,6 +23,26 @@ MEASURABLE_SECONDS = 1.0
 """No estimate of the time left before this much time was spent on at least one item."""
 MIN_INTERVAL = 0.1
 """Seconds between two redraws of a wait (the first and the last are always drawn)."""
+TICK = 1.0
+"""Seconds between two redraws of a ticking wait (:meth:`Wait.ticking`) that reports nothing."""
+
+PREPARING = {
+    "folders": "Preparing: listing the folders again",
+    "headers": "Preparing: reading the image headers again",
+    "masks": "Preparing: reading the mask headers again",
+    "acquisitions": "Preparing: comparing the images and checking the description",
+    "contents": "Preparing: reading each image whole for its content SHA-256",
+}
+COUNTED_PHASES = ("headers", "masks", "contents")
+"""The phases of the run's checks shown as done of total, each with its file."""
+"""What the run's wait says in each phase of its own checks before the first read
+(:data:`.run.phases.PHASES`, then :data:`.run.phases.CONTENTS`)."""
+BUSY_NOTE = (
+    "<div class='mb-help'>The run is going: the notebook is busy until it finishes or stops. "
+    "A cell run meanwhile (this one too) waits for it; to stop the run, interrupt the "
+    "kernel (Colab: Runtime > Interrupt execution).</div>"
+)
+"""Said under the wait while the run goes (owner test of v0.9.0: a cell run again just waited)."""
 
 
 def clock_text(seconds: float) -> str:
@@ -129,6 +151,7 @@ class Wait:
         self.drawn = 0
         self._started = self._phase_started = self._last = 0.0
         self._state: tuple[int, int, str] = (0, 0, "")
+        self._drawing = threading.Lock()
 
     @property
     def elapsed(self) -> float:
@@ -137,19 +160,14 @@ class Wait:
 
     def start(self, label: str, total: int = 0) -> None:
         """Start the wait: the clock is set and the line drawn with nothing done."""
-        self.label = label
-        self._started = self._phase_started = self.clock()
-        self.drawn = 0
-        self._draw(0, total, "")
+        self._draw(0, total, "", label=label, restart=True)
 
     def phase(self, label: str, total: int = 0, done: int = 0) -> None:
         """Name the next part of the same wait; the elapsed time goes on.
 
         ``done`` of ``total`` says which part this is when the parts themselves are counted.
         """
-        self.label = label
-        self._phase_started = self.clock()
-        self._draw(done, total, "")
+        self._draw(done, total, "", label=label)
 
     def step(self, done: int, total: int = 0, item: str = "") -> None:
         """Report progress; redrawn at most every :data:`MIN_INTERVAL` seconds, and at the end."""
@@ -158,11 +176,58 @@ class Wait:
         if last or self.clock() - self._last >= MIN_INTERVAL:
             self._draw(done, total, item)
 
-    def _draw(self, done: int, total: int, item: str) -> None:
-        self._state = (done, total, item)
-        self._last = self.clock()
-        self.drawn += 1
-        self.target.value = self.html(done, total, item)
+    @property
+    def total(self) -> int:
+        """The total last reported (0 for work that is not counted)."""
+        return self._state[1]
+
+    def _draw(
+        self, done: int, total: int, item: str, *, label: str | None = None, restart: bool = False
+    ) -> None:
+        """Draw the line; with ``label``, a new part starts (``restart``: a new wait).
+
+        The label, the clocks and the line change together under the lock the ticking
+        thread draws with, so it never draws a new label with an old part's numbers.
+        """
+        with self._drawing:  # the ticking thread draws too
+            if label is not None:
+                now = self.clock()
+                self.label, self._phase_started = label, now
+                if restart:
+                    self._started, self.drawn = now, 0
+            self._state = (done, total, item)
+            self._last = self.clock()
+            self.drawn += 1
+            self.target.value = self.html(done, total, item)
+
+    @contextmanager
+    def ticking(self, interval: float = TICK) -> Iterator[None]:
+        """Redraw the line every ``interval`` seconds in a thread while the block runs.
+
+        For work that reports no progress for a long time (the run's checks before its first
+        image, on a large experiment): the elapsed time goes on in the line instead of
+        staying at ``0:00``. The thread only redraws what was last reported; it is stopped,
+        and has drawn its last, before the block returns, so whatever replaces the line
+        afterwards stays.
+        """
+        stop = threading.Event()
+
+        def tick() -> None:
+            while not stop.wait(interval):
+                with self._drawing:
+                    if stop.is_set():
+                        return
+                    done, total, item = self._state
+                    self.drawn += 1
+                    self.target.value = self.html(done, total, item)
+
+        thread = threading.Thread(target=tick, name="morphobricks-wait-tick", daemon=True)
+        thread.start()
+        try:
+            yield
+        finally:
+            stop.set()
+            thread.join()
 
     def html(self, done: int, total: int, item: str) -> str:
         """Return the line as it would be drawn now.
@@ -186,4 +251,15 @@ class Wait:
         return clock_text(self.elapsed)
 
 
-__all__ = ["MEASURABLE_SECONDS", "MIN_INTERVAL", "Wait", "clock_text", "progress_html", "time_left"]
+__all__ = [
+    "BUSY_NOTE",
+    "COUNTED_PHASES",
+    "MEASURABLE_SECONDS",
+    "MIN_INTERVAL",
+    "PREPARING",
+    "TICK",
+    "Wait",
+    "clock_text",
+    "progress_html",
+    "time_left",
+]

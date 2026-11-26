@@ -28,6 +28,8 @@ class RunOptions:
     progress: Callable[[int, int, str], None] | None
     lab_links: LabLinks | None = None
     workers: Workers = field(default_factory=Workers)
+    checking: Callable[[str, int, int, str], None] | None = None
+    """The progress of the run's own folder and header check (:func:`.preflight.preflight`)."""
 
 
 @dataclass(frozen=True)
