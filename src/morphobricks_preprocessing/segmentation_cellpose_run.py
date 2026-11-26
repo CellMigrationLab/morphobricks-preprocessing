@@ -11,7 +11,8 @@ from pathlib import Path
 
 from ._io import file_sha256
 from .manifest import MANIFEST_FILENAME
-from .run_inputs import RunInputs
+from .open_checks import Checking, quiet
+from .run_inputs import RunInputs, open_checked
 from .segmentation_cellpose_model import CELLPOSE_VERSION
 from .segmentation_record import SegmentationError, check_mask_type
 
@@ -38,8 +39,11 @@ REPUBLISHED = (
 """The refusal of a preview, a batch or a record whose run manifest is no longer the opened one."""
 
 
-def open_run(run_folder: str) -> RunInputs:
+def open_run(run_folder: str, *, checking: Checking = quiet) -> RunInputs:
     """Open the run in ``run_folder`` (preprocessing's own checks; refusals are unchanged).
+
+    ``checking`` is told each phase of the checks (:func:`.run_inputs.open_checked`); it
+    changes nothing they check or decide.
 
     Raises
     ------
@@ -50,11 +54,11 @@ def open_run(run_folder: str) -> RunInputs:
     """
     if not run_folder.strip():
         raise SegmentationError("Give the run's output folder (the one holding run_manifest.json).")
-    return RunInputs.open(Path(run_folder.strip()))
+    return open_checked(Path(run_folder.strip()), checking=checking)
 
 
-def open_pinned(run_folder: str) -> tuple[RunInputs, str | None]:
-    """Open the run (:func:`open_run`) and return it with the SHA-256 of its manifest.
+def open_pinned(run_folder: str, *, checking: Checking = quiet) -> tuple[RunInputs, str | None]:
+    """Open the run (:func:`open_run`, with ``checking``) and return it with its manifest SHA-256.
 
     The SHA-256 is the snapshot's (:attr:`.run_inputs.RunInputs.manifest_sha256`: of the bytes
     the manifest was parsed from, review ar B2); a run published again before this returns is
@@ -69,7 +73,7 @@ def open_pinned(run_folder: str) -> tuple[RunInputs, str | None]:
     RunInputsError
         For a run that cannot be opened.
     """
-    inputs = open_run(run_folder)
+    inputs = open_run(run_folder, checking=checking)
     check_manifest(inputs, inputs.manifest_sha256)
     return inputs, inputs.manifest_sha256
 

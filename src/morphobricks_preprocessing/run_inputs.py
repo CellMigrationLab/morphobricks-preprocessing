@@ -67,6 +67,7 @@ from .manifest import (
 from .mask_conversion import ConversionInputs
 from .mask_record import shared_mask_text
 from .masks import FOLDER
+from .open_checks import RELATIVE, Checking, counted, quiet
 from .plane_channels import read_xyc_plane
 from .planes import DEFAULT_MEMORY_LIMIT
 from .recorded_sizes import RecordedSize
@@ -262,17 +263,7 @@ class RunInputs(
             ``RUN_FOLDER_REPORT_UNREADABLE``: the folder holds no manifest and its report
             cannot be read, or is of another report version; it names the file.
         """
-        output = Path(output_folder).resolve()
-        # One generation of the outputs (contract §9): read again if a run published
-        # meanwhile.
-        inputs = read_stable(output, lambda: cls._read(output, experiment_root, masks_root))
-        if inputs is None:
-            raise RunInputsError(
-                f"Another run kept publishing new results in {output} while they were being "
-                "opened. Open the run again once it has finished."
-            )
-        inputs._check_files()
-        return inputs
+        return open_checked(output_folder, experiment_root, masks_root)
 
     @classmethod
     def _read(
@@ -388,15 +379,18 @@ class RunInputs(
         """Return the table's rows, as read when the run was opened."""
         return self.records
 
-    def _check_files(self) -> None:
+    def _check_files(self, checking: Checking = quiet) -> None:
         """Refuse changed or gone files, masks without axes or shared, unrecorded files."""
-        changed = [e.relative_path for e in self.manifest.files if not self._unchanged(e)]
+        images = counted(checking, "images", self.manifest.files, RELATIVE)
+        changed = [e.relative_path for e in images if not self._unchanged(e)]
         if not changed and self.manifest.settings.verify_content:
-            changed = content_changed(self.manifest.files, self.experiment_root)
+            entries = counted(checking, "contents", self.manifest.files, RELATIVE)
+            changed = content_changed(entries, self.experiment_root)
         if changed:
             raise RunInputsError(_changed_text(changed))
         recorded = (self.manifest.masks or {}).get("files", ())
-        changed = [m["path"] for m in recorded if not self._mask_unchanged(m)]
+        masks = counted(checking, "masks", recorded, lambda m: m["path"])
+        changed = [m["path"] for m in masks if not self._mask_unchanged(m)]
         if changed:
             raise RunInputsError(_changed_text(changed, "mask"))
         without_axes = [m["path"] for m in recorded if not m.get("axes") or not m.get("roles")]
@@ -405,6 +399,7 @@ class RunInputs(
         shared = shared_mask_text(recorded)
         if shared:
             raise RunInputsError(shared)
+        checking("unrecorded", 0, 0, "")
         try:
             unrecorded = unrecorded_files(
                 self.manifest, self.experiment_root, self.masks_root, self.output_folder
@@ -458,6 +453,27 @@ class RunInputs(
             return Fingerprint.of(where) == Fingerprint.recorded(recorded)
         except FileNotFoundError:
             return False
+
+
+def open_checked(
+    output_folder: str | os.PathLike,
+    experiment_root: str | os.PathLike | None = None,
+    masks_root: str | os.PathLike | None = None,
+    *,
+    checking: Checking = quiet,
+) -> RunInputs:
+    """Open a run as :meth:`RunInputs.open` does, telling ``checking`` (:mod:`.open_checks`)."""
+    output = Path(output_folder).resolve()
+    checking("run", 0, 0, "")
+    # One generation of the outputs (contract §9): read again if a run published meanwhile.
+    inputs = read_stable(output, lambda: RunInputs._read(output, experiment_root, masks_root))
+    if inputs is None:
+        raise RunInputsError(
+            f"Another run kept publishing new results in {output} while they were being "
+            "opened. Open the run again once it has finished."
+        )
+    inputs._check_files(checking)
+    return inputs
 
 
 def _manifest(output: Path) -> tuple[RunManifest, str]:

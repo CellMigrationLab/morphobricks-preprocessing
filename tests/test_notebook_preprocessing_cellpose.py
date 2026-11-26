@@ -4,7 +4,7 @@ The app (``PreprocessingNotebook`` with its seven steps, as cell 3 shows it) run
 experiment; cell 4 (:func:`.notebook_preprocessing_cellpose.segmentation_step`) segments that
 run with the stand-in Cellpose of ``cellpose_stub.py`` (no GPU, no download) and cell 5
 (:func:`.notebook_mask_register.register_step`) offers the declarations and registers them
-through the app's own steps once the user ticked them.
+through the app's own steps once the user answered what each mask is.
 """
 
 import json
@@ -218,19 +218,19 @@ def test_preprocessing_alone_never_imports_cellpose_or_torch():
 # cell 5 ---------------------------------------------------------------------------------------
 
 
-def test_cell_5_offers_the_declaration_and_registers_only_after_the_tick(tmp_path, stub):
+def test_cell_5_asks_what_each_mask_is_and_registers_only_once_answered(tmp_path, stub):
     nb = ran_app(tmp_path)
     out = nb.result.output_folder
     step = segmentation_step(nb)
     segment(step, tmp_path / "masks")
     registration = register_step(nb, step)
-    assert list(registration.ticks) == ["Cells"]
+    assert list(registration.choices) == ["Cells"]
     section = toml_section("Cells")
     assert section == '[masks.Cells]\nsource_type = "Cells"\nrepresentation = "instances"'
     assert "[masks.Cells]" in repr(registration.children)
     assert registration.button.disabled and not registration.register()  # nothing silent
     assert "[masks" not in (out / DESCRIPTION_FILENAME).read_text(encoding="utf-8")
-    registration.ticks["Cells"].value = True
+    registration.choices["Cells"].value = "instances"
     # The app's folder check with the masks folder asks for the axes again: the user's click.
     assert not registration.register()
     assert AXES_AGAIN.split(":")[0] in registration.status.value
@@ -256,8 +256,8 @@ def test_cell_5_registers_masks_written_into_the_runs_own_masks_folder(tmp_path,
     assert step.masks_folder == str((tmp_path / "masks").resolve())
     segment(step)  # into the prefilled masks folder
     registration = register_step(nb, step)
-    assert list(registration.ticks) == ["Cells"], registration.status.value
-    registration.ticks["Cells"].value = True
+    assert list(registration.choices) == ["Cells"], registration.status.value
+    registration.choices["Cells"].value = "instances"
     assert not registration.register()  # the folder check is made again: axes to confirm
     assert AXES_AGAIN.split(":")[0] in registration.status.value
     nb.quick_confirm.click()
@@ -273,7 +273,7 @@ def stopped_for_the_axes(tmp_path, stub):
     step = segmentation_step(nb)
     segment(step, tmp_path / "masks")
     registration = register_step(nb, step)
-    registration.ticks["Cells"].value = True
+    registration.choices["Cells"].value = "instances"
     assert not registration.register()
     assert AXES_AGAIN.split(":")[0] in registration.status.value
     return nb, registration, nb._output_path(tmp_path / "exp")
@@ -288,8 +288,8 @@ def test_cell_5_run_again_after_the_axes_stop_continues(tmp_path, stub):
     nb, registration, out = stopped_for_the_axes(tmp_path, stub)
     nb.quick_confirm.click()
     again = register_step(nb, registration.segmentation)  # cell 5 run again
-    assert list(again.ticks) == ["Cells"], again.status.value
-    again.ticks["Cells"].value = True
+    assert list(again.choices) == ["Cells"], again.status.value
+    again.choices["Cells"].value = "instances"
     assert again.register(), again.status.value
     assert RunInputs.open(out).mask_types() == ("Cells",)
 
@@ -339,7 +339,7 @@ def segmented(tmp_path, nb, masks, mask_type="Cells"):
 
 
 def refused(registration):
-    assert registration.ticks == {}
+    assert registration.choices == {}
     return registration.status.value.replace("&#x27;", "'")
 
 
@@ -428,4 +428,4 @@ def test_cell_5_run_again_after_it_registered_the_masks_is_not_refused(tmp_path,
     nb.quick_confirm.click()
     assert registration.register(), registration.status.value
     again = register_step(nb, registration.segmentation)
-    assert list(again.ticks) == ["Cells"], again.status.value
+    assert list(again.choices) == ["Cells"], again.status.value

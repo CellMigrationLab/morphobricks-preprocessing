@@ -209,6 +209,8 @@ src/morphobricks_preprocessing/
                     preprocessing's discovery and pairing; RunInputs.open raises
                     UnrecordedFilesError for them (PP-8b, contract §9.1)
   run_inputs_text.py the texts RunInputs refuses a run with (moved from run_inputs.py in PP-12)
+  open_checks.py    OPEN_PHASES, counted: the phases of opening a run told to a progress callback
+                    (run_inputs.open_checked: RunInputs.open with checking=; #574) (pure)
   run_inputs_stopped.py stopped_run_refusal: the one reader of discovery_report.json for the
                     bricks; RunInputs.open raises RunStoppedError (RUN_FOLDER_STOPPED, the
                     stopped run's error issues as the report records them) or
@@ -312,8 +314,9 @@ src/morphobricks_preprocessing/
                     on the Preprocessing app's finished run; cellpose_install.py installs
                     Cellpose 4.2.1.1 only on the user's tick (restart when numpy/opencv changed);
                     notebook_mask_register.py register_step(app, segmentation): cell 5, a
-                    declaration to tick per mask type, then the app's own check, Masks answer,
-                    save, run and Describe the masks
+                    question per mask type (objects or binary, none chosen; objects registered),
+                    then the app's own check, Masks answer, save, run and Describe the masks,
+                    each step shown by notebook_register_progress.py RegisterWait (#574)
                     notebook_cellpose_preview.py MaskResult, preview_figures: the example result as
                     ZeroCostDL4Mic draws it (cellpose.plot.show_segmentation), one result per mask
                     notebook_cellpose_channels.py ChannelPicker, MaskTarget: the output's masks (Both:
