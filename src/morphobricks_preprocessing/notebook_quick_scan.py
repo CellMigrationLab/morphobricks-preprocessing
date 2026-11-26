@@ -197,6 +197,8 @@ class _QuickScan:
                 "warn", "Enter the experiment folder first.", ["Paste its path or use Browse…."]
             )
             return None
+        if self.preflight is not None:  # #520, #579: a new scan makes the earlier check history
+            self._clear_checked("")
         self._busy(self.scan_button, "Scanning…")
         ui.set_visible(self.scan_box, False)  # nothing of an earlier scan stays shown (#579)
         self.scan_tree.value, self.scan_example.children = "", []

@@ -388,22 +388,37 @@ run the experiment in the app of cell 3. Then:
   the model, its file (also the same file changed on disk) or the device changed; another image
   reuses it) and **Segment** (it reuses the loaded model, and says in one line exactly which
   model and settings it will use, in amber with what differs when the last Preview used
-  others). One line after the batch points to cell 5.
-- **5. Register the masks** asks, for each mask type cell 4 wrote, what the mask is, with no
+  others). While the model runs, a line says which model runs on which image ("Running
+  cpsam_v2 on ctrl/rep1/a.tif…") with its elapsed time; the batch's line names the model too.
+  One line after the batch points to cell 5.
+- **5. Register the masks** is shown at once, then checks the run cell 4 segmented under its
+  question, with its own line (the phase, "n of N" with the image read, the elapsed time). It
+  asks, for each mask type cell 4 wrote, what the mask is, with no
   answer chosen: *Each object has its own number (label image: every cell/nucleus is a
   separate object)* or *Foreground / background only (binary mask)*. They are measured
   differently, and the notebook never guesses which one a file is. Cellpose gives each object
-  its own number, so only the first is registered (the second is refused, saying why); the
+  its own number, so only the first is registered (the second is refused, saying why, with the
+  code `cellpose_mask_not_binary`; a binary mask from elsewhere is declared in cell 3, step
+  **Masks**); the
   declaration it adds (`[masks.Cells]` with `source_type = "Cells"` and `representation =
   "instances"`) is shown folded under the question. Answer each one and press **Register the
-  masks**: the app of cell 3 then checks the folders again with the masks folder, answers the
-  mask on **Masks**, saves the description, runs again (the histograms of unchanged images are
-  reused) and describes the masks. Each step is shown under the button as it goes ("Step 4 of
+  masks**: the app of cell 3 then pairs the masks folder, answers the mask on **Masks**, saves
+  the description, runs again (the histograms of unchanged images are reused) and describes the
+  masks, in **one press** (v0.9.1). When nothing changed since cell 3 checked the folders (the
+  same images, each with the size and modification time its header was read at, and the axes
+  confirmed), only the masks' headers are read (cell 3's **Check the masks again**) and the
+  confirmed axes are kept. Otherwise cell 3's whole folder check is made again, and the press
+  stops for the axes, saying what changed. Within one press, an image's content SHA-256 is
+  taken again only when the file may have changed since the press took it (its device, inode,
+  size, modification and status-change times); the run's check before it publishes always
+  reads every image again. Each step is shown under the button as it goes ("Step 4 of
   5 · Running again…", its elapsed time, and the step's own line: the image read now, "n of
   N"), then how long it took. Masks written into
-  the masks folder the run already used are fine. If its folder check asks you to confirm the
-  axes again, do it in cell 3 (step **Axes**) and press the button again (or run cell 5
-  again). It refuses, changing nothing, a mask type that collides with a mask already declared,
+  the masks folder the run already used are fine. If the press stops for the axes (something
+  changed since cell 3's check, and the message says what), confirm them in cell 3 (step
+  **Axes**) and press the button again (or run cell 5 again). If that folder check fails (for
+  example Google Drive stopped answering), cell 5 says so with cell 3's reason; press **Check
+  folder** in cell 3, confirm the axes, then Register again. It refuses, changing nothing, a mask type that collides with a mask already declared,
   a mask type cell 4 wrote beside a folder of the masks folder whose name differs from it only
   in case (`mask_type_differs_in_case`),
   a masks folder inside the experiment, masks of another run or masks folder than the app's,
@@ -488,9 +503,16 @@ editing, or the confirmed ones. An image that cannot be drawn gets a sentence sa
    folder and the error (the full report is in **Technical details**).
    Make sure Google Drive is mounted and the folder is there, then click the button again.
 
-   **Coming back to earlier work.** As soon as the output folder is set (typed, chosen, or the
-   default next to a new experiment folder) and no check is on screen, the app looks at what
-   the folder holds and restores it with a message at the top: *Found earlier work from
+   **Nothing is read while you type (v0.9.1, #579).** Typing or pasting a folder path never
+   starts a scan, a check or a restore: editing a folder box only clears what came from the old
+   folders (the scan, the check, the run shown) and says which button to press. **Scan the
+   folders** (on the stepper) or **Check folder** (on the pages) starts the work. The folder
+   check's line keeps its elapsed time going and counts its parts ("Comparing the images · 2
+   of 3").
+
+   **Coming back to earlier work.** When you press **Scan the folders** (or **Check folder**)
+   and no check is on screen, the app first looks at what the output folder holds and restores
+   it with a message at the top: *Found earlier work from
    &lt;date&gt;: restored &lt;what&gt;*, the output folder, what was reused and what was read
    again, and the step it opened on. When the experiment folder box is empty it is filled
    from the earlier work; a different experiment folder restores nothing. What it restores:
@@ -515,14 +537,13 @@ editing, or the confirmed ones. An image that cannot be drawn gets a sentence sa
    **Start fresh** forgets what was restored and starts a new session: no file is changed or
    deleted, and Check folder still reads the answers saved in the output folder (choose
    another output folder to start without them). If the earlier work cannot be read, a red
-   message says so and nothing of it is used. The folder boxes are read when you press Enter,
-   choose with Browse or leave the box, so a folder you pass through while typing is not
-   restored. Choosing another output folder clears what was restored, until you give an
+   message says so and nothing of it is used. A folder you pass through while typing is never
+   read or restored. Choosing another output folder clears what was restored, until you give an
    answer, confirm, save or run: from then on it is your work and stays.
 
    When the earlier work does not record its experiment folder (saved answers or a saved
-   description only), nothing is restored: enter the experiment folder, and on the stepper its
-   folders are scanned and one image is shown as soon as it is entered; if it is your
+   description only), nothing is restored: enter the experiment folder and press **Scan the
+   folders**: its folders are scanned and one image is shown; if it is your
    experiment, click **Looks right: read all image headers**, which reads the saved answers.
    Answers saved by another version of the software (an older draft format or Spec) are never
    used, and one line says so; the file is left as it is, and the experiment folder entered is

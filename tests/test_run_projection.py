@@ -197,3 +197,21 @@ def test_projection_images_must_be_unique_and_sorted_in_the_manifest(tmp_path, c
     edit(path, change)
     with pytest.raises(ManifestFormatError, match="unique and sorted"):
         read_manifest(path)
+
+
+def test_a_mask_only_recheck_pairs_the_projection_warning_again(tmp_path):
+    # #560: remasked replaced the masks but kept the conversion review of the check before,
+    # so the masks_on_projected_images warning stayed absent (or stale) after the masks changed.
+    from morphobricks_preprocessing.run.preflight import preflight, remasked
+
+    copies, out, masks, _ = projected_run(tmp_path, masks=True)
+    before = preflight(copies, tmp_path / "o2", bind_headers=True)  # checked without masks
+    assert MASKS_WARNING not in codes(before.issues)
+    again = remasked(before, masks, None, tmp_path / "o2")
+    fresh = preflight(copies, tmp_path / "o2", masks_folder=masks, bind_headers=True)
+    assert again.conversion == fresh.conversion  # as a full check with the masks gives it
+    assert MASKS_WARNING in codes(again.issues)
+    dropped = remasked(again, None, None, tmp_path / "o2")  # the masks dropped again
+    assert MASKS_WARNING not in codes(dropped.issues)
+    assert dropped.conversion.projection.masks_paired == ()
+    assert dropped.conversion.sha256 == before.conversion.sha256  # the same record, kept

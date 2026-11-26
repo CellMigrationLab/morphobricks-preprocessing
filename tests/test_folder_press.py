@@ -180,3 +180,23 @@ def test_a_run_that_raises_leaves_no_earlier_result(tmp_path, monkeypatch):
     monkeypatch.setattr(nb, "_call_run", broken)
     assert nb.run() is None
     assert nb.result is None
+
+
+def test_a_rescan_of_the_checked_folder_shows_the_image_its_caption_names(tmp_path):
+    # #520: a quick rescan of the checked folder chose an image from the fresh scan but drew
+    # it from the earlier check's viewer, which did not list a file added since: the caption
+    # named one image and another (or none) was shown. A new scan now ends the earlier check.
+    root = experiment(tmp_path, "A")
+    nb = PreprocessingNotebook(str(root), output_folder=str(tmp_path / "out"))
+    nb.steps()
+    nb.scan_button.click()
+    nb.check_button.click()
+    nb.quick_confirm.click()
+    assert nb.preflight is not None
+    add_folder(root, tmp_path / "late_masks", "late/rep1", 9)
+    nb.scan_button.click()
+    assert nb.preflight is None and nb.confirmed_mapping is None  # nothing carried over
+    images = [e.image for e in nb.scan_viewer.entries]
+    assert "late/rep1/a.tif" in images
+    assert nb.scan_viewer.image == nb.scan_image
+    assert nb.scan_image in _text(nb.scan_example.children[0].value)

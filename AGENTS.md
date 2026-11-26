@@ -181,6 +181,8 @@ src/morphobricks_preprocessing/
                     store_files (the files an OME-Zarr fingerprint covers)
   source_content.py verify_content: a source's content SHA-256 (TIFF bytes; OME-Zarr per-file
                     SHA-256s), with_content, content_changed (RunInputs of a strict run)
+  content_memo.py   ContentMemo: one notebook press's content SHA-256s, reused only while the
+                    file's identity (dev, inode, size, mtime_ns, ctime_ns) is unchanged (v0.9.1)
   manifest_versions.py manifest versions 1/2/3: a strict run writes 3, which rc4 refuses
   lab_links.py      LabLinks: the lab-tool links (Spec experiment-v1 9.3, PP-2), the fixed keys,
                     repeat_code_issues (confirmed, every described repeat once), the manifest's
@@ -325,7 +327,10 @@ src/morphobricks_preprocessing/
                     notebook_mask_register.py register_step(app, segmentation): cell 5, a
                     question per mask type (objects or binary, none chosen; objects registered),
                     then the app's own check, Masks answer, save, run and Describe the masks,
-                    each step shown by notebook_register_progress.py RegisterWait (#574)
+                    each step shown by notebook_register_progress.py RegisterWait (#574); shown
+                    first (notebook_shown_first.py ShownFirst, shared with cell 4); one press when
+                    nothing changed since cell 3's check (register_checks.py changes_since_check,
+                    and the refusal helpers, v0.9.1)
                     notebook_cellpose_preview.py MaskResult, preview_figures: the example result as
                     ZeroCostDL4Mic draws it (cellpose.plot.show_segmentation), one result per mask
                     notebook_cellpose_channels.py ChannelPicker, MaskTarget: the output's masks (Both:

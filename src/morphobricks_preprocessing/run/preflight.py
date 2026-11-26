@@ -43,6 +43,7 @@ from ..planes import (
     PlaneReadError,
     read_sample_plane,
 )
+from ..projection_run import MASKS_WARNING, masks_issue, with_masks
 from ..validation import ValidationIssue, error, has_errors, plural, warning
 from .recorded import normalise_relative_path
 
@@ -385,7 +386,16 @@ def remasked(
         bind=bool(pre.header_fingerprints),
         progress=progress,
     )
-    return replace(pre, masks=masks)
+    conversion = pre.conversion
+    if conversion is not None and conversion.projection is not None:  # #560
+        # The projection's masks and its warning follow the masks found now; the rest of the
+        # review, of the same validated record, is kept (no copy is read again).
+        pairs = [(m.image, m.path) for m in _mask_files(masks)]
+        projection = with_masks(conversion.projection, pairs)
+        kept = [i for i in conversion.issues if i.code != MASKS_WARNING]
+        issues = (*kept, *masks_issue(projection))
+        conversion = replace(conversion, projection=projection, issues=issues)
+    return replace(pre, masks=masks, conversion=conversion)
 
 
 def _masks(
