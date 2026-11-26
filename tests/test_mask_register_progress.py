@@ -35,7 +35,9 @@ from morphobricks_preprocessing import notebook_progress  # noqa: E402
 from morphobricks_preprocessing.description_file import DESCRIPTION_FILENAME  # noqa: E402
 from morphobricks_preprocessing.notebook_mask_register import (  # noqa: E402
     BINARY_REFUSED,
+    BINARY_REFUSED_CODE,
     CHOICES,
+    PAIRING,
     WHY_WE_ASK,
     refusal,
     register_step,
@@ -139,11 +141,9 @@ def segmented_app(tmp_path):
 
 
 def answered(nb, step):
-    """Return cell 5 answered for Cells, after the axes stop of its first press."""
+    """Return cell 5 answered for Cells (one press registers it since v0.9.1)."""
     registration = register_step(nb, step)
     registration.choices["Cells"].value = "instances"
-    assert not registration.register()  # the folder check asks for the axes again
-    nb.quick_confirm.click()
     return registration
 
 
@@ -196,6 +196,9 @@ def test_a_binary_answer_is_refused_saying_why_and_nothing_is_declared(tmp_path,
     assert registration.button.disabled and not registration.register()
     text = BINARY_REFUSED.format(mask_type="Cells")
     assert text.split(":")[0] in registration.blocker.value
+    # #578 TODO 1: a coded refusal that says why (Cellpose numbers each object).
+    assert BINARY_REFUSED_CODE in registration.blocker.value
+    assert "gives each object its own number" in registration.blocker.value
     assert "[masks" not in (out / DESCRIPTION_FILENAME).read_text(encoding="utf-8")
     registration.choices["Cells"].value = "instances"
     assert not registration.button.disabled and registration.blocker.value == ""
@@ -213,14 +216,16 @@ def test_the_recorded_declaration_is_unchanged(tmp_path, stub):
 # item 7: what Register reads, and its wait ----------------------------------------------------
 
 
-def test_register_reads_each_file_as_many_times_as_before(tmp_path, stub, larger, reads):
-    # Measured on main before #574 with this opener; pinned so that showing the wait reads
-    # nothing more. Per image: the run's checks (cell 5), the app's run, its check before it
-    # publishes and the tissue-mask step's opening after it, each a content SHA-256. The two
-    # viewers Check and save redraws twice also read the first image, about 4 times its size in
-    # all, through openings that each read a part of it (not whole reads here). Per mask:
-    # the run and its check before publishing (SHA-256), the mask step's fingerprints before
-    # and after reading, and its pixels (the piece counts).
+def test_one_press_reads_each_image_whole_twice(tmp_path, stub, larger, reads):
+    # Before v0.9.1 (pinned here then): 4 whole reads per image per registering press (the
+    # run's checks in cell 5, the app's run, its check before it publishes, the tissue-mask
+    # step's opening), after a first press that stopped for the axes and read each image whole
+    # once more. Now one press, and within it a SHA-256 is reused while the file's identity is
+    # unchanged (#578 TODO 2): the run's content pass and the tissue-mask step's opening reuse
+    # the one cell 5's checks took; the check before the run publishes takes its own. Per mask:
+    # the run and its check before publishing (SHA-256), the mask step's fingerprints before and
+    # after reading, and its pixels, as before; the first mask is read once more, whole (it is
+    # small here), by the masks pairing that the first press's folder check used to make.
     nb, step = segmented_app(tmp_path)
     registration = answered(nb, step)
     images = sorted(f"exp/{f.relative_path}" for f in step.workflow.inputs.fovs())
@@ -229,10 +234,49 @@ def test_register_reads_each_file_as_many_times_as_before(tmp_path, stub, larger
     reads.opens.clear(), reads.whole.clear()
     assert registration.register(), registration.status.value
     first, *others = images
-    assert reads.whole == Counter({**dict.fromkeys(images, 4), **dict.fromkeys(masks, 5)})
-    assert reads.opens == Counter(
-        {first: 21, **dict.fromkeys(others, 9), **dict.fromkeys(masks, 7)}
+    first_mask, *other_masks = masks
+    assert reads.whole == Counter(
+        {**dict.fromkeys(images, 2), first_mask: 6, **dict.fromkeys(other_masks, 5)}
     )
+    assert reads.opens == Counter(
+        {first: 24, **dict.fromkeys(others, 8), first_mask: 9, **dict.fromkeys(other_masks, 8)}
+    )
+
+
+def test_a_file_changed_mid_press_is_still_caught(tmp_path, stub, monkeypatch):
+    # #578 TODO 2: an image rewritten between two checks of one press. Its status-change time
+    # moves, so the memo hashes it again. Where the identity cannot see a change (frozen here,
+    # as on a file system without one), the run's check before it publishes, which never uses
+    # the memo, still refuses it: nothing is declared as registered.
+    from morphobricks_preprocessing import content_memo
+
+    nb, step = segmented_app(tmp_path)
+    registration = answered(nb, step)
+    image = tmp_path / "exp" / step.workflow.inputs.fovs()[0].relative_path
+    frozen = {}
+    real_identity = content_memo.file_identity
+
+    def blind(path):
+        key = str(path)
+        frozen.setdefault(key, real_identity(path))
+        return frozen[key]
+
+    monkeypatch.setattr(content_memo, "file_identity", blind)
+    save = nb.save_experiment
+
+    def save_then_change():
+        saved = save()
+        stat = image.stat()
+        data = bytearray(image.read_bytes())
+        data[-1] ^= 0xFF  # same size; the modification time is set back below
+        image.write_bytes(bytes(data))
+        os.utime(image, ns=(stat.st_atime_ns, stat.st_mtime_ns))
+        return saved
+
+    monkeypatch.setattr(nb, "save_experiment", save_then_change)
+    assert not registration.register()
+    assert not registration.registered
+    assert "The run of cell 3 stopped" in registration.status.value
 
 
 def test_showing_cell_5_reads_each_image_whole_once(tmp_path, stub, larger, reads):
@@ -261,7 +305,8 @@ def test_register_names_each_step_counts_the_images_and_ticks(tmp_path, stub, mo
     assert registration.register(), registration.status.value
     for label in (step_label(k) for k in ("run", "save", "rerun", "describe")):
         assert any(label in line for line in lines), label
-    assert not any(step_label("folders") in line for line in lines)  # made at the first press
+    assert not any(step_label("folders") in line for line in lines)  # no folder check made
+    assert any(step_label("folders", PAIRING) in line for line in lines)  # the masks paired
     hashed = [d for d in details if CHECKS["contents"] in d]
     for done, name in enumerate(names):
         assert any(f"{done} of 4" in d and name in d for d in hashed), name
@@ -273,10 +318,11 @@ def test_register_names_each_step_counts_the_images_and_ticks(tmp_path, stub, mo
     assert not registration.button.disabled  # back once it ended
 
 
-def test_the_first_press_shows_the_folder_check_of_the_app(tmp_path, stub):
+def test_a_press_after_a_change_shows_the_folder_check_of_the_app(tmp_path, stub):
     nb, step = segmented_app(tmp_path)
     registration = register_step(nb, step)
     registration.choices["Cells"].value = "instances"
+    nb.confirm_button.click()  # the axes taken back in cell 3: the folders are checked again
     lines, details = [], []
     registration.progress.observe(lambda c: lines.append(c["new"]), names="value")
     registration.progress_detail.observe(lambda c: details.append(c["new"]), names="value")
@@ -308,3 +354,53 @@ def test_the_wait_says_stopped_after_an_error_and_stops_copying():
     assert STOPPED_AFTER.split("{")[0] in line.value and detail.value == ""
     source.value = "later"
     assert detail.value == ""  # copied only while its step ran
+
+
+# #578 TODO 3: cell 5 is shown first, then opens the run with its wait (#575's pattern) -------
+
+
+def test_cell_5_is_shown_before_the_run_is_read_then_says_how_long(tmp_path, stub, reads):
+    from morphobricks_preprocessing import notebook_mask_register as cell_5
+    from morphobricks_preprocessing.notebook_open_progress import TOOK
+
+    nb, step = segmented_app(tmp_path)
+    reads.opens.clear(), reads.whole.clear()
+    seen = []
+
+    def show(registration):
+        seen.append((sum(reads.whole.values()), list(registration.choices)))
+        cell_5.display(registration)
+
+    shown = []
+    cell_5_display = cell_5.display
+    cell_5.display = shown.append
+    try:
+        registration = register_step(nb, step, show=show)
+    finally:
+        cell_5.display = cell_5_display
+    assert seen == [(0, ["Cells"])]  # shown, with its question, before any image is read
+    assert shown == [registration]
+    assert sum(reads.whole.values()) == 4  # then the run is opened: each image once
+    assert TOOK.split("{")[0] in registration.opening.value
+
+
+def test_cell_5_shown_first_is_not_shown_twice_by_the_cell(tmp_path, stub, monkeypatch):
+    from morphobricks_preprocessing import notebook_mask_register as module
+
+    nb, step = segmented_app(tmp_path)
+    monkeypatch.setattr(module, "get_ipython", lambda: object())  # as in a notebook
+    shown = []
+    monkeypatch.setattr(module, "display", shown.append)
+    registration = register_step(nb, step)
+    assert shown == [registration] and registration.skip_next_display
+    registration._ipython_display_()  # the cell's own display(registration): nothing more
+    assert not registration.skip_next_display
+
+
+def test_a_refusal_found_when_cell_5_opens_replaces_the_question(tmp_path, stub):
+    nb, step = segmented_app(tmp_path)
+    image = tmp_path / "exp" / step.workflow.inputs.fovs()[0].relative_path
+    image.write_bytes(image.read_bytes()[:-1] + b"\x07")
+    registration = register_step(nb, step, show=None)
+    assert registration.choices == {} and registration.refused
+    assert "The images changed since the run" in registration.status.value

@@ -221,8 +221,12 @@ def test_with_ipywidgets_7_the_step_is_displayed_by_the_widgets_own_display(app,
 def test_with_ipywidgets_8_the_step_is_displayed_by_its_mimebundle(app, monkeypatch):
     if not hasattr(widgets.Widget, "_repr_mimebundle_"):
         pytest.skip("ipywidgets 7: a widget has no _repr_mimebundle_ (the test above is its)")
+    from morphobricks_preprocessing import notebook_shown_first  # the shared mixin (v0.9.1)
+
     published = []
-    monkeypatch.setattr(step_module, "display", lambda obj, raw=False: published.append(obj))
+    monkeypatch.setattr(
+        notebook_shown_first, "display", lambda obj, raw=False: published.append(obj)
+    )
     for parent in widgets.Widget.__mro__:
         if "_ipython_display_" in vars(parent):
             monkeypatch.delattr(parent, "_ipython_display_")

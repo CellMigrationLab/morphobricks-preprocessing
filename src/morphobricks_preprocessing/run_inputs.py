@@ -98,7 +98,7 @@ from .run_inputs_text import (
 )
 from .run_inputs_tissue import TissueMaskInputs
 from .run_inputs_window import WindowInputs, _check_planes, _coordinate, _mapping
-from .source_content import content_changed
+from .source_content import ContentMemo, content_changed
 from .unrecorded import UnrecordedFiles, unrecorded_files
 from .zarr_input import NgffError, ZarrUnavailableError
 
@@ -379,13 +379,13 @@ class RunInputs(
         """Return the table's rows, as read when the run was opened."""
         return self.records
 
-    def _check_files(self, checking: Checking = quiet) -> None:
+    def _check_files(self, checking: Checking = quiet, memo: ContentMemo | None = None) -> None:
         """Refuse changed or gone files, masks without axes or shared, unrecorded files."""
         images = counted(checking, "images", self.manifest.files, RELATIVE)
         changed = [e.relative_path for e in images if not self._unchanged(e)]
         if not changed and self.manifest.settings.verify_content:
             entries = counted(checking, "contents", self.manifest.files, RELATIVE)
-            changed = content_changed(entries, self.experiment_root)
+            changed = content_changed(entries, self.experiment_root, memo)
         if changed:
             raise RunInputsError(_changed_text(changed))
         recorded = (self.manifest.masks or {}).get("files", ())
@@ -461,8 +461,9 @@ def open_checked(
     masks_root: str | os.PathLike | None = None,
     *,
     checking: Checking = quiet,
+    memo: ContentMemo | None = None,
 ) -> RunInputs:
-    """Open a run as :meth:`RunInputs.open` does, telling ``checking`` (:mod:`.open_checks`)."""
+    """Open a run as :meth:`RunInputs.open` does, with ``checking`` and ``memo`` (one press)."""
     output = Path(output_folder).resolve()
     checking("run", 0, 0, "")
     # One generation of the outputs (contract §9): read again if a run published meanwhile.
@@ -472,7 +473,7 @@ def open_checked(
             f"Another run kept publishing new results in {output} while they were being "
             "opened. Open the run again once it has finished."
         )
-    inputs._check_files(checking)
+    inputs._check_files(checking, memo)
     return inputs
 
 

@@ -250,6 +250,7 @@ class _RunStep:
             workers=workers,
             max_ram=cap or None,
             checking=self._checking,
+            memo=getattr(self, "_press_memo", None),  # cell 5's press (content_memo)
         )
 
     def _build_histogram_range(self) -> list[widgets.Widget]:

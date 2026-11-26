@@ -48,10 +48,14 @@ STOPPED_AFTER = "Stopped after {took}."
 """The line left when an error or an interrupt went through it."""
 
 
-def step_label(key: str) -> str:
-    """Return the line of step ``key`` of :data:`STEPS`: ``"Step 2 of 5 · <step>"``."""
+def step_label(key: str, text: str | None = None) -> str:
+    """Return the line of step ``key`` of :data:`STEPS`: ``"Step 2 of 5 · <step>"``.
+
+    ``text`` words the step instead of :data:`STEPS` (the folders step when only the masks are
+    paired, v0.9.1).
+    """
     number = list(STEPS).index(key) + 1
-    return f"Step {number} of {len(STEPS)} · {STEPS[key]}"
+    return f"Step {number} of {len(STEPS)} · {text or STEPS[key]}"
 
 
 class RegisterWait:
@@ -93,15 +97,17 @@ class RegisterWait:
             self.line.value = f"<div class='mb-help'>{took}</div>"
 
     @contextmanager
-    def step(self, key: str, shown: widgets.HTML | None = None) -> Iterator[None]:
+    def step(
+        self, key: str, shown: widgets.HTML | None = None, text: str | None = None
+    ) -> Iterator[None]:
         """Name step ``key`` while the block runs; copy ``shown`` (the app's wait) under it.
 
         ``shown`` is the app's own status line of that step: each value the app draws there
         while the block runs is drawn under the step line too, then the copy stops and the
-        line under it is emptied.
+        line under it is emptied. ``text``: as :func:`step_label`.
         """
-        if self.wait.label != step_label(key):
-            self.wait.phase(step_label(key))
+        if self.wait.label != step_label(key, text):
+            self.wait.phase(step_label(key, text))
         self.detail.value = ""
 
         def copy(change: dict) -> None:

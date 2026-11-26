@@ -27,6 +27,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Literal
 
+from ..content_memo import ContentMemo
 from ..lab_links import LabLinks
 
 RESTART = "restart"
@@ -97,6 +98,11 @@ class RunMode:
         then in a ``verify_content`` run :data:`.phases.CONTENTS`, once per image hashed.
         On a large experiment this check takes minutes (owner test of v0.9.0). Operational
         only, like ``workers``: not recorded, not compared, and the outputs are the same.
+    memo
+        Within one press of the notebook, the content SHA-256s the press already took
+        (:mod:`..content_memo`): the run's content pass reuses one while the file's identity is
+        unchanged. Its check before it publishes never does. Operational only, like
+        ``checking``; None (the default): every image is read whole.
     """
 
     name: str = RESTART
@@ -105,6 +111,7 @@ class RunMode:
     workers: int | Literal["auto"] = 1
     max_ram: int | None = None
     checking: Callable[[str, int, int, str], None] | None = field(default=None, compare=False)
+    memo: ContentMemo | None = field(default=None, compare=False)
 
 
 def run_mode(mode: object) -> RunMode:
@@ -138,6 +145,8 @@ def run_mode(mode: object) -> RunMode:
     check_workers(mode.workers, mode.max_ram)
     if mode.checking is not None and not callable(mode.checking):
         raise ValueError(f"checking must be callable or None; found {mode.checking!r}")
+    if mode.memo is not None and not isinstance(mode.memo, ContentMemo):
+        raise ValueError(f"memo must be a ContentMemo or None; found {mode.memo!r}")
     return RunMode(
         check_mode(mode.name),
         mode.verify_content,
@@ -145,6 +154,7 @@ def run_mode(mode: object) -> RunMode:
         mode.workers,
         mode.max_ram,
         mode.checking,
+        mode.memo,
     )
 
 

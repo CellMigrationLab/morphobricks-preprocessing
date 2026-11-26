@@ -10,6 +10,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from ._io import file_sha256
+from .content_memo import ContentMemo
 from .manifest import MANIFEST_FILENAME
 from .open_checks import Checking, quiet
 from .run_inputs import RunInputs, open_checked
@@ -39,11 +40,14 @@ REPUBLISHED = (
 """The refusal of a preview, a batch or a record whose run manifest is no longer the opened one."""
 
 
-def open_run(run_folder: str, *, checking: Checking = quiet) -> RunInputs:
+def open_run(
+    run_folder: str, *, checking: Checking = quiet, memo: ContentMemo | None = None
+) -> RunInputs:
     """Open the run in ``run_folder`` (preprocessing's own checks; refusals are unchanged).
 
     ``checking`` is told each phase of the checks (:func:`.run_inputs.open_checked`); it
-    changes nothing they check or decide.
+    changes nothing they check or decide. ``memo``: the content SHA-256s one notebook press
+    already took (:mod:`.content_memo`).
 
     Raises
     ------
@@ -54,7 +58,7 @@ def open_run(run_folder: str, *, checking: Checking = quiet) -> RunInputs:
     """
     if not run_folder.strip():
         raise SegmentationError("Give the run's output folder (the one holding run_manifest.json).")
-    return open_checked(Path(run_folder.strip()), checking=checking)
+    return open_checked(Path(run_folder.strip()), checking=checking, memo=memo)
 
 
 def open_pinned(run_folder: str, *, checking: Checking = quiet) -> tuple[RunInputs, str | None]:

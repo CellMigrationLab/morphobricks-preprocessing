@@ -219,7 +219,13 @@ def run_experiment(  # noqa: PLR0913
         with output_lock(output):
             reading = Workers(chosen.workers, chosen.max_ram)
             options = RunOptions(
-                mode, memory_limit, progress, chosen.lab_links, reading, chosen.checking
+                mode,
+                memory_limit,
+                progress,
+                chosen.lab_links,
+                reading,
+                chosen.checking,
+                chosen.memo,
             )
             return _locked_run(given, output, options)
     except OutputLockedError as exc:
@@ -276,7 +282,7 @@ def _locked_run(given: GivenInputs, output: Path, options: RunOptions) -> RunRes
         histogram=inputs.histogram_settings,
         verify_content=inputs.verify_content,
     )
-    reporting = Reporting(options.progress, options.checking)
+    reporting = Reporting(options.progress, options.checking, options.memo)
     rows = compute_rows(
         pre, checked, settings, output, previous, options.mode, reporting, options.workers
     )

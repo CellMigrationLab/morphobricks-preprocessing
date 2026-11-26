@@ -31,12 +31,13 @@ import ipywidgets as widgets
 import numpy as np
 
 from . import notebook_style as ui
+from .content_memo import ContentMemo
 from .fingerprint import current_fingerprint
 from .manifest import MANIFEST_FILENAME
 from .mask_conversion import _check_case_collision, _check_output_id
 from .notebook_render import blocked_line
 from .plane_errors import PlaneReadError
-from .run_inputs import RunInputs
+from .run_inputs import RunInputs, open_checked
 from .run_inputs_tissue import NOT_REUSED, PROVISIONAL_NOTE, tissue_next_steps
 
 INSTALL_HINT = 'pip install "morphobricks-preprocessing[he-mask]"'
@@ -171,8 +172,12 @@ class TissueMaskCard:
             self.result,
         ]
 
-    def refresh(self, output_folder: Path | None) -> None:
-        """Offer the RGB positions of the run in ``output_folder``; clear the card for another."""
+    def refresh(self, output_folder: Path | None, *, memo: ContentMemo | None = None) -> None:
+        """Offer the RGB positions of the run in ``output_folder``; clear the card for another.
+
+        ``memo``: the content SHA-256s the press that published the run already took
+        (:mod:`.content_memo`), reused while a file's identity is unchanged.
+        """
         manifest = None if output_folder is None else output_folder / MANIFEST_FILENAME
         seen = (output_folder, None if manifest is None else current_fingerprint(manifest))
         if seen == self._seen:  # the same run: keep the last preview and result shown
@@ -182,7 +187,7 @@ class TissueMaskCard:
         greyed = []
         if output_folder is not None and manifest.exists():
             try:
-                self._run = RunInputs.open(output_folder)
+                self._run = open_checked(output_folder, memo=memo)
             except (OSError, ValueError) as exc:
                 self._problem = str(exc)
         for fov in () if self._run is None else self._run.fovs():
