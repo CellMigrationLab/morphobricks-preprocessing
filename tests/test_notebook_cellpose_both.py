@@ -275,7 +275,7 @@ def test_the_record_of_both_is_plain_json_without_a_partner(cells):
 def settings_and_cell_model(workflow):
     """Set the cells' settings and load their model, as cell 5 does first."""
     workflow.set_settings("", 0.4, 0.0, 8)
-    workflow.load("cpsam_v2", "", "cpu", False, False)
+    workflow.load("cpsam_v2", "", "cpu")
 
 
 def nothing_written(cells, *names):
@@ -296,7 +296,7 @@ def test_nuclei_settings_without_a_loaded_nuclei_model_are_refused(cells, monkey
 
         monkeypatch.setattr(cp, "load_model", refuse)
         with pytest.raises(notebook_cellpose.CellStop, match="no weights"):
-            workflow.load_nuclei("cpsam", "", "cpu", False, False)
+            workflow.load_nuclei("cpsam", "", "cpu")
     assert workflow.nuclei_loaded is None
     with pytest.raises(
         notebook_cellpose.CellStop, match="The nuclei have their own model: load it first"

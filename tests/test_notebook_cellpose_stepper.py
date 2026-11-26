@@ -4,14 +4,14 @@
 (chips, Back, Next): Folders, Output and channels, Model and preview, Segment. These tests
 press the widgets as a user would, with the stand-in Cellpose of ``tests/cellpose_stub.py``:
 the whole flow, the folder refusal at step 1, the run's images in the preprocessing viewer,
-Preview loading the model once and reusing it, the download shown as one ``tqdm.auto`` bar,
+Preview loading the model once and reusing it, the first-use download shown as one line (#574),
 and that no *What to do next* step is left.
 """
 
 import html
 import logging
 import sys
-import types
+import urllib.error
 
 import pytest
 
@@ -256,61 +256,67 @@ def test_the_nuclei_box_shows_for_both_only(mixed_run, stub):
     assert is_visible(box) and "Output Both: the nuclei" in texts(box)
 
 
-# the download: one tqdm.auto bar, nothing else changes -----------------------------------------
+# the download on first use (#574): one "Downloading <model> weights…" line, no tick ----------
 
 
-@pytest.fixture
-def auto_bar(monkeypatch):
-    """A stand-in ``tqdm.auto`` that records the bars made (tqdm comes with Cellpose)."""
-    made = []
-
-    class Bar(TextBar):
-        def __init__(self, *args, **kwargs):
-            super().__init__(*args, **kwargs)
-            made.append(self)
-
-    auto = types.ModuleType("tqdm.auto")
-    auto.tqdm = Bar
-    package = types.ModuleType("tqdm")
-    package.auto = auto
-    monkeypatch.setitem(sys.modules, "tqdm", package)
-    monkeypatch.setitem(sys.modules, "tqdm.auto", auto)
-    return made
-
-
-def test_a_download_shows_one_notebook_bar_and_the_same_weights(mixed_run, stub, auto_bar):
+def test_preview_downloads_the_chosen_models_weights_with_a_visible_line(mixed_run, stub):
     (stub.models_dir / "cpsam").unlink()
     app = ready(mixed_run)
     fields = app.workflow.forms["model"].fields
-    fields["model"].value, fields["download_weights"].value = "cpsam", True
+    assert "download_weights" not in fields and "install_dinov3" not in fields
+    fields["model"].value = "cpsam"
     preview(app)
-    assert stub.downloaded == ["cpsam"]
-    assert stub.bars == [download.notebook_bar]  # Cellpose's bar, drawn by tqdm.auto
-    (bar,) = auto_bar
-    assert bar.kwargs["desc"] == download.BAR_LABEL and bar.kwargs["unit"] == "B"
-    assert bar.done == len(b"weights of cpsam")
-    assert sys.modules["cellpose.utils"].tqdm is TextBar  # put back
+    assert stub.downloaded == ["cpsam"] and stub.cellpose_downloaded == []
+    shown = " ".join(app.workflow.shown)
+    assert "Downloading cpsam weights…" in shown  # the line as first shown
     assert app.workflow.loaded.downloaded and app.workflow.loaded.name == "cpsam"
     assert app.workflow.loaded.path == stub.models_dir / "cpsam"
+    preview(app)  # loaded once, then reused: nothing downloads again
+    assert stub.downloaded == ["cpsam"]
 
 
-def test_no_download_without_the_tick_even_with_the_quiet_display(mixed_run, stub, auto_bar):
+def test_the_download_line_counts_megabytes_and_says_how_it_ended():
+    shown = []
+    line = download.DownloadLine(shown.append)
+    line.finish(True)
+    assert shown == [] and line.widget.value == ""  # nothing to say: nothing shown
+    mb = download.MEGABYTE
+    line("Downloading cpsam weights…", 0, 300 * mb)
+    assert shown == [line.widget]
+    line("Downloading cpsam weights…", 300 * mb, 300 * mb)
+    value = html.unescape(line.widget.value)
+    assert "Downloading cpsam weights…" in value and "300 of 300" in value and "MB" in value
+    line.finish(True)
+    assert (
+        "Downloading cpsam weights: done in" in line.widget.value and "mb-ok" in line.widget.value
+    )
+    now = [0.0]
+    stopped = download.DownloadLine(shown.append, clock=lambda: now[0])
+    stopped("Downloading cpdino weights…", 0, 0)
+    now[0] = 1.0
+    stopped("Downloading cpdino weights…", 5 * mb, 0)  # no size from the server: MB so far
+    assert "5 so far" in stopped.widget.value
+    stopped.finish(False)
+    assert "stopped after" in stopped.widget.value and "mb-error" in stopped.widget.value
+
+
+def test_a_failed_download_on_preview_is_a_refusal_and_nothing_loads(mixed_run, stub):
     (stub.models_dir / "cpsam").unlink()
+    stub.download_fail = urllib.error.URLError("blocked")
     app = ready(mixed_run)
     app.workflow.forms["model"].fields["model"].value = "cpsam"
     form = app.workflow.forms["preview"]
     form.button.click()
-    assert "Allow the download on purpose" in form.refusal
-    assert stub.downloaded == [] and auto_bar == [] and stub.constructed == []
+    assert "weights of cpsam could not be downloaded from https://huggingface.co/" in form.refusal
+    assert stub.constructed == [] and app.workflow.loaded is None and stub.calls == []
 
 
-def test_cellpose_logs_are_quiet_and_its_warnings_are_kept(stub, auto_bar):
+def test_cellpose_logs_are_quiet_and_its_warnings_are_kept(stub):
     logger = logging.getLogger("cellpose")
     before = logger.propagate
     with download.quiet_cellpose() as said:
         logging.getLogger("cellpose.models").info("Downloading: noise")
         logging.getLogger("cellpose.models").warning("pretrained model x not found")
-        assert sys.modules["cellpose.utils"].tqdm is download.notebook_bar
     assert said == ["Warning: pretrained model x not found"]
     assert logger.propagate is before and sys.modules["cellpose.utils"].tqdm is TextBar
 
@@ -325,12 +331,6 @@ def test_there_is_no_what_to_do_next_step(mixed_run, stub):
     app.workflow.forms["segment"].button.click()
     assert "What to do next" not in texts(app) and "Show the next steps" not in texts(app)
     assert not any("What to do next" in (getattr(w, "description", "") or "") for w in walk(app))
-
-
-def test_without_tqdm_auto_cellposes_own_bar_is_left_as_it_is(stub, monkeypatch):
-    monkeypatch.setitem(sys.modules, "tqdm.auto", None)  # import tqdm.auto fails
-    with download.quiet_cellpose():
-        assert sys.modules["cellpose.utils"].tqdm is TextBar
 
 
 # review of #548 ---------------------------------------------------------------------------------
@@ -402,7 +402,7 @@ def test_the_model_chip_is_not_done_once_the_model_changes(mixed_run, stub):
     assert app.stepper.states()[2].done and "cpsam" in app.stepper.states()[2].text
 
 
-def test_cellposes_unpinned_dinov3_advice_becomes_the_notebooks_pinned_tick(mixed_run, stub):
+def test_cellposes_unpinned_dinov3_advice_becomes_the_notebooks_pinned_install(mixed_run, stub):
     # L2: Cellpose logs "run pip install git+.../dinov3" (unpinned) when it cannot import
     # DINOv3; the card points to the notebook's own pinned installation instead.
     from cellpose_stub import CPDINO_WARNING
@@ -412,7 +412,7 @@ def test_cellposes_unpinned_dinov3_advice_becomes_the_notebooks_pinned_tick(mixe
     preview(app)
     (card,) = [s for s in app.workflow.shown if "Cellpose said" in s]
     assert "pip install" not in card and "git+" not in card
-    assert "Install DINOv3 now" in html.unescape(card) and "pinned commit" in card
+    assert "installs the pinned commit" in html.unescape(card) and "restart" in card
     with download.quiet_cellpose() as said:
         logging.getLogger("cellpose.models").warning(CPDINO_WARNING)
     assert said == ["Warning: " + download.CPDINO_NOTE]

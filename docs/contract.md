@@ -1399,7 +1399,18 @@ Cellpose's own `model.device` is not evidence (it only repeats the device it was
 nothing beyond the network's tensors is verified. The device is the placement of the network's tensors; Cellpose's own post-processing is not
 covered by it: Cellpose may move the flow-threshold quality step to the CPU when GPU memory is
 short, and always computes the masks from the flows on the CPU on `mps`; that is Cellpose's
-behaviour, **not refused**, and the batch records it as a note. Uncached weights are downloaded only on an explicit request; more than
+behaviour, **not refused**, and the batch records it as a note. Built-in weights are never
+downloaded by Cellpose: choosing a built-in model and loading it is the consent to download that
+model's file (owner, #574), which `segmentation_cellpose_weights` fetches from
+`mouseland/cellpose-sam` at a pinned commit (`WEIGHTS_REVISION`) and accepts only with its
+pinned size and SHA-256 (`PINNED_WEIGHTS`); a copy already in Cellpose's model folder must match
+too, else it is refused and left as it is; the file's identity (device, inode, size, modification
+time) taken when it is hashed must be unchanged right before and after Cellpose loads it, else
+the load is refused. A failed or blocked download is a refusal naming the
+model and the URL (a local write error names the folder instead); nothing partial is kept and no other model is used. Cellpose is then given
+the file's absolute path. While `model.eval` runs, torch's `UserWarning` starting "Sparse
+invariant checks are implicitly disabled" from the `torch` or `cellpose` modules is filtered
+(`warnings.catch_warnings`, never a global filter); it does not affect results. More than
 three channels are refused (Cellpose reads the first three by position); a blank diameter is
 the model's native scale, never an estimate and never 0, and a diameter that gives fewer than one
 flow iteration (`int(200 / rescale)` is 0) is refused, never raised to 1. The batch's `model` holds the model
@@ -1407,12 +1418,15 @@ name, the weights file name (or the custom file's path) and its SHA-256, and its
 every effective setting (diameter in pixels or null with its meaning, thresholds, the **full**
 normalisation dictionary given to Cellpose (its defaults read from its module at call time, with
 the user's values applied) and the flow iterations `niter` (`int(200 / rescale)`, passed
-explicitly), batch and tile size, `channel_axis` 0, device type, versions, `weights_downloaded`
-and `weights_source` (the Hugging Face URL Cellpose uses; null for a model file), the device
-`notes` and, for a DINOv3 model, the DINOv3 commit). The batch ID is the record's
-`new_batch_id()`. The DINOv3 package is installed with `--no-deps` at a pinned commit, the head
-of its default branch on 22 November 2026, which is **not verified against `cpdino`**; Cellpose
-imports it only when first imported, so the runtime is restarted after installing it.
+explicitly), batch and tile size, `channel_axis` 0, device type, versions, `weights_downloaded`,
+`weights_source` (the pinned URL, `.../resolve/<revision>/<name>`), `weights_repository` and
+`weights_revision` (all three null for a model file), the device `notes` and, for a DINOv3
+model, `dinov3_commit`, `dinov3_source` and `dinov3_installed`). The batch ID is the record's
+`new_batch_id()`. The DINOv3 package (the code of the `cpdino` networks) is installed on the
+first load of a `cpdino` model when none is installed, with `--no-deps` at a pinned commit, the
+head of its default branch on 22 November 2026, which is **not verified against `cpdino`**; a
+DINOv3 of another commit is refused, not replaced. Cellpose imports it only when first imported
+(`cellpose.vit`), so a DINOv3 installed after that needs a restart, and the load says so.
 Two-dimensional images only. **A mask the batch publishes is never left without its record
 entry**: each mask's SHA-256 and the record write (the batch so far, the same batch ID growing)
 happen in `write_mask`'s `on_published`, **under the type's write lock**, before the next image
