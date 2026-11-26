@@ -417,3 +417,135 @@ def test_a_record_and_a_run_of_different_experiment_folders_restore_nothing(exp,
     assert nb.preflight is None and nb.folder.value == ""
     text = _text(nb.restore_status.value)
     assert "names two experiment folders" in text and "They disagree" in text
+
+
+# Owner's Colab test of v0.9.0 (25 November 2026): earlier work with no recorded folder ---------
+
+OLD_DRAFT = {  # written by v0.5.1 (draft format 3, an older pinned Spec commit)
+    "format": "morphobricks-description-draft",
+    "version": 3,
+    "base_sha256": "absent",
+    "spec_commit": "cc9820f5b84f01bbbb5c8e3f54e70ee13cb5e9eb",
+    "conditions": {"drug": {"reference": "ctrl"}},
+    "technical_repeats": {},
+    "repeats": {},
+    "pairing": {},
+    "units": {},
+    "channels": {},
+    "masks": {},
+}
+
+
+def answers_only(root, out):
+    """An output folder holding saved answers of this version only: no folder is recorded."""
+    first = checked(root, out)
+    first.reference_boxes["drug"].value = "ctrl"
+    (out / CHECK_RECORD_FILENAME).unlink()
+    assert (out / DRAFT_FILENAME).is_file()
+
+
+def scanned_and_shown(nb, root):
+    """The folders entered are scanned, one picture is shown and the check is offered."""
+    assert nb._scanned is not None and nb._scanned[0] == str(root)
+    assert ui.is_visible(nb.scan_box) and len(nb.scan_example.children) == 2
+    assert not nb.check_button.disabled
+
+
+def test_the_folder_entered_after_unrecorded_earlier_work_is_scanned_and_shown(exp):
+    root, out = exp
+    answers_only(root, out)
+    nb = stepper()
+    nb.output.value = str(out)
+    text = _text(nb.restore_status.value)
+    assert "is not recorded" in text
+    assert "Check folder" not in text  # the stepper has no such button: it names its own
+    assert "Scan the folders" in text and "Looks right: read all image headers" in text
+    nb.folder.value = str(root)  # Enter, or leaving the box
+    scanned_and_shown(nb, root)
+    text = _text(nb.restore_status.value)
+    assert f"The folders of {root} are scanned below" in text
+    nb.check_button.click()
+    assert nb.preflight is not None and nb._draft_saved  # the check reads the saved answers
+    assert nb.reference_boxes["drug"].value == "ctrl"
+
+
+def test_a_scan_clicked_before_the_folder_arrives_is_made_good_when_it_arrives(exp):
+    root, out = exp
+    answers_only(root, out)
+    nb = stepper()
+    nb.output.value = str(out)
+    nb.scan_button.click()  # the click reached the kernel before the typed folder
+    assert "Enter the experiment folder first" in _text(nb.scan_status.value)
+    nb.folder.value = str(root)
+    scanned_and_shown(nb, root)
+
+
+def test_saved_answers_of_an_older_version_are_ignored_and_never_block_a_scan(exp):
+    root, out = exp
+    out.mkdir()
+    (out / DRAFT_FILENAME).write_text(json.dumps(OLD_DRAFT), encoding="utf-8")
+    before = files_of(out)
+    nb = stepper()
+    nb.output.value = str(out)
+    text = _text(nb.restore_status.value)
+    assert text.startswith("The saved answers in this output folder")
+    assert "another version" in text and "Found earlier work" not in text
+    assert not ui.is_visible(nb.restore_fresh) and files_of(out) == before
+    assert "Scan the folders" in text and "Check folder" not in text
+    nb.folder.value = str(root)  # the owner's case: the folder entered is scanned and shown
+    scanned_and_shown(nb, root)
+    assert f"The folders of {root} are scanned below" in _text(nb.restore_status.value)
+    assert files_of(out) == before  # the scan writes nothing
+    nb.check_button.click()
+    assert nb.preflight is not None and not nb._draft_saved
+    assert nb.reference_boxes["drug"].value != "ctrl"  # nothing of the old answers is used
+
+
+def old_answers_only(out):
+    out.mkdir()
+    (out / DRAFT_FILENAME).write_text(json.dumps(OLD_DRAFT), encoding="utf-8")
+
+
+def test_an_early_scan_click_is_made_good_with_older_answers_too(exp):
+    root, out = exp
+    old_answers_only(out)
+    nb = stepper()
+    nb.output.value = str(out)
+    nb.scan_button.click()  # the click reached the kernel before the typed folder
+    assert "Enter the experiment folder first" in _text(nb.scan_status.value)
+    nb.folder.value = str(root)
+    scanned_and_shown(nb, root)
+
+
+def test_the_older_answers_line_names_the_pages_check_folder_button(exp):
+    root, out = exp
+    old_answers_only(out)
+    nb = PreprocessingNotebook()
+    nb.folder_step()
+    nb.output.value = str(out)
+    text = _text(nb.restore_status.value)
+    assert "another version" in text and "Scan the folders" not in text
+    assert "click Check folder." in text
+
+
+def test_older_answers_beside_a_recorded_check_restore_the_check_without_a_scan_hint(exp):
+    root, out = exp
+    checked(root, out)
+    (out / DRAFT_FILENAME).write_text(json.dumps(OLD_DRAFT), encoding="utf-8")
+    nb = stepper()
+    nb.output.value = str(out)
+    text = _text(nb.restore_status.value)
+    assert "restored the folder check" in text and "another version" in text
+    assert "scan the folders" not in text.lower() and "again reads" not in text
+    assert "Click Looks right: read all image headers again to read every header again" in text
+
+
+def test_the_stacked_pages_name_their_check_folder_button(exp):
+    root, out = exp
+    answers_only(root, out)
+    nb = PreprocessingNotebook()
+    nb.folder_step()
+    nb.output.value = str(out)
+    assert "Enter the experiment folder and click Check folder." in _text(nb.restore_status.value)
+    nb.folder.value = str(root)
+    assert nb.preflight is None  # the pages have no scan: Check folder is the user's click

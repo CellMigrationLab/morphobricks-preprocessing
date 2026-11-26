@@ -72,7 +72,15 @@ from .reuse import read_previous, recorded_experiment_root
 from .rows import _pixel_issues, _range_issues, _row_order
 from .staging import clear_staging
 from .state import RunOptions, RunState
-from .steps import Rows, compute_rows, counts, header_checks, outcome_of, unreadable_issue
+from .steps import (
+    Reporting,
+    Rows,
+    compute_rows,
+    counts,
+    header_checks,
+    outcome_of,
+    unreadable_issue,
+)
 from .workers import Workers
 
 logger = logging.getLogger(__name__)
@@ -141,6 +149,8 @@ def run_experiment(  # noqa: PLR0913
         turning it on or off recomputes every row). Its ``lab_links``: manifest only (PP-2).
         Its ``workers`` and ``max_ram``: how many images are read at once, each whole in a
         worker thread (issue #107, :mod:`.workers`); the outputs are the same with any value.
+        Its ``checking``: the progress of the run's own folder and header check, before any
+        image is read (:attr:`.modes.RunMode.checking`).
         With more than one worker, ``progress`` is called in this thread as each image is done.
     progress
         Called as ``progress(done, total, relative_path)`` before each file is
@@ -208,7 +218,9 @@ def run_experiment(  # noqa: PLR0913
     try:
         with output_lock(output):
             reading = Workers(chosen.workers, chosen.max_ram)
-            options = RunOptions(mode, memory_limit, progress, chosen.lab_links, reading)
+            options = RunOptions(
+                mode, memory_limit, progress, chosen.lab_links, reading, chosen.checking
+            )
             return _locked_run(given, output, options)
     except OutputLockedError as exc:
         return RunResult(output, False, (lock_issue(exc),), mode=mode)
@@ -228,6 +240,7 @@ def _locked_run(given: GivenInputs, output: Path, options: RunOptions) -> RunRes
         masks_folder=inputs.masks_folder,
         mask_axes=inputs.mask_axes or None,
         bind_headers=True,
+        progress=options.checking,  # minutes on a large experiment: it is reported (v0.9.0)
     )
     loaded = load_description(output)
     links = options.lab_links  # provenance only (experiment-v1 9.3): checked, never a key
@@ -263,8 +276,9 @@ def _locked_run(given: GivenInputs, output: Path, options: RunOptions) -> RunRes
         histogram=inputs.histogram_settings,
         verify_content=inputs.verify_content,
     )
+    reporting = Reporting(options.progress, options.checking)
     rows = compute_rows(
-        pre, checked, settings, output, previous, options.mode, options.progress, options.workers
+        pre, checked, settings, output, previous, options.mode, reporting, options.workers
     )
     checked.issues.extend(_read_issues(rows, settings))
     if rows.refused or rows.changed or rows.failed:

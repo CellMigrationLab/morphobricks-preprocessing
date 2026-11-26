@@ -33,7 +33,7 @@ from .notebook_options import (
     serial_note,
 )
 from .notebook_plots import IntensityPanel
-from .notebook_progress import Wait
+from .notebook_progress import BUSY_NOTE, COUNTED_PHASES, PREPARING, Wait
 from .notebook_render import _bins_help, _label, blocked_line, change_lines, issues_html
 from .planes import DEFAULT_MEMORY_LIMIT
 from .report import issue_counts, rebuild_line
@@ -244,7 +244,13 @@ class _RunStep:
         """Return the run's mode with the workers chosen; the memory cap only with Auto."""
         workers = self.workers.value
         cap = round(self.max_ram_gib.value * 2**30) if workers == AUTO else 0
-        return RunMode(self.mode.value, verify_content, workers=workers, max_ram=cap or None)
+        return RunMode(
+            self.mode.value,
+            verify_content,
+            workers=workers,
+            max_ram=cap or None,
+            checking=self._checking,
+        )
 
     def _build_histogram_range(self) -> list[widgets.Widget]:
         """Build the histogram range choice and its robust quantiles; return the widgets."""
@@ -396,12 +402,16 @@ class _RunStep:
             return None
         self._start_run()
         try:
-            with self.log.attached():
+            # The run checks every header again before its first image, with no image read to
+            # report: the line says which header, and its elapsed time goes on (owner, v0.9.0).
+            with self.log.attached(), self._run_wait.ticking():
                 self.result = self._call_run(histogram_settings)
         except Exception as exc:  # unexpected failures still get a readable message
             self._run_failed(exc)
             return None
         finally:
+            if self.run_next.value == BUSY_NOTE:
+                self.run_next.value = ""
             self._idle(self.run_button, " Compute histograms", "play")
         self._finish_run(self.result)
         return self.result
@@ -409,7 +419,7 @@ class _RunStep:
     def _start_run(self) -> None:
         """Clear the results of an earlier run and show that this one is starting."""
         self._busy(self.run_button, "Computing…")
-        self.run_next.value = ""
+        self.run_next.value = BUSY_NOTE
         self.run_checks.clear()
         self.run_lock.hide()
         self.run_report.clear()
@@ -439,6 +449,23 @@ class _RunStep:
             intensity_settings=given.intensity_settings,
             histogram_settings=histogram_settings,
         )
+
+    def _checking(self, phase: str, done: int, total: int, path: str) -> None:
+        """Show the run's own checks: each phase, and each header or image of how many.
+
+        A phase's start and end calls without a path are placeholders (``("masks", 0, 1, "")``
+        with no masks): only the headers' start, or a call with a path, gives the real total;
+        an end is drawn as "N of N" only when the phase counted that total.
+        """
+        wait = self._run_wait
+        label = PREPARING[phase]
+        if wait.label != label:
+            counted = phase == "headers" or bool(path)  # a call with a path has the real total
+            wait.phase(label, total if counted and phase in COUNTED_PHASES else 0)
+        if phase not in COUNTED_PHASES:
+            return
+        if path or (total > 0 and done >= total and wait.total == total):
+            wait.step(done, total, path)
 
     def _run_failed(self, exc: Exception) -> None:
         """Show an unexpected failure in plain words, with the traceback in the details."""

@@ -359,6 +359,7 @@ def test_the_run_workers_are_a_run_mode_option():
         ("lab_links", "LabLinks | None", None),
         ("workers", "int | Literal['auto']", 1),
         ("max_ram", "int | None", None),
+        ("checking", "Callable[[str, int, int, str], None] | None", None),
     ]
     assert package.RunMode is RunMode
     parameters = inspect.signature(run_experiment).parameters
