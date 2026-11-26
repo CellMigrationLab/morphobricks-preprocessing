@@ -100,7 +100,7 @@ def preview_figures(results: list[MaskResult]) -> list[Figure]:
 
 
 def figure_image(figure: Figure) -> widgets.Image:
-    """Return ``figure`` as a PNG picture widget, at most 99% of its box wide.."""
+    """Return ``figure`` as a PNG picture widget, at most 99% of its box wide."""
     buffer = io.BytesIO()
     figure.savefig(buffer, format="png", bbox_inches="tight")
     layout = widgets.Layout(max_width="99%", height="auto")

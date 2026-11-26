@@ -293,6 +293,12 @@ class CellposeNotebook(CellposeWorkflow):
                 "warn", f"Changed: press Choose the channels again, then {then}."
             )
 
+    def channels_edited(self) -> None:
+        """Take the preview off; Segment's line no longer says it used these channels."""
+        super().channels_edited()
+        self._previewed_with = None
+        self._refresh_summary()
+
     def drop_choice(self) -> None:
         """Forget the channels, the mask types and every loaded model (the choice changed)."""
         super().drop_choice()
@@ -460,7 +466,11 @@ class CellposeNotebook(CellposeWorkflow):
         self._refresh_summary()
 
     def _model_fields_changed(self) -> None:
-        """Update what shows the model form's values: Segment's line and the step strip."""
+        """Take the preview off (Preview and Segment read these fields), then update the line.
+
+        What the last Preview used is kept: Segment's line still says what changed since.
+        """
+        self.clear_preview()
         self._refresh_summary()
         for callback in self.on_change:
             callback()

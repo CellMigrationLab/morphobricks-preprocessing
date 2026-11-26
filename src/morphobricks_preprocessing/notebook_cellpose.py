@@ -119,14 +119,14 @@ class CellposeWorkflow:
         self.previewed: list[MaskResult] = []
         self.preview_box = widgets.VBox()  # the last Preview's result, and nothing else
         self.shown: list[str] = []
+        self.styled = False  # the style sheet is shown (once, by the first step or Preview)
         self.on_masks_written: Callable[[cp.BatchResult], object] | None = None
         self.register_with: str | None = None
         self.folders_refused = ""  # the masks folder refusal of the last Open the run, or ""
 
     def _show(self, widget: widgets.Widget) -> None:
         """Display ``widget`` (the style sheet goes first, once)."""
-        if not self.shown:
-            display(widgets.HTML(STYLE_CSS))
+        self._style()
         self.shown.append(getattr(widget, "value", ""))
         display(widget)
 
@@ -150,6 +150,10 @@ class CellposeWorkflow:
         self.mask_types = {}
         self.clear_preview()  # a preview of other channels says nothing of the next ones
 
+    def channels_edited(self) -> None:
+        """Take the preview off: a channel dropdown or number changed (Preview re-reads them)."""
+        self.clear_preview()
+
     def clear_preview(self) -> None:
         """Take the last Preview's result off the screen and out of :attr:`previewed`."""
         self.previewed = []
@@ -159,9 +163,14 @@ class CellposeWorkflow:
 
     def _mount_preview(self) -> None:
         """Show :attr:`preview_box` in the cell that previews (a form shows it on its page)."""
-        if not self.shown:
-            display(widgets.HTML(STYLE_CSS))
+        self._style()
         display(self.preview_box)
+
+    def _style(self) -> None:
+        """Display the style sheet, the first time only."""
+        if not self.styled:
+            self.styled = True
+            display(widgets.HTML(STYLE_CSS))
 
     def model_for(self, output: str) -> tuple[cp.LoadedModel, cp.Settings]:
         """Return the model and the settings that segment the masks of ``output``.
@@ -252,6 +261,7 @@ class CellposeWorkflow:
         self.drop_choice()
         self.mask_types, self.mask_type = types, next(iter(types.values()))
         self.picker = ChannelPicker(self.inputs, output)
+        self.picker.on_edit(self.channels_edited)  # the dropdowns are live: Preview re-reads them
         lines = tuple(
             f"{OUTPUT_NAMES[o]}, mask type {t}: {len(todo[o])} of {len(self.inputs.fovs())} "
             "images have no mask yet"
@@ -273,7 +283,10 @@ class CellposeWorkflow:
         Normalisation is not a choice: it is always Cellpose's own, per image (1st to 99th
         percentile of each channel).
         """
-        self.settings = _settings(diameter, flow_threshold, cellprob_threshold, batch_size)
+        settings = _settings(diameter, flow_threshold, cellprob_threshold, batch_size)
+        if settings != self.settings:  # a preview with other settings is taken off
+            self.clear_preview()
+        self.settings = settings
 
     @stops
     def set_nuclei_settings(
@@ -285,7 +298,10 @@ class CellposeWorkflow:
     ) -> None:
         """Check the settings of a separate nuclei model (output Both, cell 5's Advanced)."""
         self._need_both()
-        self.nuclei_settings = _settings(diameter, flow_threshold, cellprob_threshold, batch_size)
+        settings = _settings(diameter, flow_threshold, cellprob_threshold, batch_size)
+        if settings != self.nuclei_settings:  # a preview with other settings is taken off
+            self.clear_preview()
+        self.nuclei_settings = settings
 
     @stops
     def load(
@@ -302,6 +318,7 @@ class CellposeWorkflow:
         if self.settings is None:
             raise SegmentationError("Set the settings first: press Load the model.")
         self.loaded = None
+        self.clear_preview()  # a preview of the model loaded before is taken off
         self.loaded = self._load_model(
             model, custom_model_file, device, download_weights, install_dino, self.settings
         )
@@ -323,6 +340,7 @@ class CellposeWorkflow:
                 "step)."
             )
         self.nuclei_loaded = None
+        self.clear_preview()  # a preview of the nuclei model loaded before is taken off
         self.nuclei_loaded = self._load_model(
             model, custom_model_file, device, download_weights, install_dino, self.nuclei_settings
         )
@@ -339,6 +357,8 @@ class CellposeWorkflow:
 
     def same_model_for_nuclei(self) -> None:
         """Segment the nuclei of Both with the model and the settings of the cells."""
+        if self.nuclei_loaded is not None or self.nuclei_settings is not None:
+            self.clear_preview()  # a preview of the nuclei's own model is taken off
         self.nuclei_loaded = self.nuclei_settings = None
 
     def _load_model(

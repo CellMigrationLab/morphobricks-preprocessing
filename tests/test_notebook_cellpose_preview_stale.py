@@ -15,6 +15,7 @@ import pytest
 
 from cellpose_stub import install, two_channel_run
 from morphobricks_preprocessing.notebook_cellpose_app import segmentation_app
+from morphobricks_preprocessing.notebook_cellpose_channels import BY_NUMBER
 from morphobricks_preprocessing.segmentation_record import record_path
 
 
@@ -156,3 +157,62 @@ def test_previews_write_nothing(run, stub):
     assert snapshot(run.masks) == before
     assert app.workflow.results == {} and app.workflow.result is None
     assert all(not record_path(run.masks, t).exists() for t in ("Cells", "Nuclei"))
+
+
+# Review of #576: the channel dropdowns are live (Preview and Segment re-read them), and so are
+# the model step's fields; any change takes the preview off, as a change of output does.
+
+
+def test_removing_the_nuclear_channel_takes_the_preview_of_both_off(run, stub):
+    app = both_previewed(run)
+    workflow = app.workflow
+    workflow.picker.nuclear.value = ""
+    assert workflow.previewed == []
+    assert workflow.preview_box.children == ()
+    assert "Nuclei" not in texts(app.stepper.pages[2])
+    assert "not previewed yet" in workflow._summary.value
+
+
+def test_changing_the_cell_channel_takes_the_preview_off(run, stub):
+    app = both_previewed(run)
+    workflow = app.workflow
+    workflow.picker.cell.value = "DNA"
+    assert workflow.previewed == []
+    assert workflow.preview_box.children == ()
+    assert "not previewed yet" in workflow._summary.value
+    workflow.picker.cell.value = "TUB"
+    press_preview(app)  # a new Preview shows its own result again
+    assert [r.name for r in workflow.previewed] == ["Cell mask", "Nuclei mask"]
+
+
+def test_a_channel_number_takes_the_preview_off(run, stub):
+    app = both_previewed(run)
+    workflow = app.workflow
+    workflow.picker.by.value = BY_NUMBER
+    assert workflow.previewed == [] and workflow.preview_box.children == ()
+
+
+def test_changing_a_model_setting_takes_the_preview_off_and_names_the_change(run, stub):
+    app = both_previewed(run)
+    workflow = app.workflow
+    workflow.forms["model"].fields["diameter"].value = "17"
+    assert workflow.previewed == []
+    assert workflow.preview_box.children == ()
+    assert "Changed since the last Preview" in workflow._summary.value
+
+
+def test_the_style_sheet_is_shown_once_after_a_failed_first_preview(run, stub, monkeypatch):
+    from morphobricks_preprocessing import notebook_cellpose
+    from morphobricks_preprocessing.notebook_style import STYLE_CSS
+
+    sheets = []
+    monkeypatch.setattr(
+        notebook_cellpose,
+        "display",
+        lambda w: sheets.append(w) if getattr(w, "value", None) == STYLE_CSS else None,
+    )
+    workflow = notebook_cellpose.CellposeWorkflow()
+    workflow._mount_preview()  # a first Preview, refused: no card shown
+    workflow._mount_preview()
+    workflow._show(widgets.HTML("a card"))
+    assert len(sheets) == 1
