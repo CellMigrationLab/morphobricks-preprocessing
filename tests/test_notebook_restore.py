@@ -1,10 +1,14 @@
-"""The notebook restores an output folder's earlier work as soon as it is set (v0.9.0).
+"""The notebook restores an output folder's earlier work on the button press (v0.9.0, #579).
 
-Owner decision of 25 November 2026: when the output folder is set, earlier work found there is
-restored with a message saying what, from when, and what was read again; *Start fresh* starts a
-new session state without touching any file. The check reuses a recorded header only while its
+Owner decision of 25 November 2026: earlier work found in the output folder is restored with a
+message saying what, from when, and what was read again; *Start fresh* starts a new session
+state without touching any file. The check reuses a recorded header only while its
 image's fingerprint is unchanged; anything uncertain reads the header again and says so.
 Both notebooks (Preprocessing and Preprocessing_Cellpose) run this same app in cell 3.
+
+Owner decision on #579 (26 November 2026): typing a folder path never starts a scan or a
+restore; the restore runs on **Scan the folders** (the stepper) or **Check folder** (the
+pages), here :func:`press`.
 """
 
 from __future__ import annotations
@@ -56,6 +60,11 @@ def stepper():
     return nb
 
 
+def press(nb):
+    """The user's press that starts the restore or the scan (#579): the only start of either."""
+    (nb.scan_button if getattr(nb, "_stepper", None) else nb.check_button).click()
+
+
 def checked(root, out):
     """Check the folder in a first session: the check writes its report and its record."""
     nb = PreprocessingNotebook(str(root), str(out))
@@ -97,6 +106,7 @@ def test_a_fresh_output_folder_restores_nothing_and_says_nothing(exp):
     nb = stepper()
     nb.folder.value = str(root)
     nb.output.value = str(out)
+    press(nb)
     assert nb.preflight is None and not ui.is_visible(nb.restore_box)
     assert nb.restore_status.value == "" and not out.exists()
 
@@ -108,7 +118,9 @@ def test_a_recorded_check_with_unchanged_images_is_reused_without_reading_a_head
     checked(root, out)
     no_header_read(monkeypatch)
     nb = stepper()
-    nb.output.value = str(out)  # the experiment folder comes from the record
+    nb.output.value = str(out)  # the experiment folder comes from the record, on the press
+    assert nb.folder.value == "" and nb.preflight is None  # typed: nothing read (#579)
+    press(nb)
     assert nb.folder.value == str(root.resolve())
     assert nb.preflight is not None and nb.preflight.headers_reused == tuple(IMAGES)
     text = _text(nb.restore_status.value)
@@ -126,6 +138,7 @@ def test_one_changed_image_is_read_again_and_the_message_says_so(exp, monkeypatc
     seen = counted_header_reads(monkeypatch)
     nb = stepper()
     nb.output.value = str(out)
+    press(nb)
     assert seen == [IMAGES[1]]
     assert nb.preflight.headers_reused == (IMAGES[0],)
     text = _text(nb.restore_status.value)
@@ -145,6 +158,7 @@ def test_a_record_that_cannot_be_used_reads_every_header_and_says_why(exp, monke
     nb = stepper()
     nb.folder.value = str(root)
     nb.output.value = str(out)
+    press(nb)
     assert sorted(seen) == IMAGES and nb.preflight.headers_reused == ()
     text = _text(nb.restore_status.value)
     assert f"{CHECK_RECORD_FILENAME} is not a usable record" in text
@@ -161,6 +175,7 @@ def test_a_record_of_another_software_version_is_not_reused(exp, monkeypatch):
     seen = counted_header_reads(monkeypatch)
     nb = stepper()
     nb.output.value = str(out)
+    press(nb)
     assert sorted(seen) == IMAGES
     assert "written by another version of the software" in _text(nb.restore_status.value)
 
@@ -173,6 +188,7 @@ def test_saved_answers_are_restored_and_open_on_the_first_step_still_to_do(exp):
     assert (out / DRAFT_FILENAME).is_file()
     nb = stepper()
     nb.output.value = str(out)
+    press(nb)
     assert nb._draft_saved and nb.reference_boxes["drug"].value == "ctrl"
     text = _text(nb.restore_status.value)
     assert "restored the folder check, your saved answers" in text
@@ -187,6 +203,7 @@ def test_a_published_description_is_reopened(exp):
     nb = stepper()
     nb.folder.value = str(root)
     nb.output.value = str(out)
+    press(nb)
     assert nb._published() is not None and not nb._published().changed
     text = _text(nb.restore_status.value)
     assert "restored the folder check, the saved experiment description" in text
@@ -199,6 +216,7 @@ def test_without_a_recorded_experiment_folder_nothing_is_restored_and_it_says_so
     describe_tree(root, out)  # a description only: no check, no run recorded the folder
     nb = stepper()
     nb.output.value = str(out)
+    press(nb)
     assert nb.preflight is None and nb.folder.value == ""
     text = _text(nb.restore_status.value)
     assert "the saved experiment description" in text and "is not recorded" in text
@@ -214,6 +232,7 @@ def test_a_finished_run_shows_its_results_and_the_next_steps(exp):
     nb = stepper()
     nb.folder.value = str(root)
     nb.output.value = str(out)
+    press(nb)
     assert nb.restored_run == out.resolve() and nb.result is None
     assert "the finished run of" in _text(nb.restore_status.value)
     assert _text(nb.run_status.value).startswith("The earlier run is complete")
@@ -231,6 +250,7 @@ def test_the_combined_notebook_segments_the_restored_run(exp, monkeypatch):
     run_described(root, prefill_mapping("TYX"), output_folder=out, image_type="fluorescence")
     nb = stepper()
     nb.output.value = str(out)
+    press(nb)
     monkeypatch.setattr(cell4, "cellpose_ready", lambda: False)  # no Cellpose installed here
     step = cell4.segmentation_step(nb)
     assert step.run_folder == str(out.resolve()) and step.refused == ""
@@ -244,6 +264,7 @@ def test_a_run_whose_images_changed_is_not_shown_as_finished(exp):
     nb = stepper()
     nb.folder.value = str(root)
     nb.output.value = str(out)
+    press(nb)
     assert nb.restored_run is None and app_folders(nb) == ("", "")
     assert "is not current" in _text(nb.restore_status.value)
 
@@ -255,6 +276,7 @@ def test_start_fresh_forgets_the_restore_and_touches_no_file(exp):
     before = files_of(out), files_of(root)
     nb = stepper()
     nb.output.value = str(out)
+    press(nb)
     assert nb.preflight is not None and nb.restored_run is not None
     restored = files_of(out)
     nb.restore_fresh.click()
@@ -275,6 +297,7 @@ def test_another_output_folder_clears_what_was_restored(exp, tmp_path):
     checked(root, out)
     nb = stepper()
     nb.output.value = str(out)
+    press(nb)
     assert nb.preflight is not None
     nb.output.value = str(tmp_path / "other")
     assert nb.preflight is None and nb.mapping is None and nb.draft is None
@@ -290,6 +313,7 @@ def test_earlier_work_of_another_experiment_restores_nothing(exp, tmp_path):
     nb = stepper()
     nb.folder.value = str(other)
     nb.output.value = str(out)
+    press(nb)
     assert nb.preflight is None
     assert "of another experiment folder" in _text(nb.restore_status.value)
 
@@ -304,6 +328,7 @@ def test_a_check_that_fails_during_the_restore_clears_and_says_so(exp, monkeypat
     monkeypatch.setattr(notebook_folder, "preflight", broken)
     nb = stepper()
     nb.output.value = str(out)
+    press(nb)
     assert nb.preflight is None and nb.restored_run is None
     assert "the folder could not be checked" in _text(nb.restore_status.value)
     assert "Input/output error" in _text(nb.folder_status.value)
@@ -321,6 +346,7 @@ def test_an_unexpected_error_while_reading_the_earlier_work_never_stops_the_note
     monkeypatch.setattr("morphobricks_preprocessing.notebook_restore.earlier_work", broken)
     nb = stepper()
     nb.output.value = str(out)
+    press(nb)
     assert nb.preflight is None
     text = _text(nb.restore_status.value)
     assert "it could not be restored" in text and "RuntimeError: cannot read it" in text
@@ -332,6 +358,7 @@ def test_check_folder_after_a_restore_reads_every_header_again(exp, monkeypatch)
     checked(root, out)
     nb = stepper()
     nb.output.value = str(out)
+    press(nb)
     seen = counted_header_reads(monkeypatch)
     nb.check_button.click()
     assert sorted(seen) == IMAGES and nb.preflight.headers_reused == ()
@@ -344,6 +371,7 @@ def test_the_stacked_pages_restore_too(exp):
     nb = PreprocessingNotebook()
     nb.folder_step()
     nb.output.value = str(out)
+    press(nb)
     assert nb.preflight is not None and nb.preflight.headers_reused == tuple(IMAGES)
     assert ui.is_visible(nb.restore_box) and "Opened on" not in _text(nb.restore_status.value)
 
@@ -378,6 +406,7 @@ def test_an_answer_after_a_restore_keeps_it_when_the_output_folder_changes(exp, 
     checked(root, out)
     nb = stepper()
     nb.output.value = str(out)
+    press(nb)
     nb.reference_boxes["drug"].value = "ctrl"  # the user's own work on the restored check
     nb.output.value = str(tmp_path / "other")
     assert nb.preflight is not None  # kept, as after a manual Check folder (issue #98 rules)
@@ -389,6 +418,7 @@ def test_a_confirmation_after_a_restore_keeps_it_too(exp, tmp_path):
     checked(root, out)
     nb = stepper()
     nb.output.value = str(out)
+    press(nb)
     assert ui.is_visible(nb.quick_card)
     nb.quick_confirm.click()
     assert nb.confirmed_mapping is not None
@@ -401,6 +431,7 @@ def test_a_run_started_after_a_restore_makes_it_the_user_s(exp):
     checked(root, out)
     nb = stepper()
     nb.output.value = str(out)
+    press(nb)
     assert nb._restored_from is not None
     nb._start_run()
     assert nb._restored_from is None and nb.restored_run is None
@@ -414,6 +445,7 @@ def test_a_record_and_a_run_of_different_experiment_folders_restore_nothing(exp,
     write_check_record(out, tmp_path / "elsewhere", {}, ())
     nb = stepper()
     nb.output.value = str(out)
+    press(nb)
     assert nb.preflight is None and nb.folder.value == ""
     text = _text(nb.restore_status.value)
     assert "names two experiment folders" in text and "They disagree" in text
@@ -456,11 +488,14 @@ def test_the_folder_entered_after_unrecorded_earlier_work_is_scanned_and_shown(e
     answers_only(root, out)
     nb = stepper()
     nb.output.value = str(out)
+    press(nb)
     text = _text(nb.restore_status.value)
     assert "is not recorded" in text
     assert "Check folder" not in text  # the stepper has no such button: it names its own
     assert "Scan the folders" in text and "Looks right: read all image headers" in text
-    nb.folder.value = str(root)  # Enter, or leaving the box
+    nb.folder.value = str(root)  # Enter, or leaving the box: nothing is read yet (#579)
+    assert nb._scanned is None or nb._scanned[0] != str(root)
+    press(nb)  # Scan the folders
     scanned_and_shown(nb, root)
     text = _text(nb.restore_status.value)
     assert f"The folders of {root} are scanned below" in text
@@ -469,14 +504,17 @@ def test_the_folder_entered_after_unrecorded_earlier_work_is_scanned_and_shown(e
     assert nb.reference_boxes["drug"].value == "ctrl"
 
 
-def test_a_scan_clicked_before_the_folder_arrives_is_made_good_when_it_arrives(exp):
+def test_a_scan_clicked_before_the_folder_arrives_scans_on_the_next_press(exp):
+    # #579: the folder arriving never starts the scan itself; the next press does.
     root, out = exp
     answers_only(root, out)
     nb = stepper()
     nb.output.value = str(out)
-    nb.scan_button.click()  # the click reached the kernel before the typed folder
+    press(nb)  # the click reached the kernel before the typed folder
     assert "Enter the experiment folder first" in _text(nb.scan_status.value)
     nb.folder.value = str(root)
+    assert nb._scanned is None
+    press(nb)
     scanned_and_shown(nb, root)
 
 
@@ -487,12 +525,14 @@ def test_saved_answers_of_an_older_version_are_ignored_and_never_block_a_scan(ex
     before = files_of(out)
     nb = stepper()
     nb.output.value = str(out)
+    press(nb)
     text = _text(nb.restore_status.value)
     assert text.startswith("The saved answers in this output folder")
     assert "another version" in text and "Found earlier work" not in text
     assert not ui.is_visible(nb.restore_fresh) and files_of(out) == before
     assert "Scan the folders" in text and "Check folder" not in text
-    nb.folder.value = str(root)  # the owner's case: the folder entered is scanned and shown
+    nb.folder.value = str(root)  # the owner's case: the folder entered is scanned on the press
+    press(nb)
     scanned_and_shown(nb, root)
     assert f"The folders of {root} are scanned below" in _text(nb.restore_status.value)
     assert files_of(out) == before  # the scan writes nothing
@@ -506,14 +546,15 @@ def old_answers_only(out):
     (out / DRAFT_FILENAME).write_text(json.dumps(OLD_DRAFT), encoding="utf-8")
 
 
-def test_an_early_scan_click_is_made_good_with_older_answers_too(exp):
+def test_an_early_scan_click_with_older_answers_scans_on_the_next_press(exp):
     root, out = exp
     old_answers_only(out)
     nb = stepper()
     nb.output.value = str(out)
-    nb.scan_button.click()  # the click reached the kernel before the typed folder
+    press(nb)  # the click reached the kernel before the typed folder
     assert "Enter the experiment folder first" in _text(nb.scan_status.value)
     nb.folder.value = str(root)
+    press(nb)
     scanned_and_shown(nb, root)
 
 
@@ -523,6 +564,7 @@ def test_the_older_answers_line_names_the_pages_check_folder_button(exp):
     nb = PreprocessingNotebook()
     nb.folder_step()
     nb.output.value = str(out)
+    press(nb)
     text = _text(nb.restore_status.value)
     assert "another version" in text and "Scan the folders" not in text
     assert "click Check folder." in text
@@ -534,6 +576,7 @@ def test_older_answers_beside_a_recorded_check_restore_the_check_without_a_scan_
     (out / DRAFT_FILENAME).write_text(json.dumps(OLD_DRAFT), encoding="utf-8")
     nb = stepper()
     nb.output.value = str(out)
+    press(nb)
     text = _text(nb.restore_status.value)
     assert "restored the folder check" in text and "another version" in text
     assert "scan the folders" not in text.lower() and "again reads" not in text
@@ -546,6 +589,7 @@ def test_the_stacked_pages_name_their_check_folder_button(exp):
     nb = PreprocessingNotebook()
     nb.folder_step()
     nb.output.value = str(out)
+    press(nb)
     assert "Enter the experiment folder and click Check folder." in _text(nb.restore_status.value)
     nb.folder.value = str(root)
     assert nb.preflight is None  # the pages have no scan: Check folder is the user's click

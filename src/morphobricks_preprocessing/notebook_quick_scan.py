@@ -124,7 +124,7 @@ class _QuickScan:
         self.scan_box.add_class("mb-scan")
         ui.set_visible(self.scan_box, False)
         self.check_blocker = widgets.HTML()
-        self.scan_button.on_click(lambda _: self._quick_scan())
+        self.scan_button.on_click(lambda _: self._scan_pressed())
         self.scan_another.on_click(lambda _: self._show_scan_example(None))
         self._check_label = (DEEP_LABEL, "check")
         self.check_button.description, self.check_button.icon = self._check_label
@@ -152,8 +152,11 @@ class _QuickScan:
         current = self._scan_current()
         if self._scanned is not None and not current:
             ui.set_visible(self.scan_box, False)  # the tree and picture are of other folders
+            self.scan_tree.value, self.scan_example.children = "", []  # cleared, not hidden
             self.scan_status.value = ui.status(
-                "info", "The folders changed.", ["Scan the folders again."]
+                "info",
+                "The folders changed.",
+                ["Press Scan the folders: nothing is read until then."],
             )
         usable = current and self._scan is not None and bool(self._scan.images)
         self.check_button.disabled = not usable
@@ -166,6 +169,19 @@ class _QuickScan:
         else:
             reasons = ["the scan found no image to read"]
         self.check_blocker.value = blocked_line(reasons)
+
+    def _scan_pressed(self) -> None:
+        """*Scan the folders* pressed: restore the earlier work first, else scan (#579).
+
+        The only start of a scan or a restore in the stepper: an edited folder box starts
+        neither.
+        """
+        before = (self.preflight, self._scanned)
+        restore = getattr(self, "_restore_earlier_work", None)
+        if restore is not None:
+            restore()
+        if (self.preflight, self._scanned) == before:
+            self._quick_scan()
 
     def _quick_scan(self) -> DiscoveryResult | None:
         """Walk the folders (no header is read), show the tree and one random image.
@@ -182,6 +198,8 @@ class _QuickScan:
             )
             return None
         self._busy(self.scan_button, "Scanning…")
+        ui.set_visible(self.scan_box, False)  # nothing of an earlier scan stays shown (#579)
+        self.scan_tree.value, self.scan_example.children = "", []
         wait = Wait(self.scan_status)
         wait.start("Listing the folders")
         seen = [0]
@@ -191,7 +209,7 @@ class _QuickScan:
             wait.step(seen[0], 0, path)
 
         try:
-            with self.log.attached():
+            with self.log.attached(), wait.ticking():  # the time goes on between folders
                 found = discover_experiment(folder, self._output_folder(), progress=listed)
         finally:
             self._idle(self.scan_button, SCAN_LABEL, "search")

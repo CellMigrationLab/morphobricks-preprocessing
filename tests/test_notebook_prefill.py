@@ -218,3 +218,29 @@ def test_recorded_intensity_limits_come_back_exactly(experiment, saturation):
     assert "intensity_settings" not in {
         c.name for c in nb._planned_changes(output_of(experiment).resolve())
     }
+
+
+def test_another_experiment_with_the_same_output_does_not_inherit_its_confirmations(tmp_path):
+    # #519: the cache of the earlier run's inputs was keyed by the output folder alone, so a
+    # copy of the experiment (same sizes and dates, shutil.copytree keeps them) checked with the
+    # same output folder kept the first root's confirmations for a one-click offer.
+    import shutil
+
+    from morphobricks_preprocessing.axes import AxisMapping
+    from morphobricks_preprocessing.run.planned import recorded_inputs
+
+    first = tmp_path / "A"
+    write_plain(first / "ctrl/rep1/a.tif", np.zeros((2, 8, 8), np.uint8))
+    out = tmp_path / "out"
+    assert run_described(first, AxisMapping("IYX", ("T", "Y", "X")), output_folder=out).written
+    second = tmp_path / "B"
+    shutil.copytree(first, second)
+    nb = PreprocessingNotebook(str(first), output_folder=str(out))
+    nb.folder_step()
+    nb.run_step()
+    assert nb._recorded == recorded_inputs(out, first.resolve())
+    nb.folder.value = str(second)
+    assert nb._recorded == recorded_inputs(out, second.resolve())
+    assert nb._recorded != recorded_inputs(out, first.resolve())
+    nb.folder.value = str(first)  # A -> B -> A: the first root's again
+    assert nb._recorded == recorded_inputs(out, first.resolve())

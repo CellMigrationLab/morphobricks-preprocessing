@@ -32,6 +32,7 @@ class _Prefill:
     def _init_prefill(self) -> None:
         self._recorded: ResolvedInputs | None = None
         self._prefill_for: Path | None = None
+        self._prefill_root: Path | None = None  # the experiment root ``_recorded`` is of (#519)
         self._prefilled: dict[str, object] = {}
         # The inputs filled at each check that the user changed: a check keeps them.
         self._edited: set[str] = set()
@@ -43,12 +44,18 @@ class _Prefill:
         if not hasattr(self, "run_checks"):
             return  # still building the pages
         output = self._prefill_target()
-        if output == self._prefill_for:
-            return
-        self._prefill_for = output
-        self._edited = set()
         folder = ui.clean_path(self.folder.value)
         root = Path(folder).resolve() if folder else None
+        if output == self._prefill_for:
+            if root != self._prefill_root and output is not None:
+                # #519: the earlier run's confirmations are scoped by the experiment folder;
+                # another one, with the same output folder, never inherits them. The inputs
+                # shown (the output folder's settings, and the user's edits) are kept.
+                self._recorded = recorded_inputs(output, root)
+            self._prefill_root = root
+            return
+        self._prefill_for, self._prefill_root = output, root
+        self._edited = set()
         self._recorded = None if output is None else recorded_inputs(output, root)
         if self._recorded is None:
             self._unfill()

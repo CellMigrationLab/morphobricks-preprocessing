@@ -420,6 +420,7 @@ class _RunStep:
     def _start_run(self) -> None:
         """Clear the results of an earlier run and show that this one is starting."""
         self._busy(self.run_button, "Computing…")
+        self.result = None  # #517: a new attempt; an earlier one's result is not this one's
         self.run_next.value = BUSY_NOTE
         self.run_checks.clear()
         self.run_lock.hide()
