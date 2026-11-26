@@ -407,8 +407,9 @@ src/morphobricks_preprocessing/
                     parent, ambiguous_parent; Q74), one_to_one_matches, match_counts and
                     PIECE_STRUCTURE (masks.binary.STRUCTURE, 8-connected, imported)
   mask_pieces.py    piece_counts (#69): each row cut into runs of one label, runs of one
-                    label in neighbouring rows joined (scipy.sparse.csgraph); no sort of
-                    every pixel and no labelling per label
+                    label in neighbouring rows joined (scipy.sparse.csgraph); above
+                    RUNS_PER_PIXEL_LIMIT (0.25, pixel-scale masks) the former route (sort,
+                    then ndimage.label per label in its box). Same counts either way
   copy_axes.py      convert (PP-11, contract §17): the axes, shape, pixel sizes (by role; a
                     relabelled axis gets an unknown scale; equal X and Y kept through a Y/X
                     swap, question 59) and OME metadata of a named-axis copy

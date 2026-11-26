@@ -1,26 +1,38 @@
-"""Count the connected pieces of every label of a 2D mask in one pass (issue #69).
+"""Count the connected pieces of every label of a 2D mask (issue #69).
 
 The kernel of :func:`.mask_scan.piece_counts` (``docs/contract.md`` §15), moved from
-:mod:`.mask_scan`. Before, the labels were renumbered with a sort of every pixel
-(``np.unique(..., return_inverse=True)``) and each label was labelled again in its bounding
-box, so labels spread over the plane read most of it once each. Now each row is cut into
-runs (consecutive pixels of one nonzero label), runs of one label in neighbouring rows are
-joined when they touch (``scipy.sparse.csgraph``), and a label's pieces are its groups of
-runs. Each pixel is read a fixed number of times, whatever the labels; the counts are the
-same as labelling each label alone with the labeller's structure (:data:`.masks.binary.
-STRUCTURE`, imported, not restated: Spec ADR 0005 BM1). No files are read or written.
+:mod:`.mask_scan`. Two routes give the same counts as labelling each label alone with the
+labeller's structure (:data:`.masks.binary.STRUCTURE`, imported, not restated: Spec ADR 0005
+BM1):
+
+- **runs** (most masks): each row is cut into runs (consecutive pixels of one nonzero label),
+  runs of one label in neighbouring rows that touch are joined (``scipy.sparse.csgraph``),
+  and a label's pieces are its groups of runs. No pixel is sorted and no label is labelled
+  again, so labels spread over the plane cost no more than compact ones;
+- **boxes** (pixel-scale masks, more than :data:`RUNS_PER_PIXEL_LIMIT` runs per pixel, such
+  as noise or checkerboards): the former route, kept unchanged: the labels are renumbered
+  with a sort of every pixel and each label is labelled in its bounding box. There, runs are
+  almost pixels, and the graph of runs would need several times the memory of the sort.
+
+No files are read or written.
 """
 
 from __future__ import annotations
 
 import numpy as np
+from scipy import ndimage
 from scipy.sparse import coo_matrix
 from scipy.sparse.csgraph import connected_components
 
 from .masks.binary import STRUCTURE
 from .masks.labels import check_labels
 
-__all__ = ["piece_counts"]
+__all__ = ["RUNS_PER_PIXEL_LIMIT", "piece_counts"]
+
+RUNS_PER_PIXEL_LIMIT = 0.25
+"""Above this many runs per pixel, the pieces are counted by boxes (the former route)."""
+
+_INT32_MAX = np.iinfo(np.int32).max
 
 
 def piece_counts(mask: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -45,8 +57,34 @@ def piece_counts(mask: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     check_labels(mask)
     if mask.ndim != 2:
         raise ValueError(f"The mask must be one 2D plane, not {mask.ndim}D.")
-    row, start, end, label = _runs(mask)
-    piece = _join_runs(row, start, end, label, _corner_reach())
+    first = mask != 0
+    first[:, 1:] &= mask[:, 1:] != mask[:, :-1]
+    if np.count_nonzero(first) > RUNS_PER_PIXEL_LIMIT * mask.size:
+        del first
+        return _pieces_by_boxes(mask)
+    return _pieces_by_runs(mask, first)
+
+
+def _pieces_by_boxes(mask: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Return :func:`piece_counts` by labelling each label in its bounding box (before #69)."""
+    values, dense = np.unique(mask, return_inverse=True)
+    dense = dense.reshape(mask.shape)
+    if values.size and values[0] == 0:  # labels are never negative, so 0 comes first
+        values = values[1:]
+    else:
+        dense = dense + 1  # no background: every value is a label
+    counts = np.zeros(values.size, dtype=np.int64)
+    for index, box in enumerate(ndimage.find_objects(dense)):
+        if box is not None:
+            counts[index] = ndimage.label(dense[box] == index + 1, STRUCTURE)[1]
+    return values, counts
+
+
+def _pieces_by_runs(mask: np.ndarray, first: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Return :func:`piece_counts` from the runs; ``first`` marks the first pixel of each."""
+    starts, ends, label = _runs(mask, first)
+    piece = _join_runs(starts, ends, label, mask.shape[1] + 2, _corner_reach())
+    del starts, ends
     # every piece is runs of one label, so a label's pieces are the pieces carrying it
     label_of_piece = np.empty(int(piece.max(initial=-1)) + 1, dtype=mask.dtype)
     label_of_piece[piece] = label
@@ -64,51 +102,58 @@ def _corner_reach() -> int:
     raise ValueError("piece_counts supports only the 8- or 4-connected 3 x 3 structure.")
 
 
-def _runs(mask: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Return the row, first and last column and label of every run of one nonzero label.
+def _runs(mask: np.ndarray, first: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Return the first and last pixel of every run, as places, and the run's label.
 
-    Runs come in row-major order. Pixels of one label next to each other in a row are one
-    run, so only runs in neighbouring rows still have to be joined.
+    A place is ``row * (columns + 2) + column``: the two spare columns keep runs of rows that
+    are not neighbours out of each other's reach. Places are ``int32`` when every place fits,
+    ``int64`` otherwise. Runs come in row-major order, so both places increase.
     """
-    on = mask != 0
-    first = on.copy()
-    first[:, 1:] &= mask[:, 1:] != mask[:, :-1]
-    last = on  # reused: ``on`` is not needed after this
+    rows, columns = mask.shape
+    width = columns + 2
+    kind = np.int32 if rows * width <= _INT32_MAX else np.int64
+    flat = np.flatnonzero(first)
+    label = np.ascontiguousarray(mask).reshape(-1)[flat]  # a view when already contiguous
+    starts = flat.astype(kind)
+    del flat
+    last = first  # reused: every first pixel is found
+    np.not_equal(mask, 0, out=last)
     last[:, :-1] &= mask[:, :-1] != mask[:, 1:]
-    row, start = np.nonzero(first)
-    end = np.nonzero(last)[1]
-    return row, start, end, mask[row, start]
+    ends = np.flatnonzero(last).astype(kind)
+    del last
+    if columns:  # no columns, no runs
+        starts += 2 * (starts // columns)
+        ends += 2 * (ends // columns)
+    return starts, ends, label
 
 
 def _join_runs(
-    row: np.ndarray, start: np.ndarray, end: np.ndarray, label: np.ndarray, reach: int
+    starts: np.ndarray, ends: np.ndarray, label: np.ndarray, width: int, reach: int
 ) -> np.ndarray:
     """Return the piece of every run: runs of one label in neighbouring rows that touch join.
 
-    A run of row ``r + 1`` touches a run of the same label in row ``r`` when their columns
-    overlap, widened by ``reach`` (1: corners touch). Runs are grouped by (row, label) and
-    sorted by first column within a group; as runs of one group never overlap, their last
-    columns are sorted too, so the runs above each run that touch it are one slice of the
-    group, found by two binary searches.
+    A run touches a run of the row above when their columns overlap, widened by ``reach``
+    (1: corners touch). The runs of the row above that a run's widened columns overlap are
+    one slice of the runs (places increase), found by two binary searches; of those, the
+    ones with the same label are joined to it. ``width`` is the places per row.
     """
-    if row.size == 0:
+    size = starts.size
+    if size == 0:
         return np.zeros(0, dtype=np.intp)
-    key = row.astype(np.int64) * (int(label.max()) + 1) + label.astype(np.int64)
-    order = np.argsort(key, kind="stable")  # stable: by first column within a group
-    keys, group = np.unique(key[order], return_inverse=True)
-    width = int(end.max()) + 3  # every column + 2 fits below it: no overlap between groups
-    low = group * width + (end[order] + 1)
-    high = group * width + (start[order] + 1)
-    above = np.searchsorted(keys, key - (int(label.max()) + 1))
-    found = above < keys.size
-    found[found] = keys[above[found]] == key[found] - (int(label.max()) + 1)
-    below, above = np.nonzero(found)[0], above[found]
-    first = np.searchsorted(low, above * width + (start[below] + 1 - reach), side="left")
-    stop = np.searchsorted(high, above * width + (end[below] + 1 + reach), side="right")
-    touching = np.maximum(stop - first, 0)
-    pairs = np.repeat(below, touching)
-    offset = np.arange(touching.sum()) - np.repeat(np.cumsum(touching) - touching, touching)
-    other = order[np.repeat(first, touching) + offset]
-    size = row.size
-    graph = coo_matrix((np.ones(pairs.size, np.int8), (pairs, other)), shape=(size, size))
+    low = np.searchsorted(ends, starts - (width + reach), side="left")
+    high = np.searchsorted(starts, ends - (width - reach), side="right")
+    touching = np.maximum(high - low, 0).astype(starts.dtype)
+    del high
+    total = int(touching.sum())
+    kind = np.int32 if total <= _INT32_MAX and size <= _INT32_MAX else np.int64
+    below = np.repeat(np.arange(size, dtype=kind), touching)
+    above = np.arange(total, dtype=kind)
+    shift = (np.cumsum(touching, dtype=np.int64) - touching - low).astype(kind)
+    above -= np.repeat(shift, touching)
+    del low, touching, shift
+    same = label[below] == label[above]
+    below, above = below[same], above[same]
+    del same
+    graph = coo_matrix((np.ones(below.size, bool), (below, above)), shape=(size, size))
+    del below, above
     return connected_components(graph, directed=False)[1]

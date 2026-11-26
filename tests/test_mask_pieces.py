@@ -1,4 +1,8 @@
-"""The run-based piece_counts gives byte-identical results to the per-label one (issue #69)."""
+"""piece_counts gives byte-identical results to the former per-label one by both routes (#69).
+
+Every test runs three times (the ``route`` fixture): runs forced, boxes forced, and the
+route piece_counts chooses.
+"""
 
 from __future__ import annotations
 
@@ -6,12 +10,20 @@ import numpy as np
 import pytest
 from scipy import ndimage
 
-from morphobricks_preprocessing import piece_counts
+from morphobricks_preprocessing import mask_pieces, piece_counts
 from morphobricks_preprocessing.masks import check_labels
 from morphobricks_preprocessing.masks.binary import STRUCTURE
 
 DTYPES = (np.bool_, np.uint8, np.int8, np.uint16, np.int16, np.uint32, np.int32, np.int64)
 DTYPES += (np.uint64,)
+
+
+@pytest.fixture(autouse=True, params=["runs", "boxes", "chosen"])
+def route(request, monkeypatch):
+    limit = {"runs": np.inf, "boxes": -1.0}.get(request.param)
+    if limit is not None:
+        monkeypatch.setattr(mask_pieces, "RUNS_PER_PIXEL_LIMIT", limit)
+    return request.param
 
 
 def boxes_piece_counts(mask):
@@ -118,3 +130,19 @@ def test_piece_counts_refuse_a_mask_that_is_not_2d():
         piece_counts(np.ones((2, 2, 2), np.int32))
     with pytest.raises(ValueError, match="negative"):
         piece_counts(np.full((2, 2), -1, np.int32))
+
+
+def test_pixel_scale_masks_take_the_boxes_route_and_others_the_runs_route(route, monkeypatch):
+    if route != "chosen":
+        pytest.skip("the choice itself is tested with the default limit")
+    taken = []
+    for name in ("_pieces_by_boxes", "_pieces_by_runs"):
+        real = getattr(mask_pieces, name)
+        monkeypatch.setattr(
+            mask_pieces, name, lambda *a, real=real, name=name: taken.append(name) or real(*a)
+        )
+    checkerboard = (np.add.outer(np.arange(64), np.arange(64)) % 2 + 1).astype(np.uint16)
+    assert_identical(checkerboard)  # one run per pixel
+    blocks = np.kron(np.arange(16, dtype=np.int32).reshape(4, 4), np.ones((16, 16), np.int32))
+    assert_identical(blocks)  # 1/16 run per pixel
+    assert taken == ["_pieces_by_boxes", "_pieces_by_runs"]
