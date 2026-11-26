@@ -296,9 +296,24 @@ banner then says "commit unknown" and that the override is on). Then:
   channels, so more are refused.
 - **Model.** `cpsam_v2` (default), `cpsam`, `cpdino`, `cpdino-vitb` or a model file of your
   own. A name or file that does not exist is refused: Cellpose itself would silently use
-  `cpsam_v2`. The weights of a built-in model are downloaded from Hugging Face on first use,
-  only if you tick the download box. `cpdino` models also need DINOv3, installed at a pinned
-  commit (the head of its default branch on 22 November 2026, not verified against `cpdino`; installed without its dependencies) only if you tick its box. Restart the runtime after installing it, then run the cells again.
+  `cpsam_v2`.
+- **Weights download (owner, #574).** Choosing a built-in model and pressing **Preview** or
+  **Segment** (or **Load the model** in the Cellpose notebook) is your consent to download that
+  model's weights; there is no box to tick. The first time, only that model's file is
+  downloaded, from Hugging Face (`mouseland/cellpose-sam` at the pinned revision
+  `7c61431b5fbb`, never the moving `main` branch), with a line such as **Downloading cpsam_v2
+  weights…** (megabytes, a bar, the time). The file must have its pinned size and SHA-256
+  before it is used; a copy already on this computer (in Cellpose's model folder) is checked
+  too, and one that differs is refused, not used and not replaced: delete it and press the
+  button again. A failed or blocked download stops with a message naming the model and the
+  URL; nothing partial is kept, and no other model is ever used instead.
+- **DINOv3 (`cpdino` models).** DINOv3 is the code of the `cpdino` networks (their weights are
+  all in the Cellpose file). When no DINOv3 is installed, the first load of a `cpdino` model
+  installs it, without its dependencies, at a pinned commit (the head of its default branch on
+  22 November 2026, not verified against `cpdino`). A DINOv3 of another commit is not
+  replaced: the load is refused with the command to run. If Cellpose was already loaded in
+  this runtime (another model loaded first), the load asks you to restart the runtime and run
+  the cells again; nothing is downloaded again.
 - **Device.** The model form says, before anything loads, whether a GPU was found and which.
   You choose `cuda`, `mps` or `cpu`. A GPU that is not available is refused, never
   replaced by the CPU, and after loading every parameter and buffer of the network must be on
@@ -310,9 +325,13 @@ banner then says "commit unknown" and that the override is on). Then:
   decrease if merged), the flow threshold (0.4; increase to keep more objects, decrease if they
   are badly shaped), the cell probability threshold (0; decrease to find more and larger
   objects, increase for fewer) and the batch size (8; lower it if the GPU runs out of memory).
-- **Download display.** While a model loads, a weights download shows as one progress bar and
-  Cellpose's log lines are not printed; its warnings are shown in one card. What is loaded is
-  unchanged: the same file, no download without the tick, no substitution, no device fallback.
+- **Download display.** While a model loads, a weights download shows as one line with its
+  progress, then how long it took; Cellpose's log lines are not printed and its warnings are
+  shown in one card. Cellpose never downloads anything itself: it is given the checked file.
+- **One torch warning is hidden.** While Cellpose runs, torch's *UserWarning: Sparse invariant
+  checks are implicitly disabled…* (from Cellpose's `dynamics.py`) is not shown. Only that
+  warning, from torch or Cellpose, only during the call; it is about validating sparse tensors
+  and does not change any result. Every other warning is shown.
 - **Diameter** is in pixels. Blank means the model's own native scale (Cellpose 4.2.1.1 does
   not estimate a diameter); 0 is refused.
 - **Normalisation** is always Cellpose's own, per image (each channel to its 1st to 99th
@@ -323,7 +342,7 @@ banner then says "commit unknown" and that the override is on). Then:
 - **Result.** One mask per image at `<masks>/<type>/<the image's folders>/<image>.tif`
   (2D, `int32`, 0 is background, the image's width and height), never over an existing mask
   unless you tick overwrite, and `<masks>/<type>/segmentation_record.json` with the model's
-  file name and SHA-256, every setting (the full normalisation and the flow iterations included), whether the weights were downloaded now and from where, the channels, the device and each image as written,
+  file name and SHA-256, every setting (the full normalisation and the flow iterations included), where the weights come from (`weights_repository`, `weights_revision`, `weights_source`) and whether they were downloaded now (`weights_downloaded`), for a `cpdino` model the DINOv3 commit and source and whether it was installed now, the channels, the device and each image as written,
   skipped or failed. The final table lists every image, with the error of a failed one.
 - **The masks folder is checked when the run is opened.** **Open the run** refuses a masks
   folder that is the run's output folder or the experiment folder, or inside or around either,

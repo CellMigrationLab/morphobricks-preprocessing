@@ -185,28 +185,29 @@ def test_the_gpu_is_used_when_asked_and_present(stub):
         cp.load_model("cpsam_v2", "gpu")
 
 
-# no silent download, the weights are hashed (audit B9) --------------------------------------
+# downloads on first use, checked; the weights are hashed (audit B9, #574) -------------------
 
 
-def test_weights_that_are_not_on_disk_are_not_downloaded_unless_allowed(stub):
+def test_weights_not_on_disk_are_downloaded_on_first_use_and_given_to_cellpose_by_path(stub):
+    # Owner (#574): choosing the model and loading it is the consent; Cellpose never downloads.
     (stub.models_dir / "cpsam").unlink()
-    with pytest.raises(SegmentationError, match="Hugging Face"):
-        cp.load_model("cpsam", "cpu")
-    assert stub.constructed == [] and stub.downloaded == []
-    loaded = cp.load_model("cpsam", "cpu", allow_download=True)
-    assert stub.downloaded == ["cpsam"] and stub.constructed[0].pretrained_model == "cpsam"
+    loaded = cp.load_model("cpsam", "cpu")
+    assert stub.downloaded == ["cpsam"] and stub.cellpose_downloaded == []
+    assert stub.constructed[0].pretrained_model == str(stub.models_dir / "cpsam")
     assert loaded.sha256 == hashlib.sha256(weights_bytes("cpsam")).hexdigest()
+    assert loaded.downloaded and (stub.models_dir / "cpsam").read_bytes() == weights_bytes("cpsam")
+    cp.load_model("cpsam", "cpu")
+    assert stub.downloaded == ["cpsam"]  # the second time: the checked copy on disk
 
 
-def test_a_file_in_the_working_folder_that_shadows_a_download_is_refused(
-    stub, tmp_path, monkeypatch
-):
+def test_a_file_in_the_working_folder_cannot_shadow_the_weights(stub, tmp_path, monkeypatch):
     (stub.models_dir / "cpsam").unlink()
     (tmp_path / "cpsam").write_bytes(b"not the model")
     monkeypatch.chdir(tmp_path)
-    with pytest.raises(SegmentationError, match="working folder"):
-        cp.load_model("cpsam", "cpu", allow_download=True)
-    assert stub.constructed == []
+    loaded = cp.load_model("cpsam", "cpu")
+    assert loaded.path == stub.models_dir / "cpsam"
+    assert stub.constructed[0].pretrained_model == str(stub.models_dir / "cpsam")
+    assert (tmp_path / "cpsam").read_bytes() == b"not the model"
 
 
 @pytest.mark.parametrize("found", [None, "4.2.0", "4.3.0"])
@@ -230,7 +231,7 @@ def test_the_model_name_file_and_weights_hash_are_in_the_record(run, stub):
     assert batch.run_manifest_sha256 == hashlib.sha256(manifest).hexdigest()
 
 
-# DINOv3 models: installed only when chosen, at a pinned commit ------------------------------
+# DINOv3 models: installed on first use of one, at a pinned commit (#574) --------------------
 
 
 def test_the_dinov3_install_command_pins_the_commit():
@@ -241,28 +242,43 @@ def test_the_dinov3_install_command_pins_the_commit():
     assert len(cp.DINOV3_COMMIT) == 40
 
 
-@pytest.mark.parametrize("commit", [None, "0" * 40])
-def test_a_dino_model_needs_the_pinned_dinov3_commit(stub, commit):
-    stub.dinov3_commit = commit
+@pytest.mark.parametrize("commit", ["0" * 40, None])
+def test_a_dino_model_refuses_a_dinov3_of_another_commit_and_does_not_replace_it(stub, commit):
+    stub.dinov3_commit, stub.dinov3_present = commit, True  # None: installed, commit unknown
     with pytest.raises(SegmentationError, match=f"commit {cp.DINOV3_COMMIT}.*pip install"):
-        cp.load_model("cpdino", "cpu", allow_download=True)
-    assert stub.constructed == []
+        cp.load_model("cpdino", "cpu")
+    assert stub.constructed == [] and stub.dinov3_installs == [] and stub.downloaded == []
     cp.load_model("cpsam_v2", "cpu")  # a SAM model needs no DINOv3 at all
+
+
+def test_a_dino_model_installs_the_pinned_dinov3_when_none_is_there(stub):
+    stub.dinov3_commit = None
+    told = []
+    loaded = cp.load_model("cpdino", "cpu", progress=lambda *a: told.append(a))
+    assert stub.dinov3_installs == [cp.DINOV3_COMMIT] and loaded.dinov3_installed
+    assert told[0] == (cp.DINOV3_LABEL, 0, 0)
+    assert loaded.dinov3_commit == cp.DINOV3_COMMIT
+    again = cp.load_model("cpdino", "cpu")
+    assert stub.dinov3_installs == [cp.DINOV3_COMMIT] and not again.dinov3_installed
+    stub.dinov3_commit = None
+    cp.load_model("cpsam_v2", "cpu")  # a SAM model never installs it
+    assert stub.dinov3_installs == [cp.DINOV3_COMMIT]
 
 
 def test_a_dino_model_needs_cellpose_to_have_imported_dinov3(monkeypatch, tmp_path):
     state = install(monkeypatch, tmp_path, has_cpdino=False)
     with pytest.raises(SegmentationError, match="Restart the runtime"):
-        cp.load_model("cpdino-vitb", "cpu", allow_download=True)
+        cp.load_model("cpdino-vitb", "cpu")
     assert state.constructed == []
 
 
 def test_a_dino_model_records_the_dinov3_commit(run, stub):
-    loaded = cp.load_model("cpdino", "cpu", allow_download=True)
+    loaded = cp.load_model("cpdino", "cpu")
     assert loaded.dinov3_commit == cp.DINOV3_COMMIT and loaded.tile_size == 384
     assert stub.downloaded == ["cpdino"]
     params = cp.inference_parameters(loaded, cp.Settings(), ("DNA",))
     assert params["dinov3_commit"] == cp.DINOV3_COMMIT and params["bsize"] == 384
+    assert params["dinov3_source"] == cp.DINOV3_URL and params["dinov3_installed"] is False
 
 
 def test_dinov3_is_installed_only_when_asked_and_a_failure_is_refused(monkeypatch):

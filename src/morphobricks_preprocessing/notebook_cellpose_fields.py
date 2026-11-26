@@ -1,14 +1,14 @@
 """The fields of the Cellpose notebook's forms: paths with **Browse…**, the model and settings.
 
 Split from :mod:`.notebook_cellpose_form` to keep each file small; built from the Preprocessing
-app's helpers in :mod:`.notebook_style`. The defaults are those of the former Colab form:
-the weights download and the DINOv3 installation off, the device ``cuda`` (an unavailable GPU
-is refused, never replaced by the CPU), the model ``cpsam_v2`` and a blank diameter.
+app's helpers in :mod:`.notebook_style`. The defaults are those of the former Colab form: the
+device ``cuda`` (an unavailable GPU is refused, never replaced by the CPU), the model
+``cpsam_v2`` and a blank diameter. There is no tick for the weights download or for DINOv3:
+choosing the model and pressing the button that loads it is the consent (owner, #574).
 
 The output Both (#440) segments the cells and the nuclei with **one model and one set of
 settings** by default. In the box **Output Both: the nuclei**, a tick gives the nuclei a model
-and settings of their own (:data:`NUCLEI_FIELDS`); the device and the download and install
-ticks stay shared.
+and settings of their own (:data:`NUCLEI_FIELDS`); the device stays shared.
 """
 
 from __future__ import annotations
@@ -249,10 +249,6 @@ def model_fields() -> dict[str, widgets.Widget]:
             description="Device",
             style=STYLE,
         ),
-        "download_weights": widgets.Checkbox(
-            value=False, description="Allow the weights download from Hugging Face"
-        ),
-        "install_dinov3": widgets.Checkbox(value=False, description="Install DINOv3 now"),
         **{name: main[name] for name in NUCLEI_FIELDS[2:]},
         SEPARATE_NUCLEI: widgets.Checkbox(
             value=False, description="Output Both: a different model or settings for the nuclei"
@@ -290,8 +286,7 @@ def _nuclei_box(fields: dict[str, widgets.Widget], status: widgets.HTML) -> widg
             full_help(
                 "<b>Both</b> writes the cells and the nuclei. By default the nuclei use the "
                 "model and the settings above. Tick to give the nuclei their own model and "
-                "settings (for example a smaller diameter); the device and the download and "
-                "install ticks are shared."
+                "settings (for example a smaller diameter); the device is shared."
             ),
             fields[SEPARATE_NUCLEI],
             own,
@@ -307,7 +302,7 @@ def show_nuclei_box(box: widgets.Widget, fields: dict[str, widgets.Widget], both
 
 
 def model_cards(fields: dict[str, widgets.Widget], status: widgets.HTML) -> list[widgets.Widget]:
-    """Return cell 5's cards: the model, device and downloads; the settings; the nuclei's box.
+    """Return cell 5's cards: the model and device; the settings; the nuclei's box.
 
     ``status`` shows, under a model file, how to paste its path where no dialog opens. The
     nuclei's box is the last card, hidden until the output is Both (:func:`show_nuclei_box`).
@@ -330,12 +325,13 @@ def model_cards(fields: dict[str, widgets.Widget], status: widgets.HTML) -> list
                     "The device is never chosen for you: a GPU that is not available is "
                     "refused, not replaced by the CPU."
                 ),
-                fields["download_weights"],
-                fields["install_dinov3"],
                 ui.help_text(
-                    "Built-in weights are downloaded from Hugging Face on first use, only with "
-                    "the download ticked. The cpdino models need DINOv3: tick to install it, then "
-                    "<b>restart the runtime</b> and run the notebook again from its first cell."
+                    "The first time a built-in model is used, only its weights are downloaded "
+                    "from Hugging Face (a pinned revision), with a progress line, and checked "
+                    "against their pinned SHA-256: choosing the model and pressing the button "
+                    "is the consent. A failed download stops; no other model is used. The "
+                    "cpdino models also install DINOv3 (a pinned commit) the first time; if "
+                    "Cellpose was already loaded, you are asked to <b>restart the runtime</b>."
                 ),
             ],
         ),

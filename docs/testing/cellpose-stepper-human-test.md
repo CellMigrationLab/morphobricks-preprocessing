@@ -50,11 +50,14 @@ note anything that looks wrong next to it.
 - [ ] There is no **Load the model** button. Each setting (diameter, flow threshold, cell
       probability threshold, batch size) has a one-line help beside it saying which way to move
       it.
-- [ ] Leave the device on `cuda`. If the model's weights are not on this runtime yet, press
-      **Preview** without the download tick: it refuses and says to allow the download.
-- [ ] Tick **Allow the weights download** and press **Preview**: the download shows as **one**
-      progress bar (no stream of log lines), then a green *Model ... loaded on cuda* card and the
-      preview figures for the image in the dropdown.
+- [ ] There is no **Allow the weights download** tick and no **Install DINOv3 now** tick.
+- [ ] Leave the device on `cuda`. With the model's weights not on this runtime yet, press
+      **Preview**: a line **Downloading cpsam_v2 weights…** shows the megabytes received of the
+      total (no stream of log lines), then *done in m:ss*, then a green *Model ... loaded on
+      cuda* card (it names the repository and revision) and the preview figures for the image
+      in the dropdown.
+- [ ] Press **Preview** again after a runtime restart: nothing downloads; the card says the
+      weights on this computer match the pinned file.
 - [ ] Choose another image and press **Preview**: no loading card appears this time (the model is
       reused); the preview is of the new image.
 - [ ] Change the diameter and press **Preview**: still no reload; the new diameter is used.

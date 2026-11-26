@@ -10,9 +10,11 @@ cell called before, with the fields' values exactly as given (cell 3's paths tid
 ``clean_path``); a refusal that stopped the cell (:class:`.CellStop`) is shown with the same
 message, verbatim, in a red card.
 
-The defaults are those of the former form: overwrite, the weights download and the DINOv3
-installation are off, the device is ``cuda`` (an unavailable GPU is refused, never replaced by
-the CPU), the model ``cpsam_v2`` and a blank diameter (the model's native scale).
+The defaults are those of the former form: overwrite is off, the device is ``cuda`` (an
+unavailable GPU is refused, never replaced by the CPU), the model ``cpsam_v2`` and a blank
+diameter (the model's native scale). There is no tick for the weights download or the DINOv3
+installation: choosing the model and pressing the button that loads it is the consent (owner,
+#574).
 """
 
 from __future__ import annotations
@@ -332,21 +334,11 @@ class CellposeNotebook(CellposeWorkflow):
         self._nuclei_failed = False
         value = {name: field.value for name, field in fields.items()}
         self._set_form_settings(fields)
-        self.load(
-            value["model"],
-            value["custom_model_file"],
-            value["device"],
-            value["download_weights"],
-            value["install_dinov3"],
-        )
+        self.load(value["model"], value["custom_model_file"], value["device"])
         if value[SEPARATE_NUCLEI]:
             try:
                 self.load_nuclei(
-                    value["nuclei_model"],
-                    value["nuclei_custom_model_file"],
-                    value["device"],
-                    value["download_weights"],
-                    value["install_dinov3"],
+                    value["nuclei_model"], value["nuclei_custom_model_file"], value["device"]
                 )
             except BaseException:  # a refusal, any error or an interrupt: neither stays loaded
                 self.loaded = self.nuclei_loaded = None

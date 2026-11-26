@@ -29,7 +29,7 @@ from .notebook_cellpose_channels import (
     MaskTarget,
     _card,
 )
-from .notebook_cellpose_download import quiet_cellpose
+from .notebook_cellpose_download import DownloadLine, quiet_cellpose
 from .notebook_cellpose_preview import MaskResult, preview_figures
 from .notebook_progress import progress_html
 from .notebook_stop import CellStop
@@ -273,33 +273,21 @@ class CellposeWorkflow:
         self.nuclei_settings = _settings(diameter, flow_threshold, cellprob_threshold, batch_size)
 
     @stops
-    def load(
-        self,
-        model: str,
-        custom_model_file: str,
-        device: str,
-        download_weights: bool,
-        install_dino: bool,
-    ) -> None:
-        """Say what loading does, then load the verified model (cell 5)."""
+    def load(self, model: str, custom_model_file: str, device: str) -> None:
+        """Say what loading does, then load the verified model (cell 5).
+
+        Loading a built-in model is the consent to download its weights when they are not on
+        this computer (and DINOv3 for a ``cpdino`` model; owner, #574): there is no tick.
+        """
         self._need("channels")
         self.picker.current_targets()
         if self.settings is None:
             raise SegmentationError("Set the settings first: press Load the model.")
         self.loaded = None
-        self.loaded = self._load_model(
-            model, custom_model_file, device, download_weights, install_dino, self.settings
-        )
+        self.loaded = self._load_model(model, custom_model_file, device, self.settings)
 
     @stops
-    def load_nuclei(
-        self,
-        model: str,
-        custom_model_file: str,
-        device: str,
-        download_weights: bool,
-        install_dino: bool,
-    ) -> None:
+    def load_nuclei(self, model: str, custom_model_file: str, device: str) -> None:
         """Load a separate model for the nuclei of the output Both (cell 5's Advanced)."""
         self._need_both()
         if self.nuclei_settings is None:
@@ -309,7 +297,7 @@ class CellposeWorkflow:
             )
         self.nuclei_loaded = None
         self.nuclei_loaded = self._load_model(
-            model, custom_model_file, device, download_weights, install_dino, self.nuclei_settings
+            model, custom_model_file, device, self.nuclei_settings
         )
 
     def _need_both(self) -> None:
@@ -327,36 +315,35 @@ class CellposeWorkflow:
         self.nuclei_loaded = self.nuclei_settings = None
 
     def _load_model(
-        self,
-        model: str,
-        custom_model_file: str,
-        device: str,
-        download_weights: bool,
-        install_dino: bool,
-        settings: cp.Settings,
+        self, model: str, custom_model_file: str, device: str, settings: cp.Settings
     ) -> cp.LoadedModel:
-        """Load the model chosen, verified, and show what was loaded."""
+        """Load the model chosen, verified, and show what was loaded (and any download)."""
         chosen = custom_model_file.strip() or model
-        if install_dino and chosen in cp.DINO_MODELS:
-            self._show(_card("info", "Installing DINOv3", (" ".join(cp.dinov3_install_command()),)))
-            cp.install_dinov3()
         self._show(
             _card(
                 "info",
                 f"Loading {chosen} on {device}",
                 (
-                    "Built-in weights are downloaded from Hugging Face on first use; they are "
-                    "downloaded only if the download box is ticked, with one progress bar.",
+                    "Built-in weights not yet on this computer are downloaded now, from "
+                    f"Hugging Face ({cp.WEIGHTS_REPOSITORY} at revision "
+                    f"{cp.WEIGHTS_REVISION[:12]}), and checked against their pinned SHA-256; "
+                    "weights already here are checked too. Only this model's weights are "
+                    "downloaded, and no other model is ever used instead.",
                     "On a GPU Cellpose may move its flow-threshold quality step to the CPU "
                     "when GPU memory is short, and always computes the masks on the CPU on "
                     "mps. That is Cellpose's own behaviour; it is recorded as a note.",
                 ),
             )
         )
-        with quiet_cellpose() as said:  # one tqdm.auto bar; what is loaded is unchanged
+        line = DownloadLine(self._show)  # shown only if something downloads
+        with quiet_cellpose() as said:
+            ok = False
             try:
-                loaded = cp.load_model(chosen, device, allow_download=download_weights)
+                with line.wait.ticking():
+                    loaded = cp.load_model(chosen, device, progress=line)
+                ok = True
             finally:
+                line.finish(ok)
                 if said:
                     self._show(_card("warn", "Cellpose said, while loading", tuple(said)))
         self._show(
@@ -367,11 +354,7 @@ class CellposeWorkflow:
                     f"Weights file: {loaded.file}",
                     f"SHA-256: {loaded.sha256}",
                     f"Network {loaded.backbone}, tile size {loaded.tile_size}",
-                    (
-                        f"Weights downloaded now from {loaded.source}"
-                        if loaded.downloaded
-                        else "Weights were already on this computer (nothing downloaded)"
-                    ),
+                    *_weights_lines(loaded),
                     "Diameter: " + _diameter(settings),
                 ),
             )
@@ -544,3 +527,19 @@ def _diameter(settings: cp.Settings) -> str:
 def _named(exc: BaseException) -> str:
     """Return an error as ``Type: message``."""
     return f"{type(exc).__name__}: {exc}"
+
+
+def _weights_lines(loaded: cp.LoadedModel) -> tuple[str, ...]:
+    """Return where the loaded weights came from, for the card that says what was loaded."""
+    if loaded.source is None:
+        return ("A model file of your own (nothing downloaded)",)
+    where = f"{loaded.repository} at revision {loaded.revision}"
+    lines = [
+        f"Weights downloaded now from {loaded.source} ({where}); SHA-256 matches the pinned one"
+        if loaded.downloaded
+        else f"Weights were already on this computer and match the pinned file of {where} "
+        "(nothing downloaded)"
+    ]
+    if loaded.dinov3_installed:
+        lines.append(f"DINOv3 installed now at commit {loaded.dinov3_commit}")
+    return tuple(lines)

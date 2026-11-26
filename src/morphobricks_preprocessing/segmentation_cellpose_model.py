@@ -1,4 +1,4 @@
-"""Loading a Cellpose model without substitution, device fallback or silent download.
+"""Loading a Cellpose model without substitution, device fallback or unchecked download.
 
 Part of :mod:`.segmentation_cellpose` (which re-exports these names). Cellpose, ``torch`` and
 ``dinov3`` are imported only inside the functions here, so importing this module stays inert;
@@ -11,9 +11,16 @@ before loading); the weights file the loaded model reports must be the one asked
 device is unavailable-refused up front, and after loading **every parameter and every buffer**
 of the network (``model.net``) must sit on a device of the requested type (``cuda:1`` counts as
 ``cuda``; the index is not checked). ``model.device`` is not evidence: Cellpose 4.2.1.1 only
-stores the device it was given. Uncached weights are downloaded only with ``allow_download``;
-whether they were, and from where, goes into the record. The weights file is hashed for the
-record.
+stores the device it was given.
+
+Built-in weights are never downloaded by Cellpose: choosing the model and loading it is the
+consent to download that model's file (owner, issue #574), which
+:mod:`.segmentation_cellpose_weights` fetches from a pinned revision and checks against its
+pinned SHA-256 (a copy on disk too); Cellpose is then handed the file's absolute path. A
+``cpdino`` model also needs the DINOv3 package (the code of its network; its weights are all in
+the Cellpose file), installed at :data:`DINOV3_COMMIT` on first use (:func:`ensure_dinov3`).
+Whether the weights were downloaded, from which repository, revision and URL, and the file's
+SHA-256 go into the record.
 """
 
 from __future__ import annotations
@@ -23,13 +30,23 @@ import importlib.metadata
 import importlib.util
 import json
 import os
+import re
 import subprocess
 import sys
+import warnings
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
 
 from ._io import file_sha256
+from .segmentation_cellpose_weights import (
+    WEIGHTS_REPOSITORY,
+    WEIGHTS_REVISION,
+    Progress,
+    fetch_weights,
+)
 from .segmentation_record import DEVICES, SegmentationError
 
 CELLPOSE_VERSION = "4.2.1.1"
@@ -44,6 +61,8 @@ DINOV3_COMMIT = "6876159a11b4df116f30f667f8c9888617df0751"
 """The DINOv3 commit installed for ``cpdino`` models: the head of its default branch on
 22 November 2026, **not verified against cpdino** (it is a pin, not a tested pairing). A model
 that needs DINOv3 runs only with exactly this commit installed."""
+DINOV3_LABEL = "Installing DINOv3 (the network code of the cpdino models)…"
+"""What the notebook shows while DINOv3 is installed (:func:`ensure_dinov3`)."""
 DEVICE_NOTE = (
     "The device recorded is where the network's tensors were verified to sit; Cellpose's "
     "post-processing is not covered by that check. Cellpose may move the flow-threshold quality "
@@ -52,6 +71,12 @@ DEVICE_NOTE = (
     "own behaviour; it is not refused."
 )
 """Recorded with a batch that ran on a GPU (not refused: the network still runs on the device)."""
+SPARSE_WARNING = "Sparse invariant checks are implicitly disabled"
+"""The start of the one torch ``UserWarning`` hidden while Cellpose runs
+(:func:`sparse_warning_hidden`)."""
+SPARSE_WARNING_MODULES = r"(cellpose|torch)(\.|$)"
+"""The modules it is hidden from: torch's own, or Cellpose's (``cellpose.dynamics`` builds the
+sparse tensor; a warning from torch's C++ code is attributed to that caller)."""
 SAM_TILE, DINO_TILE = 256, 384
 """The tile size (``bsize``) of a SAM model and of a DINOv3 model."""
 
@@ -117,6 +142,12 @@ def installed_version(distribution: str) -> str | None:
 
 def _cellpose_models() -> ModuleType:
     """Import ``cellpose.models`` of the pinned release, or refuse."""
+    _check_cellpose_version()
+    return importlib.import_module("cellpose.models")
+
+
+def _check_cellpose_version() -> None:
+    """Refuse unless the pinned Cellpose release is installed (nothing is imported)."""
     found = installed_version("cellpose")
     if found != CELLPOSE_VERSION:
         have = f"version {found} is installed" if found else "it is not installed"
@@ -124,7 +155,6 @@ def _cellpose_models() -> ModuleType:
             f"This notebook runs Cellpose {CELLPOSE_VERSION}; {have}. Run the install cell, "
             "then restart the runtime if it asks."
         )
-    return importlib.import_module("cellpose.models")
 
 
 def _torch() -> ModuleType:
@@ -237,8 +267,14 @@ def dinov3_install_command() -> list[str]:
     ]
 
 
+def dinov3_present() -> bool:
+    """Return whether a ``dinov3`` package is installed, whatever its commit (nothing imported)."""
+    importlib.invalidate_caches()
+    return bool(importlib.metadata.packages_distributions().get("dinov3"))
+
+
 def install_dinov3() -> None:
-    """Install DINOv3 at the pinned commit (only ever called when the user chooses to).
+    """Install DINOv3 at the pinned commit (:func:`ensure_dinov3`, for a ``cpdino`` model).
 
     Raises
     ------
@@ -253,11 +289,33 @@ def install_dinov3() -> None:
         ) from exc
 
 
+def ensure_dinov3(progress: Progress | None = None) -> bool:
+    """Install DINOv3 at :data:`DINOV3_COMMIT` when no DINOv3 is installed; return True if it was.
+
+    Called for a ``cpdino`` model only, before Cellpose is imported, so that Cellpose finds it
+    (choosing that model and loading it is the consent, as for its weights). A DINOv3 already
+    installed at another or an unknown commit is the user's own and is not replaced:
+    :func:`check_dinov3` refuses it, naming the command.
+
+    Raises
+    ------
+    SegmentationError
+        When the installation fails.
+    """
+    if dinov3_present():
+        return False
+    if progress is not None:
+        progress(DINOV3_LABEL, 0, 0)
+    install_dinov3()
+    return True
+
+
 def check_dinov3(models: ModuleType) -> str:
     """Return the commit of the installed DINOv3 if it is the pinned one, else refuse.
 
-    Cellpose imports DINOv3 when it is first imported, so DINOv3 installed after that needs a
-    restart of the runtime (the check says so): install it, restart, then load the model.
+    Cellpose 4.2.1.1 imports DINOv3 once, when ``cellpose.vit`` is first imported (it then
+    defines ``CPDINO`` whether or not that worked), so a DINOv3 installed after that needs a
+    restart of the runtime; the check looks at ``cellpose.vit`` itself and says so.
     """
     command = " ".join(dinov3_install_command()[2:])
     commit = installed_dinov3_commit()
@@ -268,15 +326,39 @@ def check_dinov3(models: ModuleType) -> str:
             else "none is installed, or its commit is unknown"
         )
         raise SegmentationError(
-            f"The DINOv3 models need DINOv3 at commit {DINOV3_COMMIT}; {found}. Tick the "
-            f"installation in the notebook (it runs: {command}), then restart the runtime."
+            f"The DINOv3 models need DINOv3 at commit {DINOV3_COMMIT}; {found}. A DINOv3 of "
+            f"your own is not replaced: uninstall it (pip uninstall dinov3), or install the "
+            f"pinned one ({command}), then restart the runtime and press the button again."
         )
-    if not hasattr(models, "CPDINO"):
+    vit = sys.modules.get("cellpose.vit")  # imported with ``models``
+    if not hasattr(vit, "dinov3_vitl16"):
         raise SegmentationError(
-            "DINOv3 is installed but Cellpose was imported before it. Restart the runtime, then "
-            "run the cells again."
+            f"DINOv3 is installed (commit {commit[:12]}), but Cellpose was imported in this "
+            "runtime before it was there. Restart the runtime (Colab: Runtime > Restart "
+            "session), run the cells again and press the button again; nothing is downloaded "
+            "again."
         )
     return commit
+
+
+@contextmanager
+def sparse_warning_hidden() -> Iterator[None]:
+    """Hide torch's "Sparse invariant checks are implicitly disabled" warning in the block only.
+
+    Cellpose 4.2.1.1's ``dynamics.py`` builds a sparse tensor and torch warns that its invariant
+    checks are off. Those checks only validate sparse tensors; they change no result, so nothing
+    is recorded. Only a ``UserWarning`` starting :data:`SPARSE_WARNING` from the modules
+    :data:`SPARSE_WARNING_MODULES` is filtered, inside ``warnings.catch_warnings()`` (never a
+    global filter: the filters are put back when the block ends); every other warning shows.
+    """
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message=re.escape(SPARSE_WARNING),
+            category=UserWarning,
+            module=SPARSE_WARNING_MODULES,
+        )
+        yield
 
 
 # --- loading and verifying a model ------------------------------------------------------------
@@ -304,14 +386,18 @@ class LoadedModel:
     downloaded
         True when this call downloaded the built-in weights (they were not on disk).
     source
-        Where Cellpose downloads the built-in weights from (its URL on Hugging Face), or None
-        for a custom model file.
+        The URL the built-in weights are downloaded from (the pinned revision on Hugging
+        Face, :func:`.segmentation_cellpose_weights.weights_url`), or None for a model file.
+    repository, revision
+        The Hugging Face repository and the commit of that URL, or None for a model file.
     backbone
         Cellpose's name of the network (``sam_vitl``, ``dino_vitl``, ...).
     tile_size
         The tile size (``bsize``) used: 256 for a SAM network, 384 otherwise.
     dinov3_commit
         The DINOv3 commit for a DINOv3 network, else None.
+    dinov3_installed
+        True when this call installed DINOv3 (it was not installed).
     """
 
     model: object
@@ -325,39 +411,9 @@ class LoadedModel:
     dinov3_commit: str | None = None
     downloaded: bool = False
     source: str | None = None
-
-
-def _source(models: ModuleType, choice: ModelChoice) -> str | None:
-    """Return the URL Cellpose downloads built-in weights ``choice`` from, None for a file."""
-    return None if choice.path is not None else f"{models._MODEL_URL}{choice.name}"
-
-
-def _expected(
-    models: ModuleType, choice: ModelChoice, allow_download: bool
-) -> tuple[Path, str, bool]:
-    """Return the weights file, what to hand to Cellpose to load it, and whether it downloads.
-
-    A built-in model already on disk is handed over by its absolute path, so Cellpose looks
-    nowhere else (not in the working folder, not in its list of user models) and cannot
-    download. One that is not on disk is handed over by name only when ``allow_download``.
-    """
-    if choice.path is not None:
-        return choice.path, os.fspath(choice.path), False
-    expected = Path(os.fspath(models.MODEL_DIR)) / choice.name
-    if expected.is_file():
-        return expected, os.fspath(expected), False
-    if not allow_download:
-        raise SegmentationError(
-            f"The weights of {choice.name} are not on this computer ({expected}). The built-in "
-            f"weights are downloaded from Hugging Face ({_source(models, choice)}) on first use. "
-            "Allow the download on purpose (tick it in the notebook) and run the cell again."
-        )
-    if os.path.lexists(choice.name):
-        raise SegmentationError(
-            f"A file or folder named {choice.name} is in the working folder, and Cellpose would "
-            "load it instead of downloading the model. Change to another working folder."
-        )
-    return expected, choice.name, True
+    repository: str | None = None
+    revision: str | None = None
+    dinov3_installed: bool = False
 
 
 def _construct(models: ModuleType, request: str, device: str) -> object:
@@ -417,30 +473,44 @@ def _verify(loaded: object, expected: Path, device: str, choice: ModelChoice) ->
 
 
 def load_model(
-    model: str | os.PathLike, device: str, *, allow_download: bool = False
+    model: str | os.PathLike, device: str, *, progress: Progress | None = None
 ) -> LoadedModel:
     """Load a Cellpose model, verified to be the weights file and device asked for.
 
-    The order is: the model and device are validated, Cellpose's version is checked, the
-    weights must be on disk (or the download allowed), a DINOv3 model needs the pinned
-    DINOv3; then the model is loaded and **verified** (the weights file it reports is the one
-    asked for; every parameter and buffer of the network sits on the stated device type), and
-    the weights file is hashed.
+    The order is: the model and device are validated; a DINOv3 model gets DINOv3 installed at
+    the pinned commit if none is (before Cellpose is imported); Cellpose's version is checked;
+    a built-in model's weights are downloaded if missing and checked against their pinned
+    SHA-256 (:func:`.segmentation_cellpose_weights.fetch_weights`); a DINOv3 model needs the
+    pinned DINOv3; then the model is loaded from that file's absolute path and **verified**
+    (the weights file it reports is the one asked for; every parameter and buffer of the
+    network sits on the stated device type). Choosing the model and calling this is the
+    consent to those downloads; nothing else is fetched and no other model is used.
+
+    Parameters
+    ----------
+    progress
+        Told ``(label, done, total)`` while weights download (bytes) or DINOv3 installs.
 
     Raises
     ------
     SegmentationError
         For an unknown model or one that does not exist, a device that is not available or
-        not the one the model sits on, a substituted model, weights that are not downloaded
-        (and no ``allow_download``), another Cellpose version or another DINOv3 commit.
+        not the one the model sits on, a substituted model, weights that cannot be downloaded
+        or are not the pinned file, another Cellpose version or another DINOv3 commit.
     """
     choice = choose_model(model)
     check_device(device)
-    models = _cellpose_models()
     dino = choice.name in DINO_MODELS
+    _check_cellpose_version()
+    installed = ensure_dinov3(progress) if dino else False
+    models = _cellpose_models()
     commit = check_dinov3(models) if dino else None
-    expected, request, downloads = _expected(models, choice, allow_download)
-    loaded = _construct(models, request, device)
+    if choice.path is not None:
+        expected, weights = choice.path, None
+    else:
+        weights = fetch_weights(choice.name, os.fspath(models.MODEL_DIR), progress)
+        expected = weights.path
+    loaded = _construct(models, os.fspath(expected), device)
     _verify(loaded, expected, device, choice)
     backbone = getattr(loaded, "backbone", None)
     if not isinstance(backbone, str):
@@ -452,11 +522,14 @@ def load_model(
         name=choice.name,
         file=os.fspath(expected) if choice.path else expected.name,
         path=expected,
-        sha256=file_sha256(expected),
+        sha256=file_sha256(expected) if weights is None else weights.sha256,
         device=device,
         backbone=backbone,
         tile_size=SAM_TILE if backbone == "sam_vitl" else DINO_TILE,
         dinov3_commit=commit,
-        downloaded=downloads,
-        source=_source(models, choice),
+        downloaded=weights is not None and weights.downloaded,
+        source=None if weights is None else weights.url,
+        repository=None if weights is None else WEIGHTS_REPOSITORY,
+        revision=None if weights is None else WEIGHTS_REVISION,
+        dinov3_installed=installed,
     )

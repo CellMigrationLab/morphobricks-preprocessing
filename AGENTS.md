@@ -291,8 +291,14 @@ src/morphobricks_preprocessing/
                     channel_by_number (a channel number only when every image has the same channel
                     IDs at the same C positions, translated once to the ID; #440);
                     segmentation_cellpose_model.py choose_model (a built-in name or an existing file,
-                    before loading), load_model (the weights file and device verified after loading, no
-                    download without allow_download, SHA-256 recorded, DINOv3 at a pinned commit);
+                    before loading), load_model (the weights file and device verified after loading,
+                    SHA-256 recorded, DINOv3 installed at a pinned commit on a cpdino model's first
+                    load: ensure_dinov3); segmentation_cellpose_weights.py fetch_weights: the chosen
+                    built-in model's file only, from a pinned Hugging Face revision, checked against
+                    its pinned SHA-256 (a cached copy too), a failed download a refusal (owner,
+                    #574: choosing the model and loading it is the consent; no tick);
+                    segmentation_cellpose_eval.py eval_arguments, inference_parameters (what
+                    model.eval is given and what the batch records);
                     notebook_cellpose.py CellposeWorkflow, ChannelPicker, CellStop: the widgets behind
                     notebooks/MorphoBricks_Cellpose.ipynb
                     notebook_stop.py CellStop (one line, no traceback), defined once: cells 2-8

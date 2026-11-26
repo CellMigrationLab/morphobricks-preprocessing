@@ -1715,3 +1715,19 @@ Raised during review; to be decided before the milestones that need them:
     work records; mask headers and projection markers are read as always; *Start fresh*
     writes and deletes nothing; a finished run is one `RunInputs.open` opens (review of #547)
     (`notebook_restore`, contract §9.2).
+86. Does the Cellpose step need the user's tick to download a model's weights, and to install
+    DINOv3? *Decided (owner, 26 November 2026, v0.9.1, #574):* no. Choosing the model, then
+    pressing **Preview** or **Segment** (or **Load the model** in the Cellpose notebook), is the
+    consent to download that model's weights; the "Allow the weights download from Hugging
+    Face" and "Install DINOv3 now" ticks are removed. Only the chosen model's file is
+    downloaded, on first use, with a visible "Downloading <model> weights…" line; the record
+    names the weights exactly; another model is never used instead and a failed download is a
+    refusal. *Encoding choices of this brick:* the file is downloaded from
+    `mouseland/cellpose-sam` at a pinned commit (`WEIGHTS_REVISION`, not Cellpose's moving
+    `main`) and kept only with its pinned size and SHA-256 (`PINNED_WEIGHTS`, the hashes Hugging
+    Face lists at that commit); a copy already on disk must match too, else it is refused and
+    left in place; the record adds `weights_repository` and `weights_revision` beside
+    `weights_source`, `weights_downloaded` and the model's `sha256`. DINOv3 (the code of the
+    `cpdino` networks, no weights of its own) is installed at its pinned commit only when none
+    is installed; a DINOv3 of another commit is refused, not replaced
+    (`segmentation_cellpose_weights`, `segmentation_cellpose_model.ensure_dinov3`).

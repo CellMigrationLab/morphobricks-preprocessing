@@ -11,6 +11,7 @@ code cell, the pins) and what the cells do. The forms themselves:
 import html
 import json
 import re
+import urllib.error
 from pathlib import Path
 
 import numpy as np
@@ -318,15 +319,28 @@ def test_an_unknown_or_missing_model_stops_the_cell_with_no_substitution(cells):
     assert cells.ns["workflow"].loaded.name == "my_model"
 
 
-def test_the_weights_download_needs_its_box_and_the_cell_says_where_from(cells):
+def test_loading_a_model_downloads_its_weights_and_the_cell_shows_it(cells):
+    # Owner (#574): choosing the model and pressing the button is the consent; no tick.
     cells.stub.models_dir.joinpath("cpsam_v2").unlink()
     open_and_choose(cells)
-    with pytest.raises(notebook_cellpose.CellStop, match="Hugging Face"):
-        run_cell(cells.ns, MODEL, device="cpu")
-    assert cells.stub.downloaded == []
-    assert "downloaded from Hugging Face on first use" in " ".join(cells.ns["workflow"].shown)
-    run_cell(cells.ns, MODEL, device="cpu", download_weights=True)
+    run_cell(cells.ns, MODEL, device="cpu")
+    fields = cells.ns["workflow"].forms["model"].fields
+    assert "download_weights" not in fields and "install_dinov3" not in fields
     assert cells.stub.downloaded == ["cpsam_v2"]
+    shown = " ".join(cells.ns["workflow"].shown)
+    assert (
+        "Downloading cpsam_v2 weights…" in shown and "checked against their pinned SHA-256" in shown
+    )
+
+
+def test_a_failed_download_stops_the_cell_naming_the_model_and_the_source(cells):
+    cells.stub.models_dir.joinpath("cpsam").unlink()
+    cells.stub.download_fail = urllib.error.URLError("blocked")
+    open_and_choose(cells)
+    with pytest.raises(notebook_cellpose.CellStop, match="weights of cpsam could not be") as caught:
+        run_cell(cells.ns, MODEL, model="cpsam", device="cpu")
+    assert "https://huggingface.co/mouseland/cellpose-sam/resolve/" in str(caught.value)
+    assert cells.ns["workflow"].loaded is None and cells.stub.constructed == []
 
 
 def test_the_load_card_says_whether_the_weights_were_downloaded_and_from_where(cells):
@@ -334,11 +348,13 @@ def test_the_load_card_says_whether_the_weights_were_downloaded_and_from_where(c
     run_cell(cells.ns, MODEL, device="cpu")
     assert "nothing downloaded" in cells.ns["workflow"].shown[-1]
     cells.stub.models_dir.joinpath("cpsam").unlink()
-    run_cell(cells.ns, MODEL, model="cpsam", device="cpu", download_weights=True)
-    assert "downloaded now from https://huggingface.co/" in cells.ns["workflow"].shown[-1]
+    run_cell(cells.ns, MODEL, model="cpsam", device="cpu")
+    url = "https://huggingface.co/mouseland/cellpose-sam/resolve/" + cp.WEIGHTS_REVISION
+    assert f"downloaded now from {url}/cpsam" in cells.ns["workflow"].shown[-1]
     run_cell(cells.ns, BATCH)
     params = read_record(cells.run.masks, "Cells").batches[0].parameters
-    assert params["weights_downloaded"] is True and params["weights_source"].endswith("/cpsam")
+    assert params["weights_downloaded"] is True and params["weights_source"] == url + "/cpsam"
+    assert params["weights_revision"] == cp.WEIGHTS_REVISION
 
 
 @pytest.mark.parametrize("cell", [PREVIEW, BATCH])
