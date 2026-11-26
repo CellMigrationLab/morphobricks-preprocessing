@@ -17,16 +17,16 @@ per-unit review (#376), the removal of a whole repeat or condition (#283, #535),
 merged since: quick fixes A and B (#534, #530), the check-folder and calibration-target fixes
 (#528), the follow-ups of #535 and #534 (#543), the linear strict description reader (#545), the
 kernel and reader benchmarks (#544), the guided channel step and image-type form (#546), the
-restore of an output folder's earlier work (#547) and the four-step Cellpose widget (#548). The
+restore of an output folder's earlier work (#547), the four-step Cellpose widget (#548), and the two blockers of the owner's Colab test, the restore and old-answers scan (#566) and Run progress during the pre-run checks with two linear speed-ups (#567). The
 run manifest stays version 5. It does not decide a gate; deciding a gate is the owner's.
 
 | | |
 |---|---|
-| Release candidate | Measured on the tree of the merge commit `5e11bc9f7aeb5edc8d9d08f046cd5ea485555d1c` (branch `claude/release-v0.9.0` at `e781564`, merged with `main` at `c8c3808`, which adds #528, #534, #543, #545, #544, #530, #548, #547 and #546; no conflicts; the notebooks' `RELEASE_REF`, the `RELEASE_CALLS` entry and the pin assertion are back at their pre-pin values) before this record was added; the record changes only this file, and the commit that adds it is the v0.9.0 preparation commit A (`git diff 5e11bc9 A -- src pyproject.toml` is empty). A keeps the notebooks' `RELEASE_REF` at their v0.8.0-era pins. Commit B then points the `RELEASE_REF` of all three notebooks at A and records the pair in `RELEASE_CALLS`. |
+| Release candidate | Measured on the tree of the merge commit `86d76749be9ad58de7dd4a7220a09f633216f170` (branch `claude/release-v0.9.0` at `ca3b3c6`, merged with `main` at `316be56`, which adds #566 and #567 to the earlier #528, #534, #543, #545, #544, #530, #548, #547 and #546; one conflict, in the CHANGELOG, both sides kept; the notebooks' `RELEASE_REF`, the `RELEASE_CALLS` entry and the pin assertion are back at their pre-pin values) before this record was added; the record changes only this file, and the commit that adds it is the v0.9.0 preparation commit A (`git diff 86d7674 A -- src pyproject.toml` is empty). A keeps the notebooks' `RELEASE_REF` at their v0.8.0-era pins. Commit B then points the `RELEASE_REF` of all three notebooks at A and records the pair in `RELEASE_CALLS`. |
 | Spec pin | `tests/spec_fixtures/PIN.toml`: MorphoBricks-Spec `232fb38880cc487510532d99dc71d46a27005f23` (moved from `bf68d30` in this release, ADR 0006) |
 | Environment | Linux, Python 3.13.18, `pip install --no-cache-dir -e '.[dev,notebook,zarr,he-mask]'` in a fresh venv (CI's extras; normalization 0.8.0, imagecodecs 2026.11.11, numpy 2.5.5, scipy 1.18.1, tifffile 2026.11.16, zarr 3.4.2, scikit-image 0.26.0, ipywidgets 8.1.9, pytest 9.2.0, ruff 0.17.6); `PYTEST_ADDOPTS` unset; run as root on a case-sensitive file system |
 | Commands | `python tools/check.py` (the whole suite in one run); `python -m pytest -q -p no:cacheprovider -rs tests/test_spec_*.py`; `python -m pytest -q -p no:cacheprovider -rs tests/test_notebook_setup.py tests/test_notebook_file.py` |
-| `tools/check.py` | Ruff clean, Ruff format 760 files already formatted, pytest **8813 passed, 12 skipped** (not run, below), 0 failed, code rules passed (exit status 0) |
+| `tools/check.py` | Ruff clean, Ruff format 761 files already formatted, pytest **8832 passed, 12 skipped** (not run, below), 0 failed, code rules passed (exit status 0) |
 | Spec modules (`tests/test_spec_*.py`, 30 files) | **2122 passed, 0 skipped, 0 failed** |
 | Notebook pin and version tests | `test_notebook_setup.py` and `test_notebook_file.py`: **49 passed**, 0 skipped (run on the tree of the merge commit) |
 
