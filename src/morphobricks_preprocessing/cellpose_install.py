@@ -7,15 +7,20 @@ only when the segmentation cell is used: :func:`install_cellpose` runs ``pip`` f
 installation (the consent, as for the model download and DINOv3). It keeps the rules of the
 Cellpose notebook's install cell: the release pinned, never DINOv3, and a restart asked for
 when ``pip`` changed a package the running kernel already loaded (:data:`LOADED_BY_KERNEL`),
-never a guess that the old copy still works. Nothing here imports Cellpose or torch.
+never a guess that the old copy still works. ``pip``'s lines are passed on as it prints them
+(``output``), so the notebook shows its progress (owner Colab test, #574), and
+:func:`installed_distributions` / :func:`install_changes` say what it installed. Nothing here
+imports Cellpose or torch.
 """
 
 from __future__ import annotations
 
 import importlib
+import importlib.metadata
+import re
 import subprocess
 import sys
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 
 from . import segmentation_cellpose_model as model
 from .segmentation_cellpose_model import CELLPOSE_VERSION
@@ -73,13 +78,67 @@ def _changed(before: Mapping[str, str | None]) -> list[str]:
     ]
 
 
-def install_cellpose(ticked: bool) -> str:
+def installed_distributions() -> dict[str, str]:
+    """Return the version of every installed distribution, by its normalized name (PEP 503)."""
+    found = {}
+    for dist in importlib.metadata.distributions():
+        name = dist.metadata["Name"]
+        if name:
+            found[re.sub(r"[-_.]+", "-", name).lower()] = dist.version
+    return found
+
+
+def install_changes(before: Mapping[str, str], after: Mapping[str, str]) -> list[str]:
+    """Return what an installation added or changed: ``name version`` (``was old``), sorted."""
+    return [
+        f"{name} {version}" + (f" (was {before[name]})" if name in before else "")
+        for name, version in sorted(after.items())
+        if before.get(name) != version
+    ]
+
+
+def _pip(command: list[str], output: Callable[[str], object]) -> None:
+    """Run ``pip``, telling ``output`` each line it prints (also its errors), as it prints it.
+
+    Like ``subprocess.run``, pip is killed (and waited for) when anything stops the reading,
+    an interrupt included: it never goes on installing behind a stopped cell. A byte that is
+    not text is replaced, so that a decoding error cannot stop the reading either.
+
+    Raises
+    ------
+    subprocess.CalledProcessError
+        When ``pip`` fails.
+    """
+    with subprocess.Popen(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        errors="replace",
+        bufsize=1,
+    ) as pip:
+        try:
+            for line in pip.stdout:
+                output(line.rstrip())
+        except BaseException:
+            pip.kill()
+            pip.wait()
+            raise
+    if pip.returncode:
+        raise subprocess.CalledProcessError(pip.returncode, command)
+
+
+def install_cellpose(ticked: bool, output: Callable[[str], object] = print) -> str:
     """Install the pinned Cellpose release when it is not installed, if ``ticked``.
 
     Parameters
     ----------
     ticked
         Whether the user ticked the installation (their consent to the download).
+    output
+        Told each line ``pip`` prints, as it prints it (the notebook shows its progress from
+        them, owner Colab test #574); by default printed, where a widget's callback would
+        otherwise lose them.
 
     Returns
     -------
@@ -98,7 +157,7 @@ def install_cellpose(ticked: bool) -> str:
         raise SegmentationError(NOT_TICKED.format(version=CELLPOSE_VERSION))
     before = {name: model.installed_version(name) for name in LOADED_BY_KERNEL}
     try:
-        subprocess.run(cellpose_install_command(), check=True)
+        _pip(cellpose_install_command(), output)
     except (subprocess.CalledProcessError, OSError) as exc:
         raise SegmentationError(
             f"Cellpose {CELLPOSE_VERSION} could not be installed ({exc}). Check the installation "
@@ -122,4 +181,6 @@ __all__ = [
     "cellpose_install_command",
     "cellpose_ready",
     "install_cellpose",
+    "install_changes",
+    "installed_distributions",
 ]

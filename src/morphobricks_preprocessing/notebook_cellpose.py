@@ -34,6 +34,7 @@ from .notebook_cellpose_preview import MaskResult, preview_figures
 from .notebook_progress import progress_html
 from .notebook_stop import CellStop
 from .notebook_style import STYLE_CSS, table, tiles
+from .open_checks import Checking, quiet
 from .run_inputs import Fov, RunInputs
 from .segmentation_cellpose_run import (
     channel_layouts,
@@ -164,8 +165,8 @@ class CellposeWorkflow:
         return self.loaded, self.settings
 
     @stops
-    def open(self, run_folder: str, masks_folder: str) -> None:
-        """Open the run and say what it holds (cell 3).
+    def open(self, run_folder: str, masks_folder: str, *, checking: Checking = quiet) -> None:
+        """Open the run and say what it holds (cell 3); ``checking`` is told how its checks go.
 
         What an earlier open chose is dropped first: a refused open leaves no run, channels or
         model to segment with, so nothing is written to the folders of the run before.
@@ -175,7 +176,7 @@ class CellposeWorkflow:
         self.drop_choice()
         if not masks_folder.strip():
             raise SegmentationError("Give the masks folder (outside the experiment and the run).")
-        inputs, pinned = open_pinned(run_folder)
+        inputs, pinned = open_pinned(run_folder, checking=checking)
         # The physical folder, fixed now: a relative path never follows a later change of the
         # kernel's working directory (review aq, B1).
         masks_root = Path(masks_folder.strip()).expanduser().resolve()

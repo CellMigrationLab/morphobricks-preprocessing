@@ -45,6 +45,7 @@ from .notebook_cellpose_fields import (
 from .notebook_cellpose_guard import check_current, check_folders, take_over
 from .notebook_cellpose_summary import summary_html, summary_widget, used
 from .notebook_cellpose_view import run_entries, run_viewer
+from .notebook_open_progress import opening
 from .notebook_stepper import field_rows
 
 __all__ = [
@@ -120,14 +121,17 @@ class StepForm:
         """The message of the last refusal, or ``""``."""
         return "" if self.stopped is None else str(self.stopped)
 
-    def submit(self) -> None:
+    def submit(self, *, reraise: bool = False) -> None:
         """Run the step with the fields as they are now; show a refusal, unchanged, in a card.
 
-        Any other error is left to the output area, which shows it with its traceback.
+        Any other error is left to the output area, which shows it with its traceback (in a
+        kernel it goes no further: a button's error has nowhere else to go). ``reraise``: it
+        is also raised again, for a cell that submits the form itself (cell 4, #574).
         """
         self.stopped = None
         self.output.clear_output()
         self.button.disabled = True
+        unexpected: BaseException | None = None
         try:
             with self.output:
                 try:
@@ -137,9 +141,14 @@ class StepForm:
                     self.stopped = exc
                     card = _card("error", STOPPED, (_verbatim(str(exc)),), raw=True)
                     self.workflow._show(card)
+                except BaseException as exc:
+                    unexpected = exc
+                    raise
         finally:
             self.button.disabled = False
             self.workflow._after_step()
+        if reraise and unexpected is not None:
+            raise unexpected
 
 
 class CellposeNotebook(CellposeWorkflow):
@@ -161,6 +170,7 @@ class CellposeNotebook(CellposeWorkflow):
         self._summary: widgets.HTML | None = None
         self.on_change: list[Callable[[], object]] = []  # called after every step's button
         self.viewer = run_viewer(lambda: self.inputs)
+        self.opening = widgets.HTML()  # the wait of Open the run (owner Colab test, #574)
         take_over(self)  # the forms of an earlier workflow in this kernel stop working
 
     def _keep(self, name: str, form: StepForm) -> StepForm:
@@ -229,15 +239,17 @@ class CellposeNotebook(CellposeWorkflow):
             lambda: self._open_and_show(ui.clean_path(run.value), ui.clean_path(masks.value)),
             {"run_folder": run, "masks_folder": masks},
         )
-        form.body.children = [*form.body.children, self.viewer.widget]
+        form.body.children = [*form.body.children, self.opening, self.viewer.widget]
         return self._keep("open", form)
 
     def _open_and_show(self, run_folder: str, masks_folder: str) -> None:
-        """Open the run, then show its images (or none, when it was refused)."""
-        try:
-            self.open(run_folder, masks_folder)
-        finally:
-            self.viewer.set_entries(run_entries(self.inputs))
+        """Open the run, then show its images (or none, when it was refused), with the wait."""
+        with opening(self.opening) as checking:
+            try:
+                self.open(run_folder, masks_folder, checking=checking)
+            finally:
+                checking("viewer", 0, 0, "")
+                self.viewer.set_entries(run_entries(self.inputs))
 
     def channels_form(self) -> StepForm:
         """Show the form of cell 4: the output and the mask type(s); the channels come after it.

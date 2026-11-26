@@ -91,6 +91,7 @@ def test_preprocessing_never_installs_cellpose_and_cells_4_and_5_are_thin():
     for role in SHARED:
         text = OWN_LINES.sub("", code[role])  # notebook_name names this notebook
         assert "cellpose" not in text.lower() and "torch" not in text
+    # Cell 4 is the pinned release's: segmentation_step shows its widget first itself (#574).
     for role, call in ((SEGMENT, "segmentation_step(notebook)"), (REGISTER, "register_step(")):
         text = code[role]
         assert call in text and text.rstrip().splitlines()[-1].startswith("display(")
