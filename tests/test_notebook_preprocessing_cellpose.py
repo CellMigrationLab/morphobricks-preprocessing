@@ -269,6 +269,33 @@ def test_a_failed_install_shows_pips_last_lines(tmp_path, pip):
     assert step.installed.value == ""
 
 
+def test_an_interrupted_install_kills_pip(monkeypatch):
+    # #574 review: subprocess.run killed pip on any exception; the streaming loop must too.
+    started = []
+
+    class Recorded(subprocess.Popen):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            started.append(self)
+
+    def interrupt(line):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(cellpose_install.subprocess, "Popen", Recorded)
+    child = "import time; print('Collecting cellpose', flush=True); time.sleep(120)"
+    with pytest.raises(KeyboardInterrupt):
+        cellpose_install._pip([sys.executable, "-c", child], interrupt)
+    (pip,) = started
+    assert pip.returncode is not None and pip.returncode != 0  # killed, and waited for
+
+
+def test_pip_output_that_is_not_text_is_replaced_not_fatal():
+    lines = []
+    child = "import sys; sys.stdout.buffer.write(b'Downloading caf\\xe9 (1 MB)\\n')"
+    cellpose_install._pip([sys.executable, "-c", child], lines.append)
+    assert lines == ["Downloading caf\ufffd (1 MB)"]
+
+
 def test_pip_steps_and_the_list_of_changes():
     assert pip_step("Collecting fastremap (from cellpose==4.2.1.1)") == "finding fastremap"
     assert pip_step("Requirement already satisfied: numpy in /usr (2.0.2)") is None

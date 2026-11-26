@@ -311,7 +311,7 @@ src/morphobricks_preprocessing/
                     notebook, #441), the same CellposeNotebook forms the Cellpose cells mount
                     notebook_preprocessing_cellpose.py segmentation_step(app): cell 4 of
                     notebooks/MorphoBricks_Preprocessing_Cellpose.ipynb (#441), segmentation_app
-                    on the Preprocessing app's finished run, shown (show=display) before the run
+                    on the Preprocessing app's finished run, displayed by itself (in a kernel) before the run
                     is opened once; cellpose_install.py installs Cellpose 4.2.1.1 only on the
                     user's tick (restart when numpy/opencv changed), pip's lines streamed;
                     notebook_cellpose_install.py what pip does now, then what it installed;

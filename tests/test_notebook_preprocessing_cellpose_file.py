@@ -91,12 +91,10 @@ def test_preprocessing_never_installs_cellpose_and_cells_4_and_5_are_thin():
     for role in SHARED:
         text = OWN_LINES.sub("", code[role])  # notebook_name names this notebook
         assert "cellpose" not in text.lower() and "torch" not in text
-    # Cell 4 shows its widget itself before it opens the run, so that the wait is seen (#574).
-    shown = ((SEGMENT, "segmentation = segmentation_step(notebook, show=display)"),
-             (REGISTER, "display("))  # fmt: skip
-    for role, last in shown:
+    # Cell 4 is the pinned release's: segmentation_step shows its widget first itself (#574).
+    for role, call in ((SEGMENT, "segmentation_step(notebook)"), (REGISTER, "register_step(")):
         text = code[role]
-        assert text.rstrip().splitlines()[-1].startswith(last)
+        assert call in text and text.rstrip().splitlines()[-1].startswith("display(")
         assert len(text.splitlines()) < 25
         for other in ("pip", "subprocess", "import cellpose", "import torch", "RELEASE_REF"):
             assert other not in text

@@ -31,7 +31,9 @@ OPENING = {
 COUNTED = ("images", "contents", "masks")
 """The phases shown as done of total, each with its file."""
 TOOK = "Opened and checked in {took}."
-"""The line left once the wait ends (``{took}``: ``m:ss``), refused or not."""
+"""The line left once the opening ends, opened or refused (``{took}``: ``m:ss``)."""
+STOPPED_AFTER = "Stopped after {took}."
+"""The line left when an error or an interrupt went through the opening."""
 
 
 @contextmanager
@@ -41,7 +43,8 @@ def opening(target: widgets.HTML) -> Iterator[Checking]:
     Parameters
     ----------
     target
-        The HTML widget the line is drawn in; it is left saying how long it took.
+        The HTML widget the line is drawn in; it is left saying how long it took
+        (:data:`TOOK`), or, when an exception went through the block, :data:`STOPPED_AFTER`.
 
     Yields
     ------
@@ -60,11 +63,14 @@ def opening(target: widgets.HTML) -> Iterator[Checking]:
         if phase in COUNTED:
             wait.step(done, total, path)
 
+    line = STOPPED_AFTER
     try:
         with wait.ticking():
             yield checking
+        line = TOOK
     finally:
-        target.value = f"<div class='mb-help'>{html.escape(TOOK.format(took=wait.took()))}</div>"
+        text = html.escape(line.format(took=wait.took()))
+        target.value = f"<div class='mb-help'>{text}</div>"
 
 
-__all__ = ["COUNTED", "OPENING", "TOOK", "opening"]
+__all__ = ["COUNTED", "OPENING", "STOPPED_AFTER", "TOOK", "opening"]

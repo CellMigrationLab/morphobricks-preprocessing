@@ -100,16 +100,30 @@ def install_changes(before: Mapping[str, str], after: Mapping[str, str]) -> list
 def _pip(command: list[str], output: Callable[[str], object]) -> None:
     """Run ``pip``, telling ``output`` each line it prints (also its errors), as it prints it.
 
+    Like ``subprocess.run``, pip is killed (and waited for) when anything stops the reading,
+    an interrupt included: it never goes on installing behind a stopped cell. A byte that is
+    not text is replaced, so that a decoding error cannot stop the reading either.
+
     Raises
     ------
     subprocess.CalledProcessError
         When ``pip`` fails.
     """
     with subprocess.Popen(
-        command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        errors="replace",
+        bufsize=1,
     ) as pip:
-        for line in pip.stdout:
-            output(line.rstrip())
+        try:
+            for line in pip.stdout:
+                output(line.rstrip())
+        except BaseException:
+            pip.kill()
+            pip.wait()
+            raise
     if pip.returncode:
         raise subprocess.CalledProcessError(pip.returncode, command)
 

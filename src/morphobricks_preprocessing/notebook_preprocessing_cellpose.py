@@ -26,6 +26,8 @@ from collections.abc import Callable
 from pathlib import Path
 
 import ipywidgets as widgets
+from IPython import get_ipython
+from IPython.display import display
 
 from . import notebook_style as ui
 from . import segmentation_cellpose as cp
@@ -108,6 +110,7 @@ class SegmentationStep(widgets.VBox):
         self.segmentation: SegmentationApp | None = None
         self.rechecked_run: Path | None = None
         self.registered_manifest: str | None = None
+        self.skip_next_display = False  # shown by segmentation_step: the cell's display adds none
         self.notice = widgets.HTML(self._notice())
         self.opening = widgets.HTML()  # the wait of the run's checks without the component
         self.installed = widgets.HTML()  # what the installation installed, once it did
@@ -135,11 +138,18 @@ class SegmentationStep(widgets.VBox):
         if not self.run_folder:
             return
         if self.segmentation is not None and self.masks_folder:
-            self._open_in_form()
+            self._open_in_form(reraise=True)
             return
         with opening(self.opening) as checking:
             self.refused = _refusal(self.run_folder, checking)
         self.notice.value = self._notice()
+
+    def _ipython_display_(self) -> None:
+        """Display the widget, unless :func:`segmentation_step` just did (then once nothing)."""
+        if self.skip_next_display:
+            self.skip_next_display = False
+            return
+        display(self._repr_mimebundle_(), raw=True)
 
     @property
     def workflow(self) -> CellposeNotebook | None:
@@ -177,12 +187,16 @@ class SegmentationStep(widgets.VBox):
         if open_now:
             self._open_in_form()
 
-    def _open_in_form(self) -> None:
-        """Open the run by **Open the run** when both folders are known; keep its refusal."""
+    def _open_in_form(self, reraise: bool = False) -> None:
+        """Open the run by **Open the run** when both folders are known; keep its refusal.
+
+        ``reraise``: an error that is not a refusal goes out of the cell (:meth:`check`), as
+        it did before the opening moved into the form; a button's shows it under the button.
+        """
         opener = self.segmentation.workflow.forms["open"]
         if not (self.run_folder and self.masks_folder):
             return
-        opener.submit()
+        opener.submit(reraise=reraise)
         if opener.stopped is not None:
             # A refused masks folder is said under Open the run; the run itself is not refused.
             if not self.refused and not self.segmentation.workflow.folders_refused:
@@ -264,11 +278,26 @@ def _refused_card(reason: str) -> str:
     return ui.status("error", "The run cannot be segmented", [RUN_REFUSED, reason])
 
 
+def _shown_first(step: SegmentationStep) -> None:
+    """Display ``step`` now, in a notebook; the cell's own ``display(step)`` then adds nothing."""
+    display(step)
+    step.skip_next_display = True
+
+
+def _default_show() -> Callable[[SegmentationStep], object] | None:
+    """Return how cell 4 shows its widget first: :func:`_shown_first` in a kernel, else None."""
+    return _shown_first if get_ipython() is not None else None
+
+
+_DEFAULT = object()
+"""``show`` not given: :func:`_default_show`."""
+
+
 def segmentation_step(
     app: object,
     *,
     on_masks_written: Callable[[cp.BatchResult], object] | None = None,
-    show: Callable[[SegmentationStep], object] | None = None,
+    show: Callable[[SegmentationStep], object] | None | object = _DEFAULT,
 ) -> SegmentationStep:
     """Return cell 4's widget, its run opened: the Cellpose segmentation of the app's run.
 
@@ -280,11 +309,15 @@ def segmentation_step(
     on_masks_written
         Passed to :func:`.notebook_cellpose_app.segmentation_app`.
     show
-        Called with the widget before the run is opened (cell 4: IPython's ``display``), so
-        that the wait of its checks is on screen (owner Colab test, #574); None: the widget
-        is returned opened, for the caller to show.
+        Called with the widget before the run is opened, so that the wait of its checks is on
+        screen (owner Colab test, #574); None: the widget is returned opened, for the caller
+        to show. By default, in a notebook, the widget is displayed first, and the cell's
+        ``display(segmentation)`` that follows shows nothing more: cell 4 is the same for the
+        release it pins and for this code. Outside a notebook: None.
     """
     step = SegmentationStep(app, on_masks_written)
+    if show is _DEFAULT:
+        show = _default_show()
     if show is not None:
         show(step)
     step.check()

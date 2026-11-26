@@ -121,14 +121,17 @@ class StepForm:
         """The message of the last refusal, or ``""``."""
         return "" if self.stopped is None else str(self.stopped)
 
-    def submit(self) -> None:
+    def submit(self, *, reraise: bool = False) -> None:
         """Run the step with the fields as they are now; show a refusal, unchanged, in a card.
 
-        Any other error is left to the output area, which shows it with its traceback.
+        Any other error is left to the output area, which shows it with its traceback (in a
+        kernel it goes no further: a button's error has nowhere else to go). ``reraise``: it
+        is also raised again, for a cell that submits the form itself (cell 4, #574).
         """
         self.stopped = None
         self.output.clear_output()
         self.button.disabled = True
+        unexpected: BaseException | None = None
         try:
             with self.output:
                 try:
@@ -138,9 +141,14 @@ class StepForm:
                     self.stopped = exc
                     card = _card("error", STOPPED, (_verbatim(str(exc)),), raw=True)
                     self.workflow._show(card)
+                except BaseException as exc:
+                    unexpected = exc
+                    raise
         finally:
             self.button.disabled = False
             self.workflow._after_step()
+        if reraise and unexpected is not None:
+            raise unexpected
 
 
 class CellposeNotebook(CellposeWorkflow):
