@@ -69,6 +69,67 @@ before timing). Tiles are 512 px, strips 64 rows, Zarr chunks 1024 px.
 | `pair_counts` (nuclei in cells) | 41.5 ms (40.3–50.0) | 27 MiB | 245 ms (235–260) | 110 MiB |
 | scan of one position (`_scan_plane`: both masks' pieces, both pairs) | 701 ms (674–734) | 132 MiB | 4,704 ms (4,601–4,933) | 528 MiB |
 
+### `piece_counts` by runs or by boxes (#69), before and after
+
+`python tools/benchmark_kernels.py --group masks` (7 timed calls per case after one warm-up)
+as of this change, with its three pixel-scale masks (`benchmark_inputs.pixel_mask`: a
+two-label `uint16` checkerboard, a one-label `int32` checkerboard, and half the pixels
+carrying labels 1 to 4), run on 26 November 2026 on the machine and libraries above, five
+times in turn: **before** (`main` at `88a1c42`, the per-label function), **after** (this
+change), **first** (the first version of PR #568 at `85715dc`, runs only), before, after.
+The source measured was chosen with `PYTHONPATH`; the reports' `machine.commit` is the
+tool's checkout (`85715dc`), not the source measured. Every case has the same digest in all
+five runs, and the inputs the same digests in all five (and, for the cells and nuclei, as in
+the baseline above). Another job's tests were running (1-minute load 1.9 to 2.1 at the
+starts), shared by every run. Reports:
+[before](benchmark_results/2026-11-26-kernels-masks-before-69.json),
+[first](benchmark_results/2026-11-26-kernels-masks-first-69.json) and
+[after](benchmark_results/2026-11-26-kernels-masks-after-69.json) (first round).
+
+| Case | Before (runs 1, 2) | After (runs 1, 2) | First | Traced: before / after / first | Digest (first 16) |
+|---|---:|---:|---:|---:|---|
+| `piece_counts` cells 2048 | 322, 321 ms | 15.9, 16.9 ms | 35.9 ms | 132 / 8.5 / 12.1 MiB | `4abd144b846d176c` |
+| `piece_counts` cells 4096 | 2,327, 2,061 ms | 103, 65.4 ms | 168 ms | 528 / 33.6 / 48.0 MiB | `c575615afca962cf` |
+| scan of one position 2048 | 766, 821 ms | 206, 173 ms | 214 ms | 132 / 78.5 / 78.5 MiB | `69de16bd28281cc3` |
+| scan of one position 4096 | 5,095, 4,889 ms | 965, 923 ms | 1,100 ms | 528 / 314 / 314 MiB | `ec5910c05e04c1c7` |
+| two-label checkerboard 2048 | 195, 210 ms | 191, 178 ms | 1,481 ms | 116 / 116 / 852 MiB | `e90ded1a1d3176d9` |
+| one-label checkerboard 2048 | 135, 112 ms | 147, 121 ms | 678 ms | 132 / 132 / 430 MiB | `6543cf267d7ad990` |
+| noise, four labels 2048 | 250, 231 ms | 234, 237 ms | 549 ms | 132 / 132 / 253 MiB | `484c7df9ddc9e95d` |
+| two-label checkerboard 4096 | 931, 932 ms | 1,009, 961 ms | 7,374 ms | 464 / 464 / 3,407 MiB | `e90ded1a1d3176d9` |
+| one-label checkerboard 4096 | 574, 570 ms | 556, 568 ms | 3,366 ms | 528 / 528 / 1,720 MiB | `6543cf267d7ad990` |
+| noise, four labels 4096 | 1,248, 1,215 ms | 1,049, 1,235 ms | 2,917 ms | 528 / 528 / 1,011 MiB | `99f3f03132d213f6` |
+
+Medians (the reports hold the min to max). `pair_counts` is unchanged (241 to 259 ms at 4096 px
+in every run). Peak resident memory of the benchmark process: 905 and 891 MiB before, 889 and
+889 MiB after, 3,720 MiB first.
+
+**The trade-off.** The runs route costs time and memory per run (a run is consecutive pixels
+of one label in a row), and the former route per pixel (a sort of every pixel, about 32 bytes
+each, then a labelling per label in its bounding box). On masks of objects (tens of pixels
+across) runs are a few per hundred pixels and the runs route is 10 to 30 times faster with a
+tenth of the memory or less. On pixel-scale masks (noise, checkerboards) runs are almost
+pixels: the first version took up to 8 times longer and 7 times the memory there (3.4 GiB on
+the 4096 px two-label checkerboard). `piece_counts` now counts the runs first and takes
+the former route above `RUNS_PER_PIXEL_LIMIT` = 0.25 runs per pixel, so these masks
+cost what they cost before (the counting adds one boolean plane, 16 MiB at 4096 px, freed
+before the former route starts). The limit was chosen from a sweep at 4096 px outside the tool
+(median of 3 calls, `tracemalloc` peak, equal outputs): runs route / former route 0.29 / 0.85 s
+and 100 / 528 MiB at 0.08 runs per pixel (8 px blocks of 4 labels), 0.54 / 0.92 s and 183 /
+528 MiB at 0.16, 0.74 / 0.91 s and 238 / 528 MiB at 0.21, 0.89 / 0.81 s and 220 / 528 MiB at
+0.25 (noise of one label at half the pixels, the most runs one label can make), 1.15 / 1.05 s
+and 346 / 528 MiB at 0.32, 1.57 / 1.10 s at 0.44, 2.02 / 0.49 s at 0.5 and 5.0 / 0.92 s and
+1,136 / 464 MiB at 1. Below the limit the runs route never used more memory than the former
+one and was at most about 10 % slower (at the limit itself); above it the route is the former
+one. A mask just below the limit that the runs route handles badly in time is possible but
+was not found.
+
+Outside the tool (the former function kept in `tests/test_mask_pieces.py` against the new
+one, median of 3 calls, equal outputs): a 2048 px mask of 1,000 labels scattered over 20 % of
+the pixels (0.20 runs per pixel) took 15.2 s before, 0.11 s after; 4,000 touching Voronoi
+cells at 2048 px, 0.38 s before, 0.041 s after. The former function's time on the cells was
+mostly its sort of every pixel (about 2.5 s of the 4096 px case alone), not its loop of
+per-label `ndimage.label` (about 0.15 s); the loop dominates when labels are spread out.
+
 ## Channel identity (`check_channel_identity`, three channels)
 
 | Units | Images per unit | Time | Traced |
