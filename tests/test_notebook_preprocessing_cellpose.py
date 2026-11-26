@@ -40,6 +40,7 @@ from morphobricks_preprocessing.notebook_cellpose_install import pip_step  # noq
 from morphobricks_preprocessing.notebook_mask_register import (  # noqa: E402
     AXES_AGAIN,
     NO_MASKS,
+    STOPPED,
     register_step,
     toml_section,
 )
@@ -566,3 +567,59 @@ def test_cell_5_run_again_after_it_registered_the_masks_is_not_refused(tmp_path,
     assert registration.register(), registration.status.value
     again = register_step(nb, registration.segmentation)
     assert list(again.choices) == ["Cells"], again.status.value
+
+
+def pressed_with_a_failed_check(tmp_path, monkeypatch, error):
+    """Return the app, cell 5 and the run after a press whose folder check raised ``error``."""
+    from morphobricks_preprocessing import notebook_folder
+
+    nb = ran_app(tmp_path)
+    out = nb.result.output_folder
+    step = segmentation_step(nb)
+    segment(step, tmp_path / "masks")
+    registration = register_step(nb, step)
+    registration.choices["Cells"].value = "instances"
+    real = notebook_folder.preflight
+
+    def failing(*args, **kwargs):
+        raise error
+
+    monkeypatch.setattr(notebook_folder, "preflight", failing)
+    before = snapshot(out)
+    return nb, registration, out, before, real
+
+
+def test_a_failed_folder_check_says_so_in_cell_5_not_the_axes(tmp_path, stub, monkeypatch):
+    # Before, cell 5 said to confirm the axes again (there was no check to confirm), the
+    # reason was drawn only in cell 3, and every later press raised AttributeError out of the
+    # click handler with the axes line left on screen.
+    from morphobricks_preprocessing import notebook_folder
+
+    nb, registration, out, before, real = pressed_with_a_failed_check(
+        tmp_path, monkeypatch, OSError("Drive stopped answering")
+    )
+    assert not registration.register()
+    status = registration.status.value
+    assert "did not finish" in status and "Drive stopped answering" in status
+    assert AXES_AGAIN.split(":")[0] not in status
+    assert snapshot(out) == before  # nothing declared, saved or run
+    assert not registration.register()  # pressed again: the same refusal, no exception
+    assert "did not finish" in registration.status.value
+    again = register_step(nb, registration.segmentation)  # cell 5 run again
+    assert "did not finish" in again.status.value
+    monkeypatch.setattr(notebook_folder, "preflight", real)  # Drive answers again
+    nb.check_button.click()  # cell 3's check, as the refusal says; the axes, then Register
+    nb.quick_confirm.click()
+    assert registration.register(), registration.status.value
+    assert RunInputs.open(out).mask_types() == ("Cells",)
+
+
+def test_an_unexpected_error_during_register_is_shown_in_cell_5(tmp_path, stub, monkeypatch):
+    _nb, registration, out, before, _real = pressed_with_a_failed_check(
+        tmp_path, monkeypatch, RuntimeError("unexpected")
+    )
+    with pytest.raises(RuntimeError):
+        registration.register()
+    assert STOPPED.split("(")[0] in registration.status.value
+    assert "RuntimeError: unexpected" in registration.status.value
+    assert snapshot(out) == before
