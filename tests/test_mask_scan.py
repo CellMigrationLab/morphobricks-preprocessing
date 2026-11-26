@@ -411,3 +411,18 @@ def test_the_contract_states_the_current_report_version():
     row = re.search(r"^\| `report_version` \| `(\d+)`", contract, re.MULTILINE)
     assert heading and row
     assert heading.group(1) == row.group(1) == MASK_REPORT_VERSION
+
+
+@pytest.mark.filterwarnings("ignore:.*writing zero-size array:UserWarning")  # the fixture
+def test_a_mask_plane_without_pixels_is_refused(tmp_path):
+    # Review of #568: piece_counts gives no labels for a plane of no pixels, so the scan must
+    # refuse such a plane itself (before #568 SciPy failed on it); it would otherwise count as
+    # an image and as a plane of at most one label in the mask type's kind.
+    root, folder = tmp_path / "exp", tmp_path / "masks"
+    write_data(root / "ctrl" / "a.tif", np.zeros((0, 8), dtype=np.uint8))
+    write_data(folder / "Cells" / "ctrl" / "a.tif", np.zeros((0, 8), dtype=np.uint16))
+    write_data(folder / "Nuclei" / "ctrl" / "a.tif", np.zeros((0, 8), dtype=np.uint16))
+    inventory = preflight(root, masks_folder=folder, bind_headers=True).masks
+    assert inventory.ok, inventory.issues
+    with pytest.raises(ValueError, match=r"Cells/ctrl/a.tif has no pixels.*mask_without_pixels"):
+        scan_masks(inventory, root)

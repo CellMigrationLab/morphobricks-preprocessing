@@ -23,7 +23,9 @@ shown to give identical outputs. The groups (``--group``, all by default):
   ``check_labels`` (on the mask, which it accepts, and on a copy with one negative pixel, which
   it refuses: the digest is of the verdicts, the error type and its message),
   ``piece_counts``, ``pair_counts`` and the scan of one position
-  (``mask_scan._scan_plane``: the pieces of both masks and both pairs);
+  (``mask_scan._scan_plane``: the pieces of both masks and both pairs), and ``piece_counts``
+  of three pixel-scale masks (``benchmark_inputs.pixel_mask``: two checkerboards and noise,
+  #69), the worst cases of its runs route;
 - ``channel_identity``: ``check_channel_identity`` of the image summaries of 72 and 400
   units of three channels.
 
@@ -146,6 +148,11 @@ def mask_cases(sides: tuple[int, ...]) -> Iterator[Case]:
             lambda c=nuclei, p=cells: pair_counts(c, p, thresholds=limits),
         )
         yield Case("masks", f"scan_position_{side}", {**params, "mask_types": 2}, scan)
+        for kind in inputs.PIXEL_MASKS:
+            mask = inputs.pixel_mask(side, kind)
+            found = {"side": side, "dtype": str(mask.dtype), "mask": kind}
+            name = f"piece_counts_{kind}_{side}"
+            yield Case("masks", name, found, lambda m=mask: piece_counts(m))
 
 
 def channel_identity_cases(sizes: tuple[tuple[int, int], ...]) -> Iterator[Case]:

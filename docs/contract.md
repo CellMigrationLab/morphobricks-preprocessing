@@ -1028,6 +1028,9 @@ report is written whole, by one rename, only after every image is scanned), and 
 `mask_relationships.json` is left as it was. With `verify_content` (`prepare_mask_step(...,
 verify_content=True)`, CLI `masks --verify-content`; by default the recorded run's setting)
 each mask's content SHA-256 is also taken before and after its scan and must not change.
+A mask plane of no pixels (a height or width of 0) stops the scan with a `ValueError` naming
+the mask (`mask_without_pixels`, review of #568): it has no labels, and would otherwise count
+as an image of its mask type and as a plane of at most one label in its kind.
 Unchanged masks give the same report as before. The scan reads only masks whose headers are
 bound (issue #480): a header is evidence about one version of a file, so `scan_masks` given
 masks found without `bind=True` (`find_masks`; `preflight` without `bind_headers=True`)

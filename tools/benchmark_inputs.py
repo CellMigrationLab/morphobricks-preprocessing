@@ -87,6 +87,38 @@ def _label_masks(side: int, objects: int, seed: int) -> tuple[np.ndarray, np.nda
     return cells, nuclei
 
 
+PIXEL_MASKS = ("checker_two_labels", "checker_one_label", "noise_four_labels")
+"""The pixel-scale masks (:func:`pixel_mask`): about one run of one label per pixel or two."""
+
+
+def pixel_mask(side: int, kind: str, seed: int = 0) -> np.ndarray:
+    """Return the seeded pixel-scale mask (:func:`_pixel_mask`) and record its digest."""
+    found = _pixel_mask(side, kind, seed)
+    INPUT_DIGESTS[f"pixel_mask_{kind}_{side}_seed{seed}"] = digest(found)
+    return found
+
+
+def _pixel_mask(side: int, kind: str, seed: int) -> np.ndarray:
+    """Return a ``side x side`` mask whose labels change at almost every pixel (issue #69).
+
+    ``checker_two_labels``: labels 1 and 2 in a checkerboard (``uint16``, one run per pixel);
+    ``checker_one_label``: label 1 on the black squares, background on the white (``int32``,
+    every pixel of label 1 one piece through the corners); ``noise_four_labels``: half the
+    pixels, seeded, carry a seeded label 1 to 4 (``int32``). The worst cases of the runs route
+    of ``piece_counts``, which counts these by boxes.
+    """
+    board = np.add.outer(np.arange(side), np.arange(side)) % 2
+    if kind == "checker_two_labels":
+        return (board + 1).astype(np.uint16)
+    if kind == "checker_one_label":
+        return board.astype(np.int32)
+    if kind == "noise_four_labels":
+        rng = np.random.default_rng(seed)
+        on = rng.random((side, side)) < 0.5
+        return np.where(on, rng.integers(1, 5, (side, side)), 0).astype(np.int32)
+    raise ValueError(f"no pixel-scale mask {kind}")
+
+
 def summaries(units: int, images: int, seed: int = 0) -> list:
     """Return the seeded summaries (:func:`_summaries`) and record their digest."""
     found = _summaries(units, images, seed)
