@@ -63,7 +63,7 @@ from .mask_binding import check_scanned, refuse_unbound, scan_fingerprints
 from .mask_pairs import best_parents, match_counts
 from .mask_pairs import one_to_one_matches as one_to_one_matches  # moved there
 from .mask_pieces import piece_counts as piece_counts  # moved there (issue #69)
-from .masks import MaskInventory, check_labels, read_mask
+from .masks import MaskFile, MaskInventory, check_labels, read_mask
 
 logger = logging.getLogger(__name__)
 
@@ -407,7 +407,8 @@ def scan_masks(
     ValueError
         For an invalid threshold, before any mask is read; for an image whose masks have
         different depth slices or time points; for a mask that cannot be read as the planes
-        its header gave, or holds a label outside 0 to 2,147,483,647 (:func:`.masks.read_mask`).
+        its header gave, or holds a label outside 0 to 2,147,483,647 (:func:`.masks.read_mask`);
+        for a mask plane of no pixels (``mask_without_pixels``).
     """
     limits = mask_thresholds(thresholds)
     root = Path(experiment_root).resolve()
@@ -445,6 +446,7 @@ def scan_masks(
                     )
                     for name, mask in found_masks.items()
                 }
+                _refuse_no_pixels(masks, found_masks)
                 _scan_plane(masks, pieces, single, totals, limits)
         check_scanned(found_masks.values(), inventory.folder, root, before, verify_content)
     if progress is not None:
@@ -465,6 +467,16 @@ def write_mask_report(report: MaskReport, path: str | os.PathLike) -> Path:
     """Write the report as UTF-8 JSON (two-space indent, LF), atomically; return the path."""
     text = json.dumps(report.to_dict(), indent=2, ensure_ascii=False) + "\n"
     return write_text_atomic(path, text, parents=True)
+
+
+def _refuse_no_pixels(masks: Mapping[str, np.ndarray], found: Mapping[str, MaskFile]) -> None:
+    """Refuse a mask plane of no pixels: it has no labels, so it would pass as a plane of one."""
+    for name, pixels in masks.items():
+        if pixels.size == 0:
+            raise ValueError(
+                f"the mask {found[name].path} has no pixels (shape {pixels.shape}); save the "
+                "mask with the image's height and width (mask_without_pixels)"
+            )
 
 
 def _scan_plane(
