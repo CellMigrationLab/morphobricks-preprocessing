@@ -160,19 +160,14 @@ class Wait:
 
     def start(self, label: str, total: int = 0) -> None:
         """Start the wait: the clock is set and the line drawn with nothing done."""
-        self.label = label
-        self._started = self._phase_started = self.clock()
-        self.drawn = 0
-        self._draw(0, total, "")
+        self._draw(0, total, "", label=label, restart=True)
 
     def phase(self, label: str, total: int = 0, done: int = 0) -> None:
         """Name the next part of the same wait; the elapsed time goes on.
 
         ``done`` of ``total`` says which part this is when the parts themselves are counted.
         """
-        self.label = label
-        self._phase_started = self.clock()
-        self._draw(done, total, "")
+        self._draw(done, total, "", label=label)
 
     def step(self, done: int, total: int = 0, item: str = "") -> None:
         """Report progress; redrawn at most every :data:`MIN_INTERVAL` seconds, and at the end."""
@@ -181,8 +176,25 @@ class Wait:
         if last or self.clock() - self._last >= MIN_INTERVAL:
             self._draw(done, total, item)
 
-    def _draw(self, done: int, total: int, item: str) -> None:
+    @property
+    def total(self) -> int:
+        """The total last reported (0 for work that is not counted)."""
+        return self._state[1]
+
+    def _draw(
+        self, done: int, total: int, item: str, *, label: str | None = None, restart: bool = False
+    ) -> None:
+        """Draw the line; with ``label``, a new part starts (``restart``: a new wait).
+
+        The label, the clocks and the line change together under the lock the ticking
+        thread draws with, so it never draws a new label with an old part's numbers.
+        """
         with self._drawing:  # the ticking thread draws too
+            if label is not None:
+                now = self.clock()
+                self.label, self._phase_started = label, now
+                if restart:
+                    self._started, self.drawn = now, 0
             self._state = (done, total, item)
             self._last = self.clock()
             self.drawn += 1

@@ -451,12 +451,20 @@ class _RunStep:
         )
 
     def _checking(self, phase: str, done: int, total: int, path: str) -> None:
-        """Show the run's own folder check: its phase, and each header of how many."""
+        """Show the run's own checks: each phase, and each header or image of how many.
+
+        A phase's start and end calls without a path are placeholders (``("masks", 0, 1, "")``
+        with no masks): only the headers' start, or a call with a path, gives the real total;
+        an end is drawn as "N of N" only when the phase counted that total.
+        """
         wait = self._run_wait
         label = PREPARING[phase]
         if wait.label != label:
-            wait.phase(label, total if phase in COUNTED_PHASES else 0)
-        if path and phase in COUNTED_PHASES:
+            counted = phase == "headers" or bool(path)  # a call with a path has the real total
+            wait.phase(label, total if counted and phase in COUNTED_PHASES else 0)
+        if phase not in COUNTED_PHASES:
+            return
+        if path or (total > 0 and done >= total and wait.total == total):
             wait.step(done, total, path)
 
     def _run_failed(self, exc: Exception) -> None:

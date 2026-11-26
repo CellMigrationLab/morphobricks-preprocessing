@@ -13,6 +13,7 @@ import random
 import re
 import threading
 import time
+from pathlib import PurePosixPath
 
 import pytest
 
@@ -158,7 +159,7 @@ def _brute_owner(stem, stems, folder, suffixes):
     if not keys:
         return None
     owners = stems[max(keys, key=len)]
-    near = [owner for owner in owners if owner.rsplit("/", 1)[0] == folder]
+    near = [owner for owner in owners if str(PurePosixPath(owner).parent) == folder]
     return (near or owners)[0]
 
 
@@ -168,7 +169,7 @@ def test_the_looked_up_owner_is_the_one_every_comparison_found():
     parts = ["a", "b", "f1", "x", "mask", "cells", "", "A"]
     images = sorted(
         {
-            f"{rng.choice(['c1', 'c2'])}/{rng.choice(['r1', 'masks'])}/"
+            rng.choice(["", "c1/", "c2/r1/", "c2/masks/"])  # top-level images too
             + "_".join([rng.choice(names), *(rng.choice(parts) for _ in range(rng.randint(0, 3)))])
             + ".tif"
             for _ in range(400)
@@ -177,8 +178,8 @@ def test_the_looked_up_owner_is_the_one_every_comparison_found():
     stems = _stems(images)
     for suffixes in (None, {"_mask", "_cells"}):
         for rel in images:
-            stem = rel.rsplit("/", 1)[1][: -len(".tif")].lower()
-            folder = rel.rsplit("/", 1)[0]
+            path = PurePosixPath(rel)
+            stem, folder = path.stem.lower(), str(path.parent)
             assert _mask_owner(stem, stems, folder, suffixes) == _brute_owner(
                 stem, stems, folder, suffixes
             ), (rel, suffixes)
@@ -262,3 +263,49 @@ def test_the_notebook_run_shows_each_header_it_checks_again(exp):  # noqa: F811
     # While it goes, the run says that a cell run meanwhile waits for it; then that goes.
     assert "A cell run meanwhile (this one too) waits for it" in notes[0]
     assert "waits for it" not in nb.run_next.value
+
+
+def test_the_run_wait_counts_real_totals_and_ends_at_n_of_n():
+    pytest.importorskip("ipywidgets")
+    from types import SimpleNamespace
+
+    import ipywidgets as widgets
+
+    from morphobricks_preprocessing.notebook_progress import Wait
+    from morphobricks_preprocessing.notebook_run import _RunStep
+
+    target = widgets.HTML()
+    seen = []
+    target.observe(
+        lambda change: seen.append(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", change["new"]))),
+        names="value",
+    )
+    now = [0.0]
+    step = SimpleNamespace(_run_wait=Wait(target, bar=False, clock=lambda: now[0]))
+    step._run_wait.start("Preparing")
+    # What preflight reports for 3 images and no masks (its placeholders included).
+    calls = [
+        ("folders", 0, 1, ""),
+        ("folders", 1, 1, ""),
+        ("headers", 0, 3, ""),
+        *(("headers", i, 3, f"c/{i}.tif") for i in range(3)),
+        ("headers", 3, 3, ""),
+        ("masks", 0, 1, ""),
+        ("masks", 1, 1, ""),
+        ("acquisitions", 0, 1, ""),
+        ("acquisitions", 1, 1, ""),
+        ("contents", 0, 3, "c/0.tif"),
+        ("contents", 3, 3, ""),
+    ]
+    for call in calls:
+        now[0] += 1  # past the redraw interval
+        _RunStep._checking(step, *call)
+    lines = [line.strip() for line in seen]
+    assert any(
+        line.startswith("Preparing: reading the image headers again · 3 of 3") for line in lines
+    )
+    masks = [line for line in lines if "mask headers" in line]
+    assert masks and not any(" of " in line for line in masks), masks  # no masks: no "0 of 1"
+    assert lines[-1].startswith(
+        "Preparing: reading each image whole for its content SHA-256 · 3 of 3"
+    )
