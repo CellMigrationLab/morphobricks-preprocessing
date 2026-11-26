@@ -15,7 +15,7 @@ found: #569 (memory) and #570 (thread scaling). Existing issues got new evidence
 | Code | `main` at `316be56`, installed with `pip install --no-cache-dir -e ".[zarr,dev]"` in a fresh venv |
 | Python and libraries | Python 3.13.18, numpy 2.5.5, zarr 3.4.2, numcodecs 0.17.1, imagecodecs 2026.11.11, morphobricks-normalization 0.8.0 |
 | Machine | Intel Xeon @ 2.10 GHz, 4 CPUs (not pinned), 15.7 GiB; Linux 6.18 cloud container. Load average 0.0 to 1.9 during runs; nothing else heavy was running |
-| Scripts | [`experiments/lazy_zarr_realdata/`](../../experiments/lazy_zarr_realdata/): `fetch_level0.py` (download), `lazy529.py` (measurements and the eager check), `preview529.py`, `preview_trace.py`, `profile_workers.py`, and the run scripts `run_ebi.sh` / `run_rest.sh` (paths are the scratch paths of this run) |
+| Scripts | [`experiments/lazy_zarr_realdata/`](../../experiments/lazy_zarr_realdata/): `fetch_level0.py` (download), `lazy529.py` (measurements and the eager check), `preview529.py`, `preview_trace.py`, `profile_workers.py`, and the run scripts `run_ebi.sh` / `run_rest.sh` (take the data and output directories from `ZARR529_DATA` and `ZARR529_OUT`; see the experiment README) |
 | Results | [`docs/benchmark_results/2026-11-26-lazy-zarr-realdata.json`](../benchmark_results/2026-11-26-lazy-zarr-realdata.json): every measured number and every output digest summary (long read lists are aggregated) |
 
 Measurement method (in `lazy529.py`):
