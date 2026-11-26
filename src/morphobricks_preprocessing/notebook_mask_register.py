@@ -91,6 +91,16 @@ OTHER_AXES = (
     "step Axes, confirm the recorded axes, then press Register the masks again. Nothing was "
     "declared."
 )
+CHECK_FAILED = (
+    "The folder check of cell 3 with the masks folder did not finish: {reason} Nothing was "
+    "declared and the run folder is unchanged. Fix what it names, press Check folder (Scan the "
+    "folders) in cell 3, step Images, confirm the axes, then press Register the masks again."
+)
+STOPPED = (
+    "Register the masks stopped on an unexpected problem ({problem}). The run records the "
+    "masks only once this step says The masks are registered; cell 3 shows what it saved. "
+    "Press Register the masks again."
+)
 NOT_SAVED = (
     "Check and save did not save the description: open cell 3, step Check and save, answer "
     "what it lists, then press Register the masks again here."
@@ -149,8 +159,9 @@ def _app_run(app: object, rechecked: bool) -> tuple[str, str]:
     it runs again; the run is then the output folder the app's own rule gives now.
     """
     run, masks = app_folders(app)
-    if not run and rechecked and getattr(app, "result", None) is None:
-        run = os.fspath(app._output_path(Path(app.preflight.discovery.root)))
+    pre = getattr(app, "preflight", None)
+    if not run and rechecked and getattr(app, "result", None) is None and pre is not None:
+        run = os.fspath(app._output_path(Path(pre.discovery.root)))
     return run, masks
 
 
@@ -167,6 +178,8 @@ def refusal(app: object, segmentation: object, *, rechecked: bool = False) -> st
     inputs, masks = workflow.inputs, Path(workflow.masks_root).resolve()
     segmented = Path(inputs.output_folder).resolve()
     rechecked = rechecked or getattr(segmentation, "rechecked_run", None) == segmented
+    if rechecked and getattr(app, "preflight", None) is None:  # cell 5's folder check failed
+        return CHECK_FAILED.format(reason=_plain(app.folder_status.value))
     app_run, app_masks = _app_run(app, rechecked)
     if not app_run or Path(app_run).resolve() != segmented:
         held = app_run or "no finished run"
@@ -307,6 +320,14 @@ class MaskRegistration(widgets.VBox):
         """Declare the ticked masks through the app, save, run and describe; True when done."""
         if self.button.disabled:
             return False
+        try:
+            return self._register()
+        except BaseException as exc:  # a click handler's error is never shown in this cell
+            self._stop(STOPPED.format(problem=f"{type(exc).__name__}: {exc}"))
+            raise
+
+    def _register(self) -> bool:
+        """Do the work of :meth:`register` once its button is enabled."""
         why = refusal(self.app, self.segmentation)
         if why:
             return self._stop(why)
@@ -319,11 +340,13 @@ class MaskRegistration(widgets.VBox):
             or any(t not in found.types for t in self.ticks)  # checked before cell 4 wrote
         ):
             app.masks_folder.value = os.fspath(masks)
-            app.check_folder()  # the app's Scan the folders, now with the masks folder
+            pre = app.check_folder()  # the app's Scan the folders, now with the masks folder
             # Kept on cell 4's step, not this widget: cell 5 run again continues from here.
             self.segmentation.rechecked_run = Path(
                 self.segmentation.workflow.inputs.output_folder
             ).resolve()
+            if pre is None:  # its reason is drawn in cell 3: say it here, not the axes
+                return self._stop(CHECK_FAILED.format(reason=_plain(app.folder_status.value)))
         if app.confirmed_mapping is None:
             return self._stop(AXES_AGAIN)
         why = _other_experiment(app, self.segmentation.workflow.inputs)
