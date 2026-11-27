@@ -14,6 +14,8 @@ import subprocess
 import sys
 
 import numpy as np
+from pathlib import Path
+
 import pytest
 
 from cellpose_stub import custom_model, install, weights_bytes
@@ -98,12 +100,19 @@ def test_a_custom_model_is_an_existing_file_not_a_folder(stub, tmp_path):
         cp.choose_model(path.parent / "missing")
 
 
+def given_a_private_copy(built, canonical, data):
+    """Cellpose was given the absolute path of a private copy (review bc B6) of ``data``."""
+    given = Path(built.pretrained_model)
+    assert given.is_absolute() and given.name == canonical.name  # no name Cellpose resolves
+    assert given != canonical and built.loaded_bytes == data
+    assert not given.exists()  # deleted once loaded
+
+
 def test_a_built_in_model_on_disk_is_loaded_by_its_absolute_path(stub):
     loaded = cp.load_model("cpsam", "cpu")
     (built,) = stub.constructed
-    assert built.pretrained_model == str(
-        stub.models_dir / "cpsam"
-    )  # no name Cellpose could resolve
+    given_a_private_copy(built, stub.models_dir / "cpsam", weights_bytes("cpsam"))
+    assert loaded.path == stub.models_dir / "cpsam"  # recorded: the checked file
     assert (loaded.name, loaded.file, loaded.device, loaded.tile_size) == (
         "cpsam",
         "cpsam",
@@ -115,7 +124,7 @@ def test_a_built_in_model_on_disk_is_loaded_by_its_absolute_path(stub):
 def test_a_custom_model_is_loaded_by_its_absolute_path_and_recorded_by_it(stub, tmp_path):
     path = custom_model(tmp_path)
     loaded = cp.load_model(str(path), "cpu")
-    assert stub.constructed[0].pretrained_model == str(path.resolve())
+    given_a_private_copy(stub.constructed[0], path.resolve(), weights_bytes("my_model"))
     assert loaded.name == "my_model" and loaded.file == str(path.resolve())
     assert loaded.sha256 == hashlib.sha256(weights_bytes("my_model")).hexdigest()
 
@@ -193,7 +202,7 @@ def test_weights_not_on_disk_are_downloaded_on_first_use_and_given_to_cellpose_b
     (stub.models_dir / "cpsam").unlink()
     loaded = cp.load_model("cpsam", "cpu")
     assert stub.downloaded == ["cpsam"] and stub.cellpose_downloaded == []
-    assert stub.constructed[0].pretrained_model == str(stub.models_dir / "cpsam")
+    given_a_private_copy(stub.constructed[0], stub.models_dir / "cpsam", weights_bytes("cpsam"))
     assert loaded.sha256 == hashlib.sha256(weights_bytes("cpsam")).hexdigest()
     assert loaded.downloaded and (stub.models_dir / "cpsam").read_bytes() == weights_bytes("cpsam")
     cp.load_model("cpsam", "cpu")
@@ -206,7 +215,7 @@ def test_a_file_in_the_working_folder_cannot_shadow_the_weights(stub, tmp_path, 
     monkeypatch.chdir(tmp_path)
     loaded = cp.load_model("cpsam", "cpu")
     assert loaded.path == stub.models_dir / "cpsam"
-    assert stub.constructed[0].pretrained_model == str(stub.models_dir / "cpsam")
+    given_a_private_copy(stub.constructed[0], stub.models_dir / "cpsam", weights_bytes("cpsam"))
     assert (tmp_path / "cpsam").read_bytes() == b"not the model"
 
 

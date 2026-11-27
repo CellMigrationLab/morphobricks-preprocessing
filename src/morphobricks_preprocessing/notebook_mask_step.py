@@ -107,14 +107,19 @@ class _MaskStepCard:
         self.mask_conversion = MaskConversionCard()  # Spec ADR 0005 BM12, under this card
         self.tissue_mask = TissueMaskCard()  # Spec ADR 0005 BM15, beside Convert a mask
 
-    def _refresh_mask_step(self) -> None:
-        """Offer the step when the output folder's run recorded masks; clear it for another."""
+    def _refresh_mask_step(self, *, open_run: bool = False) -> None:
+        """Offer the step when the output folder's run recorded masks; clear it for another.
+
+        ``open_run``: a press that just published the run asks the tissue-mask card to open it
+        (review bc B4); an edit of a folder box never does.
+        """
         ui.set_visible(self.mask_step_card, self._show_output)
         ui.set_visible(self.mask_conversion.card, self._show_output)
         output = self._mask_step_output()
         self.mask_conversion.refresh(output)
-        self.tissue_mask.refresh(output, memo=getattr(self, "_press_memo", None))
-        ui.set_visible(self.tissue_mask.card, self._show_output and self.tissue_mask.has_rgb)
+        memo = getattr(self, "_press_memo", None)
+        self.tissue_mask.refresh(output, memo=memo, open_run=open_run)
+        ui.set_visible(self.tissue_mask.card, self._show_output and self.tissue_mask.offered)
         manifest = None if output is None else current_fingerprint(output / MANIFEST_FILENAME)
         if self._mask_step_seen == (output, manifest):
             return

@@ -29,6 +29,7 @@ from typing import Literal
 
 from ..content_memo import ContentMemo
 from ..lab_links import LabLinks
+from .expected import ExpectedSources
 
 RESTART = "restart"
 """Reuse the rows of unchanged files; process new or changed ones (the default)."""
@@ -103,6 +104,11 @@ class RunMode:
         (:mod:`..content_memo`): the run's content pass reuses one while the file's identity is
         unchanged. Its check before it publishes never does. Operational only, like
         ``checking``; None (the default): every image is read whole.
+    expected
+        The generation of the images the run must be of (:class:`.expected.ExpectedSources`):
+        the one masks were segmented from, for the notebook's **Register the masks** (v0.9.1,
+        review bc B2). A run whose images are not it is refused (``source_not_segmented``) and
+        publishes nothing. Not recorded; None (the default): no such constraint.
     """
 
     name: str = RESTART
@@ -112,6 +118,7 @@ class RunMode:
     max_ram: int | None = None
     checking: Callable[[str, int, int, str], None] | None = field(default=None, compare=False)
     memo: ContentMemo | None = field(default=None, compare=False)
+    expected: ExpectedSources | None = field(default=None, compare=False)
 
 
 def run_mode(mode: object) -> RunMode:
@@ -147,6 +154,8 @@ def run_mode(mode: object) -> RunMode:
         raise ValueError(f"checking must be callable or None; found {mode.checking!r}")
     if mode.memo is not None and not isinstance(mode.memo, ContentMemo):
         raise ValueError(f"memo must be a ContentMemo or None; found {mode.memo!r}")
+    if mode.expected is not None and not isinstance(mode.expected, ExpectedSources):
+        raise ValueError(f"expected must be ExpectedSources or None; found {mode.expected!r}")
     return RunMode(
         check_mode(mode.name),
         mode.verify_content,
@@ -155,6 +164,7 @@ def run_mode(mode: object) -> RunMode:
         mode.max_ram,
         mode.checking,
         mode.memo,
+        mode.expected,
     )
 
 

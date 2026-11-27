@@ -30,6 +30,7 @@ from ..discovery_report import (
     RunOutcome,
     build_report,
 )
+from ..fingerprint import Fingerprint
 from ..intensity import IntensityReport, check_intensities
 from ..manifest import (
     RunSettings,
@@ -53,6 +54,7 @@ from .description_run import (
     run_checks,
     unit_entries,
 )
+from .expected import expected_issues
 from .generation import staged_generation
 from .lock import OutputLockedError, lock_issue, output_lock
 from .modes import RESTART, RunMode, run_mode
@@ -226,6 +228,7 @@ def run_experiment(  # noqa: PLR0913
                 reading,
                 chosen.checking,
                 chosen.memo,
+                chosen.expected,
             )
             return _locked_run(given, output, options)
     except OutputLockedError as exc:
@@ -267,6 +270,15 @@ def _locked_run(given: GivenInputs, output: Path, options: RunOptions) -> RunRes
         previous_root=None if recorded is None else Path(recorded.experiment_root).as_posix(),
         changes=inputs.changes,
     )
+    if options.expected is not None:  # before any pixel is read (review bc B2)
+        checked.issues.extend(
+            expected_issues(
+                options.expected,
+                inputs.experiment_root,
+                pre.header_fingerprints,
+                verify_content=bool(inputs.verify_content),
+            )
+        )
     if has_errors(checked.issues):
         return _stop(run, base, None)
     if inputs.verify_content and pre.masks is not None:
@@ -287,7 +299,18 @@ def _locked_run(given: GivenInputs, output: Path, options: RunOptions) -> RunRes
         pre, checked, settings, output, previous, options.mode, reporting, options.workers
     )
     checked.issues.extend(_read_issues(rows, settings))
-    if rows.refused or rows.changed or rows.failed:
+    if options.expected is not None:  # the entries it would publish (review bc B2)
+        fingerprints = {rel: Fingerprint.recorded(e) for rel, e in rows.entries.items()}
+        checked.issues.extend(
+            expected_issues(
+                options.expected,
+                inputs.experiment_root,
+                fingerprints,
+                verify_content=bool(inputs.verify_content),
+                entries=rows.entries,
+            )
+        )
+    if rows.refused or rows.changed or rows.failed or has_errors(checked.issues):
         return _stop(run, base, rows)
     checked.issues.extend(_pixel_issues(rows.records))
     rows.narrow.sort(key=lambda entry: (entry.plane_id, entry.channel))

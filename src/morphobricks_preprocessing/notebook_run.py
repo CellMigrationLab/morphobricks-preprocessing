@@ -251,6 +251,7 @@ class _RunStep:
             max_ram=cap or None,
             checking=self._checking,
             memo=getattr(self, "_press_memo", None),  # cell 5's press (content_memo)
+            expected=getattr(self, "_press_expected", None),  # its segmented images (bc B2)
         )
 
     def _build_histogram_range(self) -> list[widgets.Widget]:
@@ -395,6 +396,7 @@ class _RunStep:
         try:
             histogram_settings = self._histogram_settings()
         except ValueError as exc:
+            self._clear_attempt()  # review bc F2: a refused press is this press's result
             self.run_status.value = ui.status(
                 "error",
                 "The histogram range cannot be used.",
@@ -417,20 +419,31 @@ class _RunStep:
         self._finish_run(self.result)
         return self.result
 
-    def _start_run(self) -> None:
-        """Clear the results of an earlier run and show that this one is starting."""
-        self._busy(self.run_button, "Computing…")
-        self.result = None  # #517: a new attempt; an earlier one's result is not this one's
-        self.run_next.value = BUSY_NOTE
+    def _clear_attempt(self) -> None:
+        """Forget the earlier press's result and what it showed: a new press has started.
+
+        #517, review bc F2: also when the press is refused before the run starts (settings
+        that cannot be used), so no earlier result stays as if it were this press's. The files
+        an earlier run wrote are not touched.
+        """
+        self.result = None
+        self.run_next.value = ""
         self.run_checks.clear()
         self.run_lock.hide()
         self.run_report.clear()
+        self.run_tiles.value = self.run_issues.value = ""
+        ui.set_visible(self.progress, False)
         self._mask_step_stale()
+
+    def _start_run(self) -> None:
+        """Clear the results of an earlier run and show that this one is starting."""
+        self._busy(self.run_button, "Computing…")
+        self._clear_attempt()  # #517: a new attempt; an earlier one's result is not this one's
+        self.run_next.value = BUSY_NOTE
         ui.set_visible(self.progress, True)
         self.progress.value, self.progress.max, self.progress.bar_style = 0, 1, "info"
         self._run_wait = Wait(self.run_status, bar=False)  # the bar is the widget above
         self._run_wait.start("Preparing: checking the folders and the image headers again")
-        self.run_tiles.value = self.run_issues.value = ""
 
     def _call_run(self, histogram_settings: HistogramSettings) -> RunResult:
         """Run the brick with the inputs of :meth:`_given_inputs` and the mode chosen."""
@@ -487,6 +500,7 @@ class _RunStep:
         self._show_run_result(result)
         if result.written:
             self._recorded_after_run()
+            self._refresh_mask_step(open_run=True)  # the press opens the run it wrote (bc B4)
             self._show_run_checks(result.csv_path)
         self._show_log()
         if result.written:

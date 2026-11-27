@@ -24,6 +24,8 @@ from __future__ import annotations
 import html
 import random
 import secrets
+from collections.abc import Iterator
+from contextlib import contextmanager
 
 import ipywidgets as widgets
 
@@ -102,6 +104,8 @@ class _QuickScan:
         """Build the scan button, its results and the line saying what blocks the check."""
         self._scanned: tuple | None = None
         self._scan: DiscoveryResult | None = None
+        self._scan_generation = 0  # each press of Scan the folders is a new one (review bc B5)
+        self._scan_ticking = False
         self.scan_seed: int | None = None
         self.scan_image: str | None = None
         self.scan_button = ui.button(
@@ -136,23 +140,29 @@ class _QuickScan:
 
     def _scan_inputs(self) -> tuple:
         """Return the folders and exclusions as typed now (what a scan is a scan of)."""
-        return (
-            ui.clean_path(self.folder.value),
-            self._output_folder(),
-            ui.clean_path(self.masks_folder.value),
-            tuple(self._excluded()),
-        )
+        return self._check_inputs()
 
     def _scan_current(self) -> bool:
         """Return whether the folders shown were scanned as they are typed now."""
         return self._scanned is not None and self._scanned == self._scan_inputs()
 
+    def _forget_scan(self) -> None:
+        """Forget the scan: its walk, the image shown and its headers (review bc B5).
+
+        Not only hidden: a scan of other folders never comes back as current when the boxes
+        are typed back to what it scanned; a new press of **Scan the folders** is needed.
+        """
+        self._scan = self._scanned = None
+        self.scan_image = self.scan_seed = None
+        self._scan_headers = {}
+        ui.set_visible(self.scan_box, False)
+        self.scan_tree.value, self.scan_example.children = "", []
+
     def _refresh_scan_gate(self) -> None:
         """Offer the folder check only for folders scanned as typed; say what blocks it."""
         current = self._scan_current()
         if self._scanned is not None and not current:
-            ui.set_visible(self.scan_box, False)  # the tree and picture are of other folders
-            self.scan_tree.value, self.scan_example.children = "", []  # cleared, not hidden
+            self._forget_scan()  # the tree and picture are of other folders
             self.scan_status.value = ui.status(
                 "info",
                 "The folders changed.",
@@ -200,8 +210,10 @@ class _QuickScan:
         if self.preflight is not None:  # #520, #579: a new scan makes the earlier check history
             self._clear_checked("")
         self._busy(self.scan_button, "Scanning…")
-        ui.set_visible(self.scan_box, False)  # nothing of an earlier scan stays shown (#579)
-        self.scan_tree.value, self.scan_example.children = "", []
+        self._forget_scan()  # nothing of an earlier scan stays shown, or usable (#579, bc B5)
+        self._refresh_scan_gate()
+        self._scan_generation += 1
+        generation, inputs = self._scan_generation, self._scan_inputs()  # what is scanned
         wait = Wait(self.scan_status)
         wait.start("Listing the folders")
         seen = [0]
@@ -211,15 +223,22 @@ class _QuickScan:
             wait.step(seen[0], 0, path)
 
         try:
-            with self.log.attached(), wait.ticking():  # the time goes on between folders
-                found = discover_experiment(folder, self._output_folder(), progress=listed)
+            # The time goes on between folders, and while the one image is opened (bc F4).
+            with self.log.attached(), wait.ticking(), self._ticking_scan():
+                found = discover_experiment(inputs[0], inputs[1], progress=listed)
+                if generation != self._scan_generation or inputs != self._scan_inputs():
+                    return self._scan_discarded()  # a late result is of other folders (B5)
+                self._scan, self._scanned = found, inputs
+                self._reset_scan_axes()
+                wait.phase("Opening one image")
+                self._show_scan_example(None, status=False)
+        except Exception as exc:
+            self._scan_failed(exc)
+            if isinstance(exc, OSError) or isinstance(getattr(exc, "code", None), str):
+                return None
+            raise
         finally:
             self._idle(self.scan_button, SCAN_LABEL, "search")
-        self._scan, self._scanned = found, self._scan_inputs()
-        self._scan_headers = {}  # a new scan reads the headers of its pictures again
-        self._reset_scan_axes()
-        wait.phase("Opening one image")
-        self._show_scan_example(None, status=False)
         excluded = frozenset(normalise_relative_path(path) for path in self._excluded())
         self.scan_tree.value = conditions_html(found, excluded)
         errors = [issue for issue in found.issues if issue.is_error]
@@ -232,6 +251,39 @@ class _QuickScan:
         self._refresh_scan_gate()
         self._show_log()
         return found
+
+    @contextmanager
+    def _ticking_scan(self) -> Iterator[None]:
+        """Mark the scan's timed block (the tests see the image opened inside it)."""
+        self._scan_ticking = True
+        try:
+            yield
+        finally:
+            self._scan_ticking = False
+
+    def _scan_discarded(self) -> None:
+        """Discard a scan whose folders were edited while they were listed; say so."""
+        self._forget_scan()
+        self.scan_status.value = ui.status(
+            "info",
+            "The folders changed while they were listed: that scan is not used.",
+            ["Press Scan the folders again."],
+        )
+        self._refresh_scan_gate()
+
+    def _scan_failed(self, exc: BaseException) -> None:
+        """Forget the scan that failed and say why; the folder check stays disabled."""
+        self._forget_scan()
+        self.scan_status.value = ui.status(
+            "error",
+            "The folders could not be scanned.",
+            [
+                f"{type(exc).__name__}: {exc}",
+                "Nothing of an earlier scan is used. On Google Colab, make sure Google Drive "
+                "is mounted and the folder is there, then press Scan the folders again.",
+            ],
+        )
+        self._refresh_scan_gate()
 
     def _show_scan_example(self, seed: int | None, *, status: bool = True) -> None:
         """Show one image chosen at random by ``seed`` (a new seed when None), display only."""

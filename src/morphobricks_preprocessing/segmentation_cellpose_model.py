@@ -40,7 +40,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
 
-from ._io import file_sha256
+from .segmentation_cellpose_guard import no_cellpose_downloads, private_copy, unchanged
 from .segmentation_cellpose_weights import (
     WEIGHTS_REPOSITORY,
     WEIGHTS_REVISION,
@@ -503,7 +503,7 @@ def _verify(loaded: object, expected: Path, device: str, choice: ModelChoice) ->
         )
 
 
-def _identity(path: Path) -> tuple[int, int, int, int] | None:
+def _identity(path: Path) -> tuple[int, ...] | None:
     """Return the weights file's :func:`.segmentation_cellpose_weights.file_identity`, or None."""
     try:
         return file_identity(path)
@@ -555,12 +555,16 @@ def load_model(
     else:
         weights = fetch_weights(choice.name, os.fspath(models.MODEL_DIR), progress)
         expected, identity = weights.path, weights.identity
-    if _identity(expected) != identity:  # gone now: Cellpose would download cpsam_v2 instead
+    if identity is None or _identity(expected) != identity:  # gone, or changed since
         raise changed_refusal(expected)
-    loaded = _construct(models, os.fspath(expected), device)
-    _verify(loaded, expected, device, choice)
-    sha256 = file_sha256(expected) if weights is None else weights.sha256
-    if _identity(expected) != identity:  # the file Cellpose read may not be the one hashed
+    # Cellpose loads a private copy hashed as it is made, and may fetch nothing itself (B6).
+    with private_copy(expected, identity, None if weights is None else weights.sha256) as copy:
+        with no_cellpose_downloads(choice.name):
+            loaded = _construct(models, os.fspath(copy.path), device)
+        _verify(loaded, copy.path, device, choice)
+        unchanged(copy)
+    sha256 = copy.sha256
+    if _identity(expected) != identity:  # the file recorded is no longer the one copied
         raise changed_refusal(expected)
     backbone = getattr(loaded, "backbone", None)
     if not isinstance(backbone, str):

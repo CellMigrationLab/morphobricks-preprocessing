@@ -64,6 +64,7 @@ from .register_checks import (
     _same_publication,
     changes_since_check,
 )
+from .run.expected import ExpectedSources
 from .run_inputs import RunInputsError, UnrecordedFilesError
 from .segmentation_cellpose_run import manifest_sha256, open_run
 from .segmentation_record import SegmentationError, check_mask_type_folder
@@ -126,6 +127,18 @@ STOPPED = (
     "masks only once this step says The masks are registered; cell 3 shows what it saved. "
     "Press Register the masks again."
 )
+CHANGED_BEFORE_SAVE = (
+    "The images changed after the masks were paired ({reasons}). Nothing was declared and the "
+    "run folder is unchanged. Press Register the masks again: the folders are checked again."
+)
+"""The stop when cell 3's check is no longer current right before the save (review bc B1)."""
+DESCRIBE_FAILED = (
+    "The masks are declared and the run records them, but Describe the masks did not finish: "
+    "{reason} The masks are not registered yet: bricks that use masks accept only masks this "
+    "step has read. Fix what it names, then press Register the masks again (the histograms are "
+    "reused)."
+)
+"""The incomplete state when the app's *Describe the masks* failed (review bc B3)."""
 NOT_SAVED = (
     "Check and save did not save the description: open cell 3, step Check and save, answer "
     "what it lists, then press Register the masks again here."
@@ -355,8 +368,10 @@ class MaskRegistration(ShownFirst, widgets.VBox):
         if why:
             return self._stop(why)
         reasons: list[str] = []
+        self._check_failure = ""
         if not self._check_folders(wait, reasons):  # its reason is drawn in cell 3: say it here
-            return self._stop(CHECK_FAILED.format(reason=_plain(self.app.folder_status.value)))
+            why = self._check_failure or _plain(self.app.folder_status.value)
+            return self._stop(CHECK_FAILED.format(reason=why))
         app = self.app
         if app.confirmed_mapping is None:  # only after a folder check made for a change
             because = CHANGED_SINCE_CHECK.format(reasons="; ".join(reasons)) if reasons else ""
@@ -364,20 +379,33 @@ class MaskRegistration(ShownFirst, widgets.VBox):
         why = _other_experiment(app, self.segmentation.workflow.inputs)
         if why:  # the axes stop lets the user change the app: check it is still the run's
             return self._stop(why)
+        inputs = self.segmentation.workflow.inputs
         with wait.step("save"):
             why = self._answer_masks()
             if why:
                 return self._stop(why)
-            if not app.save_experiment():
+            changed = changes_since_check(app, inputs)  # again, right before the save (B1)
+            if changed:
+                return self._stop(CHANGED_BEFORE_SAVE.format(reasons="; ".join(changed)))
+            # Saved already, every answer in it (a retry after Describe the masks, B3): kept.
+            if not app.save_experiment() and not app._saved_current():
                 return self._stop(NOT_SAVED)
-        with wait.step("rerun", getattr(app, "run_status", None)), _pressed(app, memo):
+        segmented = Path(inputs.output_folder).resolve()
+        if not _same_publication(self.segmentation, segmented):  # published meanwhile
+            return self._stop(REPUBLISHED.format(segmented=segmented))
+        # The run must be of the images cell 4 segmented, not of what they are now (B2).
+        expected = ExpectedSources.of_run(inputs)
+        with wait.step("rerun", getattr(app, "run_status", None)), _pressed(app, memo, expected):
             result = app.run()
         if result is None or not result.written:
             return self._stop("The run of cell 3 stopped: its step Run says why.")
         # Kept on cell 4's step: this publication is the registration's (cell 5 run again).
         self.segmentation.registered_manifest = manifest_sha256(Path(result.output_folder))
         with wait.step("describe", getattr(app, "mask_step_status", None)), _pressed(app, memo):
-            app.mask_step_button.click()  # the app's Describe the masks
+            described = app._on_describe_masks()  # the app's Describe the masks, its result
+        why = _not_described(described, Path(result.output_folder), app.mask_step_status.value)
+        if why:  # the run is kept for the retry; the press is not complete (B3)
+            return self._stop(DESCRIBE_FAILED.format(reason=why))
         self.registered = True
         self.status.value = self._registered_html(result)
         return True
@@ -402,13 +430,18 @@ class MaskRegistration(ShownFirst, widgets.VBox):
         and ``reasons`` gets what changed. Returns False when that check failed (#580).
         """
         app, masks = self.app, Path(self.segmentation.workflow.masks_root).resolve()
-        if self._has_masks():
-            return True
+        # First, always: masks paired by a check that is no longer current are not used (B1).
         reasons[:] = changes_since_check(app, self.segmentation.workflow.inputs)
+        if not reasons and self._has_masks():
+            return True
         if not reasons:
-            with wait.step("folders", getattr(app, "masks_wait", None), PAIRING):
-                app.masks_folder.value = os.fspath(masks)
-                app._check_masks()  # the app's Check the masks again: only the masks' headers
+            try:
+                with wait.step("folders", getattr(app, "masks_wait", None), PAIRING):
+                    app.masks_folder.value = os.fspath(masks)
+                    app._check_masks()  # the app's Check the masks again: the masks' headers
+            except OSError as exc:  # a storage error: the check failed, it is not a stop
+                self._check_failure = f"{type(exc).__name__}: {exc}"
+                return False
             if self._has_masks():
                 return True
             reasons.append("pairing the masks folder alone did not find every mask type")
@@ -452,18 +485,45 @@ class MaskRegistration(ShownFirst, widgets.VBox):
         )
 
 
+def _not_described(described: object, output: Path, card: str) -> str:
+    """Return why the app's *Describe the masks* did not describe the run just published, or "".
+
+    "" only for a result with a report written in that run's output folder. A refusal, an
+    unexpected problem or a disabled button gives no result: the reason is then the app's
+    card (``card``, its HTML).
+    """
+    if described is None:
+        return _plain(card) if card.strip() else "the step did not run (its button is disabled)."
+    if described.report is None or described.path is None:
+        return "no description of the masks was written."
+    if Path(described.path).resolve().parent != output.resolve():
+        return f"the description was written to {described.path}, not to {output}."
+    return ""
+
+
+class PressInUseError(RuntimeError):
+    """A press's memo given to the app while another press's is still in use (review bc F5)."""
+
+
 @contextmanager
-def _pressed(app: object, memo: ContentMemo) -> Iterator[None]:
+def _pressed(
+    app: object, memo: ContentMemo, expected: ExpectedSources | None = None
+) -> Iterator[None]:
     """Give the app's run and its opening after it the press's ``memo`` while the block runs.
 
     Read by the app as ``_press_memo`` (:meth:`.notebook_run._RunStep._run_mode`, the tissue
-    mask card's opening); removed when the block ends, so no later click of cell 3 uses it.
+    mask card's opening) and ``_press_expected`` (the generation the run must be of,
+    :class:`.run.expected.ExpectedSources`); removed when the block ends, so no later click of
+    cell 3 uses them. A press never runs inside another: a memo already given is refused, not
+    replaced (review bc F5).
     """
-    app._press_memo = memo
+    if getattr(app, "_press_memo", None) is not None:
+        raise PressInUseError("another press of Register the masks is still running")
+    app._press_memo, app._press_expected = memo, expected
     try:
         yield
     finally:
-        app._press_memo = None
+        app._press_memo = app._press_expected = None
 
 
 def _plain(text: str) -> str:
