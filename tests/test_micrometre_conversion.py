@@ -281,10 +281,75 @@ def test_an_imagej_size_that_is_not_positive_finite_is_invalid(tmp_path, value):
     )
     sizes = read_physical_sizes(path)
     assert (sizes.x, sizes.z, sizes.t) == (0.5, None, None)
+    # tifffile 2026.11.26 returns ``spacing=inf`` and ``nan`` as the text 'inf' and 'nan'
+    # (earlier releases: the float), and the message quotes the value as tifffile gives it
+    # (#585). Either way this brick refuses it; the next test fixes both forms.
+    written = (repr(value), repr(str(value)))
+    assert sizes.invalid.split("; ") in (
+        [f"{axis}: the size {form} is not a positive finite number" for axis in "ZT"]
+        for form in written
+    )
+
+
+NOT_POSITIVE_FINITE = [
+    math.inf,
+    -math.inf,
+    math.nan,
+    0.0,
+    -2.0,
+    "inf",
+    "-inf",
+    "nan",
+    "NaN",
+    "Infinity",
+    "1e999",
+    "0",
+    "-2.0",
+    "two",
+]
+
+
+@pytest.mark.parametrize("value", NOT_POSITIVE_FINITE, ids=repr)
+def test_an_imagej_size_is_refused_by_this_brick_whatever_tifffile_parses(
+    tmp_path, monkeypatch, value
+):
+    # #585: whether tifffile gives ``spacing`` and ``finterval`` as a float or as the text
+    # written in the description, this brick's own check refuses a size that is not a
+    # positive finite number (never a tifffile message or parse), and the size is unknown.
+    path = tmp_path / "a.tif"
+    tifffile.imwrite(
+        path,
+        np.zeros((2, 3, 8, 8), np.uint16),
+        imagej=True,
+        resolution=(2.0, 2.0),
+        metadata={"axes": "TZYX", "unit": "um", "spacing": 1.0, "finterval": 1.0},
+    )
+    meta = {"unit": "um", "spacing": value, "finterval": value}
+    monkeypatch.setattr(tifffile.TiffFile, "imagej_metadata", property(lambda self: meta))
+    sizes = read_physical_sizes(path)
+    assert (sizes.x, sizes.y, sizes.z, sizes.t) == (0.5, 0.5, None, None)
     assert sizes.invalid == (
         f"Z: the size {value!r} is not a positive finite number; "
         f"T: the size {value!r} is not a positive finite number"
     )
+
+
+@pytest.mark.parametrize("value", [2.5, "2.5"], ids=repr)
+def test_an_imagej_size_given_as_a_float_or_its_text_is_read(tmp_path, monkeypatch, value):
+    # The other side of #585: a positive finite size is the same size in either form.
+    path = tmp_path / "a.tif"
+    tifffile.imwrite(
+        path,
+        np.zeros((2, 3, 8, 8), np.uint16),
+        imagej=True,
+        resolution=(2.0, 2.0),
+        metadata={"axes": "TZYX", "unit": "um", "spacing": 1.0, "finterval": 1.0},
+    )
+    meta = {"unit": "um", "spacing": value, "finterval": value}
+    monkeypatch.setattr(tifffile.TiffFile, "imagej_metadata", property(lambda self: meta))
+    sizes = read_physical_sizes(path)
+    assert (sizes.x, sizes.y, sizes.z, sizes.t) == (0.5, 0.5, 2.5, 2.5)
+    assert sizes.invalid is None
 
 
 def test_an_imagej_resolution_of_zero_is_invalid_only_with_a_unit(tmp_path):

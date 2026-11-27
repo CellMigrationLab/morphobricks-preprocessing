@@ -41,7 +41,7 @@ copy the kernel already loaded and check the imported copy is the installed one:
 both notebooks."""
 PINNED = f"morphobricks-preprocessing[notebook] @ git+{REPOSITORY}@{RELEASE_REF}"
 MAIN = "de3f7a476da8a3dc49c81b20935a9a1a4831a435"
-"""A commit of main whose version is the release's, 0.8.0 (the #371 review's example)."""
+"""A commit of main (the #371 review's example, then of the release's version, 0.8.0)."""
 
 
 def _functions(text, names):
@@ -72,7 +72,7 @@ def test_setup_reuses_the_matching_installed_release(cell_1, capsys):  # noqa: F
         "morphobricks_preprocessing.notebook_ui",  # cell 3 shows it
     ]
     out = capsys.readouterr().out
-    assert "Ready: preprocessing 0.8.0" in out
+    assert "Ready: preprocessing 0.9.1" in out
     assert "ipywidgets 7.7.1" in out
 
 
@@ -87,7 +87,7 @@ def test_setup_replaces_a_mismatched_installed_release(cell_1):  # noqa: F811
 def test_the_banner_shows_the_installed_commit(cell_1, capsys):  # noqa: F811
     state = cell_1
     state.start(INSTALL)
-    assert f"Ready: preprocessing 0.8.0 (commit {RELEASE_REF});" in capsys.readouterr().out
+    assert f"Ready: preprocessing 0.9.1 (commit {RELEASE_REF});" in capsys.readouterr().out
     assert state.namespace["SETUP_RECORD"]["preprocessing_commit"] == RELEASE_REF
     assert state.namespace["SETUP_RECORD"]["source"] == "installed package"
 
@@ -115,11 +115,11 @@ NOT_THE_RELEASE = {
 @pytest.mark.parametrize("record", NOT_THE_RELEASE.values(), ids=NOT_THE_RELEASE)
 def test_setup_installs_the_release_over_another_commit(cell_1, record, capsys):  # noqa: F811
     state = cell_1
-    state.direct_url = record  # the installed version is 0.8.0, as the notebook's
+    state.direct_url = record  # the installed version is 0.9.1, as the notebook's
     state.start(INSTALL)
     forced_then_installed(state.installs, PINNED)  # each is installed: pip would keep it
     out = capsys.readouterr().out
-    assert f"morphobricks-preprocessing v0.8.0 ({RELEASE_REF[:12]})" in out
+    assert f"morphobricks-preprocessing v0.9.1 ({RELEASE_REF[:12]})" in out
     assert f"(commit {RELEASE_REF})" in out  # what pip installed, read again after it
     assert state.namespace["SETUP_RECORD"]["preprocessing_commit"] == RELEASE_REF
 
@@ -133,14 +133,14 @@ def test_setup_stops_when_the_install_leaves_another_commit(cell_1, monkeypatch)
     forced_then_installed(state.installs, PINNED)
     assert state.namespace["SETUP_RECORD"] == {}
     # A restart would not help (pip kept the files): the stop gives the command that does.
-    assert f"recorded {'2' * 40}, not v0.8.0 ({RELEASE_REF})" in str(stop.value)
+    assert f"recorded {'2' * 40}, not v0.9.1 ({RELEASE_REF})" in str(stop.value)
     assert "Restart" not in str(stop.value)
     command = f'{sys.executable} -m pip install --force-reinstall --no-deps "{PINNED}"'
     assert f"Replace it with: {command}, then run this cell again." in str(stop.value)
 
 
 def test_setup_replaces_the_same_version_from_another_commit_that_pip_keeps(cell_1, capsys):  # noqa: F811
-    # The #371 review (pip 24.1.2 and 26.3): pip takes 0.8.0 from another commit as already
+    # The #371 review (pip 24.1.2 and 26.3): pip takes 0.9.1 from another commit as already
     # satisfied, installs nothing and keeps its record, so cell 1 stopped on every run. The
     # pinned commit is now forced, without its dependencies, then the extras are installed.
     state = cell_1
@@ -151,7 +151,7 @@ def test_setup_replaces_the_same_version_from_another_commit_that_pip_keeps(cell
     assert (
         f"Replacing the installed morphobricks-preprocessing with commit {RELEASE_REF[:12]}" in out
     )
-    assert f"Ready: preprocessing 0.8.0 (commit {RELEASE_REF});" in out
+    assert f"Ready: preprocessing 0.9.1 (commit {RELEASE_REF});" in out
     assert state.namespace["SETUP_RECORD"]["preprocessing_commit"] == RELEASE_REF
     state.start(INSTALL, fresh=False)
     assert len(state.installs) == 2  # running the cell again installs nothing more
