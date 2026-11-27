@@ -20,7 +20,7 @@ DINOv3 code installed (:func:`dinov3_ready`). With Cellpose installed but no DIN
 combined notebook still offers the ticked installation, which then installs the DINOv3 code
 only (owner, 27 Nov 2026: the DINOv3 code installs with *Install Cellpose*, never from Preview
 or Run); the SAM models work without it. A restart is asked for when ``pip`` changed Cellpose,
-torch or DINOv3 while the kernel has it loaded (:data:`LOADED_BY_KERNEL`), and when DINOv3 was
+torch or DINOv3 while the kernel has it loaded (:data:`LOADED_CODE`), and when DINOv3 was
 installed after Cellpose was imported (Cellpose imports DINOv3 once).
 
 ``pip``'s lines are passed on as it prints them (``output``), so the notebook shows its
@@ -41,15 +41,13 @@ from . import segmentation_cellpose_model as model
 from .segmentation_cellpose_model import CELLPOSE_VERSION
 from .segmentation_record import SegmentationError
 
-LOADED_BY_KERNEL = {
-    "numpy": "numpy",
-    "opencv-python": "cv2",
-    "opencv-python-headless": "cv2",
-    "cellpose": "cellpose",
-    "torch": "torch",
-}
+LOADED_BY_KERNEL = {"numpy": "numpy", "opencv-python": "cv2", "opencv-python-headless": "cv2"}
 """Packages ``pip`` may upgrade under a running kernel, each with the module that stays loaded
 (as in the Cellpose notebook's install cell)."""
+LOADED_CODE = {"cellpose": "cellpose", "torch": "torch"}
+"""Also checked here (review bc B7): Cellpose and PyTorch replaced while the kernel has them
+loaded. Kept apart from :data:`LOADED_BY_KERNEL`, the list shared with the Cellpose
+notebook's install cell (which moves only in a release)."""
 NOT_TICKED = (
     "Tick the installation first: Cellpose {version} and PyTorch are large downloads and are "
     "installed only when you ask."
@@ -99,7 +97,7 @@ def _changed(before: Mapping[str, str | None]) -> list[str]:
     """Return each package of :data:`LOADED_BY_KERNEL` pip changed while its module is loaded."""
     return [
         f"{name} {before[name]} -> {model.installed_version(name)}"
-        for name, module in LOADED_BY_KERNEL.items()
+        for name, module in {**LOADED_BY_KERNEL, **LOADED_CODE}.items()
         if before[name] and model.installed_version(name) != before[name] and module in sys.modules
     ]
 
@@ -185,7 +183,7 @@ def install_cellpose(ticked: bool, output: Callable[[str], object] = print) -> s
         return CELLPOSE_VERSION
     if not ticked:
         raise SegmentationError(NOT_TICKED.format(version=CELLPOSE_VERSION))
-    before = {name: model.installed_version(name) for name in LOADED_BY_KERNEL}
+    before = {name: model.installed_version(name) for name in {**LOADED_BY_KERNEL, **LOADED_CODE}}
     dinov3_before = model.installed_dinov3_commit()
     if not dinov3_ready():
         try:
@@ -234,6 +232,7 @@ def _checked_after(before: Mapping[str, str | None], dinov3_before: str | None) 
 
 __all__ = [
     "LOADED_BY_KERNEL",
+    "LOADED_CODE",
     "cellpose_install_command",
     "cellpose_ready",
     "dinov3_ready",

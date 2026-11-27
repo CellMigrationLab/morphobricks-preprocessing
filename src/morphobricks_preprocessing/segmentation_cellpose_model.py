@@ -72,9 +72,9 @@ DINOV3_COMMIT = "6876159a11b4df116f30f667f8c9888617df0751"
 22 November 2026, **not verified against cpdino** (it is a pin, not a tested pairing). A model
 that needs DINOv3 runs only with exactly this commit installed."""
 DINOV3_MISSING = (
-    "{name} needs the DINOv3 code, which is not installed. In the Preprocessing and Cellpose "
-    "notebook, tick and press Install Cellpose in cell 4 (it installs the pinned DINOv3 code; "
-    "no weights), then press the button again; Preview and Segment never install code."
+    "{name} needs the DINOv3 code, which is not installed. Tick the installation and press "
+    "Install Cellpose above the segmentation (it installs the pinned DINOv3 code; no "
+    "weights), then press the button again; Preview and Segment never install code."
 )
 """The refusal of a ``cpdino`` load without DINOv3 when the caller installs none (bc B7)."""
 DINOV3_LABEL = "Installing DINOv3 (the network code of the cpdino models)…"
