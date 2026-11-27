@@ -10,6 +10,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from ..content_memo import ContentMemo
 from ..lab_links import LabLinks
 from ..manifest import RunManifest
 from .description_run import RunDescription
@@ -30,6 +31,8 @@ class RunOptions:
     workers: Workers = field(default_factory=Workers)
     checking: Callable[[str, int, int, str], None] | None = None
     """The progress of the run's own folder and header check (:func:`.preflight.preflight`)."""
+    memo: ContentMemo | None = None
+    """The content SHA-256s one notebook press already took (:attr:`.modes.RunMode.memo`)."""
 
 
 @dataclass(frozen=True)

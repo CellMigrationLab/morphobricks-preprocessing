@@ -50,7 +50,7 @@ def check_progress(wait: Wait) -> Callable[[str, int, int, str], None]:
     def report(phase: str, done: int, total: int, path: str) -> None:
         if phase != state["phase"]:
             state["phase"] = phase
-            wait.phase(CHECK_PHASES[phase], total if phase == "headers" else 0)
+            wait.phase(CHECK_PHASES[phase], total if phase in ("headers", "acquisitions") else 0)
         if not path:
             return
         if phase == "folders":
@@ -120,7 +120,7 @@ class _FolderStep:
         self._build_issues_card()
         self.folder_browse.on_click(lambda _: self._browse(self.folder))
         self.output_browse.on_click(lambda _: self._browse(self.output))
-        self.check_button.on_click(lambda _: self.check_folder())
+        self.check_button.on_click(lambda _: self._check_pressed())
         self.exclude_button.on_click(lambda _: self._exclude_blocking_images())
         self.folder.observe(lambda _: self._folder_edited(), names="value")
         self.output.observe(lambda _: self._output_edited(), names="value")
@@ -252,6 +252,10 @@ class _FolderStep:
         """Run the folder and header check (pass 1) and show its results."""
         return self._run_check()
 
+    def _check_pressed(self) -> None:
+        """*Check folder* pressed: the only start of a check (#579; the restore adds to it)."""
+        self.check_folder()
+
     def _run_check(self, recorded: object = None) -> Preflight | None:
         """Run the check; ``recorded`` headers are reused where unchanged (a restore)."""
         folder = ui.clean_path(self.folder.value)
@@ -264,9 +268,10 @@ class _FolderStep:
         self.folder_next.value = ""
         wait = self._folder_wait = Wait(self.folder_status)
         wait.start(CHECK_PHASES["folders"])
+        self._clear_shown_check()  # nothing of an earlier check stays on screen meanwhile (#579)
         try:  # the earlier check never stays shown as valid, whatever stops this one (#101)
             try:
-                with self.log.attached():
+                with self.log.attached(), wait.ticking():  # the time goes on (#579)
                     masks, mask_axes = self._check_masks_arguments(Path(folder).resolve())
                     pre = preflight(
                         folder,
@@ -280,6 +285,7 @@ class _FolderStep:
                         progress=check_progress(wait),
                         recorded=recorded,
                     )
+                    wait.phase("Comparing the images within each folder")
                     pre = unit_checked(pre)  # a described run checks inside each unit
                     self._note_edits()  # a check fills only what the user left as filled
                     self.missing_as_singleton.set(
@@ -432,12 +438,8 @@ class _FolderStep:
             return
         if self.preflight is not None and ui.clean_path(self.folder.value) != self._checked_folder:
             # A different folder makes every later choice stale.
-            self._clear_checked(
-                ui.status(
-                    "info", "The folder changed.", ["Press Check folder to check the new folder."]
-                )
-            )
-        self._restore_earlier_work()  # the earlier work of the output folder it now has
+            self._clear_checked(ui.status("info", "The folder changed.", [self._press_words()]))
+        self._folders_edited()  # nothing is read or restored until a button is pressed (#579)
 
     def _fail_check(self, folder: str, exc: BaseException, heading: str) -> None:
         """Clear the earlier check for ``exc``; return only if it is an expected failure.
@@ -505,15 +507,27 @@ class _FolderStep:
     def _clear_check_views(self) -> None:
         """Clear what other views show of the checked folder (the stepper's, #101)."""
 
-    def _restore_earlier_work(self) -> None:
-        """Restore the output folder's earlier work (:mod:`.notebook_restore`); here nothing."""
+    def _folders_edited(self) -> None:
+        """Clear what came from the old folders (:mod:`.notebook_restore`); here nothing."""
+
+    def _press_words(self) -> str:
+        """Return what to press after a folder box was edited (#579)."""
+        return "Press Check folder to continue: nothing is read until then."
+
+    def _clear_shown_check(self) -> None:
+        """Hide the results of the check on screen while a new check runs (#579)."""
+        self.folder_tiles.value = self.folder_next.value = ""
+        for card in (self.labels_card, self.consistency_card, self.issues_card):
+            ui.set_visible(card, False)
 
     def _output_edited(self) -> None:
         self._update_output_hint()
         # The inputs start from the earlier run in the new output folder (audit I4).
         self._prefill_from_output()
-        # Its earlier work is restored when no check is on screen (owner, 25 November 2026).
-        self._restore_earlier_work()
+        if self.result and self.result.output_folder.resolve() != self._prefill_target():
+            self.result = None  # #517: the run shown was written to another output folder
+        # Its earlier work is restored on the button press only (owner, #579).
+        self._folders_edited()
         # The answers belong to their output folder (issue #98): another folder's draft is
         # read, or the questions asked again; nothing is carried over or written here.
         if self.pairing is not None and self._design_folder() != self._design_output:

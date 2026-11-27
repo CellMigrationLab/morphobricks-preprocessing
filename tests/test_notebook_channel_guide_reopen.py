@@ -240,7 +240,8 @@ def test_a_restored_per_repeat_draft_opens_strict_with_no_draft_write(tmp_path, 
     nb.steps()
     nb.results_step()
     nb.folder.value = str(exp[0])
-    nb.output.value = str(exp[2])  # the restore: the check, the saved answers
+    nb.output.value = str(exp[2])
+    nb.scan_button.click()  # the restore, on the press (#579): the check, the saved answers
     assert nb.preflight is not None and nb.confirmed_mapping is None
     nb.masks_folder.value = str(exp[1])
     nb.preview_checked.set(True)

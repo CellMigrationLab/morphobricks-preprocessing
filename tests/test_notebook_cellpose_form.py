@@ -84,8 +84,6 @@ def test_the_forms_start_with_the_former_defaults():
         "model": "cpsam_v2",
         "custom_model_file": "",
         "device": "cuda",  # never chosen for the user: an unavailable GPU is refused
-        "download_weights": False,
-        "install_dinov3": False,
         "diameter": "",
         "flow_threshold": 0.4,
         "cellprob_threshold": 0.0,
@@ -121,8 +119,6 @@ def test_every_field_reaches_the_workflow_as_given(monkeypatch):
         "model": "cpdino",
         "custom_model_file": "/models/mine",
         "device": "mps",
-        "download_weights": True,
-        "install_dinov3": True,
         "diameter": "17.5",
         "flow_threshold": 0.7,
         "cellprob_threshold": -1.5,
@@ -148,7 +144,7 @@ def test_every_field_reaches_the_workflow_as_given(monkeypatch):
         ("open", ("/data/run", "/data/masks")),
         ("choose_channels", ("Nuclear", "nuclei", "Nuclear2")),
         ("set_settings", ("17.5", 0.7, -1.5, 3)),
-        ("load", ("cpdino", "/models/mine", "mps", True, True)),
+        ("load", ("cpdino", "/models/mine", "mps")),
         ("preview", ("a/b.tif",)),
         ("run", (True,)),
     ]
@@ -196,12 +192,19 @@ def test_a_refusal_is_shown_verbatim_in_a_red_card_and_the_form_can_be_pressed_a
     assert form.stopped is None and "Run opened" in workflow.shown[-1]
 
 
-def test_nothing_downloads_without_the_tick(cells):
-    cells.stub.models_dir.joinpath("cpsam_v2").unlink()
+def test_only_the_chosen_models_weights_download_and_only_when_it_loads(cells):
+    # Owner (#574): no tick; choosing the model and pressing the button is the consent.
+    for name in ("cpsam_v2", "cpsam"):
+        cells.stub.models_dir.joinpath(name).unlink()
     open_and_choose(cells)
-    with pytest.raises(notebook_cellpose.CellStop, match="Hugging Face"):
-        run_cell(cells.ns, MODEL, device="cpu")  # the download box as the form starts: off
-    assert cells.stub.downloaded == [] and cells.stub.constructed == []
+    assert cells.stub.downloaded == []
+    run_cell(cells.ns, MODEL, device="cpu", model="cpsam")
+    assert cells.stub.downloaded == ["cpsam"] and cells.stub.cellpose_downloaded == []
+    labels = [
+        str(getattr(w, "description", ""))
+        for w in cells.ns["workflow"].forms["model"].fields.values()
+    ]
+    assert not any("download" in label.lower() or "DINOv3" in label for label in labels)
 
 
 def test_an_unavailable_gpu_is_refused_from_the_form_never_replaced_by_the_cpu(cells):
@@ -212,25 +215,30 @@ def test_an_unavailable_gpu_is_refused_from_the_form_never_replaced_by_the_cpu(c
     assert cells.stub.constructed == [] and cells.ns["workflow"].loaded is None
 
 
-def test_dinov3_is_installed_only_on_its_tick_and_says_to_restart(cells, monkeypatch):
-    installed = []
-    monkeypatch.setattr(cp, "install_dinov3", lambda: installed.append(True))
+def test_dinov3_is_installed_on_first_use_of_a_cpdino_model_with_no_tick(cells):
     cells.stub.dinov3_commit = None
     open_and_choose(cells)
-    with pytest.raises(notebook_cellpose.CellStop, match="restart the runtime"):
-        run_cell(cells.ns, MODEL, device="cpu", model="cpdino", download_weights=True)
-    assert installed == []
-    with pytest.raises(notebook_cellpose.CellStop, match="restart the runtime"):
-        run_cell(
-            cells.ns,
-            MODEL,
-            device="cpu",
-            model="cpdino",
-            download_weights=True,
-            install_dinov3=True,
-        )
-    assert installed == [True]
-    assert "Installing DINOv3" in " ".join(cells.ns["workflow"].shown)
+    run_cell(cells.ns, MODEL, device="cpu", model="cpsam_v2")
+    assert cells.stub.dinov3_installs == []  # a SAM model does not need it
+    run_cell(cells.ns, MODEL, device="cpu", model="cpdino")
+    assert cells.stub.dinov3_installs == [cp.DINOV3_COMMIT]
+    shown = " ".join(cells.ns["workflow"].shown)
+    assert (
+        "Installing DINOv3" in shown
+        and f"DINOv3 installed now at commit {cp.DINOV3_COMMIT}" in shown
+    )
+    assert cells.ns["workflow"].loaded.dinov3_installed
+
+
+def test_dinov3_installed_after_cellpose_was_imported_asks_for_a_restart(cells, monkeypatch):
+    import sys
+
+    cells.stub.dinov3_commit = None
+    monkeypatch.delattr(sys.modules["cellpose.vit"], "dinov3_vitl16")  # Cellpose imported first
+    open_and_choose(cells)
+    with pytest.raises(notebook_cellpose.CellStop, match="Restart the runtime"):
+        run_cell(cells.ns, MODEL, device="cpu", model="cpdino")
+    assert cells.stub.dinov3_installs == [cp.DINOV3_COMMIT] and cells.stub.constructed == []
 
 
 def test_overwrite_stays_off_unless_ticked(cells):

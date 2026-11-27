@@ -181,6 +181,8 @@ src/morphobricks_preprocessing/
                     store_files (the files an OME-Zarr fingerprint covers)
   source_content.py verify_content: a source's content SHA-256 (TIFF bytes; OME-Zarr per-file
                     SHA-256s), with_content, content_changed (RunInputs of a strict run)
+  content_memo.py   ContentMemo: one notebook press's content SHA-256s, reused only while the
+                    file's identity (dev, inode, size, mtime_ns, ctime_ns) is unchanged (v0.9.1)
   manifest_versions.py manifest versions 1/2/3: a strict run writes 3, which rc4 refuses
   lab_links.py      LabLinks: the lab-tool links (Spec experiment-v1 9.3, PP-2), the fixed keys,
                     repeat_code_issues (confirmed, every described repeat once), the manifest's
@@ -293,8 +295,14 @@ src/morphobricks_preprocessing/
                     channel_by_number (a channel number only when every image has the same channel
                     IDs at the same C positions, translated once to the ID; #440);
                     segmentation_cellpose_model.py choose_model (a built-in name or an existing file,
-                    before loading), load_model (the weights file and device verified after loading, no
-                    download without allow_download, SHA-256 recorded, DINOv3 at a pinned commit);
+                    before loading), load_model (the weights file and device verified after loading,
+                    SHA-256 recorded, DINOv3 installed at a pinned commit on a cpdino model's first
+                    load: ensure_dinov3); segmentation_cellpose_weights.py fetch_weights: the chosen
+                    built-in model's file only, from a pinned Hugging Face revision, checked against
+                    its pinned SHA-256 (a cached copy too), a failed download a refusal (owner,
+                    #574: choosing the model and loading it is the consent; no tick);
+                    segmentation_cellpose_eval.py eval_arguments, inference_parameters (what
+                    model.eval is given and what the batch records);
                     notebook_cellpose.py CellposeWorkflow, ChannelPicker, CellStop: the widgets behind
                     notebooks/MorphoBricks_Cellpose.ipynb
                     notebook_stop.py CellStop (one line, no traceback), defined once: cells 2-8
@@ -317,8 +325,12 @@ src/morphobricks_preprocessing/
                     notebook_cellpose_install.py what pip does now, then what it installed;
                     notebook_open_progress.py opening: the wait of opening a run (#574);
                     notebook_mask_register.py register_step(app, segmentation): cell 5, a
-                    declaration to tick per mask type, then the app's own check, Masks answer,
-                    save, run and Describe the masks
+                    question per mask type (objects or binary, none chosen; objects registered),
+                    then the app's own check, Masks answer, save, run and Describe the masks,
+                    each step shown by notebook_register_progress.py RegisterWait (#574); shown
+                    first (notebook_shown_first.py ShownFirst, shared with cell 4); one press when
+                    nothing changed since cell 3's check (register_checks.py changes_since_check,
+                    and the refusal helpers, v0.9.1)
                     notebook_cellpose_preview.py MaskResult, preview_figures: the example result as
                     ZeroCostDL4Mic draws it (cellpose.plot.show_segmentation), one result per mask
                     notebook_cellpose_channels.py ChannelPicker, MaskTarget: the output's masks (Both:

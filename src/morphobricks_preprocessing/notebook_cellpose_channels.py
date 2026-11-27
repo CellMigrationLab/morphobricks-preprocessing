@@ -9,6 +9,7 @@ choice is only shown here; the channels are resolved by
 from __future__ import annotations
 
 import html
+from collections.abc import Callable
 from dataclasses import dataclass
 
 import ipywidgets as widgets
@@ -204,6 +205,14 @@ class ChannelPicker:
             With the resolver's message, when the choice is refused.
         """
         return self.current_targets()[0].plan
+
+    def on_edit(self, callback: Callable[[], object]) -> None:
+        """Call ``callback`` whenever a dropdown, a channel number or the By choice changes.
+
+        Not when a step re-reads the choice (:meth:`current_targets`): only an edit.
+        """
+        for field in (*self.dropdowns, *self.number_fields, self.by):
+            field.observe(lambda _: callback(), names="value")
 
     def current_targets(self) -> tuple[MaskTarget, ...]:
         """Resolve the dropdowns as they are now and return every mask to make, or refuse.

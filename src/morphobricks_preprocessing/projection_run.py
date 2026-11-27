@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
 from .projection import METHODS, projection_dtype
@@ -328,6 +328,18 @@ def run_projection(
         masks_paired=paired,
         warnings=(MASKS_WARNING,) if paired else (),
     )
+
+
+def with_masks(projection: RunProjection, masks: Iterable[tuple[str, str]]) -> RunProjection:
+    """Return ``projection`` with its masks paired again, as :func:`run_projection` pairs them.
+
+    For a mask-only recheck (:func:`.run.preflight.remasked`, #560): the masks paired and the
+    warning follow the masks now found; everything else of the projection, read from its
+    validated record, is kept as it is (nothing is read again).
+    """
+    projected = {i.relative_path for i in projection.images}
+    paired = tuple(sorted({path for image, path in masks if image in projected}))
+    return replace(projection, masks_paired=paired, warnings=(MASKS_WARNING,) if paired else ())
 
 
 def masks_issue(projection: RunProjection) -> list[ValidationIssue]:

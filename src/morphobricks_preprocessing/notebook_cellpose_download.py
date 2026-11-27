@@ -1,46 +1,46 @@
-"""What the notebook shows while Cellpose loads a model: one progress bar, no log noise.
+"""What the notebook shows while a model loads: the download's progress, no Cellpose log noise.
 
-Cellpose 4.2.1.1 downloads built-in weights with ``cellpose.utils.download_url_to_file``, which
-draws a plain-text ``tqdm`` bar (in a notebook, a new line of text at each update), and logs
-each step at INFO through the ``cellpose`` loggers. While a model loads,
-:func:`quiet_cellpose` only changes how that is **shown**:
+Owner decision (issue #574): choosing a model and pressing **Preview** or **Segment** (or
+**Load the model**) is the consent to download that model's weights, so there is no tick to
+allow it; the download is shown instead. :class:`DownloadLine` is the ``progress`` given to
+:func:`.segmentation_cellpose_model.load_model`: the first time it is told something it
+appears, as one line "Downloading <model> weights…" with the megabytes received of the total,
+a bar and the elapsed time (:class:`.notebook_progress.Wait`), or "Installing DINOv3…" for a
+``cpdino`` model; it says at the end how long it took, or that it stopped. A model already on
+this computer shows nothing.
 
-- the bar is ``tqdm.auto``'s (one widget bar in a notebook), same total, unit and updates;
-- the ``cellpose`` loggers' INFO lines are dropped and their warnings are collected, to be
-  shown in one card afterwards (never lost).
-
-Nothing about **what** is loaded changes: the same URL, file and bytes, and the checks of
-:func:`.segmentation_cellpose_model.load_model` (no download without the user's tick, no model
-substitution, no device fallback) run unchanged. Everything is put back when the load ends,
-also when it fails. Cellpose is imported here only when the pinned release is installed (the
-load imports it right after anyway); otherwise nothing is patched and the load refuses as
-before.
+Cellpose itself never downloads here: the model is handed to it as the absolute path of the
+checked file (:mod:`.segmentation_cellpose_weights`). While it loads, :func:`quiet_cellpose`
+drops the ``cellpose`` loggers' INFO lines and collects their warnings, to be shown in one card
+afterwards (never lost). Everything is put back when the load ends, also when it fails.
 """
 
 from __future__ import annotations
 
-import importlib
 import logging
-import sys
-from collections.abc import Iterator
+import time
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
-from types import ModuleType
 
-from . import segmentation_cellpose_model as model_module
+import ipywidgets as widgets
+
+from .notebook_progress import Wait
+from .notebook_style import status
 
 LOGGER = "cellpose"
 """The parent of every Cellpose logger (``cellpose.models``, ``cellpose.core``, ...)."""
-BAR_LABEL = "Downloading the weights"
 CPDINO_IMPORT = "Could not import CPDINO"
 """How Cellpose 4.2.1.1's ``cellpose.models`` starts the warning it logs at import when DINOv3
 is not importable; the warning goes on to recommend ``pip install git+.../dinov3`` unpinned."""
 CPDINO_NOTE = (
-    "Cellpose could not import DINOv3. Only the cpdino models need it: for those, tick "
-    "Install DINOv3 now (it installs the pinned commit), then restart the runtime. The other "
-    "models do not use it."
+    "Cellpose could not import DINOv3. Only the cpdino models need it: choosing one and pressing "
+    "the button installs the pinned commit, and the runtime then needs a restart if Cellpose was "
+    "already imported. The other models do not use it."
 )
-"""What is shown instead: the notebook's pinned installation (``install_dinov3``), never an
+"""What is shown instead: the notebook's pinned installation (``ensure_dinov3``), never an
 unpinned one."""
+MEGABYTE = 1 << 20
+"""The unit the download's line counts in (MB, as 2**20 bytes)."""
 
 
 class _Collect(logging.Handler):
@@ -53,40 +53,13 @@ class _Collect(logging.Handler):
     def emit(self, record: logging.LogRecord) -> None:
         text = record.getMessage()
         if text.startswith(CPDINO_IMPORT):
-            text = CPDINO_NOTE  # never an unpinned install: the notebook's own tick instead
+            text = CPDINO_NOTE  # never an unpinned install: the notebook's own instead
         self.lines.append(f"{record.levelname.title()}: {text}")
-
-
-def _cellpose_utils() -> ModuleType | None:
-    """Return ``cellpose.utils`` of the pinned release, or None (nothing is then patched)."""
-    loaded = sys.modules.get("cellpose.utils")
-    if loaded is not None:
-        return loaded
-    if model_module.installed_version("cellpose") != model_module.CELLPOSE_VERSION:
-        return None
-    try:
-        return importlib.import_module("cellpose.utils")
-    except ImportError:
-        return None
-
-
-def _auto_bar() -> type | None:
-    """Return ``tqdm.auto.tqdm`` (Cellpose depends on tqdm), or None where it does not import."""
-    try:
-        return importlib.import_module("tqdm.auto").tqdm
-    except (ImportError, AttributeError):
-        return None
-
-
-def notebook_bar(*args: object, **kwargs: object) -> object:
-    """Return ``tqdm.auto``'s bar with Cellpose's own arguments and a plain label."""
-    kwargs.setdefault("desc", BAR_LABEL)
-    return _auto_bar()(*args, **kwargs)
 
 
 @contextmanager
 def quiet_cellpose() -> Iterator[list[str]]:
-    """Show Cellpose's download as one ``tqdm.auto`` bar and collect its warnings.
+    """Drop Cellpose's INFO lines and collect its warnings while a model loads.
 
     Yields
     ------
@@ -95,21 +68,67 @@ def quiet_cellpose() -> Iterator[list[str]]:
     """
     logger = logging.getLogger(LOGGER)
     handler, propagate = _Collect(), logger.propagate
-    logger.addHandler(handler)  # first: importing Cellpose below may already log
+    logger.addHandler(handler)  # before the load imports Cellpose: importing it may log
     logger.propagate = False
-    utils, original = None, None
     try:
-        utils = _cellpose_utils()
-        if utils is not None and _auto_bar() is not None:  # else Cellpose's own bar stays
-            original = getattr(utils, "tqdm", None)
-        if original is not None:
-            utils.tqdm = notebook_bar
         yield handler.lines
     finally:
-        if original is not None:
-            utils.tqdm = original
         logger.removeHandler(handler)
         logger.propagate = propagate
 
 
-__all__ = ["BAR_LABEL", "CPDINO_IMPORT", "CPDINO_NOTE", "LOGGER", "notebook_bar", "quiet_cellpose"]
+class DownloadLine:
+    """The ``progress(label, done, total)`` of a load, drawn as one wait line once called.
+
+    Parameters
+    ----------
+    show
+        Called once with :attr:`widget`, the first time there is something to show.
+    clock
+        Returns the time in seconds (monotonic), for the wait; replaced in tests.
+
+    Attributes
+    ----------
+    widget
+        The line (HTML).
+    labels
+        Every label shown, in order (``"Downloading cpsam_v2 weights…"``, ...).
+    """
+
+    def __init__(
+        self, show: Callable[[widgets.Widget], object], clock: Callable[[], float] = time.monotonic
+    ) -> None:
+        self.widget = widgets.HTML()
+        self.wait = Wait(self.widget, clock=clock)
+        self.labels: list[str] = []
+        self._show = show
+
+    def __call__(self, label: str, done: int, total: int) -> None:
+        """Show ``done`` of ``total`` bytes under ``label`` (a new label starts a new line)."""
+        first = not self.labels
+        if first or self.labels[-1] != label:
+            self.labels.append(label)
+            self.wait.start(label, total // MEGABYTE)
+        self.wait.step(done // MEGABYTE, total // MEGABYTE, "MB")
+        if first:  # drawn first, so that what is shown says what is happening
+            self._show(self.widget)
+
+    def finish(self, ok: bool) -> None:
+        """Replace the line by how long it took, or by where it stopped (if it was shown)."""
+        if not self.labels:
+            return
+        label = self.labels[-1].rstrip("…")
+        if ok:
+            self.widget.value = status("ok", f"{label}: done in {self.wait.took()}")
+        else:
+            self.widget.value = status("error", f"{label}: stopped after {self.wait.took()}")
+
+
+__all__ = [
+    "CPDINO_IMPORT",
+    "CPDINO_NOTE",
+    "LOGGER",
+    "MEGABYTE",
+    "DownloadLine",
+    "quiet_cellpose",
+]

@@ -44,6 +44,7 @@ from .notebook_cellpose_install import INSTALLING, PipProgress, failed_lines, in
 from .notebook_open_progress import opening
 from .notebook_progress import Wait
 from .notebook_render import blocked_line
+from .notebook_shown_first import ShownFirst
 from .open_checks import Checking, quiet
 from .run_inputs import RunInputsError
 from .segmentation_cellpose_run import open_run
@@ -68,12 +69,13 @@ the masks (:mod:`.notebook_mask_register`)."""
 INSTALL_TEXT = (
     "Cellpose {version} is not installed in this environment. It is installed only here, only "
     "when you tick the box: it brings PyTorch, a download of a few gigabytes. Preprocessing "
-    "alone never installs it. The command is <b>{command}</b>. DINOv3 is never installed here "
-    "(it is a choice of the model step)."
+    "alone never installs it. The command is <b>{command}</b>. When no DINOv3 is installed, "
+    "the pinned DINOv3 code (the network code of the cpdino models; no weights) is installed "
+    "just before Cellpose, so that a cpdino model never needs a runtime restart."
 )
 
 
-class SegmentationStep(widgets.VBox):
+class SegmentationStep(ShownFirst, widgets.VBox):
     """Cell 4's widget: what it found in the app, the installation if needed, the component.
 
     Attributes
@@ -144,23 +146,6 @@ class SegmentationStep(widgets.VBox):
         with opening(self.opening) as checking:
             self.refused = _refusal(self.run_folder, checking)
         self.notice.value = self._notice()
-
-    def _ipython_display_(self, **kwargs: object) -> None:
-        """Display the widget, unless :func:`segmentation_step` just did (then once nothing).
-
-        :attr:`skip_next_display` is consumed by the next display of this same step only (the
-        cell's ``display(segmentation)``); every later display shows it. ipywidgets 7 (Colab)
-        displays a widget by ``Widget._ipython_display_``, ipywidgets 8 by
-        ``_repr_mimebundle_`` (7 has none): whichever the installed version has.
-        """
-        if self.skip_next_display:
-            self.skip_next_display = False
-            return
-        shown_by_widget = getattr(super(), "_ipython_display_", None)
-        if shown_by_widget is not None:
-            shown_by_widget(**kwargs)
-            return
-        display(self._repr_mimebundle_(), raw=True)
 
     @property
     def workflow(self) -> CellposeNotebook | None:

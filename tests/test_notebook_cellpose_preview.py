@@ -216,3 +216,20 @@ def test_the_preview_runs_in_a_plain_jupyter_kernel(mixed_run, tmp_path, output,
     assert "WRITTEN False" in text and f"PLOTTED {masks}" in text
     if output == "both":
         assert "Cell mask: 2 objects" in text and "Nuclei mask: 2 objects" in text
+
+
+def test_the_run_line_names_the_model(cells, monkeypatch):
+    # #574 item 4: the batch's progress line names the model that runs.
+    labels = []
+    real = notebook_cellpose.progress_html
+
+    def spy(label, *args, **kwargs):
+        labels.append(label)
+        return real(label, *args, **kwargs)
+
+    monkeypatch.setattr(notebook_cellpose, "progress_html", spy)
+    open_and_choose(cells)
+    run_cell(cells.ns, MODEL, device="cpu")
+    cells.ns["workflow"].run()
+    name = cells.ns["workflow"].loaded.name
+    assert labels and set(labels) == {f"Running {name}"}

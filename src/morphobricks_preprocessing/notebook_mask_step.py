@@ -113,7 +113,7 @@ class _MaskStepCard:
         ui.set_visible(self.mask_conversion.card, self._show_output)
         output = self._mask_step_output()
         self.mask_conversion.refresh(output)
-        self.tissue_mask.refresh(output)
+        self.tissue_mask.refresh(output, memo=getattr(self, "_press_memo", None))
         ui.set_visible(self.tissue_mask.card, self._show_output and self.tissue_mask.has_rgb)
         manifest = None if output is None else current_fingerprint(output / MANIFEST_FILENAME)
         if self._mask_step_seen == (output, manifest):

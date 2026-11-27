@@ -1,9 +1,10 @@
-"""Restore the earlier work of an output folder as soon as it is set (owner, 25 November 2026).
+"""Restore the earlier work of an output folder on the button press (owner, 25 and 26 Nov 2026).
 
-When the output folder is typed or chosen (or follows a new experiment folder) and no check
-is on screen, the notebook looks at what the folder holds (:func:`.earlier_work.earlier_work`)
-and, when it holds earlier work of this experiment folder, restores it through the paths that
-already exist, then says exactly what it restored, from when, and what it read again:
+When **Scan the folders** (the stepper) or **Check folder** is pressed and no check is on
+screen, the notebook first looks at what the output folder holds
+(:func:`.earlier_work.earlier_work`) and, when it holds earlier work of this experiment
+folder, restores it through the paths that already exist, then says exactly what it
+restored, from when, and what it read again:
 
 1. **The folder check.** The check runs as *Check folder* runs it, but the header of an image
    whose fingerprint equals the one in ``check_headers.json`` is the recorded header
@@ -28,6 +29,10 @@ nothing. *Start fresh* forgets what was restored: no file is changed or deleted.
 folder clears what was restored from the first, until the user answers, confirms, saves or runs
 (:meth:`_RestoreEarlier._acted`): then it is their work, kept as after a manual check. The folder
 boxes are read once typed (``continuous_update=False``), never at each key.
+
+Owner decision on #579 (26 November 2026): typing or pasting a folder path never starts a scan,
+a check or a restore. Editing a folder box only clears what came from the old folders and says
+which button to press; the restore and any reading of the folders start on that press.
 """
 
 from __future__ import annotations
@@ -76,8 +81,45 @@ class _RestoreEarlier:
 
     # The trigger -------------------------------------------------------------------------
 
+    def _folders_edited(self) -> None:
+        """Clear what was restored from another output folder, after a folder box was edited.
+
+        Nothing is read here (#579): the restore waits for the button press.
+        """
+        if self._restoring or not hasattr(self, "restore_box") or not self._show_output:
+            return
+        self._restore_key = None  # the next press looks at the folders as they are now
+        target = self._prefill_target()
+        if self._restored_from is not None and self._restored_from != target:
+            before = self._restored_from
+            self._clear_checked(ui.status("info", "The output folder changed."))
+            self._say(
+                "info",
+                "The output folder changed: nothing restored from the earlier one is used.",
+                [f"It was {before}. No file was changed or deleted.", self._press_words()],
+            )
+
+    def _press_words(self) -> str:
+        """Return what to press after a folder box was edited (#579)."""
+        button = "Scan the folders" if getattr(self, "_stepper", None) else "Check folder"
+        return f"Press {button} to continue: nothing is read or restored until then."
+
+    def _check_pressed(self) -> None:
+        """*Check folder* pressed: restore the earlier work first, else check (#579).
+
+        On the stepper the restore belongs to *Scan the folders*, pressed before this one.
+        """
+        before = self.preflight
+        if getattr(self, "_stepper", None) is None:
+            self._restore_earlier_work()
+        if self.preflight is before:
+            super()._check_pressed()
+
     def _restore_earlier_work(self) -> None:
-        """Restore the output folder's earlier work, once per output and experiment folder."""
+        """Restore the output folder's earlier work, once per output and experiment folder.
+
+        Called by a button press only (#579), never by an edit of a folder box.
+        """
         if self._restoring or not hasattr(self, "restore_box") or not self._show_output:
             return  # an embedding brick that hides the output folder writes nothing
         target = self._prefill_target()
@@ -85,14 +127,6 @@ class _RestoreEarlier:
         if (target, folder) == self._restore_key:
             return
         self._restore_key = (target, folder)
-        if self._restored_from is not None and self._restored_from != target:
-            before = self._restored_from
-            self._clear_checked(ui.status("info", "The output folder changed."))
-            self._say(
-                "info",
-                "The output folder changed: nothing restored from the earlier one is used.",
-                [f"It was {before}. No file was changed or deleted."],
-            )
         if target is None or self.preflight is not None or self._fresh_for == target:
             return
         self._restoring = True

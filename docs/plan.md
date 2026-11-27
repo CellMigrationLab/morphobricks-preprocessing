@@ -1715,3 +1715,38 @@ Raised during review; to be decided before the milestones that need them:
     work records; mask headers and projection markers are read as always; *Start fresh*
     writes and deletes nothing; a finished run is one `RunInputs.open` opens (review of #547)
     (`notebook_restore`, contract §9.2).
+86. Does the Cellpose step need the user's tick to download a model's weights, and to install
+    DINOv3? *Decided (owner, 26 November 2026, v0.9.1, #574):* no. Choosing the model, then
+    pressing **Preview** or **Segment** (or **Load the model** in the Cellpose notebook), is the
+    consent to download that model's weights; the "Allow the weights download from Hugging
+    Face" and "Install DINOv3 now" ticks are removed. Only the chosen model's file is
+    downloaded, on first use, with a visible "Downloading <model> weights…" line; the record
+    names the weights exactly; another model is never used instead and a failed download is a
+    refusal. *Encoding choices of this brick:* the file is downloaded from
+    `mouseland/cellpose-sam` at a pinned commit (`WEIGHTS_REVISION`, not Cellpose's moving
+    `main`) and kept only with its pinned size and SHA-256 (`PINNED_WEIGHTS`, the hashes Hugging
+    Face lists at that commit); a copy already on disk must match too, else it is refused and
+    left in place; the record adds `weights_repository` and `weights_revision` beside
+    `weights_source`, `weights_downloaded` and the model's `sha256`. DINOv3 (the code of the
+    `cpdino` networks, no weights of its own) is installed at its pinned commit only when none
+    is installed; a DINOv3 of another commit is refused, not replaced
+    (`segmentation_cellpose_weights`, `segmentation_cellpose_model.ensure_dinov3`).
+    *Follow-up (v0.9.1, cpdino fix):* the combined notebook's **Install Cellpose** also installs
+    the pinned DINOv3 code before Cellpose when none is installed, so that a `cpdino` model never
+    needs a runtime restart there; the tick of that installation is the consent. A restart is
+    asked for only when DINOv3 imports but Cellpose was imported before it.
+87. Within one press of **Register the masks**, may a content SHA-256 already taken be reused?
+    *Decided (owner, 26 November 2026, on #578):* yes, only while the file's identity (device,
+    inode, size, modification time) is unchanged since it was hashed, with the cache created at
+    the start of the press and passed explicitly; checks across presses and at publication stay
+    as strict as before; any doubt means hashing again. *Encoding choices of this brick:* the
+    identity also holds the status-change time (`content_memo`); OME-Zarr folders are never
+    reused; a Cellpose mask answered as binary is refused (`cellpose_mask_not_binary`).
+88. When does the notebook read the folders typed in its boxes? *Decided (owner, 26 November
+    2026, #579):* only when a button is pressed (**Scan the folders** / **Check folder**).
+    Editing a box clears what came from the old folders; the scan, the check and the restore of
+    earlier work (question 85) start on the press. *Encoding choices of this brick:* the earlier
+    run's inputs of the output folder (one manifest read) still follow an edit; a new quick
+    scan ends the check on screen (#520). **Register the masks** keeps cell 3's confirmed axes
+    and pairs the masks alone when the folders and image headers are unchanged since cell 3's
+    check (v0.9.1), else checks the folders again and says what changed.

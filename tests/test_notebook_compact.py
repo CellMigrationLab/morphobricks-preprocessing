@@ -200,9 +200,12 @@ def test_after_the_check_the_viewer_stays_and_the_details_are_folded(exp):  # no
     assert _holds(nb.found_fold, nb.labels_card) and _holds(nb.report_fold, nb.check_report.widget)
     nb.folder.value = str(exp[0]) + "_other"
     assert not ui.is_visible(nb.found_fold)  # another folder: nothing found is shown
-    # The checked folder typed again (here with a slash): its output folder's earlier work is
-    # restored (v0.9.0), every header reused, nothing confirmed.
+    # The checked folder typed again (here with a slash), then Scan pressed: its output
+    # folder's earlier work is restored (v0.9.0; on the press since #579), every header
+    # reused, nothing confirmed.
     nb.folder.value = str(exp[0]) + "/"
+    assert not ui.is_visible(nb.found_fold)  # typed: nothing read yet
+    nb.scan_button.click()
     assert ui.is_visible(nb.found_fold) and ui.is_visible(nb.restore_box)
     assert nb.preflight.headers_reused and nb.confirmed_mapping is None
 

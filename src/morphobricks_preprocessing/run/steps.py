@@ -16,6 +16,7 @@ from morphobricks_normalization.records import PlaneRecord
 
 from ..axes import AxisReview
 from ..axis_review import review_axes
+from ..content_memo import ContentMemo
 from ..dataset import check_dataset
 from ..design import DesignTable, design_issues, reconcile_design
 from ..discovery_report import RunOutcome
@@ -181,10 +182,13 @@ class Reporting:
     checking
         As :attr:`.modes.RunMode.checking`: here the phase :data:`.phases.CONTENTS`, each
         image's content SHA-256 in a ``verify_content`` run.
+    memo
+        As :attr:`.modes.RunMode.memo`: the SHA-256s one notebook press already took.
     """
 
     reading: Callable[[int, int, str], None] | None = None
     checking: Callable[[str, int, int, str], None] | None = None
+    memo: ContentMemo | None = None
 
     def contents(self, done: int, total: int, path: str) -> None:
         """Report the content SHA-256 of image ``done`` of ``total`` (phase ``contents``)."""
@@ -291,7 +295,7 @@ def compute_rows(
     # Strict reuse: each image's content SHA-256 joins its row key; an unreadable one fails.
     # Each image read whole (minutes on Google Drive): reported, before the first read.
     entries, unhashed = (
-        with_content(entries, root, reporting.contents)
+        with_content(entries, root, reporting.contents, reporting.memo)
         if settings.verify_content
         else (entries, [])
     )

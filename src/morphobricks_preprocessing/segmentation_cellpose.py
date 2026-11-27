@@ -8,8 +8,10 @@ pinned release is :data:`CELLPOSE_VERSION` (4.2.1.1); another version is refused
 
 Loading a model (:func:`load_model`, in :mod:`.segmentation_cellpose_model`, re-exported here)
 refuses what Cellpose 4.2.1.1 would do silently: substitute ``cpsam_v2`` for a model it cannot
-find, fall back from the GPU to the CPU, and download uncached weights. This module adds the
-rest of what an audit of the Cellpose hand-off asked for:
+find and fall back from the GPU to the CPU; built-in weights are downloaded on first use from a
+pinned revision and checked against their pinned SHA-256
+(:mod:`.segmentation_cellpose_weights`), never by Cellpose. This module adds the rest of what
+an audit of the Cellpose hand-off asked for:
 
 - **Channels by ID.** The channels are resolved by canonical ID
   (:func:`.segmentation_handoff.resolve_segmentation`) and passed as a ``(C, Y, X)`` stack with
@@ -24,8 +26,10 @@ rest of what an audit of the Cellpose hand-off asked for:
   (:func:`inference_parameters`), every image into the batch with its outcome, written, skipped
   or failed with the error (:func:`run_batch`); nothing is dropped. Each mask's hash and record
   entry are written under the type's write lock; a failure there rolls the mask back. The full
-  normalisation, the flow iterations, and whether built-in weights were downloaded (and from
-  where) are in it.
+  normalisation, the flow iterations, and the built-in weights' source (repository, revision
+  and URL) and whether they were downloaded are in it.
+- **One torch warning hidden** while Cellpose runs (:func:`evaluate`,
+  :func:`.segmentation_cellpose_model.sparse_warning_hidden`); it does not change any result.
 
 Mask paths, pairing, the mask-type rules, writing, the folder rules and the record are the
 hand-off's own (:mod:`.segmentation_handoff`, :mod:`.segmentation_record`); nothing is repeated.
@@ -48,6 +52,16 @@ from .segmentation_cellpose_commit import (
     is_recorded,
     replaced_earlier_mask,
 )
+from .segmentation_cellpose_eval import (
+    MAX_SIZE_FRACTION,
+    MIN_SIZE,
+    NATIVE_SCALE,
+    NORMALIZE_PERCENTILE,
+    TILE_OVERLAP,
+    eval_arguments,
+    inference_parameters,
+    normalization,
+)
 from .segmentation_cellpose_model import (
     BUILTIN_MODELS,
     CELLPOSE_VERSION,
@@ -55,7 +69,9 @@ from .segmentation_cellpose_model import (
     DEVICE_NOTE,
     DINO_MODELS,
     DINOV3_COMMIT,
+    DINOV3_LABEL,
     DINOV3_URL,
+    SPARSE_WARNING,
     LoadedModel,
     ModelChoice,
     check_device,
@@ -68,6 +84,7 @@ from .segmentation_cellpose_model import (
     installed_dinov3_commit,
     installed_version,
     load_model,
+    sparse_warning_hidden,
     weights_file,
 )
 from .segmentation_cellpose_run import (
@@ -99,6 +116,7 @@ from .segmentation_cellpose_settings import (
     output_inputs,
     rescale_factor,
 )
+from .segmentation_cellpose_weights import WEIGHTS_REPOSITORY, WEIGHTS_REVISION, weights_url
 from .segmentation_handoff import (
     SegmentationPlan,
     images_to_segment,
@@ -119,6 +137,17 @@ from .segmentation_record import (
 )
 
 __all__ = [
+    "DEVICE_NOTE",
+    "MAX_SIZE_FRACTION",
+    "MIN_SIZE",
+    "NATIVE_SCALE",
+    "NORMALIZE_PERCENTILE",
+    "TILE_OVERLAP",
+    "eval_arguments",
+    "flow_iterations",
+    "inference_parameters",
+    "normalization",
+    "rescale_factor",
     "MAX_CHANNELS",
     "channel_coverage",
     "check_channel_count",
@@ -129,6 +158,7 @@ __all__ = [
     "CELLPOSE_VERSION",
     "DEFAULT_MODEL",
     "DINOV3_COMMIT",
+    "DINOV3_LABEL",
     "DINOV3_URL",
     "DINO_MODELS",
     "BOTH_NEEDS",
@@ -141,6 +171,9 @@ __all__ = [
     "NUCLEAR_ROLE",
     "NUCLEI_OUTPUT",
     "OUTPUT_MASK_TYPES",
+    "SPARSE_WARNING",
+    "WEIGHTS_REPOSITORY",
+    "WEIGHTS_REVISION",
     "LoadedModel",
     "ModelChoice",
     "Settings",
@@ -159,16 +192,10 @@ __all__ = [
     "installed_version",
     "load_model",
     "weights_file",
+    "weights_url",
 ]
 
 TOOL = "cellpose"
-TILE_OVERLAP, MIN_SIZE, MAX_SIZE_FRACTION = 0.1, 15, 0.4
-"""Cellpose's own defaults, passed explicitly so that the record holds the effective values."""
-NORMALIZE_PERCENTILE = [1.0, 99.0]
-NATIVE_SCALE = (
-    "native scale of the model: Cellpose 4.2.1.1 does not estimate the diameter, so a blank "
-    "diameter means the model's own scale"
-)
 IMAGE_SKIPPED = "a mask of this type is already there; not replaced (overwrite is off)"
 IMAGE_UNRECORDED = (
     "exists without provenance (not made by a recorded batch); not replaced (overwrite is off)"
@@ -181,49 +208,6 @@ ROLLED_BACK_REMOVED = "rolled back: the new mask was removed"
 
 
 # --- one image --------------------------------------------------------------------------------
-
-
-def normalization(settings: Settings) -> dict[str, Any]:
-    """Return the full normalisation given to Cellpose: its defaults now, with the user's values.
-
-    The defaults (``tile_norm_blocksize``, ``sharpen_radius``, ``invert``, ``lowhigh``, ...) come
-    from Cellpose's module global at call time, copied; ``normalize`` (always on: a setting
-    that is not True is refused) and the percentiles are then set. Nothing is left to Cellpose's
-    defaults, so the record holds all.
-    """
-    if settings.normalize is not True:  # Settings refuses it; never reach Cellpose without it
-        raise SegmentationError(NORMALIZE_REFUSAL)
-    return {
-        **default_normalization(),
-        "normalize": True,
-        "percentile": list(NORMALIZE_PERCENTILE),
-    }
-
-
-def eval_arguments(loaded: LoadedModel, settings: Settings) -> dict[str, Any]:
-    """Return every argument given to ``model.eval``, the effective inference settings.
-
-    ``channel_axis`` is 0: the stack from :meth:`.segmentation_handoff.SegmentationPlan.read`
-    is ``(C, Y, X)`` in the order of the requested channel IDs. The tile size, the full
-    normalisation, the flow iterations and the other values Cellpose would default are given
-    explicitly, so what is recorded is what ran.
-    """
-    return {
-        "batch_size": settings.batch_size,
-        "resample": True,
-        "channel_axis": 0,
-        "normalize": normalization(settings),
-        "diameter": settings.diameter,
-        "flow_threshold": settings.flow_threshold,
-        "cellprob_threshold": settings.cellprob_threshold,
-        "do_3D": False,
-        "min_size": MIN_SIZE,
-        "max_size_fraction": MAX_SIZE_FRACTION,
-        "niter": flow_iterations(settings),
-        "augment": False,
-        "tile_overlap": TILE_OVERLAP,
-        "bsize": loaded.tile_size,
-    }
 
 
 def segment_image(loaded: LoadedModel, settings: Settings, stack: np.ndarray) -> np.ndarray:
@@ -247,47 +231,19 @@ def evaluate(loaded: LoadedModel, settings: Settings, stack: np.ndarray) -> tupl
     """Return the labels of :func:`segment_image` and Cellpose's flows (``flows[0]`` is RGB).
 
     The flows are for the preview (``cellpose.plot.show_segmentation``); the batch keeps only
-    the labels. None when Cellpose returned no flows.
+    the labels. None when Cellpose returned no flows. While Cellpose runs, torch's warning that
+    begins :data:`SPARSE_WARNING` is hidden, and only it (:func:`sparse_warning_hidden`).
     """
     array = np.asarray(stack)
     if array.ndim != 3:
         raise SegmentationError(f"The stack is {array.ndim}D; Cellpose gets (C, Y, X).")
     check_channel_count([f"channel {i}" for i in range(array.shape[0])])
-    out = loaded.model.eval(array, **eval_arguments(loaded, settings))
+    with sparse_warning_hidden():
+        out = loaded.model.eval(array, **eval_arguments(loaded, settings))
     labels = np.asarray(out[0] if isinstance(out, tuple) else out)
     if labels.ndim != 2:
         raise SegmentationError(f"Cellpose returned {labels.ndim}D labels; a mask is 2D (Y, X).")
     return labels, (out[1] if isinstance(out, tuple) and len(out) > 1 else None)
-
-
-def inference_parameters(
-    loaded: LoadedModel, settings: Settings, channel_ids: Sequence[str]
-) -> dict[str, Any]:
-    """Return the parameters of a batch for the record: every effective setting, plain JSON.
-
-    The diameter is in pixels, or null with the statement that it is the model's native
-    scale; ``rescale`` is the factor Cellpose derives from it (30 / diameter, or 1). The
-    normalisation is the full dictionary given to Cellpose and ``niter`` the flow iterations
-    it derives from the rescale. ``weights_downloaded`` and ``weights_source`` say whether this
-    session downloaded the built-in weights and from where; ``notes`` holds Cellpose's device
-    behaviour (:data:`.segmentation_cellpose_model.DEVICE_NOTE`) for a GPU run.
-    """
-    arguments = eval_arguments(loaded, settings)
-    notes = [DEVICE_NOTE] if loaded.device != "cpu" else []
-    return {
-        **arguments,
-        "diameter_unit": "pixels" if settings.diameter is not None else NATIVE_SCALE,
-        "rescale": rescale_factor(settings),
-        "channel_ids_order": list(channel_ids),
-        "device_type": loaded.device,
-        "backbone": loaded.backbone,
-        "use_bfloat16": True,
-        "cellpose_version": CELLPOSE_VERSION,
-        "dinov3_commit": loaded.dinov3_commit,
-        "weights_downloaded": loaded.downloaded,
-        "weights_source": loaded.source,
-        "notes": notes,
-    }
 
 
 # --- the batch --------------------------------------------------------------------------------

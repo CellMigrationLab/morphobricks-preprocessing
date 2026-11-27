@@ -3,13 +3,19 @@
 Cellpose is not a dependency of the brick and is not installed in CI. The stand-in keeps what
 the real ``CellposeModel`` does that matters here, read from the 4.2.1.1 source: a name or path
 it cannot find is replaced by ``cpsam_v2`` (downloaded if absent), a built-in name is looked for
-in ``MODEL_DIR`` and fetched when missing, and ``pretrained_model`` / ``device`` / ``backbone``
-are set on the loaded model. As in 4.2.1.1 ``device`` is only the device it was given; where
+in ``MODEL_DIR`` and fetched when missing (``cellpose_downloaded``: the brick hands Cellpose a
+path, so this must stay empty), and ``pretrained_model`` / ``device`` / ``backbone`` are set on
+the loaded model. Nothing is ever downloaded: the brick's own download
+(:mod:`.segmentation_cellpose_weights`) gets the stand-in bytes of :func:`weights_bytes`
+(``downloaded``), whose SHA-256 and size are made the pins; ``download_fail`` makes it fail.
+As in 4.2.1.1 ``device`` is only the device it was given; where
 the weights sit is told by ``net`` (parameters and buffers with a ``device``). Its ``eval``
 records every call (the stack and the keywords) and returns a fixed label image, so a test sees
 exactly what Cellpose was given.
 """
 
+import hashlib
+import io
 import logging
 import sys
 import types
@@ -19,6 +25,7 @@ from types import SimpleNamespace
 import numpy as np
 
 from morphobricks_preprocessing import segmentation_cellpose_model as model_module
+from morphobricks_preprocessing import segmentation_cellpose_weights as weights_module
 from morphobricks_preprocessing.run_inputs import RunInputs
 from test_segmentation_handoff import EXTRA_FIRST
 from test_stage3_channels import described_run, extra_stain
@@ -87,6 +94,8 @@ def model_class(state):
             state.constructed.append(
                 SimpleNamespace(gpu=gpu, pretrained_model=pretrained_model, device=device, **kwargs)
             )
+            if state.on_construct is not None:  # something else touches the file meanwhile
+                state.on_construct(pretrained_model)
             if state.cpdino_log:  # 4.2.1.1 logs this when cellpose.models cannot import DINOv3
                 logging.getLogger("cellpose.models").warning(CPDINO_WARNING)
             self.pretrained_model = state.substitute or self._resolve(pretrained_model)
@@ -106,7 +115,7 @@ def model_class(state):
                 )
                 return str(state.models_dir / "cpsam_v2")  # the silent substitution
             if not path.exists():
-                state.downloaded.append(requested)
+                state.cellpose_downloaded.append(requested)
                 data = weights_bytes(requested)
                 # As cellpose.utils.download_url_to_file: a bar of cellpose.utils.tqdm.
                 bar_class = sys.modules["cellpose.utils"].tqdm
@@ -135,8 +144,10 @@ def modules(state):
     models._MODEL_URL = "https://huggingface.co/mouseland/cellpose-sam/resolve/main/"
     models.normalize_default = dict(state.normalize_default)
     models.CellposeModel = model_class(state)
-    if state.has_cpdino:
-        models.CPDINO = object
+    models.CPDINO = object  # 4.2.1.1 defines it whether or not DINOv3 imports
+    vit = types.ModuleType("cellpose.vit")
+    if state.has_cpdino:  # what cellpose.vit imports from DINOv3 when it can
+        vit.dinov3_vitl16 = vit.dinov3_vitb16 = object
     plot = types.ModuleType("cellpose.plot")
 
     def show_segmentation(fig, img, maski, flowi, channels=(0, 0), file_name=None):
@@ -149,7 +160,7 @@ def modules(state):
     utils = types.ModuleType("cellpose.utils")
     utils.tqdm = TextBar  # Cellpose's own: tqdm's plain text bar
     package = types.ModuleType("cellpose")
-    package.models, package.plot, package.utils = models, plot, utils
+    package.models, package.plot, package.utils, package.vit = models, plot, utils, vit
     torch = types.ModuleType("torch")
     torch.device = Device
     torch.cuda = SimpleNamespace(is_available=lambda: state.cuda)
@@ -159,6 +170,7 @@ def modules(state):
         "cellpose.models": models,
         "cellpose.plot": plot,
         "cellpose.utils": utils,
+        "cellpose.vit": vit,
         "torch": torch,
     }
 
@@ -169,8 +181,11 @@ def install(monkeypatch, tmp_path, **options):
     Switches (set on the returned state before loading): ``cuda`` / ``mps`` availability,
     ``substitute`` (the path every loaded model reports, whatever was asked), ``params`` /
     ``buffers`` (the device types of the network's tensors, when not the requested one),
-    ``no_net``, ``fail`` (a function of the stack that raises), ``version`` and
-    ``dinov3_commit``.
+    ``no_net``, ``fail`` (a function of the stack that raises), ``version``,
+    ``dinov3_commit`` (None: no DINOv3 installed; ``install_dinov3`` then installs the pinned
+    one and records it in ``dinov3_installs``), ``dinov3_present`` (a DINOv3 of unknown commit),
+    ``dinov3_import_problem`` (why ``dinov3.hub.backbones`` would not import; None: it would)
+    and ``download_fail`` (an exception the download raises).
     """
     models_dir = tmp_path / "cellpose_models"
     models_dir.mkdir(exist_ok=True)
@@ -180,6 +195,12 @@ def install(monkeypatch, tmp_path, **options):
         constructed=[],
         bars=[],
         downloaded=[],
+        urls=[],
+        cellpose_downloaded=[],
+        dinov3_installs=[],
+        dinov3_present=False,
+        dinov3_import_problem=None,
+        download_fail=None,
         models_dir=models_dir,
         cuda=False,
         mps=False,
@@ -192,6 +213,7 @@ def install(monkeypatch, tmp_path, **options):
         dinov3_commit=model_module.DINOV3_COMMIT,
         has_cpdino=True,
         cpdino_log=False,
+        on_construct=None,
         normalize_default={
             "lowhigh": None,
             "percentile": None,
@@ -217,7 +239,55 @@ def install(monkeypatch, tmp_path, **options):
         lambda name: state.version if name == "cellpose" else real_version(name),
     )
     monkeypatch.setattr(model_module, "installed_dinov3_commit", lambda: state.dinov3_commit)
+    fetching(monkeypatch, state)
     return state
+
+
+def fetching(monkeypatch, state):
+    """Stand in for DINOv3's installation and the weights download (nothing is fetched)."""
+    monkeypatch.setattr(
+        model_module,
+        "dinov3_present",
+        lambda: state.dinov3_commit is not None or state.dinov3_present,
+    )
+
+    def install_dinov3():
+        state.dinov3_installs.append(model_module.DINOV3_COMMIT)
+        state.dinov3_commit = model_module.DINOV3_COMMIT
+
+    monkeypatch.setattr(model_module, "install_dinov3", install_dinov3)
+    monkeypatch.setattr(model_module, "dinov3_import_problem", lambda: state.dinov3_import_problem)
+    monkeypatch.setattr(weights_module, "PINNED_WEIGHTS", fake_pins())
+    monkeypatch.setattr(weights_module, "_open_url", lambda url, timeout: served(state, url))
+
+
+def fake_pins():
+    """Return pins for the stand-in bytes of every built-in model (as the real pins are)."""
+    return {
+        name: weights_module.PinnedFile(
+            hashlib.sha256(weights_bytes(name)).hexdigest(), len(weights_bytes(name))
+        )
+        for name in BUILTINS
+    }
+
+
+class Response(io.BytesIO):
+    """What ``urlopen`` returns: a readable body with headers."""
+
+    def __init__(self, data, headers):
+        super().__init__(data)
+        self.headers = headers
+
+
+def served(state, url):
+    """Answer the brick's download of ``url`` with the stand-in bytes (never the network)."""
+    name = url.rsplit("/", 1)[-1]
+    state.downloaded.append(name)
+    state.urls.append(url)
+    if state.download_fail is not None:
+        raise state.download_fail
+    data = weights_bytes(name)
+    return Response(data, {"Content-Length": str(len(data))})
 
 
 def custom_model(tmp_path, name="my_model"):

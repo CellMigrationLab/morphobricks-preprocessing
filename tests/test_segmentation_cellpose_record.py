@@ -27,16 +27,24 @@ def stub(monkeypatch, tmp_path):
 
 
 def test_the_record_says_whether_the_weights_were_downloaded_and_from_where(stub, tmp_path):
-    url = "https://huggingface.co/mouseland/cellpose-sam/resolve/main/"
+    revision = "7c61431b5fbb078f3296754bd15d9f51b320f837"
+    url = f"https://huggingface.co/mouseland/cellpose-sam/resolve/{revision}/"
+    assert (cp.WEIGHTS_REPOSITORY, cp.WEIGHTS_REVISION) == ("mouseland/cellpose-sam", revision)
     on_disk = cp.load_model("cpsam", "cpu")
     assert (on_disk.downloaded, on_disk.source) == (False, url + "cpsam")
     (stub.models_dir / "cpsam").unlink()
-    fetched = cp.load_model("cpsam", "cpu", allow_download=True)
+    fetched = cp.load_model("cpsam", "cpu")
     assert (fetched.downloaded, fetched.source) == (True, url + "cpsam")
+    assert stub.urls == [url + "cpsam"]
     params = cp.inference_parameters(fetched, cp.Settings(), ("DNA",))
     assert params["weights_downloaded"] is True and params["weights_source"] == url + "cpsam"
+    assert params["weights_repository"] == "mouseland/cellpose-sam"
+    assert params["weights_revision"] == revision
+    assert params["dinov3_commit"] is None and params["dinov3_source"] is None
     own = cp.load_model(str(custom_model(tmp_path)), "cpu")
-    assert (own.downloaded, own.source) == (False, None)
+    assert (own.downloaded, own.source, own.repository, own.revision) == (False, None, None, None)
+    params = cp.inference_parameters(own, cp.Settings(), ("DNA",))
+    assert (params["weights_source"], params["weights_revision"]) == (None, None)
 
 
 def test_the_full_normalisation_is_read_from_cellpose_now_copied_and_recorded(run, stub):

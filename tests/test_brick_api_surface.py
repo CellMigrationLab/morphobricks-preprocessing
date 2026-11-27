@@ -360,6 +360,7 @@ def test_the_run_workers_are_a_run_mode_option():
         ("workers", "int | Literal['auto']", 1),
         ("max_ram", "int | None", None),
         ("checking", "Callable[[str, int, int, str], None] | None", None),
+        ("memo", "ContentMemo | None", None),  # one notebook press's SHA-256s (v0.9.1)
     ]
     assert package.RunMode is RunMode
     parameters = inspect.signature(run_experiment).parameters

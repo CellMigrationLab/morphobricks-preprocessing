@@ -43,6 +43,7 @@ from ..planes import (
     PlaneReadError,
     read_sample_plane,
 )
+from ..projection_run import MASKS_WARNING, masks_issue, with_masks
 from ..validation import ValidationIssue, error, has_errors, plural, warning
 from .recorded import normalise_relative_path
 
@@ -260,24 +261,39 @@ def preflight(
         lambda done, total, path: report("masks", done, total, path),
     )
     report("masks", 1, 1, "")
-    report("acquisitions", 0, 1, "")
+    # Each part of the comparison is reported, n of N (#579: the line seemed stuck).
+    total = len(ACQUISITION_PARTS)
+    report("acquisitions", 0, total, ACQUISITION_PARTS[0])
+    suggested = prefill_experiment_mapping(metadata)
+    report("acquisitions", 1, total, ACQUISITION_PARTS[1])
+    dataset = check_dataset(discovery, excluded=excluded)
+    report("acquisitions", 2, total, ACQUISITION_PARTS[2])
+    conversion = review_conversion(
+        root, discovery.images, images, [(m.image, m.path) for m in _mask_files(masks)]
+    )
     result = Preflight(
         discovery=discovery,
         metadata=metadata,
         excluded=excluded,
         exclusion_issues=tuple(_exclusion_issues(discovery, excluded)),
-        suggested_mapping=prefill_experiment_mapping(metadata),
-        dataset=check_dataset(discovery, excluded=excluded),
+        suggested_mapping=suggested,
+        dataset=dataset,
         masks=masks,
         calibration=calibration,
-        conversion=review_conversion(
-            root, discovery.images, images, [(m.image, m.path) for m in _mask_files(masks)]
-        ),
+        conversion=conversion,
         header_fingerprints=bound,
         headers_reused=reused,
     )
-    report("acquisitions", 1, 1, "")
+    report("acquisitions", total, total, "")
     return result
+
+
+ACQUISITION_PARTS = (
+    "the axes every header suggests",
+    "the images per condition and repeat",
+    "the named-axis copies and their record",
+)
+"""The parts of the phase ``acquisitions``, reported as n of N with their names (#579)."""
 
 
 def _mask_files(masks: MaskInventory | None) -> tuple[MaskFile, ...]:
@@ -370,7 +386,16 @@ def remasked(
         bind=bool(pre.header_fingerprints),
         progress=progress,
     )
-    return replace(pre, masks=masks)
+    conversion = pre.conversion
+    if conversion is not None and conversion.projection is not None:  # #560
+        # The projection's masks and its warning follow the masks found now; the rest of the
+        # review, of the same validated record, is kept (no copy is read again).
+        pairs = [(m.image, m.path) for m in _mask_files(masks)]
+        projection = with_masks(conversion.projection, pairs)
+        kept = [i for i in conversion.issues if i.code != MASKS_WARNING]
+        issues = (*kept, *masks_issue(projection))
+        conversion = replace(conversion, projection=projection, issues=issues)
+    return replace(pre, masks=masks, conversion=conversion)
 
 
 def _masks(
