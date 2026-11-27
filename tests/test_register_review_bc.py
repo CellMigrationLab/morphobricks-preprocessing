@@ -270,3 +270,22 @@ def test_an_unreadable_mask_header_is_a_failed_check_not_a_stop(tmp_path, stub, 
     assert STOPPED.split("(")[0] not in registration.status.value
     assert nb.masks_wait.value == ""  # "Reading mask headers" does not stay
     assert not registration.registered
+
+
+# F5: a press's memo is never reused by another, nor replaced by a nested one ------------------
+
+
+def test_a_press_inside_another_is_refused_and_the_memo_is_removed_after():
+    from types import SimpleNamespace
+
+    from morphobricks_preprocessing.content_memo import ContentMemo
+    from morphobricks_preprocessing.notebook_mask_register import PressInUseError, _pressed
+
+    app = SimpleNamespace()
+    first = ContentMemo()
+    with _pressed(app, first):
+        assert app._press_memo is first
+        with pytest.raises(PressInUseError), _pressed(app, ContentMemo()):
+            pass
+        assert app._press_memo is first  # not replaced
+    assert app._press_memo is None and app._press_expected is None

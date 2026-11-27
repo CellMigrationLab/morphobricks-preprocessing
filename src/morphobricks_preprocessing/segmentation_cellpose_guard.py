@@ -204,6 +204,29 @@ def no_cellpose_downloads(request: str) -> Iterator[None]:
             )
 
 
+def weight_devices(loaded: object) -> tuple[int, set[str]]:
+    """Return how many tensors the network holds and the device types of all of them.
+
+    Every parameter and every buffer of ``loaded.net`` counts. A model without a network that
+    lists its tensors, or one with none, proves nothing and is refused.
+    """
+    net = getattr(loaded, "net", None)
+    tensors = []
+    for listing in ("parameters", "buffers"):
+        method = getattr(net, listing, None)
+        if not callable(method):
+            raise SegmentationError(
+                "The loaded model's network does not list its weights, so the device they sit "
+                "on cannot be checked; refused."
+            )
+        tensors.extend(method())
+    if not tensors:
+        raise SegmentationError(
+            "The loaded model's network holds no weights, so the device cannot be checked; refused."
+        )
+    return len(tensors), {str(t.device.type) for t in tensors}
+
+
 __all__ = [
     "DOWNLOAD_REFUSED",
     "GUARDED",
@@ -212,4 +235,5 @@ __all__ = [
     "no_cellpose_downloads",
     "private_copy",
     "unchanged",
+    "weight_devices",
 ]

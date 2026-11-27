@@ -19,10 +19,14 @@ from test_folder_press import experiment
 pytest.importorskip("ipywidgets")
 pytest.importorskip("matplotlib")
 
-from morphobricks_preprocessing import notebook_progress, notebook_quick_scan  # noqa: E402
+from morphobricks_preprocessing import (  # noqa: E402  # noqa: E402
+    notebook_progress,
+    notebook_quick_scan,
+    notebook_tissue_mask,
+    run_inputs,
+    source_content,  # noqa: E402
+)
 from morphobricks_preprocessing import notebook_style as ui  # noqa: E402
-from morphobricks_preprocessing import notebook_tissue_mask, run_inputs  # noqa: E402
-from morphobricks_preprocessing import source_content  # noqa: E402
 from morphobricks_preprocessing.notebook_ui import PreprocessingNotebook  # noqa: E402
 
 # B4 --------------------------------------------------------------------------------------------
@@ -63,9 +67,7 @@ def test_typing_an_output_folder_with_a_run_opens_nothing(tmp_path, monkeypatch,
     assert nb.tissue_mask.pending is None
 
 
-def test_an_experiment_folder_whose_default_output_holds_a_run_opens_nothing(
-    tmp_path, monkeypatch
-):
+def test_an_experiment_folder_whose_default_output_holds_a_run_opens_nothing(tmp_path, monkeypatch):
     run = rgb_run(tmp_path / "run")
     default = run.experiment_root.parent / f"{run.experiment_root.name}_MorphoBricks_Preprocessing"
     shutil.copytree(run.output_folder, default)

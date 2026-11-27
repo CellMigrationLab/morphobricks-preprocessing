@@ -33,8 +33,9 @@ from .notebook_options import (
     serial_note,
 )
 from .notebook_plots import IntensityPanel
-from .notebook_progress import BUSY_NOTE, COUNTED_PHASES, PREPARING, Wait
+from .notebook_progress import BUSY_NOTE, COUNTED_PHASES, PREPARING
 from .notebook_render import _bins_help, _label, blocked_line, change_lines, issues_html
+from .notebook_run_attempt import _RunAttempt
 from .planes import DEFAULT_MEMORY_LIMIT
 from .report import issue_counts, rebuild_line
 from .run import RESTART, Preflight, RunMode, RunResult, run_experiment
@@ -46,7 +47,7 @@ from .validation import has_errors, plural
 READING = "Reading images"
 
 
-class _RunStep:
+class _RunStep(_RunAttempt):
     """Step 3: settings, what will happen, and the run."""
 
     # Step 3 ------------------------------------------------------------------------------
@@ -418,32 +419,6 @@ class _RunStep:
             self._idle(self.run_button, " Compute histograms", "play")
         self._finish_run(self.result)
         return self.result
-
-    def _clear_attempt(self) -> None:
-        """Forget the earlier press's result and what it showed: a new press has started.
-
-        #517, review bc F2: also when the press is refused before the run starts (settings
-        that cannot be used), so no earlier result stays as if it were this press's. The files
-        an earlier run wrote are not touched.
-        """
-        self.result = None
-        self.run_next.value = ""
-        self.run_checks.clear()
-        self.run_lock.hide()
-        self.run_report.clear()
-        self.run_tiles.value = self.run_issues.value = ""
-        ui.set_visible(self.progress, False)
-        self._mask_step_stale()
-
-    def _start_run(self) -> None:
-        """Clear the results of an earlier run and show that this one is starting."""
-        self._busy(self.run_button, "Computing…")
-        self._clear_attempt()  # #517: a new attempt; an earlier one's result is not this one's
-        self.run_next.value = BUSY_NOTE
-        ui.set_visible(self.progress, True)
-        self.progress.value, self.progress.max, self.progress.bar_style = 0, 1, "info"
-        self._run_wait = Wait(self.run_status, bar=False)  # the bar is the widget above
-        self._run_wait.start("Preparing: checking the folders and the image headers again")
 
     def _call_run(self, histogram_settings: HistogramSettings) -> RunResult:
         """Run the brick with the inputs of :meth:`_given_inputs` and the mode chosen."""

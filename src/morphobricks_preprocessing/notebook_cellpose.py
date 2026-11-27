@@ -372,11 +372,12 @@ class CellposeWorkflow:
             )
         )
         line = DownloadLine(self._show)  # shown only if something downloads
+        dino = getattr(self, "install_dinov3_on_load", True)  # False in the combined notebook
         with quiet_cellpose() as said:
             ok = False
             try:
                 with line.wait.ticking():
-                    loaded = cp.load_model(chosen, device, progress=line)
+                    loaded = cp.load_model(chosen, device, progress=line, install_dinov3=dino)
                 ok = True
             finally:
                 line.finish(ok)

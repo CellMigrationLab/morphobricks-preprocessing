@@ -18,7 +18,9 @@ consent to download that model's file (owner, issue #574), which
 :mod:`.segmentation_cellpose_weights` fetches from a pinned revision and checks against its
 pinned SHA-256 (a copy on disk too); Cellpose is then handed the file's absolute path. A
 ``cpdino`` model also needs the DINOv3 package (the code of its network; its weights are all in
-the Cellpose file), installed at :data:`DINOV3_COMMIT` on first use (:func:`ensure_dinov3`).
+the Cellpose file) at :data:`DINOV3_COMMIT`: installed by *Install Cellpose* in the combined
+notebook, never by a load there (owner, 27 Nov 2026); on first use (:func:`ensure_dinov3`)
+only where the caller asks (``install_dinov3``, the standalone Cellpose notebook).
 Whether the weights were downloaded, from which repository, revision and URL, and the file's
 SHA-256 go into the record.
 """
@@ -40,7 +42,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
 
-from .segmentation_cellpose_guard import no_cellpose_downloads, private_copy, unchanged
+from . import segmentation_cellpose_runtime as runtime
+from .segmentation_cellpose_guard import (
+    no_cellpose_downloads,
+    private_copy,
+    unchanged,
+    weight_devices,
+)
 from .segmentation_cellpose_weights import (
     WEIGHTS_REPOSITORY,
     WEIGHTS_REVISION,
@@ -63,6 +71,12 @@ DINOV3_COMMIT = "6876159a11b4df116f30f667f8c9888617df0751"
 """The DINOv3 commit installed for ``cpdino`` models: the head of its default branch on
 22 November 2026, **not verified against cpdino** (it is a pin, not a tested pairing). A model
 that needs DINOv3 runs only with exactly this commit installed."""
+DINOV3_MISSING = (
+    "{name} needs the DINOv3 code, which is not installed. In the Preprocessing and Cellpose "
+    "notebook, tick and press Install Cellpose in cell 4 (it installs the pinned DINOv3 code; "
+    "no weights), then press the button again; Preview and Segment never install code."
+)
+"""The refusal of a ``cpdino`` load without DINOv3 when the caller installs none (bc B7)."""
 DINOV3_LABEL = "Installing DINOv3 (the network code of the cpdino models)…"
 """What the notebook shows while DINOv3 is installed (:func:`ensure_dinov3`)."""
 DEVICE_NOTE = (
@@ -143,9 +157,14 @@ def installed_version(distribution: str) -> str | None:
 
 
 def _cellpose_models() -> ModuleType:
-    """Import ``cellpose.models`` of the pinned release, or refuse."""
+    """Import ``cellpose.models`` of the pinned release, or refuse (also one replaced since)."""
     _check_cellpose_version()
-    return importlib.import_module("cellpose.models")
+    fresh = "cellpose.vit" not in sys.modules  # DINOv3 is imported with it, once
+    models = importlib.import_module("cellpose.models")
+    if fresh:
+        runtime.remember_dinov3(installed_dinov3_commit())
+    runtime.check_loaded(installed_version)  # review bc B7: the loaded code is the installed
+    return models
 
 
 def _check_cellpose_version() -> None:
@@ -331,7 +350,7 @@ def dinov3_import_problem() -> str | None:
     return None
 
 
-def check_dinov3(models: ModuleType) -> str:
+def check_dinov3(models: ModuleType, model: str | None = None) -> str:
     """Return the commit of the installed DINOv3 if it is the pinned one, else refuse.
 
     Cellpose 4.2.1.1 imports DINOv3 once, when ``cellpose.vit`` is first imported (it then
@@ -369,6 +388,7 @@ def check_dinov3(models: ModuleType) -> str:
             "session), run the cells again and press the button again; nothing is downloaded "
             "again."
         )
+    runtime.check_dinov3_loaded(vit, model, commit)
     return commit
 
 
@@ -463,29 +483,6 @@ def _construct(models: ModuleType, request: str, device: str) -> object:
         ) from exc
 
 
-def _weight_devices(loaded: object) -> tuple[int, set[str]]:
-    """Return how many tensors the network holds and the device types of all of them.
-
-    Every parameter and every buffer of ``loaded.net`` counts. A model without a network that
-    lists its tensors, or one with none, proves nothing and is refused.
-    """
-    net = getattr(loaded, "net", None)
-    tensors = []
-    for listing in ("parameters", "buffers"):
-        method = getattr(net, listing, None)
-        if not callable(method):
-            raise SegmentationError(
-                "The loaded model's network does not list its weights, so the device they sit "
-                "on cannot be checked; refused."
-            )
-        tensors.extend(method())
-    if not tensors:
-        raise SegmentationError(
-            "The loaded model's network holds no weights, so the device cannot be checked; refused."
-        )
-    return len(tensors), {str(t.device.type) for t in tensors}
-
-
 def _verify(loaded: object, expected: Path, device: str, choice: ModelChoice) -> None:
     """Refuse a model that is not the file or device asked for."""
     got = os.fspath(getattr(loaded, "pretrained_model", ""))
@@ -494,7 +491,7 @@ def _verify(loaded: object, expected: Path, device: str, choice: ModelChoice) ->
             f"Cellpose loaded {got or 'an unknown file'} instead of {expected} for {choice.name}: "
             "it substituted another model. Nothing was segmented."
         )
-    count, found = _weight_devices(loaded)
+    count, found = weight_devices(loaded)
     if found != {device}:
         raise SegmentationError(
             f"The device {device} was asked for but weights of the model sit on "
@@ -512,27 +509,32 @@ def _identity(path: Path) -> tuple[int, ...] | None:
 
 
 def load_model(
-    model: str | os.PathLike, device: str, *, progress: Progress | None = None
+    model: str | os.PathLike,
+    device: str,
+    *,
+    progress: Progress | None = None,
+    install_dinov3: bool = False,
 ) -> LoadedModel:
     """Load a Cellpose model, verified to be the weights file and device asked for.
 
-    The order is: the model and device are validated; a DINOv3 model gets DINOv3 installed at
-    the pinned commit if none is (before Cellpose is imported); Cellpose's version is checked;
-    a built-in model's weights are downloaded if missing and checked against their pinned
-    SHA-256 (:func:`.segmentation_cellpose_weights.fetch_weights`); a DINOv3 model needs the
-    pinned DINOv3; then the model is loaded from that file's absolute path and **verified**
-    (the weights file it reports is the one asked for; every parameter and buffer of the
-    network sits on the stated device type). The file's identity (device, inode, size,
-    modification time) taken when it was hashed must be the same right before Cellpose opens it
-    and after Cellpose loaded it (and, for a model file of one's own, after it was hashed):
-    Cellpose would download ``cpsam_v2`` from its moving branch for a path that is gone, and a
-    file replaced in between is not the one recorded. Choosing the model and calling this is
-    the consent to those downloads; nothing else is fetched and no other model is used.
+    The model and device are validated; Cellpose's version is checked; a built-in model's
+    weights are downloaded if missing and checked against their pinned SHA-256
+    (:func:`.segmentation_cellpose_weights.fetch_weights`); a DINOv3 model needs the pinned
+    DINOv3; the loaded Cellpose, torch and DINOv3 must be the installed ones
+    (:mod:`.segmentation_cellpose_runtime`). Cellpose then loads a private copy of the file,
+    hashed as it is made, while it may fetch nothing itself
+    (:mod:`.segmentation_cellpose_guard`), and the model is **verified** (the file it reports is
+    that copy; every parameter and buffer sits on the stated device type). Choosing the model
+    and calling this is the consent to download its weights only (#574).
 
     Parameters
     ----------
     progress
         Told ``(label, done, total)`` while weights download (bytes) or DINOv3 installs.
+    install_dinov3
+        Install DINOv3 here when none is (the standalone Cellpose notebook's rule). False (the
+        default; the combined notebook, owner 27 Nov 2026): a DINOv3 model without DINOv3 is
+        refused, naming Install Cellpose.
 
     Raises
     ------
@@ -546,9 +548,11 @@ def load_model(
     check_device(device)
     dino = choice.name in DINO_MODELS
     _check_cellpose_version()
-    installed = ensure_dinov3(progress) if dino else False
+    installed = ensure_dinov3(progress) if dino and install_dinov3 else False
+    if dino and not dinov3_present():  # never installed by Preview or Run (owner, 27 Nov)
+        raise SegmentationError(DINOV3_MISSING.format(name=choice.name))
     models = _cellpose_models()
-    commit = check_dinov3(models) if dino else None
+    commit = check_dinov3(models, choice.name) if dino else None
     if choice.path is not None:
         expected, weights = choice.path, None
         identity = _identity(expected)

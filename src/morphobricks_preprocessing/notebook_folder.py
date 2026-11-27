@@ -14,6 +14,7 @@ from . import notebook_style as ui
 from .dataset import CONSISTENCY_CODES
 from .discovery import check_output_folder, default_output_folder
 from .manifest import MANIFEST_FILENAME
+from .notebook_folder_inputs import FoldersEditedError, check_inputs, expected_check_failure
 from .notebook_folder_previews import DRAWN_AT_ONCE, LabelPreviews
 from .notebook_options import _WIDE, EXCLUDABLE_CODES
 from .notebook_progress import Wait
@@ -60,26 +61,6 @@ def check_progress(wait: Wait) -> Callable[[str, int, int, str], None]:
             wait.step(done, total, path)
 
     return report
-
-
-def expected_check_failure(exc: BaseException) -> bool:
-    """Return True for a failure the folder check reports and survives (issue #101).
-
-    A storage error (``OSError``: a Google Drive that stopped answering, a folder gone) or
-    one of this package's coded refusals (an ``Exception`` with a ``code``); anything else is
-    a programming error or an interrupt, raised after the earlier check is cleared.
-    ``SystemExit("message")`` has a str ``code`` too, but it is not an ``Exception``: it
-    propagates.
-    """
-    return isinstance(exc, OSError) or (
-        isinstance(exc, Exception) and isinstance(getattr(exc, "code", None), str)
-    )
-
-
-class FoldersEditedError(Exception):
-    """The folder boxes were edited while a check read them (review bc B5): not used."""
-
-    code = "folders_edited_during_check"
 
 
 class _FolderStep:
@@ -319,12 +300,7 @@ class _FolderStep:
 
     def _check_inputs(self) -> tuple:
         """Return the folders and exclusions as typed now: what a folder check is of."""
-        return (
-            ui.clean_path(self.folder.value),
-            self._output_folder(),
-            ui.clean_path(self.masks_folder.value),
-            tuple(self._excluded()),
-        )
+        return check_inputs(self)
 
     def _show_check(self, folder: str, pre: Preflight) -> None:
         """Make ``pre`` the check on screen and show it on every step (a hook of the stepper)."""

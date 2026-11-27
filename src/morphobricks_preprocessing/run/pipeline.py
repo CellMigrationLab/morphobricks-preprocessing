@@ -270,15 +270,7 @@ def _locked_run(given: GivenInputs, output: Path, options: RunOptions) -> RunRes
         previous_root=None if recorded is None else Path(recorded.experiment_root).as_posix(),
         changes=inputs.changes,
     )
-    if options.expected is not None:  # before any pixel is read (review bc B2)
-        checked.issues.extend(
-            expected_issues(
-                options.expected,
-                inputs.experiment_root,
-                pre.header_fingerprints,
-                verify_content=bool(inputs.verify_content),
-            )
-        )
+    checked.issues.extend(_not_expected(options, inputs, pre.header_fingerprints))  # bc B2
     if has_errors(checked.issues):
         return _stop(run, base, None)
     if inputs.verify_content and pre.masks is not None:
@@ -298,18 +290,7 @@ def _locked_run(given: GivenInputs, output: Path, options: RunOptions) -> RunRes
     rows = compute_rows(
         pre, checked, settings, output, previous, options.mode, reporting, options.workers
     )
-    checked.issues.extend(_read_issues(rows, settings))
-    if options.expected is not None:  # the entries it would publish (review bc B2)
-        fingerprints = {rel: Fingerprint.recorded(e) for rel, e in rows.entries.items()}
-        checked.issues.extend(
-            expected_issues(
-                options.expected,
-                inputs.experiment_root,
-                fingerprints,
-                verify_content=bool(inputs.verify_content),
-                entries=rows.entries,
-            )
-        )
+    checked.issues.extend(_read_issues(rows, settings, options, inputs))
     if rows.refused or rows.changed or rows.failed or has_errors(checked.issues):
         return _stop(run, base, rows)
     checked.issues.extend(_pixel_issues(rows.records))
@@ -320,9 +301,40 @@ def _locked_run(given: GivenInputs, output: Path, options: RunOptions) -> RunRes
     return _publish(run, base, rows, settings)
 
 
-def _read_issues(rows: Rows, settings: RunSettings) -> list[ValidationIssue]:
-    """Return the errors of reading the images: refused for ``max_ram``, changed, unreadable."""
+def _not_expected(
+    options: RunOptions,
+    inputs: object,
+    fingerprints: Mapping[str, Fingerprint | None] | None,
+    entries: Mapping[str, object] | None = None,
+) -> list[ValidationIssue]:
+    """Return ``source_not_segmented`` when the run's images are not the expected generation.
+
+    Review bc B2 (:mod:`.expected`): checked on the headers before any pixel is read, then on
+    the entries the run would publish; nothing without ``RunMode(expected=...)``.
+    """
+    if options.expected is None:
+        return []
+    if fingerprints is None:  # the entries' own
+        fingerprints = {rel: Fingerprint.recorded(e) for rel, e in entries.items()}
+    return expected_issues(
+        options.expected,
+        inputs.experiment_root,
+        fingerprints,
+        verify_content=bool(inputs.verify_content),
+        entries=entries,
+    )
+
+
+def _read_issues(
+    rows: Rows, settings: RunSettings, options: RunOptions, inputs: object
+) -> list[ValidationIssue]:
+    """Return the errors of reading the images: refused for ``max_ram``, changed, unreadable.
+
+    And ``source_not_segmented`` when the entries the run would publish are not the expected
+    generation (review bc B2, :func:`_not_expected`).
+    """
     issues = [] if rows.refused is None else [rows.refused]
+    issues.extend(_not_expected(options, inputs, None, rows.entries))
     if rows.changed:
         compared = "fingerprint or content" if settings.verify_content else "fingerprint"
         issues.append(changed_issue(list(rows.changed), compared))

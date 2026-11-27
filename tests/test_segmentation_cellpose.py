@@ -12,10 +12,9 @@ import hashlib
 import json
 import subprocess
 import sys
-
-import numpy as np
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from cellpose_stub import custom_model, install, weights_bytes
@@ -260,14 +259,19 @@ def test_a_dino_model_refuses_a_dinov3_of_another_commit_and_does_not_replace_it
     cp.load_model("cpsam_v2", "cpu")  # a SAM model needs no DINOv3 at all
 
 
-def test_a_dino_model_installs_the_pinned_dinov3_when_none_is_there(stub):
+def test_a_dino_model_installs_the_pinned_dinov3_when_none_is_there_if_asked(stub):
+    # The standalone Cellpose notebook's rule (install_dinov3=True); the combined notebook
+    # never installs code on a load (review bc B7, tests/test_cellpose_install_bc.py).
     stub.dinov3_commit = None
     told = []
-    loaded = cp.load_model("cpdino", "cpu", progress=lambda *a: told.append(a))
+    with pytest.raises(SegmentationError, match="needs the DINOv3 code"):
+        cp.load_model("cpdino", "cpu")
+    assert stub.dinov3_installs == []
+    loaded = cp.load_model("cpdino", "cpu", progress=lambda *a: told.append(a), install_dinov3=True)
     assert stub.dinov3_installs == [cp.DINOV3_COMMIT] and loaded.dinov3_installed
     assert told[0] == (cp.DINOV3_LABEL, 0, 0)
     assert loaded.dinov3_commit == cp.DINOV3_COMMIT
-    again = cp.load_model("cpdino", "cpu")
+    again = cp.load_model("cpdino", "cpu", install_dinov3=True)
     assert stub.dinov3_installs == [cp.DINOV3_COMMIT] and not again.dinov3_installed
     stub.dinov3_commit = None
     cp.load_model("cpsam_v2", "cpu")  # a SAM model never installs it
