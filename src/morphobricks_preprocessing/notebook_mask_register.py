@@ -58,6 +58,7 @@ from .notebook_shown_first import ShownFirst
 from .open_checks import Checking, quiet
 from .register_checks import (
     CHANGED,
+    OTHER_EXPERIMENT,
     _collision,
     _only_written,
     _other_experiment,
@@ -367,6 +368,12 @@ class MaskRegistration(ShownFirst, widgets.VBox):
             why = refusal(self.app, self.segmentation, checking=wait.checking, memo=memo)
         if why:
             return self._stop(why)
+        app, inputs = self.app, self.segmentation.workflow.inputs
+        segmented, pre = Path(inputs.experiment_root).resolve(), app.preflight
+        if pre is not None and Path(pre.discovery.root).resolve() != segmented:
+            # Another experiment in cell 3: refused before any folder check writes its report.
+            held = Path(pre.discovery.root).resolve()
+            return self._stop(OTHER_EXPERIMENT.format(app_root=held, segmented=segmented))
         reasons: list[str] = []
         self._check_failure = ""
         if not self._check_folders(wait, reasons):  # its reason is drawn in cell 3: say it here
