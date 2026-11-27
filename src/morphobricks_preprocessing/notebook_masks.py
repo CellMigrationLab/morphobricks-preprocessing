@@ -165,11 +165,13 @@ class _MasksCard:
         output = self._output_folder() or default_output_folder(root)
         wait = Wait(self.masks_wait)
         wait.start("Reading mask headers")
-        with self.log.attached():
-            self.preflight = remasked(
-                self.preflight, plan.folder, plan.mask_axes or None, output, wait.step
-            )
-        self.masks_wait.value = ""
+        try:
+            with self.log.attached():
+                self.preflight = remasked(
+                    self.preflight, plan.folder, plan.mask_axes or None, output, wait.step
+                )
+        finally:  # a header that cannot be read leaves no "Reading mask headers" line behind
+            self.masks_wait.value = ""
         self._paired_masks = _pairing(plan)
         self._show_issue_summary()
         self._refresh_run_step()

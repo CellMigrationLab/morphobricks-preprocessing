@@ -91,8 +91,15 @@ def model_class(state):
 
     class Model:
         def __init__(self, gpu=False, pretrained_model="cpsam_v2", device=None, **kwargs):
+            given = Path(pretrained_model)
             state.constructed.append(
-                SimpleNamespace(gpu=gpu, pretrained_model=pretrained_model, device=device, **kwargs)
+                SimpleNamespace(
+                    gpu=gpu,
+                    pretrained_model=pretrained_model,
+                    device=device,
+                    loaded_bytes=given.read_bytes() if given.is_file() else None,
+                    **kwargs,
+                )
             )
             if state.on_construct is not None:  # something else touches the file meanwhile
                 state.on_construct(pretrained_model)
@@ -106,25 +113,18 @@ def model_class(state):
 
         @staticmethod
         def _resolve(requested):
+            # As 4.2.1.1: a path that exists is used; else a built-in name, or cpsam_v2 in
+            # place of anything else, through cache_model_path (looked up on the module, so
+            # that a guard replacing it is seen).
             if Path(requested).exists():
                 return requested
-            path = state.models_dir / requested
+            cache = sys.modules["cellpose.models"].cache_model_path
             if requested not in BUILTINS:
                 logging.getLogger("cellpose.models").warning(
                     "pretrained model %s not found, using default model", requested
                 )
-                return str(state.models_dir / "cpsam_v2")  # the silent substitution
-            if not path.exists():
-                state.cellpose_downloaded.append(requested)
-                data = weights_bytes(requested)
-                # As cellpose.utils.download_url_to_file: a bar of cellpose.utils.tqdm.
-                bar_class = sys.modules["cellpose.utils"].tqdm
-                state.bars.append(bar_class)
-                with bar_class(total=len(data), unit="B", unit_scale=True) as bar:
-                    bar.update(len(data))
-                logging.getLogger("cellpose.models").info("Downloading: %s", requested)
-                path.write_bytes(data)
-            return str(path)
+                return cache("cpsam_v2")  # the silent substitution
+            return cache(requested)
 
         def eval(self, x, **kwargs):
             state.calls.append(SimpleNamespace(x=np.array(x), kwargs=kwargs))
@@ -137,9 +137,42 @@ def model_class(state):
     return Model
 
 
+def cache_model_path(state):
+    """Return 4.2.1.1's ``cache_model_path``: the cached file, downloaded when it is missing."""
+
+    def cache(name):
+        path = state.models_dir / name
+        if not path.exists():
+            sys.modules["cellpose.utils"].download_url_to_file(
+                sys.modules["cellpose.models"]._MODEL_URL + name, str(path), progress=True
+            )
+        return str(path)
+
+    return cache
+
+
+def download_url_to_file(state):
+    """Return 4.2.1.1's ``cellpose.utils.download_url_to_file`` (writes the stand-in bytes)."""
+
+    def download(url, dst, progress=True):
+        name = url.rsplit("/", 1)[-1]
+        state.cellpose_downloaded.append(name)
+        data = weights_bytes(name)
+        # As cellpose.utils.download_url_to_file: a bar of cellpose.utils.tqdm.
+        bar_class = sys.modules["cellpose.utils"].tqdm
+        state.bars.append(bar_class)
+        with bar_class(total=len(data), unit="B", unit_scale=True) as bar:
+            bar.update(len(data))
+        logging.getLogger("cellpose.models").info("Downloading: %s", name)
+        Path(dst).write_bytes(data)
+
+    return download
+
+
 def modules(state):
     """Return the fake ``cellpose``, ``cellpose.models`` and ``torch`` modules."""
     models = types.ModuleType("cellpose.models")
+    models.cache_model_path = cache_model_path(state)
     models.MODEL_DIR = state.models_dir
     models._MODEL_URL = "https://huggingface.co/mouseland/cellpose-sam/resolve/main/"
     models.normalize_default = dict(state.normalize_default)
@@ -159,6 +192,7 @@ def modules(state):
     plot.show_segmentation = show_segmentation
     utils = types.ModuleType("cellpose.utils")
     utils.tqdm = TextBar  # Cellpose's own: tqdm's plain text bar
+    utils.download_url_to_file = download_url_to_file(state)
     package = types.ModuleType("cellpose")
     package.models, package.plot, package.utils, package.vit = models, plot, utils, vit
     torch = types.ModuleType("torch")

@@ -61,6 +61,7 @@ def pip(monkeypatch, stub):
         def __init__(self, command, **options):
             assert options["stderr"] is subprocess.STDOUT and options["text"]
             state.commands.append(command)
+            self.command = command
             self.stdout, self.returncode = iter(state.lines), None
 
         def __enter__(self):
@@ -68,9 +69,20 @@ def pip(monkeypatch, stub):
 
         def __exit__(self, *exc):
             self.returncode = state.returncode
-            if not state.returncode:
-                stub.version = "4.2.1.1"
+            if state.returncode:
+                return
+            if self.command == model.dinov3_install_command():
+                stub.dinov3_commit = model.DINOV3_COMMIT
+                return
+            stub.version = "4.2.1.1"
+            for name, module in hidden.items():  # installed: importable now
+                monkeypatch.setitem(sys.modules, name, module)
 
+    # Cellpose is not installed, so it was never imported (review bc B7: the restart check
+    # after a DINOv3 installation looks at what is imported).
+    hidden = {n: m for n, m in sys.modules.items() if n == "cellpose" or n.startswith("cellpose.")}
+    for name in hidden:
+        monkeypatch.delitem(sys.modules, name)
     monkeypatch.setattr(model, "installed_version", version)
     monkeypatch.setattr(cellpose_install.subprocess, "Popen", Pip)
     monkeypatch.setattr(cellpose_install.subprocess, "run", None)  # never the silent run

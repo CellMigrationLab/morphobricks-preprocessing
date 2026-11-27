@@ -15,6 +15,14 @@ only once, when its network module is first imported, so a DINOv3 installed late
 ``cpdino`` load after a ``cpsam`` one) needed a runtime restart (owner's Colab test of v0.9.0).
 A DINOv3 already installed, at any commit, is left as it is; the model step checks its commit.
 
+v0.9.1 (external review bc of #582, B7): readiness is two things, Cellpose installed and the
+DINOv3 code installed (:func:`dinov3_ready`). With Cellpose installed but no DINOv3, the
+combined notebook still offers the ticked installation, which then installs the DINOv3 code
+only (owner, 27 Nov 2026: the DINOv3 code installs with *Install Cellpose*, never from Preview
+or Run); the SAM models work without it. A restart is asked for when ``pip`` changed Cellpose,
+torch or DINOv3 while the kernel has it loaded (:data:`LOADED_CODE`), and when DINOv3 was
+installed after Cellpose was imported (Cellpose imports DINOv3 once).
+
 ``pip``'s lines are passed on as it prints them (``output``), so the notebook shows its
 progress (owner Colab test, #574), and :func:`installed_distributions` / :func:`install_changes`
 say what it installed. Nothing here imports Cellpose or torch.
@@ -36,6 +44,10 @@ from .segmentation_record import SegmentationError
 LOADED_BY_KERNEL = {"numpy": "numpy", "opencv-python": "cv2", "opencv-python-headless": "cv2"}
 """Packages ``pip`` may upgrade under a running kernel, each with the module that stays loaded
 (as in the Cellpose notebook's install cell)."""
+LOADED_CODE = {"cellpose": "cellpose", "torch": "torch"}
+"""Also checked here (review bc B7): Cellpose and PyTorch replaced while the kernel has them
+loaded. Kept apart from :data:`LOADED_BY_KERNEL`, the list shared with the Cellpose
+notebook's install cell (which moves only in a release)."""
 NOT_TICKED = (
     "Tick the installation first: Cellpose {version} and PyTorch are large downloads and are "
     "installed only when you ask."
@@ -64,6 +76,11 @@ def cellpose_ready() -> bool:
     return model.installed_version("cellpose") == CELLPOSE_VERSION
 
 
+def dinov3_ready() -> bool:
+    """Return whether a DINOv3 is installed (its commit is checked when a model loads)."""
+    return model.dinov3_present()
+
+
 def cellpose_install_command() -> list[str]:
     """Return the ``pip`` command that installs the pinned Cellpose release (with PyTorch)."""
     return [
@@ -80,7 +97,7 @@ def _changed(before: Mapping[str, str | None]) -> list[str]:
     """Return each package of :data:`LOADED_BY_KERNEL` pip changed while its module is loaded."""
     return [
         f"{name} {before[name]} -> {model.installed_version(name)}"
-        for name, module in LOADED_BY_KERNEL.items()
+        for name, module in {**LOADED_BY_KERNEL, **LOADED_CODE}.items()
         if before[name] and model.installed_version(name) != before[name] and module in sys.modules
     ]
 
@@ -162,12 +179,13 @@ def install_cellpose(ticked: bool, output: Callable[[str], object] = print) -> s
         included: Cellpose is then not installed), when it changed a package
         the kernel had loaded (restart the runtime), or when another version is still installed.
     """
-    if cellpose_ready():
+    if cellpose_ready() and dinov3_ready():
         return CELLPOSE_VERSION
     if not ticked:
         raise SegmentationError(NOT_TICKED.format(version=CELLPOSE_VERSION))
-    before = {name: model.installed_version(name) for name in LOADED_BY_KERNEL}
-    if not model.dinov3_present():
+    before = {name: model.installed_version(name) for name in {**LOADED_BY_KERNEL, **LOADED_CODE}}
+    dinov3_before = model.installed_dinov3_commit()
+    if not dinov3_ready():
         try:
             _pip(model.dinov3_install_command(), output)
         except (subprocess.CalledProcessError, OSError) as exc:
@@ -177,6 +195,13 @@ def install_cellpose(ticked: bool, output: Callable[[str], object] = print) -> s
                 "output and internet access, then press the button again."
             ) from exc
         importlib.invalidate_caches()
+        if "cellpose.vit" in sys.modules:  # Cellpose imported DINOv3 (none) already: once
+            raise SegmentationError(
+                RESTART.format(changed="DINOv3 (installed now)", again=AGAIN)
+                + " Until then the cpsam models work; the cpdino ones need the restart."
+            )
+    if cellpose_ready():  # only DINOv3 was missing
+        return _checked_after(before, dinov3_before)
     try:
         _pip(cellpose_install_command(), output)
     except (subprocess.CalledProcessError, OSError) as exc:
@@ -185,7 +210,15 @@ def install_cellpose(ticked: bool, output: Callable[[str], object] = print) -> s
             "output and internet access, then press the button again."
         ) from exc
     importlib.invalidate_caches()
+    return _checked_after(before, dinov3_before)
+
+
+def _checked_after(before: Mapping[str, str | None], dinov3_before: str | None) -> str:
+    """Refuse an installation that replaced loaded code; return the Cellpose version installed."""
     changed = _changed(before)
+    dinov3_now = model.installed_dinov3_commit()
+    if "dinov3" in sys.modules and dinov3_before and dinov3_now != dinov3_before:
+        changed.append(f"DINOv3 {dinov3_before[:12]} -> {(dinov3_now or 'none')[:12]}")
     if changed:
         raise SegmentationError(RESTART.format(changed=", ".join(changed), again=AGAIN))
     found = model.installed_version("cellpose")
@@ -199,8 +232,10 @@ def install_cellpose(ticked: bool, output: Callable[[str], object] = print) -> s
 
 __all__ = [
     "LOADED_BY_KERNEL",
+    "LOADED_CODE",
     "cellpose_install_command",
     "cellpose_ready",
+    "dinov3_ready",
     "install_cellpose",
     "install_changes",
     "installed_distributions",

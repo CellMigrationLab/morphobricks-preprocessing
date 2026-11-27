@@ -12,6 +12,7 @@ import hashlib
 import json
 import subprocess
 import sys
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -98,12 +99,19 @@ def test_a_custom_model_is_an_existing_file_not_a_folder(stub, tmp_path):
         cp.choose_model(path.parent / "missing")
 
 
+def given_a_private_copy(built, canonical, data):
+    """Cellpose was given the absolute path of a private copy (review bc B6) of ``data``."""
+    given = Path(built.pretrained_model)
+    assert given.is_absolute() and given.name == canonical.name  # no name Cellpose resolves
+    assert given != canonical and built.loaded_bytes == data
+    assert not given.exists()  # deleted once loaded
+
+
 def test_a_built_in_model_on_disk_is_loaded_by_its_absolute_path(stub):
     loaded = cp.load_model("cpsam", "cpu")
     (built,) = stub.constructed
-    assert built.pretrained_model == str(
-        stub.models_dir / "cpsam"
-    )  # no name Cellpose could resolve
+    given_a_private_copy(built, stub.models_dir / "cpsam", weights_bytes("cpsam"))
+    assert loaded.path == stub.models_dir / "cpsam"  # recorded: the checked file
     assert (loaded.name, loaded.file, loaded.device, loaded.tile_size) == (
         "cpsam",
         "cpsam",
@@ -115,7 +123,7 @@ def test_a_built_in_model_on_disk_is_loaded_by_its_absolute_path(stub):
 def test_a_custom_model_is_loaded_by_its_absolute_path_and_recorded_by_it(stub, tmp_path):
     path = custom_model(tmp_path)
     loaded = cp.load_model(str(path), "cpu")
-    assert stub.constructed[0].pretrained_model == str(path.resolve())
+    given_a_private_copy(stub.constructed[0], path.resolve(), weights_bytes("my_model"))
     assert loaded.name == "my_model" and loaded.file == str(path.resolve())
     assert loaded.sha256 == hashlib.sha256(weights_bytes("my_model")).hexdigest()
 
@@ -193,7 +201,7 @@ def test_weights_not_on_disk_are_downloaded_on_first_use_and_given_to_cellpose_b
     (stub.models_dir / "cpsam").unlink()
     loaded = cp.load_model("cpsam", "cpu")
     assert stub.downloaded == ["cpsam"] and stub.cellpose_downloaded == []
-    assert stub.constructed[0].pretrained_model == str(stub.models_dir / "cpsam")
+    given_a_private_copy(stub.constructed[0], stub.models_dir / "cpsam", weights_bytes("cpsam"))
     assert loaded.sha256 == hashlib.sha256(weights_bytes("cpsam")).hexdigest()
     assert loaded.downloaded and (stub.models_dir / "cpsam").read_bytes() == weights_bytes("cpsam")
     cp.load_model("cpsam", "cpu")
@@ -206,7 +214,7 @@ def test_a_file_in_the_working_folder_cannot_shadow_the_weights(stub, tmp_path, 
     monkeypatch.chdir(tmp_path)
     loaded = cp.load_model("cpsam", "cpu")
     assert loaded.path == stub.models_dir / "cpsam"
-    assert stub.constructed[0].pretrained_model == str(stub.models_dir / "cpsam")
+    given_a_private_copy(stub.constructed[0], stub.models_dir / "cpsam", weights_bytes("cpsam"))
     assert (tmp_path / "cpsam").read_bytes() == b"not the model"
 
 
@@ -251,14 +259,19 @@ def test_a_dino_model_refuses_a_dinov3_of_another_commit_and_does_not_replace_it
     cp.load_model("cpsam_v2", "cpu")  # a SAM model needs no DINOv3 at all
 
 
-def test_a_dino_model_installs_the_pinned_dinov3_when_none_is_there(stub):
+def test_a_dino_model_installs_the_pinned_dinov3_when_none_is_there_if_asked(stub):
+    # The standalone Cellpose notebook's rule (install_dinov3=True); the combined notebook
+    # never installs code on a load (review bc B7, tests/test_cellpose_install_bc.py).
     stub.dinov3_commit = None
     told = []
-    loaded = cp.load_model("cpdino", "cpu", progress=lambda *a: told.append(a))
+    with pytest.raises(SegmentationError, match="needs the DINOv3 code"):
+        cp.load_model("cpdino", "cpu")
+    assert stub.dinov3_installs == []
+    loaded = cp.load_model("cpdino", "cpu", progress=lambda *a: told.append(a), install_dinov3=True)
     assert stub.dinov3_installs == [cp.DINOV3_COMMIT] and loaded.dinov3_installed
     assert told[0] == (cp.DINOV3_LABEL, 0, 0)
     assert loaded.dinov3_commit == cp.DINOV3_COMMIT
-    again = cp.load_model("cpdino", "cpu")
+    again = cp.load_model("cpdino", "cpu", install_dinov3=True)
     assert stub.dinov3_installs == [cp.DINOV3_COMMIT] and not again.dinov3_installed
     stub.dinov3_commit = None
     cp.load_model("cpsam_v2", "cpu")  # a SAM model never installs it

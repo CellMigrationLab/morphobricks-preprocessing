@@ -109,7 +109,7 @@ class WeightsFile:
     repository: str = WEIGHTS_REPOSITORY
     revision: str = WEIGHTS_REVISION
     downloaded: bool = False
-    identity: tuple[int, int, int, int] | None = None
+    identity: tuple[int, ...] | None = None
 
 
 def weights_url(name: str) -> str:
@@ -147,12 +147,15 @@ def _refusal(name: str, url: str, why: str) -> SegmentationError:
     )
 
 
-def file_identity(path: str | os.PathLike) -> tuple[int, int, int, int]:
-    """Return a file's identity now: its device, inode, size and modification time (ns).
+def file_identity(path: str | os.PathLike) -> tuple[int, ...]:
+    """Return a file's identity now: device, inode, size, modification and status-change times.
 
     Taken when the file is hashed and compared after Cellpose loads it
     (:func:`.segmentation_cellpose_model.load_model`): a file replaced, removed or written to
-    in between is another file than the one hashed.
+    in between is another file than the one hashed. The status-change time (ns) is part of it
+    since v0.9.1 (review bc B6): a rewrite in place with the size and modification time set
+    back moves it on POSIX. What Cellpose loads is a private copy hashed as it is made
+    (:mod:`.segmentation_cellpose_guard`), so the identity is not the only evidence.
 
     Raises
     ------
@@ -160,7 +163,7 @@ def file_identity(path: str | os.PathLike) -> tuple[int, int, int, int]:
         When the file cannot be read (it is gone, say).
     """
     found = os.stat(path)
-    return (found.st_dev, found.st_ino, found.st_size, found.st_mtime_ns)
+    return (found.st_dev, found.st_ino, found.st_size, found.st_mtime_ns, found.st_ctime_ns)
 
 
 def fetch_weights(

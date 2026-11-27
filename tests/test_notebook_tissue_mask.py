@@ -144,7 +144,12 @@ def test_the_card_sits_beside_convert_a_mask_and_shows_only_for_an_rgb_run(tmp_p
     assert not ui.is_visible(nb.tissue_mask.card)
     nb.output.value = str(run.output_folder)
     nb._refresh_mask_step()
+    # Review bc B4: an edit opens nothing; the card offers to open the run in the folder.
+    assert not nb.tissue_mask.has_rgb and ui.is_visible(nb.tissue_mask.card)
+    assert ui.is_visible(nb.tissue_mask.open_button)
+    nb.tissue_mask.open_button.click()
     assert nb.tissue_mask.has_rgb and ui.is_visible(nb.tissue_mask.card)
+    assert not ui.is_visible(nb.tissue_mask.open_button)
 
 
 def test_a_mask_id_with_spaces_keeps_the_button_disabled_and_writes_nothing(tmp_path):

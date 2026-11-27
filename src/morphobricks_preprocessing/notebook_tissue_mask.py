@@ -17,6 +17,11 @@ least one unit declared ``rgb``. It calls the same functions as the command line
 
 A disabled button names what blocks it; a refusal during the write is a red card naming the
 position. Nothing is computed until the user clicks.
+
+v0.9.1 (external review bc of #582, B4): the run is opened (every image checked, in a strict run
+hashed) only on a press: after **Run** wrote it, or on this card's own **Open the run** for a
+run already in the output folder. Typing or changing the output folder only forgets the run the
+card showed (#579: a folder box edit reads nothing but the earlier run's manifest).
 """
 
 from __future__ import annotations
@@ -110,8 +115,16 @@ class TissueMaskCard:
         self._units: dict[str, list[str]] = {}
         self._problem = ""
         self._seen: tuple | None = None
+        self.pending: Path | None = None
         layout = widgets.Layout(width="99%")
         self.hint = widgets.HTML()
+        self.open_button = ui.button(
+            " Open the run",
+            style="info",
+            icon="folder-open",
+            tooltip="Open the run in the output folder and list its RGB positions",
+        )
+        ui.set_visible(self.open_button, False)
         self.unit = widgets.Dropdown(options=[], layout=layout)
         self.add_unit = ui.button(" Choose all of this unit", style="info", icon="check-square")
         self.positions = widgets.SelectMultiple(options=[], rows=6, layout=layout)
@@ -133,6 +146,7 @@ class TissueMaskCard:
         self.status = widgets.HTML()
         self.result = widgets.HTML()
         self.card = ui.card("Make an H&E tissue mask (optional)", self._children())
+        self.open_button.on_click(lambda _: self.open_pending())
         self.add_unit.on_click(lambda _: self._choose_unit())
         self.positions.observe(lambda _: self._positions_changed(), names="value")
         self.preview_button.on_click(lambda _: self.preview())
@@ -151,6 +165,7 @@ class TissueMaskCard:
                 "new mask as binary, run again and describe the masks before a brick uses it."
             ),
             self.hint,
+            self.open_button,
             self.unit,
             self.add_unit,
             self.positions,
@@ -172,9 +187,24 @@ class TissueMaskCard:
             self.result,
         ]
 
-    def refresh(self, output_folder: Path | None, *, memo: ContentMemo | None = None) -> None:
+    @property
+    def offered(self) -> bool:
+        """True when the card has something to show: RGB positions, or a run to open."""
+        return self.has_rgb or self.pending is not None
+
+    def refresh(
+        self,
+        output_folder: Path | None,
+        *,
+        memo: ContentMemo | None = None,
+        open_run: bool = True,
+    ) -> None:
         """Offer the RGB positions of the run in ``output_folder``; clear the card for another.
 
+        ``open_run``: the run is opened (a press: Run, or this card's **Open the run**). False
+        (the notebook's refresh after an edit of a folder box): a run other than the one shown
+        is only forgotten, and offered to open; nothing of it is read but its manifest's
+        fingerprint.
         ``memo``: the content SHA-256s the press that published the run already took
         (:mod:`.content_memo`), reused while a file's identity is unchanged.
         """
@@ -182,10 +212,12 @@ class TissueMaskCard:
         seen = (output_folder, None if manifest is None else current_fingerprint(manifest))
         if seen == self._seen:  # the same run: keep the last preview and result shown
             return
-        self._seen = seen
+        exists = seen[1] is not None
+        self._seen = seen if open_run else None
+        self.pending = output_folder if exists and not open_run else None
         self.output_folder, self._run, self._units, self._problem = output_folder, None, {}, ""
         greyed = []
-        if output_folder is not None and manifest.exists():
+        if open_run and exists:
             try:
                 self._run = open_checked(output_folder, memo=memo)
             except (OSError, ValueError) as exc:
@@ -210,12 +242,31 @@ class TissueMaskCard:
             if greyed
             else ""
         )
-        self.hint.value = "" if self.has_rgb else (
-            "<div class='mb-help'>Available after a run with a unit declared rgb.</div>"
-        )  # fmt: skip
+        ui.set_visible(self.open_button, self.pending is not None)
+        self.hint.value = "" if self.has_rgb else self._hint()
         self.status.value = self.result.value = self.numbers.value = ""
         ui.set_visible(self.picture, False)
         self._positions_changed()
+
+    def _hint(self) -> str:
+        """Return the line shown while there are no RGB positions to offer."""
+        if self.pending is not None:
+            return (
+                "<div class='mb-help'>The output folder holds a run. Press <b>Open the run</b> "
+                "to list its RGB positions: it checks every image of the run first (in a run "
+                "that verifies content, each is read whole), which takes a while on Google "
+                "Drive. Nothing is opened before.</div>"
+            )
+        return "<div class='mb-help'>Available after a run with a unit declared rgb.</div>"
+
+    def open_pending(self) -> None:
+        """Open the run offered (the card's **Open the run**), with its wait on the card."""
+        if self.pending is None:
+            return
+        self.status.value = ui.working("Opening the run: checking its images…")
+        self.refresh(self.pending, open_run=True)
+        if self._problem:
+            self.status.value = ui.status("error", "The run cannot be opened.", [self._problem])
 
     def _choose_unit(self) -> None:
         """Add every usable position of the chosen unit to the selection."""

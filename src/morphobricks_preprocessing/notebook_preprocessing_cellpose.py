@@ -34,6 +34,7 @@ from . import segmentation_cellpose as cp
 from .cellpose_install import (
     cellpose_install_command,
     cellpose_ready,
+    dinov3_ready,
     install_cellpose,
     install_changes,
     installed_distributions,
@@ -73,6 +74,14 @@ INSTALL_TEXT = (
     "the pinned DINOv3 code (the network code of the cpdino models; no weights) is installed "
     "just before Cellpose, so that a cpdino model never needs a runtime restart."
 )
+DINOV3_TEXT = (
+    "Cellpose {version} is installed, but not the DINOv3 code the cpdino models need (their "
+    "network code; no weights). The cpsam models work now. To use a cpdino model, tick the box "
+    "and press the button: it installs only the pinned DINOv3 code (<b>{command}</b>). "
+    "Preview and Segment never install code. If Cellpose was already imported in this runtime, "
+    "a restart is then needed for the cpdino models."
+)
+"""The install card when only the DINOv3 code is missing (review bc B7, owner 27 Nov 2026)."""
 
 
 class SegmentationStep(ShownFirst, widgets.VBox):
@@ -127,6 +136,8 @@ class SegmentationStep(ShownFirst, widgets.VBox):
         ]
         if cellpose_ready():
             self._mount(open_now=False)
+            if not dinov3_ready():  # the code install is offered, never made by a load (B7)
+                self.install_box.children = [self._install_card(), self.segmentation]
         else:
             self.install_box.children = [self._install_card()]
 
@@ -179,6 +190,7 @@ class SegmentationStep(ShownFirst, widgets.VBox):
             register_with=REGISTER_WITH,
             open_now=False,
         )
+        self.segmentation.workflow.install_dinov3_on_load = False  # Install Cellpose does (B7)
         self.install_box.children = [self.segmentation]  # on screen before the wait
         if open_now:
             self._open_in_form()
@@ -201,11 +213,18 @@ class SegmentationStep(ShownFirst, widgets.VBox):
 
     def _install_card(self) -> widgets.VBox:
         """Return the card that installs Cellpose on the user's tick, then mounts the component."""
-        command = " ".join(cellpose_install_command()[2:])
-        text = INSTALL_TEXT.format(version=cp.CELLPOSE_VERSION, command=html.escape(command))
+        self.dinov3_only = cellpose_ready()
+        if self.dinov3_only:
+            command = " ".join(cp.dinov3_install_command()[2:])
+            text = DINOV3_TEXT.format(version=cp.CELLPOSE_VERSION, command=html.escape(command))
+            what = "the DINOv3 code of the cpdino models"
+        else:
+            command = " ".join(cellpose_install_command()[2:])
+            text = INSTALL_TEXT.format(version=cp.CELLPOSE_VERSION, command=html.escape(command))
+            what = f"Cellpose {cp.CELLPOSE_VERSION} (with PyTorch)"
         self.install_tick = widgets.Checkbox(
             value=False,
-            description=f"Install Cellpose {cp.CELLPOSE_VERSION} (with PyTorch) now",
+            description=f"Install {what} now",
             indent=False,
             layout=widgets.Layout(width="auto"),
         )
@@ -248,13 +267,17 @@ class SegmentationStep(ShownFirst, widgets.VBox):
                 version = install_cellpose(self.install_tick.value, shown.line)
         except cp.SegmentationError as exc:
             lines = [html.escape(str(exc)), *failed_lines(shown.lines)]
-            self.install_status.value = ui.status(
-                "error", "Cellpose is not installed", lines, raw=True
-            )
+            title = "The installation is not finished" if self.dinov3_only else (
+                "Cellpose is not installed"
+            )  # fmt: skip
+            self.install_status.value = ui.status("error", title, lines, raw=True)
             return False
         changes = install_changes(before, installed_distributions())
         self.installed.value = installed_html(version, wait.took(), changes)
-        self._mount()
+        if self.dinov3_only:  # the component is there: the card goes
+            self.install_box.children = [self.segmentation]
+        else:
+            self._mount()
         return True
 
 

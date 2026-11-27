@@ -14,6 +14,7 @@ from ..content_memo import ContentMemo
 from ..lab_links import LabLinks
 from ..manifest import RunManifest
 from .description_run import RunDescription
+from .expected import ExpectedSources
 from .preflight import Preflight
 from .recorded import ResolvedInputs
 from .steps import Checked
@@ -33,6 +34,8 @@ class RunOptions:
     """The progress of the run's own folder and header check (:func:`.preflight.preflight`)."""
     memo: ContentMemo | None = None
     """The content SHA-256s one notebook press already took (:attr:`.modes.RunMode.memo`)."""
+    expected: ExpectedSources | None = None
+    """The generation the run's images must be (:attr:`.modes.RunMode.expected`)."""
 
 
 @dataclass(frozen=True)
