@@ -88,6 +88,7 @@ class _RestoreEarlier:
         """
         if self._restoring or not hasattr(self, "restore_box") or not self._show_output:
             return
+        self._restore_key = None  # the next press looks at the folders as they are now
         target = self._prefill_target()
         if self._restored_from is not None and self._restored_from != target:
             before = self._restored_from
@@ -104,9 +105,13 @@ class _RestoreEarlier:
         return f"Press {button} to continue: nothing is read or restored until then."
 
     def _check_pressed(self) -> None:
-        """*Check folder* pressed: restore the earlier work first, else check (#579)."""
+        """*Check folder* pressed: restore the earlier work first, else check (#579).
+
+        On the stepper the restore belongs to *Scan the folders*, pressed before this one.
+        """
         before = self.preflight
-        self._restore_earlier_work()
+        if getattr(self, "_stepper", None) is None:
+            self._restore_earlier_work()
         if self.preflight is before:
             super()._check_pressed()
 

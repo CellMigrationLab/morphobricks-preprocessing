@@ -226,10 +226,10 @@ def test_changing_the_folder_resets_later_steps(experiment):
     nb = confirmed(experiment)
     assert not nb.run_button.disabled
     nb.folder.value = str(experiment) + "_other"
-    assert nb.preflight is None and nb.confirmed_mapping is None
-    assert "The folder changed" in nb.folder_status.value
-    assert nb.run_button.disabled and not ui.is_visible(nb.labels_card)
-    nb.folder.value = str(experiment)  # back: its recorded check is restored, nothing confirmed
+    assert nb.preflight is None is nb.confirmed_mapping and nb.run_button.disabled
+    assert "The folder changed" in nb.folder_status.value and not ui.is_visible(nb.labels_card)
+    nb.folder.value = str(experiment)  # back: nothing is read until Check folder (#579)
+    nb.check_button.click()  # its recorded check is restored, nothing confirmed
     assert nb.preflight is not None and nb.preflight.headers_reused and nb.run_button.disabled
     assert nb.confirmed_mapping is None and "Found earlier work" in nb.restore_status.value
 

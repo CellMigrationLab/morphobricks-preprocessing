@@ -107,7 +107,7 @@ def with_content(
     for done, (rel, entry) in enumerate(entries.items()):
         if progress is not None:
             progress(done, total, rel)
-        sha = current_content(root / rel, memo)
+        sha = current_content(root / rel) if memo is None else current_content(root / rel, memo)
         if sha is None:
             unreadable.append(rel)
         found[rel] = replace(entry, content_sha256=sha)
@@ -139,5 +139,10 @@ def content_changed(
         entry.relative_path
         for entry in entries
         if entry.content_sha256 is None
-        or current_content(root / entry.relative_path, memo) != entry.content_sha256
+        or (
+            current_content(root / entry.relative_path)
+            if memo is None
+            else current_content(root / entry.relative_path, memo)
+        )
+        != entry.content_sha256
     )
