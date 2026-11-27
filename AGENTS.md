@@ -1351,9 +1351,25 @@ jupyter lab notebooks/MorphoBricks_Preprocessing.ipynb
 
 ---
 
-## 11. Status (current state, v0.8.0)
+## 11. Status (current state, v0.9.1)
 
-- **Released:** v0.8.0 (19 November 2026), a minor release because of its breaking entries
+- **Released:** v0.9.1 (27 November 2026), a patch release: the Cellpose and Register fixes of
+  the owner's Colab test of v0.9.0 (#574, #579, #580; merged as #582: weights on first use,
+  pinned and checked, #577; cell 5's question and wait, #578; folders read on a press only) and
+  the fixes of its external review (#584: Cellpose's own downloads refused and a private hashed
+  copy loaded, Register bound to the segmented generation and complete only once described, no
+  run opened on a folder edit, the DINOv3 code installed with Install Cellpose in the combined
+  notebook), and the tifffile 2026.11.26 test fix (#585); normalization stays at v0.8.0, run
+  manifest version 5 and the description unchanged.
+  v0.9.0 (26 November 2026; the tag's own CHANGELOG dates it 24 November, when it was first
+  prepared), a minor release, Stable 1: two notebooks
+  (`MorphoBricks_Preprocessing` and `MorphoBricks_Preprocessing_Cellpose`, #441;
+  `MorphoBricks_Cellpose` stays until the owner's Colab test), normalization pinned at v0.8.0
+  (#471), the Spec pin at `232fb38` (fast mode, ADR 0006; draft file version 4), run integrity
+  checked at read and open (#480, #489, #490, #491) and the conversion and publication fixes
+  (#400, #447, #448, #467, #482, #488, #497); run manifest version 5 unchanged; released from
+  its release branch (tag `v0.9.0` = `669a1f9`, never merged into `main`).
+  v0.8.0 (19 November 2026), a minor release because of its breaking entries
   (`imagecodecs` required, codecs without a measured bound refused; no format change): lazy windows (#339,
   `docs/design/lazy-windows.md`) with `window_map` / `map_windows` (#346), the array H&E tissue
   mask `he_tissue_mask_array` (#343), the `max_ram` worker planner (#341), window memory

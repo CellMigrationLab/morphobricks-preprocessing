@@ -10,7 +10,7 @@ import importlib.metadata
 import json
 
 DISTRIBUTION = "morphobricks-preprocessing"
-PINNED_VERSION = "0.8.0"
+PINNED_VERSION = "0.9.1"
 """The version both notebooks' RELEASE_REF commits hold."""
 
 

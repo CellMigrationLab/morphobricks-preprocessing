@@ -6,6 +6,88 @@ real run; a skip is never counted as a pass. Owner rulings of 8 November 2026 (i
 "no skips" applies to the Spec conformance modules (`tests/test_spec_*.py`); a skip elsewhere
 in the suite is listed as **not run**, with its reason.
 
+## Release record: v0.9.1 (27 November 2026)
+
+A G1-style record of the v0.9.1 release candidate, a patch release: the v0.9.1 batch #582 (the
+Cellpose and Register fixes of the owner's Colab test of v0.9.0, #574, #579, #580: #577, #578,
+#581, and #576, which was already in the v0.9.0 tag), the fixes of its external review (#584),
+and the tifffile 2026.11.26 test fix (#585). No format change: the run manifest stays version 5;
+normalization stays at v0.8.0. It does not decide a gate; deciding a gate is the owner's.
+
+| | |
+|---|---|
+| Release candidate | Measured on the tree of the v0.9.1 preparation commit A without this record (branch `claude/release-v0.9.1` from `main` at `7bc61678a7eff69f7fd0df68ca379bc112a820cd`, #582 and #584 merged; then the two commits of the unmerged v0.9.0 release branch that `main` lacks, cherry-picked: `bac58a1` (CI: one passed release-only case per pinned notebook) and `e781564` (#500: the both-spellings test skips where the file system ignores case); then A's changes: the version 0.9.1, the CHANGELOG, the status and release-check texts, the #585 tests, this record and the v0.9.0 record copied from the tag). The record changes only this file. A keeps the notebooks' `RELEASE_REF` at their v0.8.0-era pins (`main` never held the v0.9.0 pins). Commit B then points the `RELEASE_REF` of all three notebooks at A and records the pair in `RELEASE_CALLS`. |
+| Spec pin | `tests/spec_fixtures/PIN.toml`: MorphoBricks-Spec `232fb38880cc487510532d99dc71d46a27005f23` (unchanged since v0.9.0) |
+| Environment | Linux, Python 3.13.18, `pip install --no-cache-dir -e '.[dev,notebook,zarr]'` in a fresh venv (normalization 0.8.0, imagecodecs 2026.11.11, numpy 2.5.5, scipy 1.18.1, tifffile 2026.11.26, zarr 3.4.2, ipywidgets 8.1.9, pytest 9.2.0, ruff 0.17.6; no `he-mask` extra, so scikit-image is not installed); `PYTEST_ADDOPTS` unset; `TMPDIR` a folder of its own; run as root on a case-sensitive file system |
+| Commands | `python tools/check.py` (the whole suite in one run); `python -m pytest -q -p no:cacheprovider tests/test_spec_*.py`; `python -m pytest -q -p no:cacheprovider -rs tests/test_notebook_setup.py tests/test_notebook_file.py` |
+| `tools/check.py` | Ruff clean, Ruff format 791 files already formatted, pytest **8980 passed, 32 skipped** (not run, below), 0 failed, code rules passed (exit status 0) |
+| Spec modules (`tests/test_spec_*.py`, 30 files) | **2122 passed, 0 skipped, 0 failed** |
+| Notebook pin and version tests | `test_notebook_setup.py` and `test_notebook_file.py`: **49 passed**, 0 skipped |
+| ipywidgets 7.7.5 | The 137 test files that use the widgets or the notebook modules, once, in a second fresh venv with `ipywidgets==7.7.5` (Colab's major version): **2028 passed, 8 skipped**, 0 failed (skips: one 8-only `_repr_mimebundle_` test, the 3 release-only tests, 4 scikit-image tests) |
+
+**Not run (32 skips, none in the Spec modules):** 11 skips that need scikit-image (the `he-mask`
+extra is not installed: `tests/test_he_tissue_array.py:27`, `tests/test_he_tissue_consumer_gate.py:24`,
+`tests/test_he_tissue_mask.py:23`, `tests/test_he_tissue_rule.py:24` (whole modules, one skip each),
+`tests/test_cli_tissue_mask.py:41`, `:61`, `:74` and `tests/test_notebook_tissue_mask.py:33`,
+`:81`, `:99`, `:118`); the editable-install identity test `tests/test_code_identity.py:169`
+(CI's `wheel-identity` job runs it on a wheel install); three that need a case-insensitive file
+system, `tests/test_cli_log.py:166` and `tests/test_folder_rules.py:199` and `:230`; two that
+cannot run as root, `tests/test_discovery.py:665` and `tests/test_links_store_unreadable.py:48`;
+12 parametrisations of `tests/test_mask_pieces.py` (`:137`, 2, and `:163`, 10) that skip by
+design (their case is tested elsewhere); and the 3 release-only freshness tests
+(`tests/release_run.py:40`, `test_release_only_the_preprocessing_pin_is_a_commit_with_this_code`
+for each pinned notebook), which run on commit B with `MORPHOBRICKS_RELEASE_RUN=1`. The
+behaviours of the skips are **not verified by this run**.
+
+**Still the owner's:** the full matrix as a release run (GitHub Actions is blocked by the
+organization's billing, so this local run is the gate), the Colab and JupyterLab browser check
+(`docs/colab-release-check.md`) at commit B, and the Cellpose stepper human test
+(`docs/testing/cellpose-stepper-human-test.md`), before tagging.
+
+## Release record: v0.9.0 (26 November 2026)
+
+Copied from the tag `v0.9.0` (`669a1f9`) in v0.9.1: the release branch `claude/release-v0.9.0` was never merged into `main`. The tag's own file heads it "24 November 2026", the day the release was first prepared; the tag and the GitHub release are of 26 November 2026, the date used here.
+
+A G1-style record of the v0.9.0 release candidate, a minor release, Stable 1: two notebooks
+(`MorphoBricks_Preprocessing` and `MorphoBricks_Preprocessing_Cellpose`, #441), normalization
+pinned at v0.8.0 (#471), the Spec pin at `232fb38` (fast mode, Spec ADR 0006; draft file
+version 4), run integrity checked at read and open (#480, #489, #490, #491), the conversion and
+publication fixes (#400, #447, #448, #467, #482, #488, #497), the channel-tag override with its
+per-unit review (#376), the removal of a whole repeat or condition (#283, #535), and the work
+merged since: quick fixes A and B (#534, #530), the check-folder and calibration-target fixes
+(#528), the follow-ups of #535 and #534 (#543), the linear strict description reader (#545), the
+kernel and reader benchmarks (#544), the guided channel step and image-type form (#546), the
+restore of an output folder's earlier work (#547), the four-step Cellpose widget (#548), and the two blockers of the owner's Colab test, the restore and old-answers scan (#566) and Run progress during the pre-run checks with two linear speed-ups (#567), and the owner's Cellpose test blocker, Preview showing only its own result (#576). The
+run manifest stays version 5. It does not decide a gate; deciding a gate is the owner's.
+
+| | |
+|---|---|
+| Release candidate | Measured on the tree of the merge commit `8125f8383b02a7b4ab826608a45f28d74b4f3e91` (branch `claude/release-v0.9.0` at `3a1b073`, merged with the head `1d43cd3` of #576, branch `claude/cellpose-preview-stale` on `main` at `316be56`; `main` itself is not merged, so #568, #572 and later work stay out of v0.9.0; the release branch holds #528, #534, #543, #545, #544, #530, #548, #547, #546, #566 and #567; one conflict, in the CHANGELOG, both sides kept; `git diff 3a1b073 A -- src` is exactly #576's source change, four `notebook_cellpose*.py` files; the notebooks' `RELEASE_REF`, the `RELEASE_CALLS` entry and the pin assertion are back at their pre-pin values) before this record was added; the record changes only this file, and the commit that adds it is the v0.9.0 preparation commit A (`git diff 8125f8383b02a7b4ab826608a45f28d74b4f3e91 A -- src pyproject.toml` is empty). A keeps the notebooks' `RELEASE_REF` at their v0.8.0-era pins. Commit B then points the `RELEASE_REF` of all three notebooks at A and records the pair in `RELEASE_CALLS`. |
+| Spec pin | `tests/spec_fixtures/PIN.toml`: MorphoBricks-Spec `232fb38880cc487510532d99dc71d46a27005f23` (moved from `bf68d30` in this release, ADR 0006) |
+| Environment | Linux, Python 3.13.18, `pip install --no-cache-dir -e '.[dev,notebook,zarr,he-mask]'` in a fresh venv (CI's extras; normalization 0.8.0, imagecodecs 2026.11.11, numpy 2.5.5, scipy 1.18.1, tifffile 2026.11.16, zarr 3.4.2, scikit-image 0.26.0, ipywidgets 8.1.9, pytest 9.2.0, ruff 0.17.6); `PYTEST_ADDOPTS` unset; run as root on a case-sensitive file system |
+| Commands | `python tools/check.py` (the whole suite in one run); `python -m pytest -q -p no:cacheprovider -rs tests/test_spec_*.py`; `python -m pytest -q -p no:cacheprovider -rs tests/test_notebook_setup.py tests/test_notebook_file.py` |
+| `tools/check.py` | Ruff clean, Ruff format 762 files already formatted, pytest **8843 passed, 12 skipped** (not run, below), 0 failed, code rules passed (exit status 0) |
+| Spec modules (`tests/test_spec_*.py`, 30 files) | **2122 passed, 0 skipped, 0 failed** |
+| Notebook pin and version tests | `test_notebook_setup.py` and `test_notebook_file.py`: **49 passed**, 0 skipped (run on the tree of the merge commit) |
+
+**Not run (12 skips, none in the Spec modules):** `tests/test_he_tissue_consumer_gate.py:25`
+(gate P3 needs fiberfeatures v0.7.0, not installed); the editable-install identity tests
+`tests/test_code_identity.py:169`, `tests/test_he_tissue_array.py:286` and
+`tests/test_he_tissue_mask.py:500` (preprocessing is an editable install here, never verified;
+CI's `wheel-identity` job runs them on a wheel install); three tests that need a
+case-insensitive file system, `tests/test_cli_log.py:166` and `tests/test_folder_rules.py:199`
+and `:230`; two that cannot run as root, `tests/test_discovery.py:665` and
+`tests/test_links_store_unreadable.py:48`; and the 3 release-only freshness tests
+(`tests/release_run.py:40`,
+`test_release_only_the_preprocessing_pin_is_a_commit_with_this_code` for each pinned notebook),
+which run in the release PR with `MORPHOBRICKS_RELEASE_RUN=1` once commit B has moved the pins.
+The scikit-image tests ran (the `he-mask` extra is installed). The behaviours of the skips are
+**not verified by this run**.
+
+**Still the owner's:** the `release` label (the full matrix as a release run), the Colab and
+JupyterLab browser check (`docs/colab-release-check.md`) at commit B, and the Cellpose stepper
+human test (`docs/testing/cellpose-stepper-human-test.md`), before tagging.
+
 ## Release record: v0.8.0 (19 November 2026)
 
 A G1-style record of the v0.8.0 release candidate (first prepared as v0.7.1; renumbered by owner decision because of the breaking entries), a minor release: lazy windows
